@@ -226,6 +226,7 @@ export default function AdminShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar */}
         <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
             <MobileNav nav={nav} />
             <h1 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight sm:text-base">{title}</h1>

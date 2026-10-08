@@ -934,7 +934,7 @@ function SfLoading() {
       <div className="h-14 border-b animate-pulse" />
       <div className="mx-auto max-w-7xl px-4 py-6">
         <Skeleton className="h-80 rounded-2xl" />
-        <div className="grid grid-cols-2 gap-4 pt-8 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 pt-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="aspect-square rounded-xl" />
           ))}

@@ -202,6 +202,8 @@ export default function SellerShell() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* top bar */}
         <header className="flex items-center gap-3 border-b bg-background/95 px-4 py-3 print:hidden">
+          {/* brand gradient strip */}
+          <div className="fixed inset-x-0 top-0 z-50 h-1 bg-brand-gradient print:hidden" aria-hidden="true" />
           {/* mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>

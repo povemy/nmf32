@@ -85,7 +85,7 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         title="Marketplace is warming up"
         hint="We couldn't reach the marketplace service. Please try again in a moment."
         action={
-          <Button onClick={() => window.location.reload()} className="bg-teal-700 hover:bg-teal-800">
+          <Button onClick={() => window.location.reload()} className="bg-brand-gradient-deep hover:brightness-110">
             Retry
           </Button>
         }
@@ -99,7 +99,7 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         <HeroCarousel banners={home.banners} ctx={ctx} />
       ) : (
         <div className="mx-auto max-w-7xl px-4 pt-4">
-          <div className="h-40 sm:h-56 rounded-2xl bg-gradient-to-r from-teal-800 to-emerald-700 animate-pulse" />
+        <div className="h-40 sm:h-56 rounded-2xl bg-brand-gradient opacity-80 animate-pulse" />
         </div>
       )}
 
@@ -116,9 +116,9 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
                   key={cat.id}
                   type="button"
                   onClick={() => ctx.nav({ name: "category", categorySlug: cat.slug, label: cat.name })}
-                  className="group flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card p-3 hover:border-teal-600/50 hover:shadow-sm transition-all min-h-[44px]"
+                  className="group flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card shadow-soft p-3 hover:border-teal-600/50 hover:shadow-md transition-all min-h-[44px]"
                 >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-50 text-teal-700 group-hover:bg-teal-100 transition-colors">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-50 text-teal-700 group-hover:bg-brand-gradient group-hover:text-white transition-all">
                     <Icon className="h-5 w-5" />
                   </span>
                   <span className="text-[11px] font-medium leading-tight text-center line-clamp-2">{cat.name}</span>
@@ -135,7 +135,7 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
           icon={<Sparkles className="h-5 w-5 text-amber-500" />}
         >
           {home ? (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
               {home.featured.map((p) => (
                 <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
               ))}
@@ -154,10 +154,10 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
                   key={s.id}
                   type="button"
                   onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
-                  className="group overflow-hidden rounded-xl border bg-card text-left hover:shadow-md hover:border-teal-600/40 transition-all"
+                  className="group overflow-hidden rounded-xl border bg-card shadow-soft text-left hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all"
                   aria-label={`Visit ${s.name}`}
                 >
-                  <div className="relative h-20 bg-gradient-to-r from-teal-700/90 to-emerald-600/80 overflow-hidden">
+                  <div className="relative h-20 bg-brand-gradient overflow-hidden">
                     {s.bannerUrl ? (
                       <img src={s.bannerUrl} alt="" loading="lazy" className="h-full w-full object-cover opacity-80" />
                     ) : null}
@@ -194,7 +194,7 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         {/* new arrivals */}
         <SectionBlock title="New arrivals" subtitle="Fresh from our sellers" icon={<ShoppingBag className="h-5 w-5 text-emerald-600" />}>
           {home ? (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
               {home.latest.map((p) => (
                 <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
               ))}
@@ -305,7 +305,7 @@ function HeroCarousel({
               <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 sm:p-8 max-w-lg">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">SHOPMESH picks</span>
                 <span className="text-lg sm:text-2xl font-extrabold text-white leading-snug drop-shadow">{b.title}</span>
-                <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-teal-800">
+                <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-teal-800 shadow-sm">
                   Shop now <ChevronRight className="h-3.5 w-3.5" />
                 </span>
               </span>
@@ -471,14 +471,14 @@ export function ResultsView({
               : "This category has no active listings yet. Check back soon!"
           }
           action={
-            <Button onClick={() => ctx.nav({ name: "market" })} className="bg-teal-700 hover:bg-teal-800">
+            <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
               Back to market
             </Button>
           }
         />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
             {items.map((p) => (
               <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
             ))}

@@ -205,6 +205,8 @@ function MarketHeader({
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      {/* brand gradient strip */}
+      <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
       <div className="mx-auto flex max-w-7xl items-center gap-2 sm:gap-4 px-4 py-3">
         {/* mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -272,11 +274,11 @@ function MarketHeader({
 
         {/* logo */}
         <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] items-center gap-2" aria-label="SHOPMESH home">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
             <ShoppingBag className="h-5 w-5" />
           </span>
           <span className="text-lg font-extrabold tracking-tight text-teal-900">
-            SHOP<span className="text-emerald-600">MESH</span>
+            SHOP<span className="text-brand-gradient">MESH</span>
           </span>
         </button>
 
@@ -396,7 +398,7 @@ function ShopperFooter({
   onMarket: () => void;
 }) {
   return (
-    <footer className="mt-auto border-t bg-gradient-to-b from-teal-950 to-teal-900 text-teal-50">
+    <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 text-teal-50">
       <div className="mx-auto max-w-7xl px-4 py-10">
         <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
           <div className="space-y-2">
@@ -404,7 +406,7 @@ function ShopperFooter({
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50/10">
                 <ShoppingBag className="h-5 w-5 text-amber-300" />
               </span>
-              SHOP<span className="text-emerald-300">MESH</span>
+              SHOP<span className="text-teal-200">MESH</span>
             </p>
             <p className="max-w-md text-xs text-teal-200/80">
               The marketplace where independent Malaysian shops launch beautiful storefronts in minutes.

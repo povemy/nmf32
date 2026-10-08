@@ -266,11 +266,11 @@ export function ProductCard({
     <button
       type="button"
       onClick={() => onOpen(p)}
-      className="group text-left rounded-xl border bg-card overflow-hidden hover:shadow-md hover:border-teal-600/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
+      className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
       aria-label={`${p.title} from ${p.storeName}, ${formatMinor(p.priceMinor)}`}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
-        {/* plain <img> (SVG placeholder service) — never next/image here */}
+        {/* plain <img> (product mockups / placeholder service) — never next/image here */}
         <img
           src={p.imageUrl}
           alt={p.title}
@@ -278,39 +278,39 @@ export function ProductCard({
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
         />
         {discount ? (
-          <span className="absolute top-2 left-2 rounded-full bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5">
+          <span className="absolute top-1.5 left-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5">
             -{discount}%
           </span>
         ) : null}
       </div>
-      <div className="p-3 space-y-1.5">
-        <h3 className="text-sm font-medium leading-snug line-clamp-2 min-h-[2.5rem]">{p.title}</h3>
+      <div className="p-2.5 space-y-1">
+        <h3 className="text-xs font-medium leading-snug line-clamp-2 min-h-[2rem]">{p.title}</h3>
         {!hidePrice ? (
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-bold text-teal-700">{formatMinor(p.priceMinor)}</span>
             {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
-              <span className="text-xs text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+              <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
             ) : null}
           </div>
         ) : null}
-        {showStore ? <p className="text-xs text-muted-foreground truncate">{p.storeName}</p> : null}
+        {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
         <div className="flex items-center justify-between gap-1 pt-0.5">
-          <Stars rating={p.ratingAvg} count={p.ratingCount} />
+          <Stars rating={p.ratingAvg} />
+          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
         </div>
-        <p className="text-[11px] text-muted-foreground">{p.salesCount} sold</p>
       </div>
     </button>
   );
 }
 
-export function ProductGridSkeleton({ n = 8 }: { n?: number }) {
+export function ProductGridSkeleton({ n = 12 }: { n?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
       {Array.from({ length: n }).map((_, i) => (
         <div key={i} className="space-y-2">
           <Skeleton className="aspect-square rounded-xl" />
-          <Skeleton className="h-4 w-4/5" />
-          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="h-3.5 w-4/5" />
+          <Skeleton className="h-3.5 w-2/5" />
         </div>
       ))}
     </div>

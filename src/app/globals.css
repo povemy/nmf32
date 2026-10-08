@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-jakarta);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -41,75 +41,94 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ------------------------------------------------------------------
+   * ShopMesh Modern Gradient — brand remap of the Tailwind teal scale.
+   * Every teal-* class in the app now resolves to the brand palette
+   * (#004B5C → #00A8C6) so surfaces, accents and hover states all
+   * inherit the gradient brand system automatically.
+   * ------------------------------------------------------------------ */
+  --color-teal-50: #e6f7fb;
+  --color-teal-100: #cceef7;
+  --color-teal-200: #9fdcef;
+  --color-teal-300: #6cc9e4;
+  --color-teal-400: #2fb2d4;
+  --color-teal-500: #00a8c6;
+  --color-teal-600: #0093b4;
+  --color-teal-700: #00647a;
+  --color-teal-800: #004b5c;
+  --color-teal-900: #003947;
+  --color-teal-950: #002a34;
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+  /* ShopMesh Modern Gradient (DESIGN.md) */
+  --background: #e8fcff;
+  --foreground: #181c1e;
+  --card: #ffffff;
+  --card-foreground: #181c1e;
+  --popover: #ffffff;
+  --popover-foreground: #181c1e;
+  --primary: #004b5c;
+  --primary-foreground: #ffffff;
+  --secondary: #00687b;
+  --secondary-foreground: #ffffff;
+  --muted: #eef6f9;
+  --muted-foreground: #55666c;
+  --accent: #d9f3fa;
+  --accent-foreground: #004b5c;
+  --destructive: #ba1a1a;
+  --border: #d8ebf1;
+  --input: #cfe7ee;
+  --ring: #00a8c6;
+  --chart-1: #00647a;
+  --chart-2: #00a8c6;
+  --chart-3: #693705;
+  --chart-4: #ffb77e;
+  --chart-5: #62defe;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #181c1e;
+  --sidebar-primary: #004b5c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d9f3fa;
+  --sidebar-accent-foreground: #004b5c;
+  --sidebar-border: #d8ebf1;
+  --sidebar-ring: #00a8c6;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #0b2229;
+  --foreground: #eff1f3;
+  --card: #12303a;
+  --card-foreground: #eff1f3;
+  --popover: #12303a;
+  --popover-foreground: #eff1f3;
+  --primary: #88d1ea;
+  --primary-foreground: #001f28;
+  --secondary: #1c4653;
+  --secondary-foreground: #aeecff;
+  --muted: #173a45;
+  --muted-foreground: #9db8c0;
+  --accent: #1c4653;
+  --accent-foreground: #aeecff;
+  --destructive: #ffdad6;
+  --border: rgba(0, 168, 198, 0.22);
+  --input: rgba(0, 168, 198, 0.25);
+  --ring: #58d6f5;
+  --chart-1: #62defe;
+  --chart-2: #88d1ea;
+  --chart-3: #ffb77e;
+  --chart-4: #ffdcc3;
+  --chart-5: #00a8c6;
+  --sidebar: #12303a;
+  --sidebar-foreground: #eff1f3;
+  --sidebar-primary: #88d1ea;
+  --sidebar-primary-foreground: #001f28;
+  --sidebar-accent: #1c4653;
+  --sidebar-accent-foreground: #aeecff;
+  --sidebar-border: rgba(0, 168, 198, 0.22);
+  --sidebar-ring: #58d6f5;
 }
 
 @layer base {
@@ -118,5 +137,41 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Light cyan canvas with a soft vertical brand wash */
+    background-image: linear-gradient(180deg, #e8fcff 0%, #effbfd 42%, #f7fafb 100%);
+    background-attachment: fixed;
+    font-feature-settings: "cv02", "cv03", "cv04";
+  }
+  /* Card surface: soft tinted shadow instead of heavy borders (DESIGN.md) */
+  .bg-card {
+    box-shadow: 0 10px 25px -8px rgba(0, 100, 122, 0.1);
+  }
+}
+
+@layer utilities {
+  /* Primary brand gradient — 135deg, #00647A → #00A8C6 */
+  .bg-brand-gradient {
+    background-image: linear-gradient(135deg, #00647a 0%, #00a8c6 100%);
+  }
+  /* Darker CTA variant — safe contrast for white label text */
+  .bg-brand-gradient-deep {
+    background-image: linear-gradient(135deg, #00556a 0%, #008aa8 100%);
+  }
+  /* Translucent brand wash for chips/badges */
+  .bg-brand-gradient-soft {
+    background-image: linear-gradient(135deg, rgba(0, 100, 122, 0.08) 0%, rgba(0, 168, 198, 0.16) 100%);
+  }
+  /* Gradient text */
+  .text-brand-gradient {
+    background-image: linear-gradient(135deg, #00647a 0%, #00a8c6 60%, #35c4de 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .shadow-soft {
+    box-shadow: 0 10px 25px -5px rgba(0, 100, 122, 0.1);
+  }
+  .border-brand-subtle {
+    border-color: rgba(0, 168, 198, 0.28);
   }
 }
