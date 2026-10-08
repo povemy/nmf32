@@ -1,0 +1,153 @@
+================================================================================
+PART 1 — PRODUCT SPECIFICATION
+SHOPMESH v1  |  Normative for product behavior; DDL/API are normative for data.
+================================================================================
+
+1.1 PERSONAS
+- SELLER (founder): non-technical. Wants: free store, fast setup, marketplace
+  traffic, payouts, marketing pixel plug-ins. Zero config required to launch.
+- SHOPPER: buys on a seller storefront or the marketplace. Guest checkout OK.
+- PLATFORM ADMIN: runs everything: approvals, moderation, commissions, payouts,
+  disputes, settings, logs. Full command centre (PART 4).
+- PLATFORM FINANCE: commissions, payouts, ledger, reconciliation.
+- SUPPORT/MODERATOR: tickets, product/flagged content review, limited scopes.
+
+1.2 ROLES & PERMISSION MATRIX
+Platform roles: superadmin | ops | finance | moderator | support | readonly
+Store roles:    owner | staff (granular perms) | (shoppers have no login v1)
+Capability                 super ops  finance  moderator  support  store.owner
+Approve/reject sellers      Y     Y      -         -         -        -
+Product moderation          Y     Y      -         Y         -        -
+Commission settings         Y     -      Y         -         -        -
+Payouts / ledger            Y     -      Y         -         -        -
+Refund approve              Y     Y      Y         -         -        store*
+Dispute manage              Y     Y      Y         -         -        -
+View all logs               Y     Y      Y(fin)    -         -        own store
+Settings / feature flags    Y     -      -         -         -        -
+Impersonate seller store    Y     -      -         -         -        -
+(*store.owner may REQUEST refund; platform or auto-rules approve.)
+
+1.3 SELLER JOURNEY (state machine)
+draft -> onboarding -> pending_review -> active -> suspended -> (active|terminated)
+- draft:        account created, email/phone verified.
+- onboarding:   wizard steps: profile -> store identity -> KYC docs -> bank
+                account -> pick template -> publish request.
+- pending_review: admin reviews KYC + first products (moderation queue).
+- active:       store live on {slug}.shopmesh.site; marketplace listing ON by
+                default (seller opt-out flag).
+- suspended:    admin action; storefront shows maintenance page; payouts frozen.
+- terminated:   final; data retained per policy; payout of remaining balance
+                after dispute/refund window.
+SLA knobs: auto-approve KYC if eKYC provider passes AND risk score low (config).
+
+1.4 SHOPPER JOURNEY
+Marketplace or storefront -> product -> add to cart -> hosted checkout
+(checkout.shopmesh.io/{store}) -> local payment (FPX/e-wallet/card) ->
+webhook confirms -> order paid -> seller fulfills + tracking ->
+delivered -> review request -> payout eligibility timer starts.
+Guest checkout: cart token in cookie; customer record auto-created on order
+(email + phone). Optional shopper accounts = v2.
+
+1.5 STOREFRONT + PAGE BUILDER (fast, section-based)
+- Every store ships with a default published template in <60s from signup.
+- Store = set of PAGES; each page = ordered list of typed SECTIONS (JSON tree,
+  versioned: draft vs published; publish purges CDN cache).
+- Section registry v1 (each = server component + prop JSON-schema):
+  announcement_bar, header, hero, image_banner, product_grid,
+  collection_list, rich_text, image_with_text, testimonials, faq,
+  newsletter, countdown, whatsapp_floating, footer, marketplace_strip.
+- Theme tokens (store.theme JSONB): primary_color, accent_color, font_heading,
+  font_body, radius, button_style, spacing_scale.
+- Page types: home, product, collection, about, contact, policy, custom,
+  checkout(locked), order_status(locked).
+- Preview: /preview/{storeId}/{pageId}?t=token (token TTL 30 min).
+- v1 explicitly EXCLUDES: free-form canvas, custom code injection (except GTM
+  ID field), multi-page drag nav — keeps it fast and unbreakable.
+
+1.6 MARKETPLACE DISCOVERY
+- market.shopmesh.io: search (Meili), categories, banners, featured slots.
+- Listing gate: product.status='active' AND store.status='active' AND
+  store.marketplace_opt_in AND passed moderation.
+- Ranking score (config weights in settings): 0.40 recency + 0.30 sales_count
+  + 0.20 rating + 0.10 CTR; demote on refund-rate breach.
+- Storefront cross-sell: optional marketplace_strip section (drives discovery).
+- Platform coupons usable across marketplace at admin discretion.
+
+1.7 CUSTOM DOMAINS
+Mode A (CNAME): seller adds CNAME -> shops.shopmesh.net. Platform verifies via
+  TXT _shopmesh-challenge.{domain}, issues cert via Cloudflare for SaaS.
+Mode B (NS delegation): seller points nameservers at platform CF account;
+  platform creates zone, full DNS+SSL managed (the "everything done for you" mode).
+States: pending -> verifying -> verified -> active | failed (with error reason).
+Rules: force HTTPS; www<->apex redirect policy per store; primary domain flag;
+  default subdomain always remains reachable (never break their only URL).
+
+1.8 PAYMENTS (LOCAL FIRST)
+- Driver interface: createIntent, verifyWebhook, capture?, refund, getStatus.
+- v1 drivers (enable per country in admin settings): FPX via Curlec/ToyyibPay;
+  e-wallets (TNG/GrabPay/Boost) via Stripe MY or regional PSP; Midtrans/Xendit
+  for ID. Card via Stripe when available.
+- Flow: hosted checkout -> createIntent(payment_pending, TTL 30 min) ->
+  redirect -> provider webhook (signature-verified, idempotent, raw payload
+  logged) -> order.paid event via outbox.
+- Funds: provider settles to platform bank T+1..T+3 -> reconciliation job
+  matches settlement reports -> platform holds ALL funds; seller share is a
+  ledger liability (PART 3 M10).
+
+1.9 COMMISSION / PROFIT-SHARING (summary; full math in PART 3 M09)
+- Resolution priority: fee holiday > product override > category override >
+  seller override > global default.
+- Base: amount customer actually paid for the item after discounts
+  (config flag can switch to list-price base).
+- Optional: fixed fee per order, min commission, shipping commission flag.
+- Stored per order_item (percent + amount + resolution trace JSONB) — never
+  recomputed after the fact.
+
+1.10 PAYOUTS (summary; full in PART 3 M10)
+- Hold: available_at = paid_at + hold_days (default 7) OR delivered+grace
+  (config rule). Risk tier can raise hold days.
+- Schedule: weekly (admin-configured weekday) auto-run, or manual batch.
+- Minimum payout amount; negative wallets carry forward, block payout.
+- Method: local bank transfer via provider API or manual CSV + mark-paid.
+
+1.11 CONTENT & RISK POLICY (because marketplace is GENERAL)
+- Prohibited items list (admin-editable CMS page) enforced by:
+  moderation queue for new sellers' first N products (config), keyword/image
+  flagging, shopper report button, admin takedown with reason code.
+- Risk engine (v1 = rules): refund_rate > threshold, dispute_rate, order
+  velocity, mismatched bank holder name -> raise risk_tier -> higher hold,
+  manual payout review, listing demotion.
+
+1.12 INTEGRATIONS (external marketing tools)
+- Pixels (store-level config): Meta Pixel, GA4, TikTok Pixel, GTM container.
+- Server events (optional v1.5): Meta CAPI, TikTok Events API.
+- Outbound webhooks (HMAC-signed, retries 1m/5m/30m/2h/24h then dead):
+  order.created, order.paid, order.shipped, order.delivered, order.refunded,
+  product.updated, stock.low, payout.paid, seller.approved.
+- Public REST API for sellers with scoped keys (read products/orders,
+  write products/stock) -> Zapier/Make compatible.
+
+1.13 NOTIFICATION MATRIX (template-driven, channel per row)
+Event                 -> Seller        -> Customer      -> Admin
+seller.registered     -                -                email
+kyc.approved/rejected email/wa         -                -
+order.paid            email/wa+inapp   email            digest
+order.shipped         -                email/wa         -
+order.delivered       -                email(review ask)-
+stock.low             email/inapp      -                -
+payout.paid/failed    email/wa         -                email on fail
+refund.approved       email            email            -
+dispute.opened        email            -                email
+domain.verified       email            -                -
+weekly digest         email            -                -
+monthly statement     email(inapp)     -                -
+
+1.14 NON-FUNCTIONAL TARGETS
+- Storefront TTFB < 300ms cached (ISR/CDN), P95 API < 250ms, checkout
+  submission < 1.5s. Uptime 99.9%. RPO 5 min (PITR), RTO 1h.
+- Backups: PG PITR + nightly logical; monthly RESTORE DRILL (PART 6 gate).
+
+1.15 OUT OF SCOPE v1 (park, don't build)
+Multi-currency, shopper accounts, seller-to-seller chat, mobile apps,
+platform-fulfilled shipping, subscriptions, auction, ad-credits system,
+multi-language admin (schema ready: locale columns).

@@ -1,0 +1,117 @@
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { readBody, optNum, optBool, str, stripSeller, daysAgo } from "@/app/api/admin/_helpers";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// GET /api/admin/sellers/[id] — full seller profile
+export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
+  await requireAdmin();
+  const { id } = await ctx.params;
+  const seller = await db.seller.findUnique({
+    where: { id },
+    include: {
+      store: true,
+      wallet: true,
+      kycDocuments: { orderBy: { createdAt: "asc" } },
+      bankAccounts: { orderBy: { createdAt: "desc" } },
+      sellerNotes: { orderBy: { createdAt: "desc" } },
+    },
+  });
+  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  const [recentProducts, recentOrders, productCount] = await Promise.all([
+    db.product.findMany({
+      where: { storeId: seller.store?.id ?? "__none__" },
+      include: { images: { orderBy: { sortOrder: "asc" }, take: 1 }, category: true },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    db.order.findMany({
+      where: { storeId: seller.store?.id ?? "__none__" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    db.product.count({ where: { storeId: seller.store?.id ?? "__none__" } }),
+  ]);
+
+  const since = daysAgo(30);
+  const agg = seller.store
+    ? await db.order.aggregate({
+        where: { storeId: seller.store.id, paidAt: { gte: since, not: null } },
+        _sum: { totalMinor: true },
+        _count: { _all: true },
+      })
+    : { _sum: { totalMinor: 0 }, _count: { _all: 0 } };
+
+  return ok({
+    seller: stripSeller(seller),
+    store: seller.store,
+    kycDocuments: seller.kycDocuments,
+    bankAccounts: seller.bankAccounts,
+    wallet: seller.wallet,
+    products: recentProducts,
+    orders: recentOrders,
+    notes: seller.sellerNotes,
+    gmv30dMinor: agg._sum.totalMinor ?? 0,
+    orders30d: agg._count._all,
+    productCount,
+  });
+});
+
+// PATCH /api/admin/sellers/[id] — risk tier / commission / hold overrides / marketplace opt-in
+export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
+  const admin = await requireAdmin();
+  const { id } = await ctx.params;
+  const body = await readBody(req);
+
+  const seller = await db.seller.findUnique({ where: { id } });
+  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  const data: {
+    riskTier?: string;
+    commissionOverridePercent?: number | null;
+    holdDaysOverride?: number | null;
+    marketplaceOptIn?: boolean;
+  } = {};
+  const riskTier = str(body, "riskTier");
+  if (riskTier != null) {
+    if (!["low", "medium", "high"].includes(riskTier)) throw new ApiError(400, "VALIDATION", "riskTier must be low | medium | high");
+    data.riskTier = riskTier;
+  }
+  if ("commissionOverridePercent" in body) {
+    const v = optNum(body, "commissionOverridePercent");
+    if (v != null && (v < 0 || v > 100)) throw new ApiError(400, "VALIDATION", "commissionOverridePercent must be 0..100");
+    data.commissionOverridePercent = v ?? null;
+  }
+  if ("holdDaysOverride" in body) {
+    const v = optNum(body, "holdDaysOverride");
+    if (v != null && (v < 0 || v > 60)) throw new ApiError(400, "VALIDATION", "holdDaysOverride must be 0..60");
+    data.holdDaysOverride = v != null ? Math.round(v) : null;
+  }
+  const marketplaceOptIn = optBool(body, "marketplaceOptIn");
+  if (marketplaceOptIn != null) data.marketplaceOptIn = marketplaceOptIn;
+
+  if (Object.keys(data).length === 0) throw new ApiError(400, "VALIDATION", "Nothing to update");
+
+  const updated = await db.seller.update({ where: { id }, data });
+
+  await auditAdmin({
+    adminId: admin.id,
+    adminEmail: admin.email,
+    action: "seller.update",
+    entityType: "seller",
+    entityId: id,
+    before: {
+      riskTier: seller.riskTier,
+      commissionOverridePercent: seller.commissionOverridePercent,
+      holdDaysOverride: seller.holdDaysOverride,
+      marketplaceOptIn: seller.marketplaceOptIn,
+    },
+    after: data,
+  });
+
+  return ok(stripSeller(updated));
+});

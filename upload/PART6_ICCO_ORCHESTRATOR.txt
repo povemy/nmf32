@@ -1,0 +1,105 @@
+================================================================================
+PART 6 — CODEBASE INTEGRITY CONTROL ORCHESTRATOR (ICCO)
+Goal: the codebase can never silently drift from the blueprint — DDL, API
+contract, module boundaries, money invariants, and audit guarantees are all
+machine-enforced. Especially important when building with AI/IDE agents.
+================================================================================
+
+6.1 PRINCIPLES
+1. Contracts are artifacts: PART2 (DDL) and PART5 (OpenAPI) live in
+   /docs/contracts and are REGENERATED + DIFFED in CI. A PR that changes DB or
+   API without regenerating them is blocked.
+2. Migrations are immutable: once merged, a migration file is never edited
+   (checksum-guarded). Fix-forward only.
+3. Money code is sacred: any PR touching files under modules marked
+   "money-critical" (commission, ledger, payouts, checkout) requires: 95% test
+   coverage, property tests for rounding, a finance CODEOWNER review.
+4. Module boundaries are linted: apps/api modules may not deep-import another
+   module's internals (only its public service/interface).
+5. AI-generated code regions are marked: `// @generated:<contract>` blocks are
+   CODEOWNered by the CI bot; manual edits to them are overwritten/rejected.
+6. Every admin mutation is audited — enforced by an interceptor and verified
+   by a nightly completeness scan (mutation endpoints vs audit rows).
+
+6.2 ENFORCEMENT GATES (CI pipeline order)
+ G1  lint (eslint + module-boundary rule)            [block]
+ G2  typecheck (tsc --noEmit, strict)                [block]
+ G3  unit tests + coverage (global 80%, money 95%)   [block]
+ G4  secret scan (gitleaks)                          [block]
+ G5  migration checks: up on fresh PG, down, checksum
+     vs merged history, no `DROP TABLE` without
+     `breaking:` label + 2 approvals                 [block]
+ G6  schema drift: migrate fresh DB => pg_dump schema
+     => diff vs committed schema.sql snapshot        [block]
+ G7  OpenAPI: regenerate from zod specs => diff;
+     breaking change => require API version bump     [block]
+ G8  contract tests: schemathesis against mocked API
+     (all listed endpoints return contract shapes)   [block]
+ G9  e2e smoke: seller signup -> product -> checkout
+     (mock gateway) -> order paid -> ledger entries
+     balanced -> payout dry run                      [block]
+ G10 dependency audit + license allowlist + SBOM      [warn->block]
+ G11 build + container scan                           [block]
+ G12 deploy staging => smoke => manual approve =>
+     prod canary 10% => health gates 15 min =>
+     full rollout | auto-rollback                    [block]
+
+6.3 icco.config.yaml (consumed by CI + local `make verify`)
+----------------------------------------------------------------
+version: 1
+contracts:
+  ddl: db/migrations            # checksum-locked after merge
+  openapi: docs/contracts/openapi.json
+  schema_snapshot: docs/contracts/schema.sql
+money_critical_paths:
+  - apps/api/src/commission/**
+  - apps/api/src/ledger/**
+  - apps/api/src/payouts/**
+  - apps/api/src/checkout/**
+coverage: {global: 80, money: 95}
+module_boundaries:
+  enforce: true
+  public_interfaces: ["*.module.ts exposes public-api.ts"]
+generated_markers: ["@generated:ddl", "@generated:openapi"]
+breaking_change_policy: {api: semver-major, db: "expand-contract only"}
+audit_required_actions: "all non-GET admin/* endpoints"
+invariants:
+  - {id: ledger-balanced, job: nightly, expr: "sum(debit)==sum(credit) per txn"}
+  - {id: wallet-truth,    job: nightly, expr: "wallets cache == ledger sum"}
+  - {id: audit-completeness, job: nightly}
+  - {id: outbox-lag, job: 5min, warn_after: 60s}
+  - {id: webhook-dead-letters, job: hourly, alert: finance+ops}
+----------------------------------------------------------------
+
+6.4 BRANCH & COMMIT POLICY
+- main (prod, protected) <- release/* <- develop; feature/* short-lived;
+  squash merges, linear history, 1 approval (2 for money-critical, DB, auth).
+- Conventional commits: type(scope): subject; scopes = module codes
+  (M01..M17) -> changelog + review routing.
+- CODEOWNERS: /db/migrations @platform-infra; money modules @finance-eng;
+  docs/contracts @ci-bot.
+- PR template checklist: migration? openapi regenerated? admin audit for new
+  setting? feature flag if user-facing? rollback note?
+
+6.5 RUNTIME INTEGRITY (workers, scheduled)
+- nightly-ledger-invariant: PART 3 M10 checks; drift => page finance, freeze
+  auto-payouts, open incident.
+- nightly-audit-completeness: scan request logs of non-GET admin endpoints =>
+  missing audit rows => alert superadmin.
+- 5min-outbox-lag / hourly-dead-letters / daily-backup-verify /
+  monthly-restore-drill (restore to scratch DB, run smoke, report).
+- rls-probe (Phase 5): attempt cross-tenant read with store token => must 403.
+
+6.6 FAILURE PLAYBOOKS (short)
+- Ledger drift: freeze payouts (flag), snapshot DB, replay affected txns from
+  outbox + payment_webhook_logs, post adjusting entries with approval, RCA.
+- Bad migration shipped: if pre-data-loss => fix-forward migration; else
+  PITR restore to RPO-5min; runbook in /infra/runbooks/.
+- Breaking API needed: new version path /v2 (v1 deprecated 90 days), sellers
+  notified via announcements + email.
+
+6.7 DEFINITION OF DONE (any feature PR)
+[ ] DDL migration + regenerated schema snapshot   [ ] OpenAPI regenerated
+[ ] unit + contract + e2e tests                   [ ] audit events wired
+[ ] feature flag if visible                        [ ] docs/blueprint updated
+[ ] rollback note                                  [ ] ICCO pipeline green

@@ -1,0 +1,246 @@
+================================================================================
+PART 3 — MODULE SPECIFICATIONS (17 modules)
+Format per module: Purpose / Depends on / Tables (PART 2) / API ops (PART 5)
+/ Screens (PART 4) / Rules / State machines / Edge cases.
+M09 and M10 are specified in FULL depth (they are the heart of the platform).
+================================================================================
+
+M01 IDENTITY & RBAC
+  Purpose: admin + seller auth, sessions, 2FA, role checks, impersonation.
+  Tables: admin_users, admin_sessions, users, impersonation_logs, api_keys.
+  API: adminLogin, admin2faVerify, adminRefresh, sellerLogin, sellerRegister,
+       refresh, logout, passwordForgot, passwordReset, adminUsersCreate/List/
+       Update, impersonateStore, apiKeys*.
+  Screens: ADM login (AUTH-01), SYS-03, SYS-04, seller auth (SEL-AUTH*).
+  Rules: JWT access 15min + rotating refresh (sessions table = revocation);
+         lockout after 5 fails (locked_until); TOTP required for superadmin;
+         impersonation = scoped read token, banner shown, fully logged.
+  Edge: staff perms array checked per endpoint via decorator @RequirePerm().
+
+M02 SELLER ONBOARDING & KYC
+  Tables: sellers, seller_kyc_documents, users, bank_accounts, stores.
+  API: sellerRegister, onboardingState, onboardingStep, kycUpload,
+       adminSellersList, adminSellerDetail, adminSellerApprove,
+       adminSellerReject, adminKycReview, bankAccounts*, adminBankVerify.
+  Screens: SEL-AUTH..SEL-ONB-4, SEL-31, ADM SEL-01..03.
+  State machine: onboarding -> pending_review -> active | rejected(->onboarding)
+                 active <-> suspended -> terminated.
+  Rules: store auto-created (draft) at register; approve requires ALL kyc docs
+         approved + >=1 bank account verified + >=1 product submitted;
+         risk_tier set at approval; rejection reason is template-coded.
+
+M03 STORES & CUSTOM DOMAINS
+  Tables: stores, store_domains, settings(store scope).
+  API: storeSettingsGet/Update, storeDomainsList/Create/Verify/Delete,
+       adminDomainsList, adminDomainRetry.
+  Screens: SD-12, SD-09, STO-01..04.
+  Domain flow: create -> status=verifying -> worker checks TXT/CNAME every
+  5min x 72 attempts -> verified -> CF custom hostname create -> ssl issued
+  -> active. NS mode: worker creates CF zone + waits NS propagation.
+  Edge: domain conflict (belongs to another store) => explicit error;
+        deleting primary domain requires choosing replacement.
+
+M04 PAGE BUILDER & THEMES
+  Tables: stores(theme), cms_pages(store pages), media_files.
+  Data shape: pages.row = {sections:[{type, props, id}], version}.
+  API: storePagesList/Get/UpdateDraft/Publish/Revert, storeThemeGet/Update,
+       previewToken.
+  Screens: SD-08 (builder), SEL storefront renderer.
+  Rules: publish = write published JSONB + purge CDN + bump version;
+         publish is atomic; draft autosave every 5s; preview token TTL 30min;
+         unknown section type in DB => render fallback box, never 500.
+  v1 sections: announcement_bar, header, hero, image_banner, product_grid,
+  collection_list, rich_text, image_with_text, testimonials, faq, newsletter,
+  countdown, whatsapp_floating, footer, marketplace_strip (props in PART 1 §1.5).
+
+M05 PRODUCT CATALOG & MODERATION
+  Tables: products, product_images, product_variants, inventory_logs,
+          categories, collections, collection_products, reviews.
+  API: storeProducts* (CRUD, publish, variants CRUD, inventoryAdjust),
+       storeCollections*, storeReviews*, adminProductsList, adminProductReview,
+       adminProductApprove/Reject, adminCategories*.
+  Rules: first 5 products of new seller => status pending_review (config
+         'moderation.first_n'); subsequent => active directly unless keyword
+         flag hits; price = variant price (product.price_minor mirrors cheapest
+         variant for search); stock below threshold => stock.low event.
+  Edge: deleting variant referenced by order_items => soft-block (set inactive);
+        category delete => products.category_id NULL + warning.
+
+M06 MARKETPLACE DISCOVERY & SEARCH
+  Tables: products (index to Meili), featured_slots, marketplace_banners,
+          categories, daily_*_stats.
+  API: marketProductsSearch, marketProductsGet, marketStoresList,
+       marketCategories, adminBanners*, adminFeatured*.
+  Rules: index filter = status active + store live + marketplace_opt_in;
+         ranking score per PART 1 §1.6; reindex via outbox consumer +
+         nightly full reconcile (search_index_state checkpoint).
+
+M07 CART, CHECKOUT & PAYMENTS
+  Tables: carts, cart_items, orders, order_items, payment_intents,
+          payment_webhook_logs, coupons, shipping_*, tax_rates.
+  API: cartGet/Add/Update/Remove, checkoutQuote, checkoutCreate,
+       paymentStatus, webhooksPayments{provider}.
+  Checkout flow:
+    quote -> server recomputes prices/stock/shipping/discounts (NEVER trust
+    client totals) -> create order (payment_pending, TTL 30min) ->
+    createIntent -> redirect provider -> webhook (verify signature,
+    idempotency by provider_ref, log raw) -> mark order paid ->
+    ledger entries (M10) -> outbox events (seller email, webhook, stats).
+  Rules: stock reserved at checkoutCreate (TTL release job);
+         expired payment => order cancelled + restock;
+         webhook replay => no-op via provider_ref unique + processed flag;
+         partial payment failure => retry new intent on same order.
+  Driver interface: createIntent(order, cfg) / verifyAndParse(webhook) /
+                    refund(intent, amount) / fetchStatus(ref).
+
+M08 ORDER PIPELINE & FULFILLMENT
+  Tables: orders, order_items, order_status_history, shipments, reviews.
+  API: storeOrdersList/Get, storeOrderFulfill, storeOrderShip,
+       storeOrderCancel, adminOrdersList/Get, adminOrderNote.
+  Order machine:
+    payment_pending -> paid -> processing -> shipped -> delivered -> completed
+        |-> cancelled (pre-paid only)
+        |-> refunding -> partially_refunded/refunded -> closed
+        any paid+ -> disputed (parallel flag, not terminal).
+  Rules: every transition writes history + fires outbox event;
+         delivered => completed after N days auto (worker) + review request;
+         cancel post-paid => refund path; seller cannot edit money fields ever.
+
+M09 COMMISSION ENGINE  [FULL SPEC]
+  Tables: commission_settings, commission_overrides, fee_holidays,
+          products, categories, sellers, order_items (snapshots).
+  API: adminCommissionSettingsGet/Update, adminCommissionOverrides*,
+       adminFeeHolidays*, adminCommissionSimulate.
+  Screens: FIN-01..04.
+  RESOLUTION (compute at order placement, snapshot per item):
+    1. active fee_holiday covering (seller, category, now)  => percent=0
+    2. product.commission_percent_override
+    3. nearest category ancestor with commission_percent
+    4. seller.commission_override_percent
+    5. commission_settings.default_percent
+    Effective hold_days resolved similarly (override else settings).
+  BASE:
+    base = item.subtotal_paid (unit_price*qty - allocated discount)
+    if base_price_rule = 'list_price': base = unit_price*qty
+    if applies_to_shipping: base += item.shipping_minor (allocated)
+  MATH:
+    discount allocation: order discount split proportional to line subtotal;
+    remainder cents => highest-value line.
+    commission_minor = round_half_up(base * percent/100) + allocated fixed fee
+    floor at min_commission_minor (per order, not per line).
+    seller_net_minor = base + item.shipping_minor - commission_minor
+                       - fixed_fee_minor
+  TRACE: commission_breakdown JSONB = {rule_source, percent, base,
+    holiday_id?, flags} — audit-proof, never recomputed.
+  VALIDATION: admin simulator POST {items[]} returns computed split before
+    saving settings; saving settings requires 2nd confirm in UI.
+  EDGE: settings change NEVER affects existing orders (snapshots);
+        refund reverses commission proportionally (M11).
+
+M10 WALLETS, LEDGER & PAYOUTS  [FULL SPEC]
+  Tables: wallets, ledger_accounts, ledger_transactions, ledger_lines,
+          payouts, payout_batches, payout_items, bank_accounts,
+          commission_settings(holds), payment_webhook_logs.
+  API: storeWalletGet, storePayoutsList, storeStatementGet,
+       adminWalletsList, adminWalletAdjust,
+       adminLedgerAccounts, adminLedgerTransactions, adminLedgerExport,
+       adminPayoutBatchesCreate/List/Detail, adminPayoutsList,
+       adminPayoutMarkPaid, adminPayoutFail, adminBankAccountsVerify.
+  Screens: SD-06, SD-07, FIN-05..12, RPT-04.
+  CHART OF ACCOUNTS:
+    asset      PLATFORM:BANK_MAIN, GATEWAY:{provider}
+    liability  SELLER:{wallet_id}:PAYABLE, PLATFORM:PAYOUT_CLEARING
+    revenue    PLATFORM:REVENUE_COMMISSION
+  SIGN CONVENTION: seller wallet balance = SUM(credit) - SUM(debit) on its
+    account. credits with available_at > now() = pending.
+  JOURNAL RECIPES (worked example: item paid 90.00 after 10% coupon on 100.00
+    list, shipping 10.00, commission 10%, hold 7d, FPX):
+    T1 order_paid        DR GATEWAY:FPX 100.00
+                         CR SELLER:{w}:PAYABLE 91.00 (available_at=+7d)
+                         CR PLATFORM:REVENUE_COMMISSION 9.00
+    T2 gateway_settlement DR PLATFORM:BANK_MAIN 100.00 / CR GATEWAY:FPX 100.00
+    T3 payout_initiated   DR SELLER:{w}:PAYABLE 91.00 / CR PAYOUT_CLEARING 91.00
+    T4 payout_confirmed   DR PAYOUT_CLEARING 91.00 / CR BANK_MAIN 91.00
+    T5 refund 50.00       DR SELLER:{w}:PAYABLE 45.50
+                          DR PLATFORM:REVENUE_COMMISSION 4.50
+                          CR GATEWAY:FPX 50.00
+    T6 admin adjustment   DR/CR SELLER_PAYABLE x / CR/DR REVENUE_ADJUST
+  HOLD: on T1, available_at = paid_at + hold_days (rule days_after_paid) or
+    estimated delivered+grace (rule days_after_delivered; worker re-stamps
+    available_at when delivered event arrives if earlier rule not met).
+    Wallet caches: pending = credits with available_at > now; available moves
+    when now() crosses available_at (computed live in queries; nightly job
+    refreshes cached columns).
+  PAYOUT RUN (worker, scheduled or manual):
+    for each wallet where available_minor >= payout.min_minor:
+      amount = available_minor (full sweep)
+      create payout(processing) + payout_items snapshot (sales, commission,
+        refunds, adjustments, negative_carry since last payout)
+      T3 entries (wallet available -= amount, reserved += amount)
+      submit bank driver / generate CSV (manual mode)
+    on success webhook/poll => mark paid, T4 entries
+    on fail => reverse T3 (CR SELLER_PAYABLE), status failed, alert.
+  NEGATIVE WALLET (refund after payout): payout skipped; carry-forward row
+    added to next payout_items as negative_carry; UI shows red balance.
+  RECONCILIATION: import provider settlement report (or API) => match T2
+    entries; unmatched > 24h => finance alert (FIN-12).
+  INVARIANTS (nightly): SUM(debit)=SUM(credit) per txn; wallet cache == ledger
+    truth; any drift => page finance + freeze auto payouts.
+  STATEMENTS: monthly per seller = payout_items grouped; PDF+CSV export job.
+
+M11 REFUNDS & DISPUTES
+  Tables: refunds, disputes, orders, ledger_*, payment_intents.
+  API: storeRefundRequest, adminRefundsList, adminRefundApprove,
+       adminRefundProcess, adminDisputes*, storeDisputeRespond.
+  Rules: refund amount <= item remaining; restock flag; commission reversal
+    = refund_amount * item.commission_percent/100 (+ proportional fixed fee
+    skip); gateway refund driver call; payout not affected retroactively
+    except via negative wallet; dispute opens flag on order + blocks payout
+    of involved amount (reserved).
+
+M12 COUPONS & MARKETING
+  Tables: coupons, coupon_redemptions, marketplace_banners, featured_slots,
+          announcements.
+  API: storeCoupons*, adminCoupons*, adminBanners*, adminFeatured*,
+       adminAnnouncements*.
+  Rules: validation at quote (server): window, usage, per-customer, min spend,
+    applies_to; freeship zeroes shipping allocation; platform coupons create
+    commission note (platform-funded discount optionally reduces commission
+    base — flag commission.base_price_rule stays 'paid_price').
+
+M13 INTEGRATIONS HUB
+  Tables: store_integrations, webhook_endpoints, webhook_deliveries, api_keys.
+  API: storeIntegrations*, storeWebhooks*, storeApiKeys*,
+       adminWebhookDeliveries/replay, adminIntegrationsRegistry*.
+  Rules: pixels injected server-side into storefront <head> (config map);
+        webhooks: HMAC-SHA256 header X-Shopmesh-Signature: t=...,v1=...;
+        retry 1m/5m/30m/2h/24h -> dead; replay button re-enqueues;
+        event catalog versioned (header X-Shopmesh-Event-Version).
+
+M14 NOTIFICATIONS
+  Tables: notification_templates, notification_logs.
+  API: adminNotificationTemplates*, adminNotificationLogs, test send.
+  Rules: worker consumes outbox -> render handlebars -> channel driver ->
+        log; failures retried x3; template edit = versioned (keep last 10).
+
+M15 REPORTING & EXPORTS
+  Tables: daily_*_stats (rolled up by worker), export_jobs.
+  API: adminReports* (sales, sellers, commission, payouts), adminExports*,
+       storeDashboard, storeReports*.
+  Rules: exports = async job -> CSV to R2 -> signed URL 24h; big exports
+        streamed; every export logged.
+
+M16 SUPPORT DESK
+  Tables: support_tickets, support_messages.
+  API: storeTickets*, adminTickets*.
+  Rules: ticket contexts can deep-link order/payout; canned replies;
+        SLA timers displayed (config per priority).
+
+M17 PLATFORM OPS (settings, flags, jobs, health)
+  Tables: settings, feature_flags, jobs_history, api_request_logs,
+          search_index_state, admin_audit_logs, activity_logs, announcements.
+  API: adminSettings*, adminFeatureFlags*, adminJobs(retry),
+       adminSystemHealth, adminMaintenance, adminReindex, adminLogs*.
+  Rules: maintenance mode = storefront returns 503 w/ page, admin+seller
+        unaffected; kill switches per module via flags; job retry is
+        idempotent-guarded (job_id dedupe key).

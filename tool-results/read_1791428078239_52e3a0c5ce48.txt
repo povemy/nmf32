@@ -1,0 +1,1061 @@
+     1→     1→-- ==============================================================================
+     2→     2→-- PART 2 — FULL DATABASE SCHEMA (PostgreSQL 16)
+     3→     3→-- SHOPMESH v1 | Normative. All tables, keys, constraints, core indexes, seeds.
+     4→     4→-- Money = BIGINT minor units. Time = timestamptz UTC. IDs = UUID.
+     5→     5→-- ==============================================================================
+     6→     6→
+     7→     7→CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- gen_random_uuid()
+     8→     8→CREATE EXTENSION IF NOT EXISTS citext;      -- case-insensitive emails/codes
+     9→     9→CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- title search fallback
+    10→    10→
+    11→    11→CREATE SEQUENCE order_number_seq START 100001;
+    12→    12→
+    13→    13→-- updated_at auto-touch
+    14→    14→CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END $$ LANGUAGE plpgsql;
+    15→    15→
+    16→    16→-- ==============================================================================
+    17→    17→-- SECTION A: PLATFORM CONFIG, PLANS
+    18→    18→-- ==============================================================================
+    19→    19→CREATE TABLE plans (
+    20→    20→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    21→    21→  code TEXT NOT NULL UNIQUE,                    -- 'free'
+    22→    22→  name TEXT NOT NULL,
+    23→    23→  monthly_fee_minor BIGINT NOT NULL DEFAULT 0,
+    24→    24→  commission_percent NUMERIC(5,2),              -- fallback when no setting row
+    25→    25→  product_limit INT,                            -- NULL = unlimited
+    26→    26→  media_limit_mb INT,
+    27→    27→  staff_limit INT,
+    28→    28→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    29→    29→  created_at timestamptz NOT NULL DEFAULT now(),
+    30→    30→  updated_at timestamptz NOT NULL DEFAULT now()
+    31→    31→);
+    32→    32→
+    33→    33→CREATE TABLE commission_settings (              -- SINGLETON (id always 1)
+    34→    34→  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    35→    35→  default_percent NUMERIC(5,2) NOT NULL DEFAULT 8.00,
+    36→    36→  applies_to_shipping BOOLEAN NOT NULL DEFAULT FALSE,
+    37→    37→  base_price_rule TEXT NOT NULL DEFAULT 'paid_price'
+    38→    38→      CHECK (base_price_rule IN ('paid_price','list_price')),
+    39→    39→  fixed_fee_minor BIGINT NOT NULL DEFAULT 0,
+    40→    40→  min_commission_minor BIGINT NOT NULL DEFAULT 0,
+    41→    41→  payout_hold_days INT NOT NULL DEFAULT 7,
+    42→    42→  hold_release_rule TEXT NOT NULL DEFAULT 'days_after_paid'
+    43→    43→      CHECK (hold_release_rule IN ('days_after_paid','days_after_delivered')),
+    44→    44→  grace_days_after_delivered INT NOT NULL DEFAULT 2,
+    45→    45→  updated_by UUID,                              -- admin_users.id (FK later)
+    46→    46→  created_at timestamptz NOT NULL DEFAULT now(),
+    47→    47→  updated_at timestamptz NOT NULL DEFAULT now()
+    48→    48→);
+    49→    49→
+    50→    50→CREATE TABLE settings (
+    51→    51→  key TEXT PRIMARY KEY,
+    52→    52→  scope TEXT NOT NULL DEFAULT 'platform' CHECK (scope IN ('platform','store')),
+    53→    53→  store_id UUID,                                -- set when scope='store'
+    54→    54→  value JSONB NOT NULL,
+    55→    55→  description TEXT,
+    56→    56→  updated_by UUID,
+    57→    57→  updated_at timestamptz NOT NULL DEFAULT now()
+    58→    58→);
+    59→    59→
+    60→    60→CREATE TABLE feature_flags (
+    61→    61→  key TEXT PRIMARY KEY,
+    62→    62→  description TEXT,
+    63→    63→  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    64→    64→  rollout JSONB NOT NULL DEFAULT '{}',   -- {percent: 100, seller_ids: []}
+    65→    65→  updated_by UUID,
+    66→    66→  updated_at timestamptz NOT NULL DEFAULT now()
+    67→    67→);
+    68→    68→
+    69→    69→-- ==============================================================================
+    70→    70→-- SECTION B: ADMIN IDENTITY, RBAC, AUDIT
+    71→    71→-- ==============================================================================
+    72→    72→CREATE TABLE admin_users (
+    73→    73→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    74→    74→  email CITEXT NOT NULL UNIQUE,
+    75→    75→  password_hash TEXT NOT NULL,
+    76→    76→  full_name TEXT NOT NULL,
+    77→    77→  role_code TEXT NOT NULL DEFAULT 'support'
+    78→    78→      CHECK (role_code IN ('superadmin','ops','finance','moderator','support','readonly')),
+    79→    79→  totp_secret_enc TEXT,
+    80→    80→  totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    81→    81→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    82→    82→  failed_logins INT NOT NULL DEFAULT 0,
+    83→    83→  locked_until timestamptz,
+    84→    84→  last_login_at timestamptz,
+    85→    85→  created_at timestamptz NOT NULL DEFAULT now(),
+    86→    86→  updated_at timestamptz NOT NULL DEFAULT now()
+    87→    87→);
+    88→    88→
+    89→    89→CREATE TABLE admin_sessions (
+    90→    90→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    91→    91→  admin_id UUID NOT NULL REFERENCES admin_users(id),
+    92→    92→  refresh_token_hash TEXT NOT NULL UNIQUE,
+    93→    93→  ip INET, user_agent TEXT,
+    94→    94→  expires_at timestamptz NOT NULL,
+    95→    95→  revoked_at timestamptz,
+    96→    96→  created_at timestamptz NOT NULL DEFAULT now()
+    97→    97→);
+    98→    98→CREATE INDEX idx_admin_sessions_admin ON admin_sessions(admin_id);
+    99→    99→
+   100→   100→CREATE TABLE admin_audit_logs (                 -- IMMUTABLE (no update/delete grants)
+   101→   101→  id BIGSERIAL PRIMARY KEY,
+   102→   102→  admin_id UUID REFERENCES admin_users(id),
+   103→   103→  action TEXT NOT NULL,                         -- 'commission.settings.update'
+   104→   104→  entity_type TEXT NOT NULL,
+   105→   105→  entity_id TEXT,
+   106→   106→  before JSONB, after JSONB,
+   107→   107→  ip INET, user_agent TEXT, request_id TEXT,
+   108→   108→  created_at timestamptz NOT NULL DEFAULT now()
+   109→   109→);
+   110→   110→CREATE INDEX idx_audit_entity ON admin_audit_logs(entity_type, entity_id);
+   111→   111→CREATE INDEX idx_audit_created ON admin_audit_logs(created_at DESC);
+   112→   112→
+   113→   113→CREATE TABLE impersonation_logs (
+   114→   114→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   115→   115→  admin_id UUID NOT NULL REFERENCES admin_users(id),
+   116→   116→  seller_id UUID,                               -- FK added after sellers
+   117→   117→  reason TEXT NOT NULL,
+   118→   118→  started_at timestamptz NOT NULL DEFAULT now(),
+   119→   119→  ended_at timestamptz,
+   120→   120→  ip INET
+   121→   121→);
+   122→   122→
+   123→   123→-- ==============================================================================
+   124→   124→-- SECTION C: SELLERS, STORES, DOMAINS, KYC, BANK
+   125→   125→-- ==============================================================================
+   126→   126→CREATE TABLE users (                            -- seller owners + staff
+   127→   127→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   128→   128→  seller_id UUID,                               -- FK added below (circular)
+   129→   129→  email CITEXT NOT NULL UNIQUE,
+   130→   130→  phone TEXT,
+   131→   131→  password_hash TEXT NOT NULL,
+   132→   132→  full_name TEXT NOT NULL,
+   133→   133→  role_code TEXT NOT NULL DEFAULT 'owner' CHECK (role_code IN ('owner','staff')),
+   134→   134→  perms TEXT[] NOT NULL DEFAULT '{}',           -- staff granular perms
+   135→   135→  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended')),
+   136→   136→  email_verified_at timestamptz,
+   137→   137→  phone_verified_at timestamptz,
+   138→   138→  totp_secret_enc TEXT,
+   139→   139→  last_login_at timestamptz,
+   140→   140→  created_at timestamptz NOT NULL DEFAULT now(),
+   141→   141→  updated_at timestamptz NOT NULL DEFAULT now()
+   142→   142→);
+   143→   143→
+   144→   144→CREATE TABLE sellers (
+   145→   145→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   146→   146→  owner_user_id UUID NOT NULL REFERENCES users(id),
+   147→   147→  plan_id UUID REFERENCES plans(id),
+   148→   148→  type TEXT NOT NULL DEFAULT 'individual' CHECK (type IN ('individual','business')),
+   149→   149→  display_name TEXT NOT NULL,
+   150→   150→  business_reg_no TEXT,
+   151→   151→  email CITEXT NOT NULL,
+   152→   152→  phone TEXT,
+   153→   153→  country_code CHAR(2) NOT NULL,
+   154→   154→  status TEXT NOT NULL DEFAULT 'onboarding'
+   155→   155→      CHECK (status IN ('onboarding','pending_review','active','suspended','terminated')),
+   156→   156→  risk_tier TEXT NOT NULL DEFAULT 'normal' CHECK (risk_tier IN ('low','normal','high')),
+   157→   157→  commission_override_percent NUMERIC(5,2),     -- seller-specific rate
+   158→   158→  hold_days_override INT,
+   159→   159→  marketplace_opt_in BOOLEAN NOT NULL DEFAULT TRUE,
+   160→   160→  contract_accepted_at timestamptz,
+   161→   161→  suspension_reason TEXT,
+   162→   162→  created_at timestamptz NOT NULL DEFAULT now(),
+   163→   163→  updated_at timestamptz NOT NULL DEFAULT now(),
+   164→   164→  deleted_at timestamptz
+   165→   165→);
+   166→   166→ALTER TABLE users ADD CONSTRAINT fk_users_seller
+   167→   167→  FOREIGN KEY (seller_id) REFERENCES sellers(id);
+   168→   168→ALTER TABLE commission_settings
+   169→   169→  ADD CONSTRAINT fk_cs_admin FOREIGN KEY (updated_by) REFERENCES admin_users(id);
+   170→   170→
+   171→   171→CREATE TABLE seller_kyc_documents (
+   172→   172→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   173→   173→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   174→   174→  doc_type TEXT NOT NULL CHECK (doc_type IN
+   175→   175→      ('id_front','id_selfie','business_reg','bank_book','address_proof','other')),
+   176→   176→  media_file_id UUID,                           -- FK added after media_files
+   177→   177→  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+   178→   178→  reviewer_admin_id UUID REFERENCES admin_users(id),
+   179→   179→  reviewed_at timestamptz,
+   180→   180→  rejection_reason TEXT,
+   181→   181→  created_at timestamptz NOT NULL DEFAULT now(),
+   182→   182→  updated_at timestamptz NOT NULL DEFAULT now()
+   183→   183→);
+   184→   184→CREATE INDEX idx_kyc_seller ON seller_kyc_documents(seller_id, status);
+   185→   185→
+   186→   186→CREATE TABLE media_files (
+   187→   187→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   188→   188→  store_id UUID,                                -- NULL = platform-level asset
+   189→   189→  owner_type TEXT NOT NULL CHECK (owner_type IN ('seller','admin')),
+   190→   190→  owner_id UUID NOT NULL,
+   191→   191→  kind TEXT NOT NULL DEFAULT 'image' CHECK (kind IN ('image','video','file')),
+   192→   192→  storage_key TEXT NOT NULL,
+   193→   193→  cdn_url TEXT NOT NULL,
+   194→   194→  mime TEXT NOT NULL,
+   195→   195→  size_bytes BIGINT NOT NULL,
+   196→   196→  width INT, height INT,
+   197→   197→  checksum TEXT,
+   198→   198→  created_at timestamptz NOT NULL DEFAULT now(),
+   199→   199→  deleted_at timestamptz
+   200→   200→);
+   201→   201→ALTER TABLE seller_kyc_documents
+   202→   202→  ADD CONSTRAINT fk_kyc_media FOREIGN KEY (media_file_id) REFERENCES media_files(id);
+   203→   203→
+   204→   204→CREATE TABLE stores (
+   205→   205→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   206→   206→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   207→   207→  name TEXT NOT NULL,
+   208→   208→  slug CITEXT NOT NULL UNIQUE,                  -- {slug}.shopmesh.site
+   209→   209→  status TEXT NOT NULL DEFAULT 'draft'
+   210→   210→      CHECK (status IN ('draft','live','paused','suspended')),
+   211→   211→  template_code TEXT NOT NULL DEFAULT 'minimal',
+   212→   212→  theme JSONB NOT NULL DEFAULT '{}',
+   213→   213→  currency CHAR(3) NOT NULL,
+   214→   214→  locale TEXT NOT NULL DEFAULT 'en',
+   215→   215→  timezone TEXT NOT NULL DEFAULT 'Asia/Kuala_Lumpur',
+   216→   216→  support_contact JSONB NOT NULL DEFAULT '{}',  -- {whatsapp, email}
+   217→   217→  social JSONB NOT NULL DEFAULT '{}',
+   218→   218→  seo JSONB NOT NULL DEFAULT '{}',
+   219→   219→  created_at timestamptz NOT NULL DEFAULT now(),
+   220→   220→  updated_at timestamptz NOT NULL DEFAULT now(),
+   221→   221→  deleted_at timestamptz
+   222→   222→);
+   223→   223→CREATE INDEX idx_stores_seller ON stores(seller_id);
+   224→   224→
+   225→   225→CREATE TABLE store_domains (
+   226→   226→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   227→   227→  store_id UUID NOT NULL REFERENCES stores(id),
+   228→   228→  domain TEXT NOT NULL UNIQUE,                  -- lowercase FQDN
+   229→   229→  mode TEXT NOT NULL CHECK (mode IN ('cname','nameserver')),
+   230→   230→  status TEXT NOT NULL DEFAULT 'pending'
+   231→   231→      CHECK (status IN ('pending','verifying','verified','active','failed')),
+   232→   232→  verification_token TEXT NOT NULL,
+   233→   233→  ssl_status TEXT NOT NULL DEFAULT 'pending' CHECK (ssl_status IN ('pending','issued','failed')),
+   234→   234→  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+   235→   235→  error TEXT,
+   236→   236→  verified_at timestamptz,
+   237→   237→  last_checked_at timestamptz,
+   238→   238→  created_at timestamptz NOT NULL DEFAULT now(),
+   239→   239→  updated_at timestamptz NOT NULL DEFAULT now()
+   240→   240→);
+   241→   241→CREATE INDEX idx_domains_status ON store_domains(status);
+   242→   242→
+   243→   243→CREATE TABLE bank_accounts (
+   244→   244→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   245→   245→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   246→   246→  bank_name TEXT NOT NULL,
+   247→   247→  account_number_enc TEXT NOT NULL,
+   248→   248→  account_holder_name TEXT NOT NULL,
+   249→   249→  holder_name_matches BOOLEAN,                  -- risk check result
+   250→   250→  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','rejected')),
+   251→   251→  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+   252→   252→  verified_at timestamptz,
+   253→   253→  created_at timestamptz NOT NULL DEFAULT now(),
+   254→   254→  updated_at timestamptz NOT NULL DEFAULT now()
+   255→   255→);
+   256→   256→
+   257→   257→-- ==============================================================================
+   258→   258→-- SECTION D: CATALOG
+   259→   259→-- ==============================================================================
+   260→   260→CREATE TABLE categories (
+   261→   261→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   262→   262→  parent_id UUID REFERENCES categories(id),
+   263→   263→  name TEXT NOT NULL,
+   264→   264→  slug CITEXT NOT NULL UNIQUE,
+   265→   265→  path TEXT NOT NULL,                           -- 'electronics/phones'
+   266→   266→  icon TEXT,
+   267→   267→  position INT NOT NULL DEFAULT 0,
+   268→   268→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   269→   269→  commission_percent NUMERIC(5,2),              -- category-level override
+   270→   270→  created_at timestamptz NOT NULL DEFAULT now(),
+   271→   271→  updated_at timestamptz NOT NULL DEFAULT now()
+   272→   272→);
+   273→   273→
+   274→   274→CREATE TABLE products (
+   275→   275→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   276→   276→  store_id UUID NOT NULL REFERENCES stores(id),
+   277→   277→  category_id UUID REFERENCES categories(id),
+   278→   278→  title TEXT NOT NULL,
+   279→   279→  slug CITEXT NOT NULL,
+   280→   280→  description_html TEXT NOT NULL DEFAULT '',    -- sanitized server-side
+   281→   281→  status TEXT NOT NULL DEFAULT 'draft'
+   282→   282→      CHECK (status IN ('draft','pending_review','active','rejected','archived')),
+   283→   283→  rejection_reason TEXT,
+   284→   284→  marketplace_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+   285→   285→  price_minor BIGINT NOT NULL CHECK (price_minor >= 0),
+   286→   286→  compare_at_price_minor BIGINT CHECK (compare_at_price_minor >= 0),
+   287→   287→  currency CHAR(3) NOT NULL,
+   288→   288→  commission_percent_override NUMERIC(5,2),
+   289→   289→  weight_grams INT,
+   290→   290→  dims JSONB,
+   291→   291→  seo JSONB NOT NULL DEFAULT '{}',
+   292→   292→  tags TEXT[] NOT NULL DEFAULT '{}',
+   293→   293→  sales_count INT NOT NULL DEFAULT 0,
+   294→   294→  rating_avg NUMERIC(3,2) NOT NULL DEFAULT 0,
+   295→   295→  rating_count INT NOT NULL DEFAULT 0,
+   296→   296→  published_at timestamptz,
+   297→   297→  created_at timestamptz NOT NULL DEFAULT now(),
+   298→   298→  updated_at timestamptz NOT NULL DEFAULT now(),
+   299→   299→  deleted_at timestamptz
+   300→   300→);
+   301→   301→CREATE UNIQUE INDEX uq_products_store_slug ON products(store_id, slug)
+   302→   302→  WHERE deleted_at IS NULL;
+   303→   303→CREATE INDEX idx_products_market ON products(status, marketplace_enabled)
+   304→   304→  WHERE deleted_at IS NULL;
+   305→   305→CREATE INDEX idx_products_cat ON products(category_id);
+   306→   306→CREATE INDEX idx_products_title_trgm ON products USING gin (title gin_trgm_ops);
+   307→   307→
+   308→   308→CREATE TABLE product_images (
+   309→   309→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   310→   310→  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   311→   311→  media_file_id UUID NOT NULL REFERENCES media_files(id),
+   312→   312→  position INT NOT NULL DEFAULT 0,
+   313→   313→  alt TEXT
+   314→   314→);
+   315→   315→
+   316→   316→CREATE TABLE product_variants (
+   317→   317→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   318→   318→  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   319→   319→  sku TEXT,
+   320→   320→  title TEXT NOT NULL DEFAULT 'Default',        -- 'Red / XL'
+   321→   321→  option1_name TEXT, option1_value TEXT,
+   322→   322→  option2_name TEXT, option2_value TEXT,
+   323→   323→  option3_name TEXT, option3_value TEXT,
+   324→   324→  price_minor BIGINT NOT NULL CHECK (price_minor >= 0),
+   325→   325→  compare_at_minor BIGINT,
+   326→   326→  cost_minor BIGINT,                            -- seller-private
+   327→   327→  stock_quantity INT NOT NULL DEFAULT 0,
+   328→   328→  low_stock_threshold INT NOT NULL DEFAULT 5,
+   329→   329→  weight_grams INT,
+   330→   330→  barcode TEXT,
+   331→   331→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   332→   332→  position INT NOT NULL DEFAULT 0,
+   333→   333→  created_at timestamptz NOT NULL DEFAULT now(),
+   334→   334→  updated_at timestamptz NOT NULL DEFAULT now()
+   335→   335→);
+   336→   336→CREATE UNIQUE INDEX uq_variants_sku ON product_variants(product_id, sku)
+   337→   337→  WHERE sku IS NOT NULL;
+   338→   338→
+   339→   339→CREATE TABLE inventory_logs (
+   340→   340→  id BIGSERIAL PRIMARY KEY,
+   341→   341→  variant_id UUID NOT NULL REFERENCES product_variants(id),
+   342→   342→  delta INT NOT NULL,
+   343→   343→  reason TEXT NOT NULL CHECK (reason IN
+   344→   344→      ('sale','restock','manual','return','cancel_restock','adjustment')),
+   345→   345→  reference_type TEXT, reference_id UUID,
+   346→   346→  actor_type TEXT CHECK (actor_type IN ('seller','staff','admin','system')),
+   347→   347→  actor_id UUID,
+   348→   348→  note TEXT,
+   349→   349→  created_at timestamptz NOT NULL DEFAULT now()
+   350→   350→);
+   351→   351→CREATE INDEX idx_invlog_variant ON inventory_logs(variant_id, created_at DESC);
+   352→   352→
+   353→   353→CREATE TABLE collections (
+   354→   354→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   355→   355→  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+   356→   356→  title TEXT NOT NULL,
+   357→   357→  slug CITEXT NOT NULL,
+   358→   358→  type TEXT NOT NULL DEFAULT 'manual' CHECK (type IN ('manual','smart')),
+   359→   359→  smart_rules JSONB,
+   360→   360→  image_media_id UUID REFERENCES media_files(id),
+   361→   361→  position INT NOT NULL DEFAULT 0,
+   362→   362→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   363→   363→  created_at timestamptz NOT NULL DEFAULT now(),
+   364→   364→  updated_at timestamptz NOT NULL DEFAULT now()
+   365→   365→);
+   366→   366→CREATE UNIQUE INDEX uq_collections_store_slug ON collections(store_id, slug);
+   367→   367→
+   368→   368→CREATE TABLE collection_products (
+   369→   369→  collection_id UUID NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+   370→   370→  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   371→   371→  position INT NOT NULL DEFAULT 0,
+   372→   372→  PRIMARY KEY (collection_id, product_id)
+   373→   373→);
+   374→   374→
+   375→   375→CREATE TABLE reviews (
+   376→   376→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   377→   377→  product_id UUID NOT NULL REFERENCES products(id),
+   378→   378→  store_id UUID NOT NULL REFERENCES stores(id),
+   379→   379→  order_id UUID,                                -- FK added after orders
+   380→   380→  customer_name TEXT,
+   381→   381→  rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+   382→   382→  body TEXT,
+   383→   383→  seller_reply TEXT,
+   384→   384→  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending','approved','rejected')),
+   385→   385→  created_at timestamptz NOT NULL DEFAULT now(),
+   386→   386→  updated_at timestamptz NOT NULL DEFAULT now()
+   387→   387→);
+   388→   388→CREATE INDEX idx_reviews_product ON reviews(product_id, status);
+   389→   389→
+   390→   390→-- ==============================================================================
+   391→   391→-- SECTION E: MARKETING (coupons, banners)
+   392→   392→-- ==============================================================================
+   393→   393→CREATE TABLE coupons (
+   394→   394→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   395→   395→  store_id UUID REFERENCES stores(id),          -- NULL = platform-wide
+   396→   396→  code CITEXT NOT NULL,
+   397→   397→  type TEXT NOT NULL CHECK (type IN ('percent','fixed','freeship')),
+   398→   398→  value NUMERIC(12,2) NOT NULL,                 -- percent OR minor amount
+   399→   399→  min_spend_minor BIGINT,
+   400→   400→  max_discount_minor BIGINT,
+   401→   401→  usage_limit INT, per_customer_limit INT DEFAULT 1,
+   402→   402→  used_count INT NOT NULL DEFAULT 0,
+   403→   403→  starts_at timestamptz, ends_at timestamptz,
+   404→   404→  applies_to JSONB,                             -- {product_ids:[], collection_ids:[]}
+   405→   405→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   406→   406→  created_at timestamptz NOT NULL DEFAULT now(),
+   407→   407→  updated_at timestamptz NOT NULL DEFAULT now()
+   408→   408→);
+   409→   409→CREATE UNIQUE INDEX uq_coupons_scope_code ON coupons
+   410→   410→  (COALESCE(store_id,'00000000-0000-0000-0000-000000000000'::uuid), code);
+   411→   411→
+   412→   412→CREATE TABLE marketplace_banners (
+   413→   413→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   414→   414→  title TEXT, subtitle TEXT,
+   415→   415→  image_media_id UUID REFERENCES media_files(id),
+   416→   416→  link_url TEXT,
+   417→   417→  position INT NOT NULL DEFAULT 0,
+   418→   418→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   419→   419→  starts_at timestamptz, ends_at timestamptz,
+   420→   420→  created_at timestamptz NOT NULL DEFAULT now(),
+   421→   421→  updated_at timestamptz NOT NULL DEFAULT now()
+   422→   422→);
+   423→   423→
+   424→   424→CREATE TABLE featured_slots (                   -- marketplace curation
+   425→   425→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   426→   426→  slot TEXT NOT NULL,                           -- 'home_hero','category:xyz'
+   427→   427→  product_id UUID REFERENCES products(id),
+   428→   428→  store_id UUID REFERENCES stores(id),
+   429→   429→  position INT NOT NULL DEFAULT 0,
+   430→   430→  active_from timestamptz, active_to timestamptz,
+   431→   431→  created_by UUID REFERENCES admin_users(id),
+   432→   432→  created_at timestamptz NOT NULL DEFAULT now()
+   433→   433→);
+   434→   434→
+   435→   435→-- ==============================================================================
+   436→   436→-- SECTION F: SHIPPING, TAX, CUSTOMERS, CARTS
+   437→   437→-- ==============================================================================
+   438→   438→CREATE TABLE shipping_zones (
+   439→   439→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   440→   440→  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+   441→   441→  name TEXT NOT NULL,
+   442→   442→  countries TEXT[] NOT NULL DEFAULT '{MY}',
+   443→   443→  states TEXT[],
+   444→   444→  position INT NOT NULL DEFAULT 0
+   445→   445→);
+   446→   446→CREATE TABLE shipping_rates (
+   447→   447→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   448→   448→  zone_id UUID NOT NULL REFERENCES shipping_zones(id) ON DELETE CASCADE,
+   449→   449→  name TEXT NOT NULL,
+   450→   450→  type TEXT NOT NULL DEFAULT 'flat' CHECK (type IN ('flat','price_tier','weight_tier')),
+   451→   451→  amount_minor BIGINT NOT NULL DEFAULT 0,
+   452→   452→  free_over_minor BIGINT,
+   453→   453→  tiers JSONB,
+   454→   454→  is_active BOOLEAN NOT NULL DEFAULT TRUE
+   455→   455→);
+   456→   456→
+   457→   457→CREATE TABLE tax_rates (
+   458→   458→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   459→   459→  store_id UUID REFERENCES stores(id),          -- NULL = platform default
+   460→   460→  country CHAR(2) NOT NULL, state TEXT,
+   461→   461→  name TEXT NOT NULL,                           -- 'SST'
+   462→   462→  rate_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+   463→   463→  is_inclusive BOOLEAN NOT NULL DEFAULT TRUE,
+   464→   464→  updated_at timestamptz NOT NULL DEFAULT now()
+   465→   465→);
+   466→   466→
+   467→   467→CREATE TABLE customers (
+   468→   468→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   469→   469→  store_id UUID NOT NULL REFERENCES stores(id),
+   470→   470→  email CITEXT, phone TEXT,
+   471→   471→  full_name TEXT,
+   472→   472→  marketing_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+   473→   473→  orders_count INT NOT NULL DEFAULT 0,
+   474→   474→  total_spent_minor BIGINT NOT NULL DEFAULT 0,
+   475→   475→  tags TEXT[] NOT NULL DEFAULT '{}',
+   476→   476→  created_at timestamptz NOT NULL DEFAULT now(),
+   477→   477→  updated_at timestamptz NOT NULL DEFAULT now()
+   478→   478→);
+   479→   479→CREATE INDEX idx_customers_store ON customers(store_id, email);
+   480→   480→
+   481→   481→CREATE TABLE carts (
+   482→   482→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   483→   483→  store_id UUID NOT NULL REFERENCES stores(id),
+   484→   484→  customer_id UUID REFERENCES customers(id),
+   485→   485→  token UUID NOT NULL UNIQUE,                   -- guest cart token
+   486→   486→  currency CHAR(3) NOT NULL,
+   487→   487→  expires_at timestamptz NOT NULL DEFAULT now() + interval '7 days',
+   488→   488→  created_at timestamptz NOT NULL DEFAULT now(),
+   489→   489→  updated_at timestamptz NOT NULL DEFAULT now()
+   490→   490→);
+   491→   491→CREATE TABLE cart_items (
+   492→   492→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   493→   493→  cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+   494→   494→  variant_id UUID NOT NULL REFERENCES product_variants(id),
+   495→   495→  product_id UUID NOT NULL REFERENCES products(id),
+   496→   496→  qty INT NOT NULL CHECK (qty > 0),
+   497→   497→  unit_price_minor BIGINT NOT NULL,             -- snapshot at add-time
+   498→   498→  metadata JSONB
+   499→   499→);
+   500→   500→
+   501→   501→-- ==============================================================================
+   502→   502→-- SECTION G: ORDERS, FULFILLMENT, REFUNDS, DISPUTES
+   503→   503→-- ==============================================================================
+   504→   504→CREATE TABLE orders (
+   505→   505→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   506→   506→  order_number TEXT NOT NULL UNIQUE
+   507→   507→      DEFAULT 'SM-' || to_char(now(),'YYMM') || '-'
+   508→   508→              || lpad(nextval('order_number_seq')::text, 6, '0'),
+   509→   509→  store_id UUID NOT NULL REFERENCES stores(id),
+   510→   510→  customer_id UUID REFERENCES customers(id),
+   511→   511→  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
+   512→   512→    ('pending','payment_pending','paid','processing','shipped','delivered',
+   513→   513→     'completed','cancelled','refunding','partially_refunded','refunded',
+   514→   514→     'disputed','closed')),
+   515→   515→  channel TEXT NOT NULL DEFAULT 'storefront' CHECK (channel IN ('storefront','marketplace','api')),
+   516→   516→  currency CHAR(3) NOT NULL,
+   517→   517→  subtotal_minor BIGINT NOT NULL DEFAULT 0,
+   518→   518→  discount_minor BIGINT NOT NULL DEFAULT 0,
+   519→   519→  shipping_fee_minor BIGINT NOT NULL DEFAULT 0,
+   520→   520→  tax_minor BIGINT NOT NULL DEFAULT 0,
+   521→   521→  grand_total_minor BIGINT NOT NULL DEFAULT 0,
+   522→   522→  platform_commission_minor BIGINT NOT NULL DEFAULT 0,  -- money snapshot
+   523→   523→  seller_net_minor BIGINT NOT NULL DEFAULT 0,
+   524→   524→  coupon_id UUID REFERENCES coupons(id),
+   525→   525→  coupon_code TEXT,
+   526→   526→  shipping_address JSONB NOT NULL,
+   527→   527→  billing_address JSONB,
+   528→   528→  customer_note TEXT,
+   529→   529→  payment_provider TEXT, payment_ref TEXT,
+   530→   530→  risk_score INT, risk_flags TEXT[] NOT NULL DEFAULT '{}',
+   531→   531→  idempotency_key TEXT,
+   532→   532→  placed_at timestamptz DEFAULT now(),
+   533→   533→  paid_at timestamptz, fulfilled_at timestamptz, delivered_at timestamptz,
+   534→   534→  completed_at timestamptz, cancelled_at timestamptz, cancel_reason TEXT,
+   535→   535→  created_at timestamptz NOT NULL DEFAULT now(),
+   536→   536→  updated_at timestamptz NOT NULL DEFAULT now()
+   537→   537→);
+   538→   538→CREATE INDEX idx_orders_store ON orders(store_id, created_at DESC);
+   539→   539→CREATE INDEX idx_orders_status ON orders(status);
+   540→   540→CREATE INDEX idx_orders_payment_ref ON orders(payment_ref);
+   541→   541→
+   542→   542→CREATE TABLE order_items (
+   543→   543→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   544→   544→  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+   545→   545→  product_id UUID REFERENCES products(id),
+   546→   546→  variant_id UUID REFERENCES product_variants(id),
+   547→   547→  product_title TEXT NOT NULL,                  -- snapshots (immutable record)
+   548→   548→  variant_title TEXT, sku TEXT, image_url TEXT,
+   549→   549→  qty INT NOT NULL CHECK (qty > 0),
+   550→   550→  unit_price_minor BIGINT NOT NULL,
+   551→   551→  discount_minor BIGINT NOT NULL DEFAULT 0,     -- allocated share
+   552→   552→  subtotal_minor BIGINT NOT NULL,               -- what customer paid for line
+   553→   553→  tax_minor BIGINT NOT NULL DEFAULT 0,
+   554→   554→  shipping_minor BIGINT NOT NULL DEFAULT 0,     -- allocated share
+   555→   555→  commission_percent NUMERIC(5,2) NOT NULL,     -- EFFECTIVE rate snapshot
+   556→   556→  commission_minor BIGINT NOT NULL DEFAULT 0,
+   557→   557→  fixed_fee_minor BIGINT NOT NULL DEFAULT 0,
+   558→   558→  seller_net_minor BIGINT NOT NULL,
+   559→   559→  commission_breakdown JSONB,                   -- resolution trace (M09)
+   560→   560→  fulfillment_status TEXT NOT NULL DEFAULT 'unfulfilled'
+   561→   561→      CHECK (fulfillment_status IN ('unfulfilled','partial','fulfilled','returned'))
+   562→   562→);
+   563→   563→
+   564→   564→CREATE TABLE order_status_history (
+   565→   565→  id BIGSERIAL PRIMARY KEY,
+   566→   566→  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+   567→   567→  from_status TEXT, to_status TEXT NOT NULL,
+   568→   568→  actor_type TEXT NOT NULL CHECK (actor_type IN ('system','seller','admin','customer')),
+   569→   569→  actor_id UUID,
+   570→   570→  note TEXT,
+   571→   571→  created_at timestamptz NOT NULL DEFAULT now()
+   572→   572→);
+   573→   573→CREATE INDEX idx_osh_order ON order_status_history(order_id);
+   574→   574→
+   575→   575→CREATE TABLE shipments (
+   576→   576→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   577→   577→  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+   578→   578→  provider TEXT, tracking_number TEXT, tracking_url TEXT,
+   579→   579→  items JSONB NOT NULL,                         -- [{order_item_id, qty}]
+   580→   580→  status TEXT NOT NULL DEFAULT 'pending'
+   581→   581→      CHECK (status IN ('pending','in_transit','delivered','failed','returned')),
+   582→   582→  shipped_at timestamptz, delivered_at timestamptz,
+   583→   583→  created_by_type TEXT, created_by_id UUID,
+   584→   584→  created_at timestamptz NOT NULL DEFAULT now()
+   585→   585→);
+   586→   586→
+   587→   587→CREATE TABLE refunds (
+   588→   588→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   589→   589→  order_id UUID NOT NULL REFERENCES orders(id),
+   590→   590→  order_item_id UUID REFERENCES order_items(id),-- NULL = whole order
+   591→   591→  amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+   592→   592→  reason TEXT NOT NULL,
+   593→   593→  restock BOOLEAN NOT NULL DEFAULT TRUE,
+   594→   594→  status TEXT NOT NULL DEFAULT 'requested'
+   595→   595→      CHECK (status IN ('requested','approved','rejected','processing','succeeded','failed')),
+   596→   596→  gateway_ref TEXT,
+   597→   597→  commission_reversed_minor BIGINT NOT NULL DEFAULT 0,
+   598→   598→  requested_by_type TEXT NOT NULL,
+   599→   599→  requested_by_id UUID,
+   600→   600→  processed_by UUID REFERENCES admin_users(id),
+   601→   601→  created_at timestamptz NOT NULL DEFAULT now(),
+   602→   602→  updated_at timestamptz NOT NULL DEFAULT now()
+   603→   603→);
+   604→   604→CREATE INDEX idx_refunds_order ON refunds(order_id);
+   605→   605→
+   606→   606→CREATE TABLE disputes (
+   607→   607→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   608→   608→  order_id UUID NOT NULL REFERENCES orders(id),
+   609→   609→  type TEXT NOT NULL CHECK (type IN ('chargeback','item_not_received','not_as_described','other')),
+   610→   610→  status TEXT NOT NULL DEFAULT 'open'
+   611→   611→      CHECK (status IN ('open','under_review','won','lost','accepted','closed')),
+   612→   612→  amount_minor BIGINT NOT NULL,
+   613→   613→  provider_ref TEXT,
+   614→   614→  evidence JSONB NOT NULL DEFAULT '[]',
+   615→   615→  deadline_at timestamptz,
+   616→   616→  resolution_note TEXT,
+   617→   617→  created_at timestamptz NOT NULL DEFAULT now(),
+   618→   618→  updated_at timestamptz NOT NULL DEFAULT now()
+   619→   619→);
+   620→   620→
+   621→   621→-- ==============================================================================
+   622→   622→-- SECTION H: PAYMENTS
+   623→   623→-- ==============================================================================
+   624→   624→CREATE TABLE payment_intents (
+   625→   625→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   626→   626→  order_id UUID NOT NULL REFERENCES orders(id),
+   627→   627→  store_id UUID NOT NULL REFERENCES stores(id),
+   628→   628→  provider TEXT NOT NULL,                       -- 'curlec','toyyibpay','stripe_my','midtrans'
+   629→   629→  provider_ref TEXT,
+   630→   630→  amount_minor BIGINT NOT NULL,
+   631→   631→  currency CHAR(3) NOT NULL,
+   632→   632→  method TEXT,                                  -- 'fpx','card','ewallet_tng',...
+   633→   633→  status TEXT NOT NULL DEFAULT 'created' CHECK (status IN
+   634→   634→    ('created','pending','requires_action','succeeded','failed','expired',
+   635→   635→     'refunded','partially_refunded')),
+   636→   636→  checkout_url TEXT,
+   637→   637→  failure_code TEXT, failure_message TEXT,
+   638→   638→  expires_at timestamptz,
+   639→   639→  raw_payload JSONB,
+   640→   640→  created_at timestamptz NOT NULL DEFAULT now(),
+   641→   641→  updated_at timestamptz NOT NULL DEFAULT now()
+   642→   642→);
+   643→   643→CREATE INDEX idx_pi_order ON payment_intents(order_id);
+   644→   644→CREATE UNIQUE INDEX uq_pi_provider_ref ON payment_intents(provider_ref)
+   645→   645→  WHERE provider_ref IS NOT NULL;
+   646→   646→
+   647→   647→CREATE TABLE payment_webhook_logs (             -- IMMUTABLE raw intake
+   648→   648→  id BIGSERIAL PRIMARY KEY,
+   649→   649→  provider TEXT NOT NULL,
+   650→   650→  event_type TEXT,
+   651→   651→  provider_ref TEXT,
+   652→   652→  signature_valid BOOLEAN,
+   653→   653→  payload JSONB NOT NULL,
+   654→   654→  processed BOOLEAN NOT NULL DEFAULT FALSE,
+   655→   655→  processing_error TEXT,
+   656→   656→  received_at timestamptz NOT NULL DEFAULT now(),
+   657→   657→  processed_at timestamptz
+   658→   658→);
+   659→   659→
+   660→   660→-- ==============================================================================
+   661→   661→-- SECTION I: MONEY — WALLETS, LEDGER (double-entry), COMMISSION, PAYOUTS
+   662→   662→-- ==============================================================================
+   663→   663→CREATE TABLE wallets (
+   664→   664→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   665→   665→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   666→   666→  currency CHAR(3) NOT NULL,
+   667→   667→  pending_minor BIGINT NOT NULL DEFAULT 0,      -- cached; truth = ledger_lines
+   668→   668→  available_minor BIGINT NOT NULL DEFAULT 0,    -- cached; may go negative
+   669→   669→  reserved_minor BIGINT NOT NULL DEFAULT 0,
+   670→   670→  lifetime_earned_minor BIGINT NOT NULL DEFAULT 0,
+   671→   671→  UNIQUE (seller_id, currency)
+   672→   672→);
+   673→   673→
+   674→   674→CREATE TABLE ledger_accounts (
+   675→   675→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   676→   676→  code TEXT NOT NULL UNIQUE,     -- 'PLATFORM:BANK_MAIN','GATEWAY:FPX',
+   677→   677→                                 -- 'SELLER:{wallet_id}:PAYABLE','PLATFORM:REVENUE_COMMISSION',
+   678→   678→                                 -- 'PLATFORM:PAYOUT_CLEARING'
+   679→   679→  name TEXT NOT NULL,
+   680→   680→  type TEXT NOT NULL CHECK (type IN ('asset','liability','revenue','expense','equity')),
+   681→   681→  wallet_id UUID REFERENCES wallets(id),
+   682→   682→  currency CHAR(3) NOT NULL,
+   683→   683→  is_system BOOLEAN NOT NULL DEFAULT TRUE,
+   684→   684→  created_at timestamptz NOT NULL DEFAULT now()
+   685→   685→);
+   686→   686→
+   687→   687→CREATE TABLE ledger_transactions (              -- IMMUTABLE
+   688→   688→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   689→   689→  group_id UUID,                                -- correlate multi-step flows
+   690→   690→  txn_type TEXT NOT NULL,                       -- 'order_paid','gateway_settlement',
+   691→   691→                                                -- 'payout_initiated','payout_confirmed',
+   692→   692→                                                -- 'refund','adjustment'
+   693→   693→  ref_type TEXT NOT NULL CHECK (ref_type IN ('order','payment','refund','payout','adjustment')),
+   694→   694→  ref_id UUID NOT NULL,
+   695→   695→  description TEXT,
+   696→   696→  occurred_at timestamptz NOT NULL,
+   697→   697→  created_at timestamptz NOT NULL DEFAULT now()
+   698→   698→);
+   699→   699→CREATE INDEX idx_lt_ref ON ledger_transactions(ref_type, ref_id);
+   700→   700→
+   701→   701→CREATE TABLE ledger_lines (                     -- IMMUTABLE
+   702→   702→  id BIGSERIAL PRIMARY KEY,
+   703→   703→  transaction_id UUID NOT NULL REFERENCES ledger_transactions(id),
+   704→   704→  account_id UUID NOT NULL REFERENCES ledger_accounts(id),
+   705→   705→  direction TEXT NOT NULL CHECK (direction IN ('debit','credit')),
+   706→   706→  amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+   707→   707→  currency CHAR(3) NOT NULL,
+   708→   708→  wallet_id UUID REFERENCES wallets(id),        -- denormalized for balance queries
+   709→   709→  available_at timestamptz,                     -- NULL = immediately available;
+   710→   710→                                                -- set on seller credits = hold expiry
+   711→   711→  memo TEXT,
+   712→   712→  created_at timestamptz NOT NULL DEFAULT now()
+   713→   713→);
+   714→   714→CREATE INDEX idx_ll_wallet ON ledger_lines(wallet_id, available_at);
+   715→   715→CREATE INDEX idx_ll_txn ON ledger_lines(transaction_id);
+   716→   716→-- INVARIANT (nightly job, PART 6):
+   717→   717→--   per wallet: available_minor == SUM(credit where available_at<=now)
+   718→   718→--                                        - SUM(debit)
+   719→   719→--   per transaction: SUM(debit) == SUM(credit)
+   720→   720→
+   721→   721→CREATE TABLE commission_overrides (
+   722→   722→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   723→   723→  scope TEXT NOT NULL CHECK (scope IN ('category','seller','product')),
+   724→   724→  category_id UUID REFERENCES categories(id),
+   725→   725→  seller_id UUID REFERENCES sellers(id),
+   726→   726→  product_id UUID REFERENCES products(id),
+   727→   727→  percent NUMERIC(5,2) NOT NULL,
+   728→   728→  fixed_fee_minor BIGINT,
+   729→   729→  hold_days INT,
+   730→   730→  valid_from timestamptz NOT NULL DEFAULT now(),
+   731→   731→  valid_to timestamptz,
+   732→   732→  note TEXT,
+   733→   733→  created_by UUID REFERENCES admin_users(id),
+   734→   734→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   735→   735→  created_at timestamptz NOT NULL DEFAULT now(),
+   736→   736→  updated_at timestamptz NOT NULL DEFAULT now()
+   737→   737→);
+   738→   738→CREATE INDEX idx_cov_scope ON commission_overrides(scope, is_active);
+   739→   739→
+   740→   740→CREATE TABLE fee_holidays (
+   741→   741→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   742→   742→  name TEXT NOT NULL,
+   743→   743→  all_sellers BOOLEAN NOT NULL DEFAULT FALSE,
+   744→   744→  seller_ids UUID[] NOT NULL DEFAULT '{}',
+   745→   745→  category_ids UUID[] NOT NULL DEFAULT '{}',
+   746→   746→  percent NUMERIC(5,2) NOT NULL DEFAULT 0,      -- usually 0
+   747→   747→  starts_at timestamptz NOT NULL,
+   748→   748→  ends_at timestamptz NOT NULL,
+   749→   749→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   750→   750→  created_by UUID REFERENCES admin_users(id),
+   751→   751→  created_at timestamptz NOT NULL DEFAULT now()
+   752→   752→);
+   753→   753→
+   754→   754→CREATE TABLE payout_batches (
+   755→   755→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   756→   756→  run_type TEXT NOT NULL CHECK (run_type IN ('scheduled','manual','threshold')),
+   757→   757→  status TEXT NOT NULL DEFAULT 'draft'
+   758→   758→      CHECK (status IN ('draft','processing','completed','completed_with_errors','failed')),
+   759→   759→  currency CHAR(3) NOT NULL,
+   760→   760→  total_minor BIGINT NOT NULL DEFAULT 0,
+   761→   761→  payout_count INT NOT NULL DEFAULT 0,
+   762→   762→  scheduled_for timestamptz,
+   763→   763→  started_at timestamptz, finished_at timestamptz,
+   764→   764→  created_by UUID REFERENCES admin_users(id),
+   765→   765→  created_at timestamptz NOT NULL DEFAULT now()
+   766→   766→);
+   767→   767→
+   768→   768→CREATE TABLE payouts (
+   769→   769→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   770→   770→  batch_id UUID REFERENCES payout_batches(id),
+   771→   771→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   772→   772→  wallet_id UUID NOT NULL REFERENCES wallets(id),
+   773→   773→  currency CHAR(3) NOT NULL,
+   774→   774→  amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+   775→   775→  method TEXT NOT NULL DEFAULT 'bank_transfer' CHECK (method IN ('bank_transfer','ewallet','manual')),
+   776→   776→  bank_account_id UUID REFERENCES bank_accounts(id),
+   777→   777→  status TEXT NOT NULL DEFAULT 'pending'
+   778→   778→      CHECK (status IN ('pending','processing','paid','failed','cancelled')),
+   779→   779→  provider TEXT, provider_ref TEXT,
+   780→   780→  reference_no TEXT NOT NULL UNIQUE,            -- 'PO-2025-000123'
+   781→   781→  failure_reason TEXT,
+   782→   782→  statement_period TEXT,                        -- '2025-06'
+   783→   783→  requested_at timestamptz NOT NULL DEFAULT now(),
+   784→   784→  processed_at timestamptz, paid_at timestamptz,
+   785→   785→  created_at timestamptz NOT NULL DEFAULT now(),
+   786→   786→  updated_at timestamptz NOT NULL DEFAULT now()
+   787→   787→);
+   788→   788→CREATE INDEX idx_payouts_seller ON payouts(seller_id, created_at DESC);
+   789→   789→
+   790→   790→CREATE TABLE payout_items (                     -- statement line detail
+   791→   791→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   792→   792→  payout_id UUID NOT NULL REFERENCES payouts(id),
+   793→   793→  order_id UUID REFERENCES orders(id),
+   794→   794→  adjustment_type TEXT NOT NULL CHECK (adjustment_type IN
+   795→   795→      ('sale','commission','refund','adjustment','negative_carry')),
+   796→   796→  amount_minor BIGINT NOT NULL,                 -- signed from seller view
+   797→   797→  description TEXT NOT NULL,
+   798→   798→  created_at timestamptz NOT NULL DEFAULT now()
+   799→   799→);
+   800→   800→
+   801→   801→-- ==============================================================================
+   802→   802→-- SECTION J: INTEGRATIONS, WEBHOOKS, API KEYS, OUTBOX
+   803→   803→-- ==============================================================================
+   804→   804→CREATE TABLE api_keys (
+   805→   805→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   806→   806→  seller_id UUID NOT NULL REFERENCES sellers(id),
+   807→   807→  store_id UUID NOT NULL REFERENCES stores(id),
+   808→   808→  name TEXT NOT NULL,
+   809→   809→  key_prefix TEXT NOT NULL,                     -- 'sk_live_ab12'
+   810→   810→  key_hash TEXT NOT NULL UNIQUE,
+   811→   811→  scopes TEXT[] NOT NULL DEFAULT '{read:products,read:orders}',
+   812→   812→  last_used_at timestamptz,
+   813→   813→  expires_at timestamptz,
+   814→   814→  revoked_at timestamptz,
+   815→   815→  created_at timestamptz NOT NULL DEFAULT now()
+   816→   816→);
+   817→   817→
+   818→   818→CREATE TABLE store_integrations (
+   819→   819→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   820→   820→  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+   821→   821→  provider TEXT NOT NULL,   -- 'meta_pixel','ga4','tiktok_pixel','gtm',
+   822→   822→                            -- 'meta_capi','tiktok_events_api','mailchimp',...
+   823→   823→  config JSONB NOT NULL DEFAULT '{}',
+   824→   824→  status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected','error','disconnected')),
+   825→   825→  last_synced_at timestamptz,
+   826→   826→  UNIQUE (store_id, provider)
+   827→   827→);
+   828→   828→
+   829→   829→CREATE TABLE webhook_endpoints (
+   830→   830→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   831→   831→  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+   832→   832→  url TEXT NOT NULL,
+   833→   833→  secret_enc TEXT NOT NULL,
+   834→   834→  events TEXT[] NOT NULL,                       -- subset of event catalog
+   835→   835→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   836→   836→  created_at timestamptz NOT NULL DEFAULT now()
+   837→   837→);
+   838→   838→
+   839→   839→CREATE TABLE webhook_deliveries (
+   840→   840→  id BIGSERIAL PRIMARY KEY,
+   841→   841→  endpoint_id UUID NOT NULL REFERENCES webhook_endpoints(id),
+   842→   842→  event TEXT NOT NULL,
+   843→   843→  payload JSONB NOT NULL,
+   844→   844→  status TEXT NOT NULL DEFAULT 'pending'
+   845→   845→      CHECK (status IN ('pending','delivered','failed','dead')),
+   846→   846→  attempts INT NOT NULL DEFAULT 0,
+   847→   847→  next_retry_at timestamptz,
+   848→   848→  response_code INT, last_error TEXT,
+   849→   849→  created_at timestamptz NOT NULL DEFAULT now(),
+   850→   850→  delivered_at timestamptz
+   851→   851→);
+   852→   852→CREATE INDEX idx_wd_endpoint ON webhook_deliveries(endpoint_id, created_at DESC);
+   853→   853→
+   854→   854→CREATE TABLE event_outbox (                     -- transactional outbox
+   855→   855→  id BIGSERIAL PRIMARY KEY,
+   856→   856→  event_name TEXT NOT NULL,                     -- 'order.paid'
+   857→   857→  aggregate_type TEXT NOT NULL,
+   858→   858→  aggregate_id UUID NOT NULL,
+   859→   859→  payload JSONB NOT NULL,
+   860→   860→  attempts INT NOT NULL DEFAULT 0,
+   861→   861→  created_at timestamptz NOT NULL DEFAULT now(),
+   862→   862→  processed_at timestamptz
+   863→   863→);
+   864→   864→CREATE INDEX idx_outbox_unprocessed ON event_outbox(processed_at) WHERE processed_at IS NULL;
+   865→   865→
+   866→   866→-- ==============================================================================
+   867→   867→-- SECTION K: NOTIFICATIONS, SUPPORT, CMS, OPS, LOGS
+   868→   868→-- ==============================================================================
+   869→   869→CREATE TABLE notification_templates (
+   870→   870→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   871→   871→  code TEXT NOT NULL,                           -- 'order.paid.seller'
+   872→   872→  channel TEXT NOT NULL CHECK (channel IN ('email','sms','whatsapp','inapp')),
+   873→   873→  locale TEXT NOT NULL DEFAULT 'en',
+   874→   874→  subject TEXT,
+   875→   875→  body_template TEXT NOT NULL,                  -- {{handlebars}}
+   876→   876→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   877→   877→  updated_by UUID REFERENCES admin_users(id),
+   878→   878→  created_at timestamptz NOT NULL DEFAULT now(),
+   879→   879→  updated_at timestamptz NOT NULL DEFAULT now(),
+   880→   880→  UNIQUE (code, channel, locale)
+   881→   881→);
+   882→   882→
+   883→   883→CREATE TABLE notification_logs (
+   884→   884→  id BIGSERIAL PRIMARY KEY,
+   885→   885→  template_code TEXT NOT NULL,
+   886→   886→  channel TEXT NOT NULL,
+   887→   887→  recipient TEXT NOT NULL,
+   888→   888→  store_id UUID, seller_id UUID,
+   889→   889→  ref_type TEXT, ref_id UUID,
+   890→   890→  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed','bounced')),
+   891→   891→  provider TEXT, provider_ref TEXT, error TEXT,
+   892→   892→  created_at timestamptz NOT NULL DEFAULT now(),
+   893→   893→  sent_at timestamptz
+   894→   894→);
+   895→   895→CREATE INDEX idx_notiflog_created ON notification_logs(created_at DESC);
+   896→   896→
+   897→   897→CREATE TABLE support_tickets (
+   898→   898→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   899→   899→  ticket_no TEXT NOT NULL UNIQUE,
+   900→   900→  seller_id UUID REFERENCES sellers(id),
+   901→   901→  store_id UUID REFERENCES stores(id),
+   902→   902→  subject TEXT NOT NULL,
+   903→   903→  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','pending','resolved','closed')),
+   904→   904→  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+   905→   905→  assigned_admin_id UUID REFERENCES admin_users(id),
+   906→   906→  last_reply_at timestamptz,
+   907→   907→  created_at timestamptz NOT NULL DEFAULT now(),
+   908→   908→  updated_at timestamptz NOT NULL DEFAULT now()
+   909→   909→);
+   910→   910→CREATE TABLE support_messages (
+   911→   911→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   912→   912→  ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+   913→   913→  sender_type TEXT NOT NULL CHECK (sender_type IN ('seller','admin')),
+   914→   914→  sender_id UUID NOT NULL,
+   915→   915→  body TEXT NOT NULL,
+   916→   916→  attachments JSONB NOT NULL DEFAULT '[]',
+   917→   917→  created_at timestamptz NOT NULL DEFAULT now()
+   918→   918→);
+   919→   919→
+   920→   920→CREATE TABLE cms_pages (
+   921→   921→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   922→   922→  scope TEXT NOT NULL DEFAULT 'platform' CHECK (scope IN ('platform','store')),
+   923→   923→  store_id UUID REFERENCES stores(id),
+   924→   924→  slug CITEXT NOT NULL,                         -- 'prohibited-items','terms'
+   925→   925→  title TEXT NOT NULL,
+   926→   926→  body_html TEXT NOT NULL DEFAULT '',
+   927→   927→  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft','published')),
+   928→   928→  seo JSONB NOT NULL DEFAULT '{}',
+   929→   929→  created_at timestamptz NOT NULL DEFAULT now(),
+   930→   930→  updated_at timestamptz NOT NULL DEFAULT now(),
+   931→   931→  UNIQUE (slug, COALESCE(store_id,'00000000-0000-0000-0000-000000000000'::uuid))
+   932→   932→);
+   933→   933→
+   934→   934→CREATE TABLE announcements (
+   935→   935→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   936→   936→  audience TEXT NOT NULL CHECK (audience IN ('seller','admin','marketplace')),
+   937→   937→  title TEXT NOT NULL, body TEXT NOT NULL,
+   938→   938→  level TEXT NOT NULL DEFAULT 'info' CHECK (level IN ('info','warning','critical')),
+   939→   939→  active_from timestamptz, active_to timestamptz,
+   940→   940→  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+   941→   941→  created_by UUID REFERENCES admin_users(id),
+   942→   942→  created_at timestamptz NOT NULL DEFAULT now()
+   943→   943→);
+   944→   944→
+   945→   945→CREATE TABLE export_jobs (
+   946→   946→  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+   947→   947→  requested_by_type TEXT NOT NULL CHECK (requested_by_type IN ('admin','seller')),
+   948→   948→  requested_by_id UUID NOT NULL,
+   949→   949→  type TEXT NOT NULL CHECK (type IN ('orders','products','payouts','ledger','sellers','customers','statement')),
+   950→   950→  params JSONB NOT NULL DEFAULT '{}',
+   951→   951→  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','done','failed')),
+   952→   952→  file_media_id UUID REFERENCES media_files(id),
+   953→   953→  row_count INT, error TEXT,
+   954→   954→  created_at timestamptz NOT NULL DEFAULT now(),
+   955→   955→  finished_at timestamptz
+   956→   956→);
+   957→   957→
+   958→   958→CREATE TABLE daily_store_stats (
+   959→   959→  store_id UUID NOT NULL REFERENCES stores(id),
+   960→   960→  stat_date DATE NOT NULL,
+   961→   961→  orders_count INT NOT NULL DEFAULT 0,
+   962→   962→  gmv_minor BIGINT NOT NULL DEFAULT 0,
+   963→   963→  commission_minor BIGINT NOT NULL DEFAULT 0,
+   964→   964→  refunds_minor BIGINT NOT NULL DEFAULT 0,
+   965→   965→  new_customers INT NOT NULL DEFAULT 0,
+   966→   966→  visits INT NOT NULL DEFAULT 0,
+   967→   967→  PRIMARY KEY (store_id, stat_date)
+   968→   968→);
+   969→   969→CREATE TABLE daily_platform_stats (
+   970→   970→  stat_date DATE PRIMARY KEY,
+   971→   971→  orders_count INT NOT NULL DEFAULT 0,
+   972→   972→  gmv_minor BIGINT NOT NULL DEFAULT 0,
+   973→   973→  commission_minor BIGINT NOT NULL DEFAULT 0,
+   974→   974→  refunds_minor BIGINT NOT NULL DEFAULT 0,
+   975→   975→  new_sellers INT NOT NULL DEFAULT 0,
+   976→   976→  active_stores INT NOT NULL DEFAULT 0,
+   977→   977→  payouts_minor BIGINT NOT NULL DEFAULT 0
+   978→   978→);
+   979→   979→
+   980→   980→CREATE TABLE activity_logs (                    -- seller/staff/system actions
+   981→   981→  id BIGSERIAL PRIMARY KEY,
+   982→   982→  actor_type TEXT NOT NULL CHECK (actor_type IN ('seller','staff','system','customer')),
+   983→   983→  actor_id UUID,
+   984→   984→  store_id UUID,
+   985→   985→  action TEXT NOT NULL,
+   986→   986→  entity_type TEXT, entity_id TEXT,
+   987→   987→  before JSONB, after JSONB,
+   988→   988→  ip INET,
+   989→   989→  created_at timestamptz NOT NULL DEFAULT now()
+   990→   990→);
+   991→   991→CREATE INDEX idx_actlog_entity ON activity_logs(entity_type, entity_id);
+   992→   992→
+   993→   993→CREATE TABLE api_request_logs (                 -- sampled (config); all 4xx/5xx
+   994→   994→  id BIGSERIAL PRIMARY KEY,
+   995→   995→  method TEXT NOT NULL, path TEXT NOT NULL,
+   996→   996→  status_code INT NOT NULL,
+   997→   997→  actor_type TEXT, actor_id UUID, store_id UUID,
+   998→   998→  ip INET, latency_ms INT, request_id TEXT,
+   999→   999→  created_at timestamptz NOT NULL DEFAULT now()
+  1000→  1000→);
+  1001→  1001→
+  1002→  1002→CREATE TABLE jobs_history (
+  1003→  1003→  id BIGSERIAL PRIMARY KEY,
+  1004→  1004→  queue TEXT NOT NULL, job_name TEXT NOT NULL,
+  1005→  1005→  status TEXT NOT NULL CHECK (status IN ('ok','failed','retry')),
+  1006→  1006→  attempts INT NOT NULL DEFAULT 1,
+  1007→  1007→  payload JSONB, error TEXT,
+  1008→  1008→  started_at timestamptz, finished_at timestamptz
+  1009→  1009→);
+  1010→  1010→
+  1011→  1011→CREATE TABLE search_index_state (
+  1012→  1012→  index_name TEXT PRIMARY KEY,
+  1013→  1013→  last_checkpoint timestamptz,
+  1014→  1014→  status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle','indexing','error')),
+  1015→  1015→  last_error TEXT
+  1016→  1016→);
+  1017→  1017→
+  1018→  1018→ALTER TABLE reviews      ADD CONSTRAINT fk_reviews_order FOREIGN KEY (order_id) REFERENCES orders(id);
+  1019→  1019→ALTER TABLE impersonation_logs ADD CONSTRAINT fk_imp_seller FOREIGN KEY (seller_id) REFERENCES sellers(id);
+  1020→  1020→
+  1021→  1021→-- updated_at triggers on every table that has the column
+  1022→  1022→DO $$ DECLARE t record;
+  1023→  1023→BEGIN
+  1024→  1024→  FOR t IN SELECT table_name FROM information_schema.columns
+  1025→  1025→           WHERE table_schema='public' AND column_name='updated_at'
+  1026→  1026→  LOOP
+  1027→  1027→    EXECUTE format(
+  1028→  1028→      'CREATE TRIGGER trg_%I_upd BEFORE UPDATE ON %I
+  1029→  1029→       FOR EACH ROW EXECUTE FUNCTION set_updated_at()', t.table_name, t.table_name);
+  1030→  1030→  END LOOP;
+  1031→  1031→END $$;
+  1032→  1032→
+  1033→  1033→-- ==============================================================================
+  1034→  1034→-- SECTION L: SEEDS
+  1035→  1035→-- ==============================================================================
+  1036→  1036→INSERT INTO plans (code, name, monthly_fee_minor, commission_percent, product_limit, media_limit_mb, staff_limit)
+  1037→  1037→VALUES ('free','Free',0,8.00,100,2048,3);
+  1038→  1038→
+  1039→  1039→INSERT INTO commission_settings (id, default_percent) VALUES (1, 8.00);
+  1040→  1040→
+  1041→  1041→INSERT INTO feature_flags (key, description, enabled) VALUES
+  1042→  1042→  ('marketplace.enabled','Marketplace discovery surfaces',TRUE),
+  1043→  1043→  ('page_builder.advanced','Extra section types',FALSE),
+  1044→  1044→  ('payouts.auto_run','Automatic scheduled payout batches',FALSE),
+  1045→  1045→  ('integrations.capi','Meta Conversions API server events',FALSE),
+  1046→  1046→  ('shopper.accounts','Shopper login (v2)',FALSE);
+  1047→  1047→
+  1048→  1048→INSERT INTO ledger_accounts (code, name, type, currency) VALUES
+  1049→  1049→  ('PLATFORM:BANK_MAIN','Platform bank account','asset','MYR'),
+  1050→  1050→  ('PLATFORM:REVENUE_COMMISSION','Commission revenue','revenue','MYR'),
+  1051→  1051→  ('PLATFORM:PAYOUT_CLEARING','Payouts in transit','liability','MYR');
+  1052→  1052→-- GATEWAY:{provider} and SELLER:{wallet_id}:PAYABLE accounts are created
+  1053→  1053→-- dynamically by the money module.
+  1054→  1054→
+  1055→  1055→INSERT INTO categories (name, slug, path, position) VALUES
+  1056→  1056→  ('Fashion','fashion','fashion',1),
+  1057→  1057→  ('Electronics','electronics','electronics',2),
+  1058→  1058→  ('Home & Living','home-living','home-living',3),
+  1059→  1059→  ('Beauty','beauty','beauty',4),
+  1060→  1060→  ('Food & Beverage','food-beverage','food-beverage',5),
+  1061→  1061→  ('Others','others','others',99);

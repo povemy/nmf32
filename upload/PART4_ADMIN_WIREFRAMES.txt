@@ -1,0 +1,206 @@
+================================================================================
+PART 4 — UI SCREEN INVENTORY & WIREFRAMES
+ADMIN (command centre) + SELLER dashboard + STOREFRONT pages.
+Format per screen: [ID] Name / Route / Access / Purpose / Layout+Elements /
+Actions (operationId refs) / Audit.  ~55 admin screens.
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 ADMIN NAV TREE
+--------------------------------------------------------------------------------
+1 Dashboard            DASH-01
+2 Sellers              SEL-01 All · SEL-02 Detail · SEL-03 KYC Queue
+3 Stores & Domains     STO-01 Stores · STO-02 Store Detail · STO-03 Domains
+4 Catalog              CAT-01 Moderation · CAT-02 Product Review · CAT-03
+                       Categories · CAT-04 Reviews · CAT-05 Flagged
+5 Orders               ORD-01 All · ORD-02 Detail · ORD-03 Refunds ·
+                       ORD-04 Disputes
+6 Finance              FIN-01 Commission Settings · FIN-02 Overrides ·
+                       FIN-03 Fee Holidays · FIN-04 Simulator · FIN-05 Wallets ·
+                       FIN-06 Ledger Explorer · FIN-07 Payout Batches ·
+                       FIN-08 Payout Detail · FIN-09 Bank Verification ·
+                       FIN-10 Reconciliation · FIN-11 Revenue
+7 Marketing            MKT-01 Banners · MKT-02 Featured · MKT-03 Coupons ·
+                       MKT-04 Announcements
+8 Content              CNT-01 CMS Pages · CNT-02 Templates
+9 Integrations         INT-01 Registry · INT-02 Connections · INT-03 Webhook
+                       Deliveries · INT-04 API Keys
+10 Notifications       NTF-01 Templates · NTF-02 Delivery Log
+11 Support             SUP-01 Tickets · SUP-02 Ticket Detail · SUP-03 Canned
+12 Reports & Exports   RPT-01 Sales · RPT-02 Seller Ranking · RPT-03
+                       Commission · RPT-04 Payouts · RPT-05 Export Center
+13 System              SYS-01 Settings · SYS-02 Feature Flags · SYS-03 Admin
+                       Users · SYS-04 Roles · SYS-05 Jobs · SYS-06 Health ·
+                       SYS-07 Maintenance · SYS-08 Search Index · SYS-09 API Log
+14 Audit               AUD-01 Admin Audit · AUD-02 Diff Viewer · AUD-03
+                       Activity Log · AUD-04 Impersonation Log
+
+Global chrome (all screens): top bar (env badge, search palette Ctrl+K,
+announcements bell, admin menu), left nav, breadcrumb, toast system.
+Every destructive action => confirm modal typing object id.
+Every list: saved views, column chooser, CSV export (RPT-05 job).
+
+--------------------------------------------------------------------------------
+4.2 KEY SCREEN WIREFRAMES (dense)
+--------------------------------------------------------------------------------
+[DASH-01] Command Dashboard   /admin   all roles (scoped widgets)
++------------------+------------------+------------------+------------------+
+| GMV today (spark)| Orders today     | Commission today | Active stores    |
++------------------+------------------+------------------+------------------+
+| Pending KYC (n)  | Products to moderate | Refunds queue | Disputes open |
++------------------+------------------+------------------+------------------+
+| Payouts due (amount/sellers) | Ledger health | Queue depth | Error rate  |
++------------------+------------------+------------------+------------------+
+| GMV 30d chart (drill to RPT-01)  | Top sellers table | Recent signups    |
++--------------------------------------------------------------------------+
+Actions: click-through to queues; "Run payout batch" shortcut (finance).
+Data: adminDashboardGet (aggregated, 60s cache).
+
+[SEL-01] Sellers List  /admin/sellers  ops+, readonly view
+Filters: status, risk_tier, country, plan, created range, kyc state, search.
+Table: name, email, store slug, status chip, risk chip, GMV 30d, balance
+available, commission %, created. Row => SEL-02.
+Bulk: suspend, export. Actions: adminSellersList, adminSellerApprove.
+
+[SEL-02] Seller Detail  /admin/sellers/:id
+Header: name, status chips, risk tier selector, quick actions
+(Approve/Reject/Suspend/Terminate/Impersonate[modal w/ reason => AUD-04]).
+Tabs: Overview(KYC state, plan, commission override, hold days override,
+marketplace opt-in) · KYC docs(inline approve/reject w/ reason, image
+lightbox) · Store(link) · Products(5 recent) · Orders · Wallet(balance,
+pending/available, link FIN-05) · Payouts · Bank accounts(verify) ·
+Notes(add) · Logs(admin audit + activity merged timeline).
+Actions: adminSellerDetail/Patch, adminKycReview, adminSellerSuspend...
+
+[SEL-03] KYC Queue  /admin/sellers/kyc
+Cards with doc thumbnails; one-click approve/reject per doc + whole-seller
+decision; SLA aging badges (>48h red). adminKycReview.
+
+[STO-03] Domain Requests  /admin/domains
+Table: domain, store, mode(cname/ns), status, ssl, last check, error.
+Actions: retry verification, view DNS instructions modal, force reissue SSL.
+adminDomainsList, adminDomainRetry.
+
+[CAT-01] Product Moderation  /admin/products/moderation
+Gallery-grid list (image, title, store, price, submitted age, flag chips).
+Detail drawer (CAT-02): full images, description, category, variants,
+keyword-flag reasons, buyer reports count. Actions: Approve / Reject(reason
+template) / Ban seller product + warn. adminProductReview.
+
+[ORD-01] Orders  /admin/orders
+Filters: status, store, channel, date, amount range, payment provider.
+Table: order_number, store, customer, total, commission, seller net, status,
+paid via, age. Row => ORD-02. adminOrdersList.
+[ORD-02] Order Detail: money panel (subtotal/discount/shipping/tax/total +
+commission + seller net + breakdown trace link), items table, timeline
+(status history), payments (intents + webhook refs), refunds, dispute,
+shipping address, risk flags. Safe actions: note, resend emails.
+NO money editing. adminOrderGet.
+
+[FIN-01] Commission Settings  /admin/finance/commission  finance+
+Form: default_percent, fixed_fee_minor, min_commission_minor,
+applies_to_shipping(toggle), base_price_rule(radio), payout_hold_days,
+hold_release_rule(radio), grace_days. Side panel: live example math
+(recalculates on keystroke via adminCommissionSimulate).
+Save => confirm modal with diff => adminCommissionSettingsUpdate => AUD-01.
+
+[FIN-02] Overrides  /admin/finance/commission/overrides
+Table: scope icon(category/seller/product), target, percent, fixed fee,
+hold days, valid_from/to, active, created_by. Create modal: typeahead target
+picker; conflict warning if overlapping higher-priority rule exists.
+adminCommissionOverrides*.
+
+[FIN-03] Fee Holidays  /admin/finance/commission/holidays
+Table + create modal (name, scope all/sellers/categories multiselect, window,
+percent). Active holidays highlighted in dashboard. adminFeeHolidays*.
+
+[FIN-04] Rate Simulator  /admin/finance/commission/simulator
+Input rows: price, qty, discount, shipping, category/seller context =>
+output: commission, seller net, trace (which rule won). Pure tool.
+
+[FIN-05] Wallets  /admin/finance/wallets
+Table: seller, currency, pending, available (red if <0), reserved, lifetime.
+Row => drawer: recent ledger lines for wallet. Manual adjust button =>
+modal (amount, direction, reason) => adminWalletAdjust (double entry T6,
+audit). Filters: negative only, pending>0.
+
+[FIN-06] Ledger Explorer  /admin/finance/ledger
+Tabs: Transactions | Accounts. Txn table: id, type, ref link, occurred,
+amounts (DR/CR balanced display), description. Detail => line table
+(account, direction, amount, available_at, memo). Filters: type, date,
+wallet, account. Export => FIN job. adminLedgerTransactions.
+
+[FIN-07] Payout Batches  /admin/finance/payouts/batches
+"New batch" (manual) => modal: currency, min amount, include-negative=no,
+dry-run preview table => Confirm. Table: batch, run_type, status, payouts n,
+total, started/finished. Row => payout list filtered. adminPayoutBatches*.
+
+[FIN-08] Payout Detail  /admin/finance/payouts/:id
+Header: reference_no, seller, amount, status stepper. Sections: payout_items
+statement table; bank account (masked, verified chip); ledger entries T3/T4
+links; provider ref. Actions: mark paid (manual mode; requires ref no),
+fail (reason), download advice PDF. adminPayoutMarkPaid/adminPayoutFail.
+
+[FIN-09] Bank Verification  /admin/finance/banks
+Pending accounts queue: masked number, holder name, seller legal name,
+match indicator. Verify/Reject. adminBankAccountsVerify.
+
+[FIN-10] Reconciliation  /admin/finance/reconciliation
+Upload provider settlement file (or pull) => match list: matched (green) /
+unmatched (amber) with age. Actions: match manually, flag. Alert banner if
+unmatched >24h. adminReconUpload, adminReconList.
+
+[MKT-01..04]: standard CRUD tables + image pickers + scheduling.
+[NTF-01]: template table grouped by event; editor with variables cheat-sheet
++ "send test" (adminNotificationTemplateTest).
+[SYS-02]: flag table with toggle + rollout editor (percent, seller allowlist);
+changes audited.
+[SYS-05]: queue depth cards per queue, job table (status, attempts, error,
+payload preview), retry + discard buttons (adminJobsRetry).
+[SYS-06]: health cards: API p95, DB, Redis, Meili, workers heartbeat, disk,
+last backup, last invariant run (green/red), open incidents.
+[AUD-01]: filterable log (admin, action, entity, date); row => AUD-02 diff
+viewer (before/after JSON field-by-field with colors).
+[SUP-02]: chat-style thread, right rail context (seller card, recent orders,
+wallet), status/priority controls, canned replies dropdown.
+
+--------------------------------------------------------------------------------
+4.3 SELLER DASHBOARD (seller.shopmesh.io) — screen list
+--------------------------------------------------------------------------------
+SEL-AUTH register/login/forgot · SEL-ONB-1 profile · SEL-ONB-2 store identity
+(name, slug w/ live availability, template picker w/ preview) · SEL-ONB-3 KYC
+upload (progress checklist) · SEL-ONB-4 bank account · SEL-ONB-5 submit =>
+"under review" screen with expected SLA.
+SD-01 Dashboard: today/7d/30d cards (orders, revenue, commission, net,
+payouts), low stock list, latest reviews, pending actions checklist.
+SD-02 Products list (status chips, inline stock edit) · SD-03 Product editor
+(basic/variants matrix/pricing/SEO/images drag-sort; "Submit for review" or
+"Publish" per moderation state).
+SD-04 Orders (tabs: to fulfill/ship/done/refunds) · SD-05 Order detail
+(fulfill form: provider+tracking; print packing slip; refund request).
+SD-06 Wallet: balance cards, pending-vs-available explainer, ledger-lite
+(payout_items view), statement downloads.
+SD-07 Payouts: schedule info (next run date), history, bank account mgmt.
+SD-08 Page Builder: page list => builder (left: section library; center:
+canvas w/ device toggle; right: section props form; top: draft/published
+chips, preview, publish). Theme editor modal (colors/fonts/radius).
+SD-09 Domains: add domain wizard (mode choice, DNS instructions w/ copy
+buttons, status stepper, SSL state).
+SD-10 Integrations: pixel cards (Meta/GA4/TikTok/GTM) connect w/ ID fields +
+status; webhook endpoints (events multiselect, secret show-once, delivery
+log w/ redeliver); API keys (create, scope picker, show-once).
+SD-11 Coupons · SD-12 Store settings (name, slug, support contacts, social,
+policies via CMS) · SD-13 Shipping (zones/rates editor) · SD-14 Staff
+(invite, perms checkboxes) · SD-15 Reviews (reply) · SD-16 Onboarding
+checklist widget (dismissable).
+
+--------------------------------------------------------------------------------
+4.4 STOREFRONT PAGES (shopper)
+--------------------------------------------------------------------------------
+Home (builder) · Collection PLP (grid, sort, filter by price/variant) ·
+PDP (gallery, variant picker, stock badge, reviews, seller info card,
+"More from this store", optional marketplace_strip) · Cart (drawer + page) ·
+Checkout (contact, shipping address w/ state dropdown, shipping rates radio,
+coupon, order summary, Pay button => provider redirect) · Payment result
+(pending/success/fail + retry) · Order status lookup (email+order_number) ·
+Policy pages · WhatsApp floating button.

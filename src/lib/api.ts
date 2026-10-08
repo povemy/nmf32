@@ -1,0 +1,188 @@
+// API envelope + error handling + audit (PART 0 §0.7 conventions).
+// Envelope: single => {data}; list => {data:[], meta:{page,size,total}}.
+// Errors:   {error:{code, message, details}}.
+import { NextResponse } from "next/server";
+import { db } from "./db";
+
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  details?: unknown;
+  constructor(status: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function ok<T>(data: T, init?: ResponseInit): NextResponse {
+  return NextResponse.json({ data }, init);
+}
+
+export function okPaged<T>(rows: T[], meta: { page: number; size: number; total: number }): NextResponse {
+  return NextResponse.json({ data: rows, meta });
+}
+
+export function fail(status: number, code: string, message: string, details?: unknown): NextResponse {
+  return NextResponse.json({ error: { code, message, details } }, { status });
+}
+
+/** Wrap a route handler: converts thrown ApiErrors into envelope responses. */
+export function handle<Args extends unknown[]>(
+  fn: (...args: Args) => Promise<NextResponse>
+): (...args: Args) => Promise<NextResponse> {
+  return async (...args: Args) => {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        return fail(e.status, e.code, e.message, e.details);
+      }
+      console.error("[api]", e);
+      const message = e instanceof Error ? e.message : "Internal error";
+      return fail(500, "INTERNAL", message);
+    }
+  };
+}
+
+export function getPagination(url: URL, maxSize = 100) {
+  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const size = Math.min(maxSize, Math.max(1, parseInt(url.searchParams.get("size") ?? "20", 10) || 20));
+  return { page, size, skip: (page - 1) * size, take: size };
+}
+
+export async function auditAdmin(input: {
+  adminId: string;
+  adminEmail: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  before?: unknown;
+  after?: unknown;
+}) {
+  await db.adminAuditLog.create({
+    data: {
+      adminId: input.adminId,
+      adminEmail: input.adminEmail,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      beforeJson: input.before != null ? JSON.stringify(input.before) : null,
+      afterJson: input.after != null ? JSON.stringify(input.after) : null,
+    },
+  });
+  await db.activityLog.create({
+    data: {
+      actorType: "admin",
+      actorId: input.adminId,
+      actorLabel: input.adminEmail,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      metaJson: input.after != null ? JSON.stringify(input.after) : null,
+    },
+  });
+}
+
+export async function logActivity(input: {
+  actorType: "admin" | "seller" | "system" | "shopper";
+  actorId?: string | null;
+  actorLabel?: string | null;
+  action: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  meta?: unknown;
+}) {
+  await db.activityLog.create({
+    data: {
+      actorType: input.actorType,
+      actorId: input.actorId ?? null,
+      actorLabel: input.actorLabel ?? null,
+      action: input.action,
+      entityType: input.entityType ?? null,
+      entityId: input.entityId ?? null,
+      metaJson: input.meta != null ? JSON.stringify(input.meta) : null,
+    },
+  });
+}
+
+/** Fire notification log rows (M14 — template-driven; worker renders in prod, we log inline). */
+export async function notify(input: { event: string; channel: "email" | "whatsapp" | "inapp"; recipient: string; subject?: string; status?: "queued" | "sent" | "failed"; error?: string }) {
+  await db.notificationLog.create({
+    data: {
+      event: input.event,
+      channel: input.channel,
+      recipient: input.recipient,
+      subject: input.subject ?? null,
+      status: input.status ?? "sent",
+      error: input.error ?? null,
+    },
+  });
+}
+
+/** Simulated outbound webhook fan-out (M13): enqueue deliveries for store endpoints. */
+export async function dispatchStoreWebhooks(input: { storeId: string; event: string; payload: unknown }) {
+  const endpoints = await db.webhookEndpoint.findMany({ where: { storeId: input.storeId, isActive: true } });
+  for (const ep of endpoints) {
+    const events = JSON.parse(ep.eventsJson || "[]") as string[];
+    if (!events.includes(input.event)) continue;
+    await db.webhookDelivery.create({
+      data: {
+        endpointId: ep.id,
+        event: input.event,
+        payloadJson: JSON.stringify(input.payload),
+        status: "success",
+        attempts: 1,
+        responseCode: 200,
+        lastAttemptAt: new Date(),
+      },
+    });
+  }
+}
+
+/** Advance order status with history + side-effects */
+export async function transitionOrder(input: {
+  orderId: string;
+  toStatus: string;
+  actor?: string;
+  note?: string;
+  timestamps?: Partial<Record<"paidAt" | "fulfilledAt" | "shippedAt" | "deliveredAt" | "completedAt" | "cancelledAt", Date>>;
+}) {
+  const order = await db.order.findUnique({ where: { id: input.orderId } });
+  if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found");
+  await db.order.update({
+    where: { id: order.id },
+    data: { status: input.toStatus, ...input.timestamps },
+  });
+  await db.orderStatusHistory.create({
+    data: {
+      orderId: order.id,
+      fromStatus: order.status,
+      toStatus: input.toStatus,
+      actor: input.actor ?? "system",
+      note: input.note ?? null,
+    },
+  });
+  return { ...order, status: input.toStatus };
+}
+
+export function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
+export async function nextOrderNumber(): Promise<string> {
+  const c = await db.counter.upsert({
+    where: { key: "order_number" },
+    create: { key: "order_number", value: 100001 },
+    update: { value: { increment: 1 } },
+  });
+  return `SM-${c.value}`;
+}

@@ -1,0 +1,268 @@
+================================================================================
+PART 5 — API CONTRACT (OpenAPI 3.1) — SHOPMESH v1
+NOTE: This file contains YAML inside a txt wrapper. When saving, save the YAML
+portion (below the ===CUT=== line) as PART5_OPENAPI_CONTRACT.yaml
+================================================================================
+===CUT===
+openapi: 3.1.0
+info: {title: SHOPMESH Platform API, version: 1.0.0}
+servers:
+  - {url: 'https://api.shopmesh.io/v1'}
+tags:
+  - {name: Auth}          - {name: AdminSellers}   - {name: AdminCatalog}
+  - {name: AdminOrders}   - {name: AdminFinance}   - {name: AdminMarketing}
+  - {name: AdminContent}  - {name: AdminIntegrations}
+  - {name: AdminNotifications} - {name: AdminSupport}
+  - {name: AdminReports}  - {name: AdminSystem}    - {name: AdminAudit}
+  - {name: SellerStore}   - {name: SellerCatalog}  - {name: SellerOrders}
+  - {name: SellerMoney}   - {name: SellerBuilder}  - {name: SellerIntegrations}
+  - {name: Market}        - {name: Storefront}     - {name: Checkout}
+  - {name: Webhooks}      - {name: System}
+security: [{bearerAuth: []}]
+
+# 5.1 CONVENTIONS --------------------------------------------------------------
+# Auth surfaces:  adminJwt (admin.*), sellerJwt (seller/store + admin-safe),
+#                 storeApiKey (SellerStore/Catalog/Orders write scopes).
+# Field mapping:  API field = DDL column snake->camel, type from DDL.
+#                 Any schema below marked "per DDL:<table>" is generated
+#                 mechanically from PART 2 (CI-checked, see PART 6).
+# Envelope:       list => {data:[], meta:{page,size,total}}; single => {data}.
+# Errors:         4XX/5XX => Error schema. Idempotency-Key on money POSTs.
+
+paths:
+  # ---- AUTH ----
+  /auth/admin/login:
+    post: {operationId: adminLogin, tags: [Auth], security: [],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/AdminLoginIn'}}}},
+      responses: {'200': {description: tokens}, '401': {$ref: common401}}}
+  /auth/admin/2fa:
+    post: {operationId: admin2faVerify, tags: [Auth], security: [],
+      requestBody: {content: {application/json: {schema: {type: object, required: [challengeId, code], properties: {challengeId: {type: string}, code: {type: string}}}}}},
+      responses: {'200': {description: tokens}}}
+  /auth/seller/register:
+    post: {operationId: sellerRegister, tags: [Auth], security: [],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/SellerRegisterIn'}}}},
+      responses: {'201': {description: pending verification}, '409': {$ref: common409}}}
+  /auth/seller/login:
+    post: {operationId: sellerLogin, tags: [Auth], security: [],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/LoginIn'}}}},
+      responses: {'200': {description: tokens}}}
+  /auth/refresh:
+    post: {operationId: refresh, tags: [Auth], security: [],
+      requestBody: {content: {application/json: {schema: {type: object, required: [refreshToken], properties: {refreshToken: {type: string}}}}}},
+      responses: {'200': {description: tokens}}}
+  /auth/password/forgot:
+    post: {operationId: passwordForgot, tags: [Auth], security: [], responses: {'202': {description: accepted}}}
+  /auth/password/reset:
+    post: {operationId: passwordReset, tags: [Auth], security: [], responses: {'204': {description: ok}}}
+
+  # ---- ADMIN: SELLERS ----
+  /admin/sellers:
+    get: {operationId: adminSellersList, tags: [AdminSellers], responses: {'200': {description: Seller[] paged}}}
+  /admin/sellers/{id}:
+    get: {operationId: adminSellerDetail, tags: [AdminSellers], responses: {'200': {description: SellerDetail}}}
+    patch: {operationId: adminSellerPatch, tags: [AdminSellers], responses: {'200': {description: Seller}}}
+  /admin/sellers/{id}/approve:
+    post: {operationId: adminSellerApprove, tags: [AdminSellers], responses: {'200': {description: Seller}}}
+  /admin/sellers/{id}/reject:
+    post: {operationId: adminSellerReject, tags: [AdminSellers], responses: {'200': {description: Seller}}}
+  /admin/sellers/{id}/suspend:
+    post: {operationId: adminSellerSuspend, tags: [AdminSellers], responses: {'200': {description: Seller}}}
+  /admin/sellers/{id}/kyc/{docId}:
+    post: {operationId: adminKycReview, tags: [AdminSellers],
+      requestBody: {content: {application/json: {schema: {type: object, required: [decision], properties: {decision: {type: string, enum: [approved, rejected]}, reason: {type: string}}}}}},
+      responses: {'200': {description: KycDoc}}}
+  /admin/sellers/{id}/impersonate:
+    post: {operationId: impersonateStore, tags: [AdminSellers], responses: {'200': {description: scoped token}}}
+  /admin/sellers/{id}/notes:
+    get: {operationId: adminSellerNotesList, tags: [AdminSellers], responses: {'200': {description: Note[]}}}
+    post: {operationId: adminSellerNoteCreate, tags: [AdminSellers], responses: {'201': {description: Note}}}
+
+  # ---- ADMIN: CATALOG ----
+  /admin/products:
+    get: {operationId: adminProductsList, tags: [AdminCatalog], responses: {'200': {description: Product[] paged}}}
+  /admin/products/{id}/approve: {post: {operationId: adminProductApprove, tags: [AdminCatalog], responses: {'200': {description: Product}}}}
+  /admin/products/{id}/reject:
+    post: {operationId: adminProductReject, tags: [AdminCatalog], responses: {'200': {description: Product}}}
+  /admin/categories:
+    get: {operationId: adminCategoriesList, tags: [AdminCatalog], responses: {'200': {description: Category tree}}}
+    post: {operationId: adminCategoryCreate, tags: [AdminCatalog], responses: {'201': {description: Category}}}
+  /admin/categories/{id}:
+    patch: {operationId: adminCategoryUpdate, tags: [AdminCatalog], responses: {'200': {description: Category}}}
+    delete: {operationId: adminCategoryDelete, tags: [AdminCatalog], responses: {'204': {description: ok}}}
+
+  # ---- ADMIN: ORDERS / REFUNDS / DISPUTES ----
+  /admin/orders:
+    get: {operationId: adminOrdersList, tags: [AdminOrders], responses: {'200': {description: Order[] paged}}}
+  /admin/orders/{id}: {get: {operationId: adminOrderGet, tags: [AdminOrders], responses: {'200': {description: OrderDetail}}}}
+  /admin/refunds:
+    get: {operationId: adminRefundsList, tags: [AdminOrders], responses: {'200': {description: Refund[]}}}
+  /admin/refunds/{id}/approve: {post: {operationId: adminRefundApprove, tags: [AdminOrders], responses: {'200': {description: Refund}}}}
+  /admin/refunds/{id}/process: {post: {operationId: adminRefundProcess, tags: [AdminOrders], responses: {'200': {description: Refund}}}}
+  /admin/disputes/{id}:
+    get: {operationId: adminDisputeGet, tags: [AdminOrders], responses: {'200': {description: Dispute}}}
+    patch: {operationId: adminDisputeUpdate, tags: [AdminOrders], responses: {'200': {description: Dispute}}}
+
+  # ---- ADMIN: FINANCE (commission, ledger, payouts) ----
+  /admin/commission/settings:
+    get: {operationId: adminCommissionSettingsGet, tags: [AdminFinance], responses: {'200': {description: CommissionSettings}}}
+    put: {operationId: adminCommissionSettingsUpdate, tags: [AdminFinance], responses: {'200': {description: CommissionSettings}}}
+  /admin/commission/overrides:
+    get: {operationId: adminCommissionOverridesList, tags: [AdminFinance], responses: {'200': {description: CommissionOverride[]}}}
+    post: {operationId: adminCommissionOverrideCreate, tags: [AdminFinance], responses: {'201': {description: CommissionOverride}}}
+  /admin/commission/overrides/{id}:
+    patch: {operationId: adminCommissionOverrideUpdate, tags: [AdminFinance], responses: {'200': {description: CommissionOverride}}}
+    delete: {operationId: adminCommissionOverrideDelete, tags: [AdminFinance], responses: {'204': {description: ok}}}
+  /admin/commission/holidays:
+    get: {operationId: adminFeeHolidaysList, tags: [AdminFinance], responses: {'200': {description: FeeHoliday[]}}}
+    post: {operationId: adminFeeHolidayCreate, tags: [AdminFinance], responses: {'201': {description: FeeHoliday}}}
+  /admin/commission/holidays/{id}:
+    patch: {operationId: adminFeeHolidayUpdate, tags: [AdminFinance], responses: {'200': {description: FeeHoliday}}}
+    delete: {operationId: adminFeeHolidayDelete, tags: [AdminFinance], responses: {'204': {description: ok}}}
+  /admin/commission/simulate:
+    post: {operationId: adminCommissionSimulate, tags: [AdminFinance],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/SimulateIn'}}}},
+      responses: {'200': {description: SimulateOut}}}
+  /admin/wallets:
+    get: {operationId: adminWalletsList, tags: [AdminFinance], responses: {'200': {description: Wallet[]}}}
+  /admin/wallets/{id}/adjust:
+    post: {operationId: adminWalletAdjust, tags: [AdminFinance],
+      requestBody: {content: {application/json: {schema: {type: object, required: [amountMinor, direction, reason], properties: {amountMinor: {type: integer}, direction: {type: string, enum: [credit, debit]}, reason: {type: string}}}}}},
+      responses: {'200': {description: Wallet}}}
+  /admin/ledger/transactions:
+    get: {operationId: adminLedgerTransactions, tags: [AdminFinance], responses: {'200': {description: LedgerTxn[] cursor-paged}}}
+  /admin/ledger/accounts:
+    get: {operationId: adminLedgerAccounts, tags: [AdminFinance], responses: {'200': {description: LedgerAccount[] w/ balances}}}
+  /admin/ledger/export:
+    post: {operationId: adminLedgerExport, tags: [AdminFinance], responses: {'202': {description: ExportJob}}}
+  /admin/payout-batches:
+    get: {operationId: adminPayoutBatchesList, tags: [AdminFinance], responses: {'200': {description: PayoutBatch[]}}}
+    post: {operationId: adminPayoutBatchCreate, tags: [AdminFinance], responses: {'202': {description: PayoutBatch (async run)}}}
+  /admin/payouts:
+    get: {operationId: adminPayoutsList, tags: [AdminFinance], responses: {'200': {description: Payout[]}}}
+  /admin/payouts/{id}/mark-paid: {post: {operationId: adminPayoutMarkPaid, tags: [AdminFinance], responses: {'200': {description: Payout}}}}
+  /admin/payouts/{id}/fail: {post: {operationId: adminPayoutFail, tags: [AdminFinance], responses: {'200': {description: Payout}}}}
+  /admin/bank-accounts/{id}/verify: {post: {operationId: adminBankVerify, tags: [AdminFinance], responses: {'200': {description: BankAccount}}}}
+  /admin/reconciliation/upload: {post: {operationId: adminReconUpload, tags: [AdminFinance], responses: {'202': {description: recon job}}}}
+
+  # ---- ADMIN: MARKETING / CONTENT / INTEGRATIONS / NOTIF / SUPPORT / REPORTS ----
+  /admin/coupons: {get: {operationId: adminCouponsList, tags: [AdminMarketing], responses: {'200': {description: Coupon[]}}}, post: {operationId: adminCouponCreate, tags: [AdminMarketing], responses: {'201': {description: Coupon}}}}
+  /admin/coupons/{id}: {patch: {operationId: adminCouponUpdate, tags: [AdminMarketing], responses: {'200': {description: Coupon}}}, delete: {operationId: adminCouponDelete, tags: [AdminMarketing], responses: {'204': {description: ok}}}}
+  /admin/banners: {get: {operationId: adminBannersList, tags: [AdminMarketing], responses: {'200': {description: Banner[]}}}, post: {operationId: adminBannerCreate, tags: [AdminMarketing], responses: {'201': {description: Banner}}}}
+  /admin/featured: {get: {operationId: adminFeaturedList, tags: [AdminMarketing], responses: {'200': {description: FeaturedSlot[]}}}, post: {operationId: adminFeaturedCreate, tags: [AdminMarketing], responses: {'201': {description: FeaturedSlot}}}}
+  /admin/announcements: {get: {operationId: adminAnnouncementsList, tags: [AdminContent], responses: {'200': {description: Announcement[]}}}, post: {operationId: adminAnnouncementCreate, tags: [AdminContent], responses: {'201': {description: Announcement}}}}
+  /admin/cms-pages: {get: {operationId: adminCmsPagesList, tags: [AdminContent], responses: {'200': {description: CmsPage[]}}}, post: {operationId: adminCmsPageCreate, tags: [AdminContent], responses: {'201': {description: CmsPage}}}}
+  /admin/integrations/registry: {get: {operationId: adminIntegrationsRegistry, tags: [AdminIntegrations], responses: {'200': {description: registry}}}}
+  /admin/webhook-deliveries:
+    get: {operationId: adminWebhookDeliveries, tags: [AdminIntegrations], responses: {'200': {description: WebhookDelivery[]}}}
+  /admin/webhook-deliveries/{id}/replay: {post: {operationId: adminWebhookReplay, tags: [AdminIntegrations], responses: {'202': {description: queued}}}}
+  /admin/notification-templates: {get: {operationId: adminNotifTemplatesList, tags: [AdminNotifications], responses: {'200': {description: Template[]}}}, post: {operationId: adminNotifTemplateCreate, tags: [AdminNotifications], responses: {'201': {description: Template}}}}
+  /admin/notification-logs: {get: {operationId: adminNotifLogs, tags: [AdminNotifications], responses: {'200': {description: NotificationLog[]}}}}
+  /admin/tickets: {get: {operationId: adminTicketsList, tags: [AdminSupport], responses: {'200': {description: Ticket[]}}}}
+  /admin/tickets/{id}: {get: {operationId: adminTicketGet, tags: [AdminSupport], responses: {'200': {description: TicketDetail}}}, post: {operationId: adminTicketReply, tags: [AdminSupport], responses: {'201': {description: Message}}}}
+  /admin/reports/{type}: {get: {operationId: adminReportsGet, tags: [AdminReports], parameters: [{name: type, in: path, required: true, schema: {type: string, enum: [sales, sellers, commission, payouts]}}], responses: {'200': {description: report}}}}
+  /admin/exports: {post: {operationId: adminExportCreate, tags: [AdminReports], responses: {'202': {description: ExportJob}}}}
+
+  # ---- ADMIN: SYSTEM & AUDIT ----
+  /admin/settings: {get: {operationId: adminSettingsList, tags: [AdminSystem], responses: {'200': {description: Setting[]}}}, put: {operationId: adminSettingsUpdate, tags: [AdminSystem], responses: {'200': {description: Setting[]}}}}
+  /admin/feature-flags: {get: {operationId: adminFlagsList, tags: [AdminSystem], responses: {'200': {description: Flag[]}}}, patch: {operationId: adminFlagUpdate, tags: [AdminSystem], responses: {'200': {description: Flag}}}}
+  /admin/admin-users: {get: {operationId: adminUsersList, tags: [AdminSystem], responses: {'200': {description: AdminUser[]}}}, post: {operationId: adminUserCreate, tags: [AdminSystem], responses: {'201': {description: AdminUser}}}}
+  /admin/jobs: {get: {operationId: adminJobsList, tags: [AdminSystem], responses: {'200': {description: Job[]}}}}
+  /admin/jobs/{id}/retry: {post: {operationId: adminJobsRetry, tags: [AdminSystem], responses: {'202': {description: ok}}}}
+  /admin/system/health: {get: {operationId: adminSystemHealth, tags: [System], responses: {'200': {description: HealthReport}}}}
+  /admin/system/maintenance: {post: {operationId: adminMaintenance, tags: [AdminSystem], responses: {'200': {description: state}}}}
+  /admin/system/reindex: {post: {operationId: adminReindex, tags: [AdminSystem], responses: {'202': {description: ok}}}}
+  /admin/audit-logs: {get: {operationId: adminAuditLogs, tags: [AdminAudit], responses: {'200': {description: AuditLog[]}}}}
+  /admin/activity-logs: {get: {operationId: adminActivityLogs, tags: [AdminAudit], responses: {'200': {description: ActivityLog[]}}}}
+
+  # ---- SELLER (sellerJwt / storeApiKey) ----
+  /store/onboarding/state: {get: {operationId: onboardingState, tags: [SellerStore], responses: {'200': {description: OnboardingState}}}}
+  /store/onboarding/step: {post: {operationId: onboardingStep, tags: [SellerStore], responses: {'200': {description: OnboardingState}}}}
+  /store/settings: {get: {operationId: storeSettingsGet, tags: [SellerStore], responses: {'200': {description: Store}}}, patch: {operationId: storeSettingsUpdate, tags: [SellerStore], responses: {'200': {description: Store}}}}
+  /store/domains: {get: {operationId: storeDomainsList, tags: [SellerStore], responses: {'200': {description: StoreDomain[]}}}, post: {operationId: storeDomainCreate, tags: [SellerStore], responses: {'201': {description: StoreDomain}}}}
+  /store/domains/{id}/verify: {post: {operationId: storeDomainVerify, tags: [SellerStore], responses: {'200': {description: StoreDomain}}}}
+  /store/products: {get: {operationId: storeProductsList, tags: [SellerCatalog], responses: {'200': {description: Product[]}}}, post: {operationId: storeProductCreate, tags: [SellerCatalog], responses: {'201': {description: Product}}}}
+  /store/products/{id}: {get: {operationId: storeProductGet, tags: [SellerCatalog], responses: {'200': {description: ProductDetail}}}, patch: {operationId: storeProductUpdate, tags: [SellerCatalog], responses: {'200': {description: Product}}}, delete: {operationId: storeProductArchive, tags: [SellerCatalog], responses: {'204': {description: ok}}}}
+  /store/products/{id}/variants: {post: {operationId: storeVariantCreate, tags: [SellerCatalog], responses: {'201': {description: Variant}}}}
+  /store/variants/{id}: {patch: {operationId: storeVariantUpdate, tags: [SellerCatalog], responses: {'200': {description: Variant}}}}
+  /store/inventory/adjust: {post: {operationId: storeInventoryAdjust, tags: [SellerCatalog], responses: {'200': {description: Variant}}}}
+  /store/collections: {get: {operationId: storeCollectionsList, tags: [SellerCatalog], responses: {'200': {description: Collection[]}}}, post: {operationId: storeCollectionCreate, tags: [SellerCatalog], responses: {'201': {description: Collection}}}}
+  /store/orders: {get: {operationId: storeOrdersList, tags: [SellerOrders], responses: {'200': {description: Order[]}}}}
+  /store/orders/{id}: {get: {operationId: storeOrderGet, tags: [SellerOrders], responses: {'200': {description: OrderDetail}}}}
+  /store/orders/{id}/fulfill: {post: {operationId: storeOrderFulfill, tags: [SellerOrders], responses: {'200': {description: Shipment}}}}
+  /store/orders/{id}/refund-request: {post: {operationId: storeRefundRequest, tags: [SellerOrders], responses: {'201': {description: Refund}}}}
+  /store/wallet: {get: {operationId: storeWalletGet, tags: [SellerMoney], responses: {'200': {description: Wallet + recent payout_items}}}}
+  /store/payouts: {get: {operationId: storePayoutsList, tags: [SellerMoney], responses: {'200': {description: Payout[]}}}}
+  /store/statements/{period}: {get: {operationId: storeStatementGet, tags: [SellerMoney], responses: {'200': {description: statement}}}}
+  /store/bank-accounts: {get: {operationId: storeBankAccountsList, tags: [SellerMoney], responses: {'200': {description: BankAccount[]}}}, post: {operationId: storeBankAccountCreate, tags: [SellerMoney], responses: {'201': {description: BankAccount}}}}
+  /store/pages: {get: {operationId: storePagesList, tags: [SellerBuilder], responses: {'200': {description: Page[]}}}}
+  /store/pages/{id}/draft: {put: {operationId: storePageUpdateDraft, tags: [SellerBuilder], responses: {'200': {description: Page}}}}
+  /store/pages/{id}/publish: {post: {operationId: storePagePublish, tags: [SellerBuilder], responses: {'200': {description: Page}}}}
+  /store/theme: {get: {operationId: storeThemeGet, tags: [SellerBuilder], responses: {'200': {description: Theme}}}, put: {operationId: storeThemeUpdate, tags: [SellerBuilder], responses: {'200': {description: Theme}}}}
+  /store/integrations: {get: {operationId: storeIntegrationsList, tags: [SellerIntegrations], responses: {'200': {description: StoreIntegration[]}}}, put: {operationId: storeIntegrationUpsert, tags: [SellerIntegrations], responses: {'200': {description: StoreIntegration}}}}
+  /store/webhooks: {get: {operationId: storeWebhooksList, tags: [SellerIntegrations], responses: {'200': {description: WebhookEndpoint[]}}}, post: {operationId: storeWebhookCreate, tags: [SellerIntegrations], responses: {'201': {description: WebhookEndpoint (secret show-once)}}}}
+  /store/api-keys: {get: {operationId: storeApiKeysList, tags: [SellerIntegrations], responses: {'200': {description: ApiKey[]}}}, post: {operationId: storeApiKeyCreate, tags: [SellerIntegrations], responses: {'201': {description: key secret show-once}}}}
+
+  # ---- PUBLIC: MARKET / STOREFRONT / CHECKOUT / WEBHOOKS ----
+  /market/products: {get: {operationId: marketProductsSearch, tags: [Market], responses: {'200': {description: ProductCard[]}}}}
+  /market/stores: {get: {operationId: marketStoresList, tags: [Market], responses: {'200': {description: StoreCard[]}}}}
+  /market/categories: {get: {operationId: marketCategories, tags: [Market], responses: {'200': {description: tree}}}}
+  /sf/{storeSlug}/products: {get: {operationId: sfProductsList, tags: [Storefront], responses: {'200': {description: ProductCard[]}}}}
+  /sf/{storeSlug}/products/{slug}: {get: {operationId: sfProductGet, tags: [Storefront], responses: {'200': {description: ProductDetail}}}}
+  /sf/{storeSlug}/pages/{pageSlug}: {get: {operationId: sfPageGet, tags: [Storefront], responses: {'200': {description: rendered page JSON}}}}
+  /checkout/cart: {get: {operationId: cartGet, tags: [Checkout], security: [], responses: {'200': {description: Cart}}}}
+  /checkout/cart/items: {post: {operationId: cartAddItem, tags: [Checkout], security: [], responses: {'200': {description: Cart}}}}
+  /checkout/quote:
+    post: {operationId: checkoutQuote, tags: [Checkout], security: [],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/QuoteIn'}}}},
+      responses: {'200': {description: Quote (server-recomputed totals)}}}
+  /checkout/orders:
+    post: {operationId: checkoutCreate, tags: [Checkout], security: [],
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}],
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CheckoutIn'}}}},
+      responses: {'201': {description: Order + payment redirect}, '409': {$ref: common409}}}
+  /checkout/payments/{intentId}: {get: {operationId: paymentStatus, tags: [Checkout], security: [], responses: {'200': {description: PaymentIntent}}}}
+  /webhooks/payments/{provider}: {post: {operationId: paymentWebhook, tags: [Webhooks], security: [], responses: {'200': {description: ack}, '400': {description: bad signature}}}}
+
+components:
+  securitySchemes: {bearerAuth: {type: http, scheme: bearer}}
+  parameters:
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+    Page: {name: page, in: query, schema: {type: integer, default: 1}}
+    Size: {name: size, in: query, schema: {type: integer, default: 20, maximum: 100}}
+  responses:
+    common401: {description: unauthorized}
+    common403: {description: forbidden}
+    common404: {description: not found}
+    common409: {description: conflict}
+  schemas:
+    Error: {type: object, properties: {error: {type: object, properties: {code: {type: string}, message: {type: string}, details: {}}}}}
+    AdminLoginIn: {type: object, required: [email, password], properties: {email: {type: string}, password: {type: string}}}
+    LoginIn: {type: object, required: [email, password], properties: {email: {type: string}, password: {type: string}}}
+    SellerRegisterIn: {type: object, required: [email, password, fullName, displayName, countryCode],
+      properties: {email: {type: string}, password: {type: string}, fullName: {type: string}, displayName: {type: string}, countryCode: {type: string}, storeSlug: {type: string}}}
+    # per DDL:sellers          -> Seller schema (all columns camelCased)
+    # per DDL:stores          -> Store schema
+    # per DDL:store_domains   -> StoreDomain schema
+    # per DDL:products        -> Product schema (+images[], variants[])
+    # per DDL:product_variants-> Variant schema
+    # per DDL:orders          -> Order schema (+items[])
+    # per DDL:order_items     -> OrderItem schema (includes commissionPercent,
+    #                            commissionMinor, sellerNetMinor, breakdown)
+    # per DDL:payment_intents -> PaymentIntent schema
+    # per DDL:refunds         -> Refund schema
+    # per DDL:disputes        -> Dispute schema
+    # per DDL:wallets         -> Wallet schema
+    # per DDL:payouts         -> Payout schema
+    # per DDL:payout_batches  -> PayoutBatch schema
+    # per DDL:ledger_transactions/lines -> LedgerTxn / LedgerLine schemas
+    # per DDL:coupons, marketplace_banners, featured_slots, cms_pages,
+    #          webhook_endpoints, webhook_deliveries, store_integrations,
+    #          api_keys, notification_templates, support_tickets, export_jobs,
+    #          settings, feature_flags, admin_users, categories, reviews
+    CommissionSettings: {type: object, properties: {defaultPercent: {type: number}, appliesToShipping: {type: boolean}, basePriceRule: {type: string, enum: [paid_price, list_price]}, fixedFeeMinor: {type: integer}, minCommissionMinor: {type: integer}, payoutHoldDays: {type: integer}, holdReleaseRule: {type: string, enum: [days_after_paid, days_after_delivered]}, graceDaysAfterDelivered: {type: integer}}}
+    CommissionOverride: {type: object, properties: {scope: {type: string, enum: [category, seller, product]}, categoryId: {}, sellerId: {}, productId: {}, percent: {type: number}, fixedFeeMinor: {}, holdDays: {}, validFrom: {type: string}, validTo: {}, isActive: {type: boolean}}}
+    SimulateIn: {type: object, properties: {priceMinor: {type: integer}, qty: {type: integer}, discountMinor: {type: integer}, shippingMinor: {type: integer}, categoryId: {}, sellerId: {}, productId: {}}}
+    SimulateOut: {type: object, properties: {commissionMinor: {type: integer}, sellerNetMinor: {type: integer}, trace: {type: object}}}
+    QuoteIn: {type: object, required: [storeSlug, items], properties: {storeSlug: {type: string}, items: {type: array, items: {type: object, properties: {variantId: {type: string}, qty: {type: integer}}}}, couponCode: {type: string}, shippingAddress: {type: object}, shippingRateId: {type: string}}}
+    CheckoutIn: {type: object, required: [storeSlug, items, shippingAddress, shippingRateId], properties: {storeSlug: {type: string}, items: {type: array, items: {type: object, properties: {variantId: {type: string}, qty: {type: integer}}}}, couponCode: {type: string}, shippingAddress: {type: object}, billingAddress: {type: object}, customerNote: {type: string}, provider: {type: string}}}

@@ -1,0 +1,553 @@
+     1→"use client";
+     2→// FIN-01 Commission Settings (w/ live example math) + FIN-04 Commission Simulator.
+     3→import { useCallback, useEffect, useMemo, useState } from "react";
+     4→import { Badge } from "@/components/ui/badge";
+     5→import { Button } from "@/components/ui/button";
+     6→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+     7→import { Input } from "@/components/ui/input";
+     8→import { Label } from "@/components/ui/label";
+     9→import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+    10→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    11→import { Switch } from "@/components/ui/switch";
+    12→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    13→import { toMinor, formatMinor } from "@/lib/money";
+    14→import { cn } from "@/lib/utils";
+    15→import { apiSend, useApi, useDebounced } from "./use-api";
+    16→import { EmptyState, ErrorState, Money, PageHeader, TONE_CLASS } from "./ui-bits";
+    17→
+    18→type SettingsBody = {
+    19→  defaultPercent: number;
+    20→  appliesToShipping: boolean;
+    21→  basePriceRule: "paid_price" | "list_price";
+    22→  fixedFeeMinor: number;
+    23→  minCommissionMinor: number;
+    24→  payoutHoldDays: number;
+    25→  holdReleaseRule: "days_after_paid" | "days_after_delivered";
+    26→  graceDaysAfterDelivered: number;
+    27→};
+    28→
+    29→type SimTrace = {
+    30→  rule_source: string;
+    31→  source_id?: string;
+    32→  holiday_id?: string;
+    33→  percent: number;
+    34→  base: number;
+    35→  percent_part: number;
+    36→  fixed_fee_allocated: number;
+    37→  discount_allocated: number;
+    38→  shipping_allocated: number;
+    39→  flags: string[];
+    40→};
+    41→
+    42→type SimResult = {
+    43→  commissionMinor: number;
+    44→  sellerNetMinor: number;
+    45→  holdDays: number;
+    46→  trace: SimTrace;
+    47→};
+    48→
+    49→type SimBody = {
+    50→  priceMinor: number;
+    51→  qty: number;
+    52→  discountMinor: number;
+    53→  shippingMinor: number;
+    54→  categoryId?: string | null;
+    55→  sellerId?: string | null;
+    56→  productId?: string | null;
+    57→};
+    58→
+    59→/* ---------------------------------------------------------------- FIN-01 */
+    60→
+    61→const emptyForm = {
+    62→  defaultPercent: "0",
+    63→  fixedFee: "0.00",
+    64→  minCommission: "0.00",
+    65→  appliesToShipping: false,
+    66→  basePriceRule: "paid_price",
+    67→  payoutHoldDays: "7",
+    68→  holdReleaseRule: "days_after_paid",
+    69→  graceDays: "2",
+    70→};
+    71→
+    72→export function CommissionSettingsView() {
+    73→  const { data, error, loading, refetch } = useApi<SettingsBody>("/api/admin/commission/settings");
+    74→  const [form, setForm] = useState<typeof emptyForm | null>(null);
+    75→  const [confirmOpen, setConfirmOpen] = useState(false);
+    76→  const [saving, setSaving] = useState(false);
+    77→
+    78→  // example math inputs
+    79→  const [exPrice, setExPrice] = useState("120.00");
+    80→  const [exDiscount, setExDiscount] = useState("0");
+    81→  const [exShipping, setExShipping] = useState("8.90");
+    82→
+    83→  const [simResult, setSimResult] = useState<SimResult | null>(null);
+    84→  const [simError, setSimError] = useState<string | null>(null);
+    85→  const debouncedEx = useDebounced(`${exPrice}|${exDiscount}|${exShipping}`, 450);
+    86→
+    87→  useEffect(() => {
+    88→    if (data && !form) {
+    89→      setForm({
+    90→        defaultPercent: String(data.defaultPercent),
+    91→        fixedFee: (data.fixedFeeMinor / 100).toFixed(2),
+    92→        minCommission: (data.minCommissionMinor / 100).toFixed(2),
+    93→        appliesToShipping: data.appliesToShipping,
+    94→        basePriceRule: data.basePriceRule,
+    95→        payoutHoldDays: String(data.payoutHoldDays),
+    96→        holdReleaseRule: data.holdReleaseRule,
+    97→        graceDays: String(data.graceDaysAfterDelivered),
+    98→      });
+    99→    }
+   100→  }, [data, form]);
+   101→
+   102→  useEffect(() => {
+   103→    let cancelled = false;
+   104→    const run = async () => {
+   105→      const [price, discount, shipping] = debouncedEx.split("|");
+   106→      try {
+   107→        const res = await apiSend<SimResult>("/api/admin/commission/simulate", "POST", {
+   108→          priceMinor: toMinor(price || "0"),
+   109→          qty: 1,
+   110→          discountMinor: toMinor(discount || "0"),
+   111→          shippingMinor: toMinor(shipping || "0"),
+   112→        });
+   113→        if (!cancelled) {
+   114→          setSimResult(res);
+   115→          setSimError(null);
+   116→        }
+   117→      } catch (e) {
+   118→        if (!cancelled) {
+   119→          setSimResult(null);
+   120→          setSimError(e instanceof Error ? e.message : "Simulation unavailable");
+   121→        }
+   122→      }
+   123→    };
+   124→    void run();
+   125→    return () => {
+   126→      cancelled = true;
+   127→    };
+   128→  }, [debouncedEx]);
+   129→
+   130→  const diffRows = useMemo(() => {
+   131→    if (!data || !form) return [];
+   132→    return [
+   133→      { label: "defaultPercent", from: `${data.defaultPercent}%`, to: `${form.defaultPercent}%`, changed: Number(form.defaultPercent) !== data.defaultPercent },
+   134→      { label: "fixedFee", from: formatMinor(data.fixedFeeMinor), to: formatMinor(toMinor(form.fixedFee)), changed: toMinor(form.fixedFee) !== data.fixedFeeMinor },
+   135→      { label: "minCommission", from: formatMinor(data.minCommissionMinor), to: formatMinor(toMinor(form.minCommission)), changed: toMinor(form.minCommission) !== data.minCommissionMinor },
+   136→      { label: "appliesToShipping", from: String(data.appliesToShipping), to: String(form.appliesToShipping), changed: form.appliesToShipping !== data.appliesToShipping },
+   137→      { label: "basePriceRule", from: data.basePriceRule, to: form.basePriceRule, changed: form.basePriceRule !== data.basePriceRule },
+   138→      { label: "payoutHoldDays", from: `${data.payoutHoldDays}d`, to: `${form.payoutHoldDays}d`, changed: Number(form.payoutHoldDays) !== data.payoutHoldDays },
+   139→      { label: "holdReleaseRule", from: data.holdReleaseRule, to: form.holdReleaseRule, changed: form.holdReleaseRule !== data.holdReleaseRule },
+   140→      { label: "graceDaysAfterDelivered", from: `${data.graceDaysAfterDelivered}d`, to: `${form.graceDays}d`, changed: Number(form.graceDays) !== data.graceDaysAfterDelivered },
+   141→    ];
+   142→  }, [data, form]);
+   143→
+   144→  const dirty = useMemo(() => diffRows.some((r) => r.changed), [diffRows]);
+   145→
+   146→  const save = useCallback(async () => {
+   147→    if (!form) return;
+   148→    setSaving(true);
+   149→    try {
+   150→      await apiSend("/api/admin/commission/settings", "PUT", {
+   151→        defaultPercent: Number(form.defaultPercent),
+   152→        fixedFeeMinor: toMinor(form.fixedFee),
+   153→        minCommissionMinor: toMinor(form.minCommission),
+   154→        appliesToShipping: form.appliesToShipping,
+   155→        basePriceRule: form.basePriceRule,
+   156→        payoutHoldDays: Number(form.payoutHoldDays),
+   157→        holdReleaseRule: form.holdReleaseRule,
+   158→        graceDaysAfterDelivered: Number(form.graceDays),
+   159→      });
+   160→      toast.success("Commission settings saved", { description: "Audited server-side; affects future orders." });
+   161→      setConfirmOpen(false);
+   162→      void refetch();
+   163→    } catch (e) {
+   164→      toast.error("Save failed", { description: e instanceof Error ? e.message : String(e) });
+   165→    } finally {
+   166→      setSaving(false);
+   167→    }
+   168→  }, [form, refetch]);
+   169→
+   170→  if (error) {
+   171→    return <Card className="py-0"><CardContent className="p-4"><ErrorState message={error} onRetry={() => void refetch()} /></CardContent></Card>;
+   172→  }
+   173→  if (loading || !data || !form) {
+   174→    return (
+   175→      <div className="space-y-4">
+   176→        <div className="h-8 w-64 animate-pulse rounded bg-muted" />
+   177→        <Card className="py-0"><CardContent className="h-72 p-4"><div className="h-full w-full animate-pulse rounded-lg bg-muted" /></CardContent></Card>
+   178→      </div>
+   179→    );
+   180→  }
+   181→
+   182→  // local estimate with unsaved values (client-side M09 core math)
+   183→  const exBase = Math.max(
+   184→    0,
+   185→    toMinor(exPrice || "0") - toMinor(exDiscount || "0") + (form.appliesToShipping ? toMinor(exShipping || "0") : 0)
+   186→  );
+   187→  const exPercentPart = Math.round(exBase * Number(form.defaultPercent || "0")) / 100;
+   188→  const exCommission = Math.round(exPercentPart) + toMinor(form.fixedFee || "0");
+   189→  const exNet = exBase + toMinor(exShipping || "0") - exCommission;
+   190→
+   191→  return (
+   192→    <div className="space-y-4">
+   193→      <PageHeader
+   194→        title="Commission"
+   195→        description="Global M09 engine defaults. Resolution: fee holiday → product → category → seller → global."
+   196→        actions={
+   197→          <Button size="sm" className="min-h-[44px]" onClick={() => setConfirmOpen(true)} disabled={!dirty}>
+   198→            {dirty ? "Save changes…" : "Saved"}
+   199→          </Button>
+   200→        }
+   201→      />
+   202→
+   203→      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+   204→        <Card className="py-0 xl:col-span-3">
+   205→          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   206→            <CardTitle className="text-base">Global settings</CardTitle>
+   207→            <CardDescription>Money fields are entered in RM and stored as integer minor units.</CardDescription>
+   208→          </CardHeader>
+   209→          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+   210→            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   211→              <div className="space-y-1.5">
+   212→                <Label className="text-xs text-muted-foreground">Default commission %</Label>
+   213→                <Input inputMode="decimal" value={form.defaultPercent} onChange={(e) => setForm({ ...form, defaultPercent: e.target.value })} className="min-h-[44px]" />
+   214→              </div>
+   215→              <div className="space-y-1.5">
+   216→                <Label className="text-xs text-muted-foreground">Fixed fee per order (RM)</Label>
+   217→                <Input inputMode="decimal" value={form.fixedFee} onChange={(e) => setForm({ ...form, fixedFee: e.target.value })} className="min-h-[44px]" />
+   218→              </div>
+   219→              <div className="space-y-1.5">
+   220→                <Label className="text-xs text-muted-foreground">Min commission per order (RM)</Label>
+   221→                <Input inputMode="decimal" value={form.minCommission} onChange={(e) => setForm({ ...form, minCommission: e.target.value })} className="min-h-[44px]" />
+   222→              </div>
+   223→              <div className="space-y-1.5">
+   224→                <Label className="text-xs text-muted-foreground">Payout hold days</Label>
+   225→                <Input inputMode="numeric" value={form.payoutHoldDays} onChange={(e) => setForm({ ...form, payoutHoldDays: e.target.value })} className="min-h-[44px]" />
+   226→              </div>
+   227→              <div className="space-y-1.5">
+   228→                <Label className="text-xs text-muted-foreground">Grace days after delivered</Label>
+   229→                <Input inputMode="numeric" value={form.graceDays} onChange={(e) => setForm({ ...form, graceDays: e.target.value })} className="min-h-[44px]" />
+   230→              </div>
+   231→              <div className="flex items-end gap-3 pb-1.5">
+   232→                <Switch id="ship" checked={form.appliesToShipping} onCheckedChange={(v) => setForm({ ...form, appliesToShipping: v })} />
+   233→                <Label htmlFor="ship" className="text-sm">Commission applies to shipping</Label>
+   234→              </div>
+   235→            </div>
+   236→
+   237→            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+   238→              <div className="space-y-2">
+   239→                <Label className="text-xs text-muted-foreground">Base price rule</Label>
+   240→                <RadioGroup value={form.basePriceRule} onValueChange={(v) => setForm({ ...form, basePriceRule: v })} className="gap-2">
+   241→                  {["paid_price", "list_price"].map((v) => (
+   242→                    <div key={v} className="flex min-h-[44px] items-center gap-2 rounded-lg border px-3">
+   243→                      <RadioGroupItem value={v} id={`bp-${v}`} />
+   244→                      <Label htmlFor={`bp-${v}`} className="cursor-pointer text-sm font-normal">
+   245→                        {v === "paid_price" ? "Paid price (after discounts)" : "List price (before discounts)"}
+   246→                      </Label>
+   247→                    </div>
+   248→                  ))}
+   249→                </RadioGroup>
+   250→              </div>
+   251→              <div className="space-y-2">
+   252→                <Label className="text-xs text-muted-foreground">Hold release rule</Label>
+   253→                <RadioGroup value={form.holdReleaseRule} onValueChange={(v) => setForm({ ...form, holdReleaseRule: v })} className="gap-2">
+   254→                  {["days_after_paid", "days_after_delivered"].map((v) => (
+   255→                    <div key={v} className="flex min-h-[44px] items-center gap-2 rounded-lg border px-3">
+   256→                      <RadioGroupItem value={v} id={`hr-${v}`} />
+   257→                      <Label htmlFor={`hr-${v}`} className="cursor-pointer text-sm font-normal">
+   258→                        {v === "days_after_paid" ? "Days after payment" : "Days after delivery"}
+   259→                      </Label>
+   260→                    </div>
+   261→                  ))}
+   262→                </RadioGroup>
+   263→              </div>
+   264→            </div>
+   265→          </CardContent>
+   266→        </Card>
+   267→
+   268→        {/* live example math */}
+   269→        <Card className="py-0 xl:col-span-2">
+   270→          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   271→            <CardTitle className="text-base">Example math</CardTitle>
+   272→            <CardDescription>Live simulation against saved settings (debounced).</CardDescription>
+   273→          </CardHeader>
+   274→          <CardContent className="space-y-3 p-4 pt-0 sm:p-6 sm:pt-0">
+   275→            <div className="grid grid-cols-3 gap-2">
+   276→              <div className="space-y-1">
+   277→                <Label className="text-[11px] text-muted-foreground">Price RM</Label>
+   278→                <Input inputMode="decimal" value={exPrice} onChange={(e) => setExPrice(e.target.value)} className="min-h-[40px]" />
+   279→              </div>
+   280→              <div className="space-y-1">
+   281→                <Label className="text-[11px] text-muted-foreground">Discount RM</Label>
+   282→                <Input inputMode="decimal" value={exDiscount} onChange={(e) => setExDiscount(e.target.value)} className="min-h-[40px]" />
+   283→              </div>
+   284→              <div className="space-y-1">
+   285→                <Label className="text-[11px] text-muted-foreground">Shipping RM</Label>
+   286→                <Input inputMode="decimal" value={exShipping} onChange={(e) => setExShipping(e.target.value)} className="min-h-[40px]" />
+   287→              </div>
+   288→            </div>
+   289→
+   290→            {simError ? (
+   291→              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+   292→                {simError}
+   293→              </div>
+   294→            ) : simResult ? (
+   295→              <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+   296→                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Server trace (saved settings)</p>
+   297→                <div className="flex items-center justify-between text-sm">
+   298→                  <span className="text-muted-foreground">Commission</span>
+   299→                  <Money minor={simResult.commissionMinor} bold />
+   300→                </div>
+   301→                <div className="flex items-center justify-between text-sm">
+   302→                  <span className="text-muted-foreground">Seller net</span>
+   303→                  <Money minor={simResult.sellerNetMinor} bold />
+   304→                </div>
+   305→                <div className="flex flex-wrap gap-1.5 pt-1">
+   306→                  <Badge variant="outline" className={cn(TONE_CLASS.teal, "capitalize")}>{(simResult.trace?.rule_source ?? "global").replace(/_/g, " ")}</Badge>
+   307→                  <Badge variant="outline">{simResult.trace?.percent ?? 0}%</Badge>
+   308→                  <Badge variant="outline">base {formatMinor(simResult.trace?.base ?? 0)}</Badge>
+   309→                  <Badge variant="outline">hold {simResult.holdDays}d</Badge>
+   310→                  {(simResult.trace?.flags ?? []).map((f) => (
+   311→                    <Badge key={f} variant="outline" className={cn(TONE_CLASS.amber)}>{f.replace(/_/g, " ")}</Badge>
+   312→                  ))}
+   313→                </div>
+   314→              </div>
+   315→            ) : null}
+   316→
+   317→            {dirty ? (
+   318→              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+   319→                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Estimated with unsaved changes</p>
+   320→                <div className="mt-1.5 flex items-center justify-between text-sm">
+   321→                  <span className="text-muted-foreground">Commission</span>
+   322→                  <Money minor={exCommission} bold />
+   323→                </div>
+   324→                <div className="flex items-center justify-between text-sm">
+   325→                  <span className="text-muted-foreground">Seller net</span>
+   326→                  <Money minor={exNet} bold />
+   327→                </div>
+   328→              </div>
+   329→            ) : null}
+   330→          </CardContent>
+   331→        </Card>
+   332→      </div>
+   333→
+   334→      {confirmOpen ? (
+   335→        <SettingsDiffDialog rows={diffRows} saving={saving} onClose={() => setConfirmOpen(false)} onSave={() => void save()} />
+   336→      ) : null}
+   337→    </div>
+   338→  );
+   339→}
+   340→
+   341→function SettingsDiffDialog({
+   342→  rows,
+   343→  saving,
+   344→  onClose,
+   345→  onSave,
+   346→}: {
+   347→  rows: { label: string; from: string; to: string; changed: boolean }[];
+   348→  saving: boolean;
+   349→  onClose: () => void;
+   350→  onSave: () => void;
+   351→}) {
+   352→  return (
+   353→    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" onClick={onClose}>
+   354→      <div className="w-full max-w-lg rounded-xl border bg-background p-4 shadow-xl sm:p-6" onClick={(e) => e.stopPropagation()}>
+   355→        <h2 className="text-lg font-semibold">Confirm new commission settings</h2>
+   356→        <p className="mt-1 text-sm text-muted-foreground">Changed rows are highlighted; the save is audited.</p>
+   357→        <div className="mt-4 max-h-[50vh] overflow-y-auto rounded-lg border [scrollbar-width:thin]">
+   358→          <Table>
+   359→            <TableHeader>
+   360→              <TableRow>
+   361→                <TableHead>Field</TableHead>
+   362→                <TableHead>Current</TableHead>
+   363→                <TableHead>New</TableHead>
+   364→              </TableRow>
+   365→            </TableHeader>
+   366→            <TableBody>
+   367→              {rows.map((r) => (
+   368→                <TableRow key={r.label} className={cn(r.changed && "bg-amber-50/70 dark:bg-amber-950/25")}>
+   369→                  <TableCell className="font-mono text-xs">{r.label}</TableCell>
+   370→                  <TableCell className="text-sm tabular-nums text-muted-foreground">{r.from}</TableCell>
+   371→                  <TableCell className="text-sm font-medium tabular-nums">{r.to}</TableCell>
+   372→                </TableRow>
+   373→              ))}
+   374→            </TableBody>
+   375→          </Table>
+   376→        </div>
+   377→        <div className="mt-4 flex justify-end gap-2">
+   378→          <Button variant="outline" onClick={onClose} disabled={saving} className="min-h-[44px] sm:min-h-0">Cancel</Button>
+   379→          <Button onClick={onSave} disabled={saving} className="min-h-[44px] sm:min-h-0">{saving ? "Saving…" : "Save settings"}</Button>
+   380→        </div>
+   381→      </div>
+   382→    </div>
+   383→  );
+   384→}
+   385→
+   386→/* ---------------------------------------------------------------- FIN-04 */
+   387→
+   388→type SimCategory = { id: string; name: string };
+   389→type SimSeller = { id: string; displayName: string };
+   390→
+   391→export function SimulatorView() {
+   392→  const [price, setPrice] = useState("89.90");
+   393→  const [qty, setQty] = useState("1");
+   394→  const [discount, setDiscount] = useState("0");
+   395→  const [shipping, setShipping] = useState("0");
+   396→  const [categoryId, setCategoryId] = useState("none");
+   397→  const [sellerId, setSellerId] = useState("none");
+   398→
+   399→  const cats = useApi<SimCategory[]>("/api/admin/categories");
+   400→  const sellers = useApi<SimSeller[]>("/api/admin/sellers?size=100");
+   401→
+   402→  const body: SimBody = useMemo(
+   403→    () => ({
+   404→      priceMinor: toMinor(price || "0"),
+   405→      qty: Math.max(1, Number(qty || "1")),
+   406→      discountMinor: toMinor(discount || "0"),
+   407→      shippingMinor: toMinor(shipping || "0"),
+   408→      categoryId: categoryId === "none" ? null : categoryId,
+   409→      sellerId: sellerId === "none" ? null : sellerId,
+   410→      productId: null,
+   411→    }),
+   412→    [price, qty, discount, shipping, categoryId, sellerId]
+   413→  );
+   414→  const debouncedBody = useDebounced(JSON.stringify(body), 450);
+   415→
+   416→  const [result, setResult] = useState<SimResult | null>(null);
+   417→  const [err, setErr] = useState<string | null>(null);
+   418→  const [running, setRunning] = useState(false);
+   419→
+   420→  useEffect(() => {
+   421→    let cancelled = false;
+   422→    const run = async () => {
+   423→      setRunning(true);
+   424→      setErr(null);
+   425→      try {
+   426→        const res = await apiSend<SimResult>("/api/admin/commission/simulate", "POST", JSON.parse(debouncedBody) as SimBody);
+   427→        if (!cancelled) setResult(res);
+   428→      } catch (e) {
+   429→        if (!cancelled) {
+   430→          setResult(null);
+   431→          setErr(e instanceof Error ? e.message : "Simulation failed");
+   432→        }
+   433→      } finally {
+   434→        if (!cancelled) setRunning(false);
+   435→      }
+   436→    };
+   437→    void run();
+   438→    return () => {
+   439→      cancelled = true;
+   440→    };
+   441→  }, [debouncedBody]);
+   442→
+   443→  return (
+   444→    <div className="space-y-4">
+   445→      <PageHeader title="Commission Simulator" description="Pure what-if tool — nothing is persisted." />
+   446→
+   447→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   448→        <Card className="py-0">
+   449→          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   450→            <CardTitle className="text-base">Inputs</CardTitle>
+   451→          </CardHeader>
+   452→          <CardContent className="grid grid-cols-2 gap-3 p-4 pt-0 sm:p-6 sm:pt-0">
+   453→            <div className="space-y-1"><Label className="text-xs text-muted-foreground">Price (RM)</Label><Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="min-h-[44px]" /></div>
+   454→            <div className="space-y-1"><Label className="text-xs text-muted-foreground">Qty</Label><Input inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} className="min-h-[44px]" /></div>
+   455→            <div className="space-y-1"><Label className="text-xs text-muted-foreground">Discount (RM)</Label><Input inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} className="min-h-[44px]" /></div>
+   456→            <div className="space-y-1"><Label className="text-xs text-muted-foreground">Shipping (RM)</Label><Input inputMode="decimal" value={shipping} onChange={(e) => setShipping(e.target.value)} className="min-h-[44px]" /></div>
+   457→            <div className="col-span-2 space-y-1">
+   458→              <Label className="text-xs text-muted-foreground">Category</Label>
+   459→              <Select value={categoryId} onValueChange={setCategoryId}>
+   460→                <SelectTrigger className="min-h-[44px]" aria-label="Category"><SelectValue placeholder="Any" /></SelectTrigger>
+   461→                <SelectContent className="max-h-72">
+   462→                  <SelectItem value="none">— any —</SelectItem>
+   463→                  {(cats.data ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+   464→                </SelectContent>
+   465→              </Select>
+   466→            </div>
+   467→            <div className="col-span-2 space-y-1">
+   468→              <Label className="text-xs text-muted-foreground">Seller</Label>
+   469→              <Select value={sellerId} onValueChange={setSellerId}>
+   470→                <SelectTrigger className="min-h-[44px]" aria-label="Seller"><SelectValue placeholder="Any" /></SelectTrigger>
+   471→                <SelectContent className="max-h-72">
+   472→                  <SelectItem value="none">— any —</SelectItem>
+   473→                  {(sellers.data ?? []).map((s) => <SelectItem key={s.id} value={s.id}>{s.displayName}</SelectItem>)}
+   474→                </SelectContent>
+   475→              </Select>
+   476→            </div>
+   477→          </CardContent>
+   478→        </Card>
+   479→
+   480→        <Card className="py-0">
+   481→          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   482→            <CardTitle className="flex items-center gap-2 text-base">
+   483→              Results
+   484→              {running ? <span className="h-2 w-2 animate-pulse rounded-full bg-teal-500" aria-label="computing" /> : null}
+   485→            </CardTitle>
+   486→          </CardHeader>
+   487→          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+   488→            {err ? (
+   489→              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{err}</div>
+   490→            ) : result ? (
+   491→              <div className="space-y-4">
+   492→                <div className="grid grid-cols-3 gap-3 text-center">
+   493→                  <div className="rounded-lg border bg-muted/30 p-3">
+   494→                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Commission</p>
+   495→                    <p className="mt-1 text-base font-bold text-teal-700 dark:text-teal-400 sm:text-lg">{formatMinor(result.commissionMinor)}</p>
+   496→                  </div>
+   497→                  <div className="rounded-lg border bg-muted/30 p-3">
+   498→                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Seller net</p>
+   499→                    <p className="mt-1 text-base font-bold text-emerald-700 dark:text-emerald-400 sm:text-lg">{formatMinor(result.sellerNetMinor)}</p>
+   500→                  </div>
+   501→                  <div className="rounded-lg border bg-muted/30 p-3">
+   502→                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Hold</p>
+   503→                    <p className="mt-1 text-base font-bold sm:text-lg">{result.holdDays}d</p>
+   504→                  </div>
+   505→                </div>
+   506→
+   507→                <div>
+   508→                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rule trace</p>
+   509→                  <div className="overflow-hidden rounded-lg border">
+   510→                    <Table>
+   511→                      <TableBody>
+   512→                        <SimRow k="rule_source" v={result.trace?.rule_source} chip />
+   513→                        <SimRow k="percent" v={result.trace ? `${result.trace.percent}%` : undefined} />
+   514→                        <SimRow k="base" v={result.trace ? formatMinor(result.trace.base) : undefined} />
+   515→                        <SimRow k="percent_part" v={result.trace ? formatMinor(result.trace.percent_part) : undefined} />
+   516→                        <SimRow k="fixed_fee_allocated" v={result.trace ? formatMinor(result.trace.fixed_fee_allocated) : undefined} />
+   517→                        <SimRow k="discount_allocated" v={result.trace ? formatMinor(result.trace.discount_allocated) : undefined} />
+   518→                        <SimRow k="shipping_allocated" v={result.trace ? formatMinor(result.trace.shipping_allocated) : undefined} />
+   519→                        <SimRow k="flags" v={result.trace?.flags?.length ? result.trace.flags.join(", ") : undefined} />
+   520→                      </TableBody>
+   521→                    </Table>
+   522→                  </div>
+   523→                </div>
+   524→              </div>
+   525→            ) : (
+   526→              <EmptyState title="Adjust inputs" hint="The simulator recomputes as you type." />
+   527→            )}
+   528→          </CardContent>
+   529→        </Card>
+   530→      </div>
+   531→    </div>
+   532→  );
+   533→}
+   534→
+   535→function SimRow({ k, v, chip }: { k: string; v?: string; chip?: boolean }) {
+   536→  return (
+   537→    <TableRow>
+   538→      <TableCell className="w-44 font-mono text-xs text-muted-foreground">{k}</TableCell>
+   539→      <TableCell>
+   540→        {v ? (
+   541→          chip ? (
+   542→            <Badge variant="outline" className={cn(TONE_CLASS.teal, "capitalize")}>{v.replace(/_/g, " ")}</Badge>
+   543→          ) : (
+   544→            <span className="text-sm tabular-nums">{v}</span>
+   545→          )
+   546→        ) : (
+   547→          <span className="text-xs text-muted-foreground">—</span>
+   548→        )}
+   549→      </TableCell>
+   550→    </TableRow>
+   551→  );
+   552→}
+   553→

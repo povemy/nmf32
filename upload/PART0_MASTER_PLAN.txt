@@ -1,0 +1,159 @@
+================================================================================
+PART 0 — MASTER PLAN
+Project codename: SHOPMESH (placeholder — replace with your brand)
+Version: 1.0  |  Status: Normative blueprint
+================================================================================
+
+--------------------------------------------------------------------------------
+0.1 ONE-LINE DEFINITION
+--------------------------------------------------------------------------------
+A free-to-join, commission-based e-commerce platform where every seller gets an
+instant standalone storefront (own domain optional) AND automatic placement in a
+shared marketplace — like "Shopify + Shopee in one", with zero setup cost for
+founders. Platform earns via configurable profit-sharing (commission) per sale.
+
+--------------------------------------------------------------------------------
+0.2 CORE CONCEPT (LOCKED DECISIONS)
+--------------------------------------------------------------------------------
+1. Standalone platform (self-hosted / own infra, not built on Shopify).
+2. General e-commerce — any legal product, any seller. Risk is handled via
+   moderation + prohibited-items policy + risk tiers (see PART 1 §1.11),
+   NOT by niche restriction.
+3. Business model: FREE plan (no monthly fee, no setup fee). Platform takes a
+   commission per order, pre-configured in admin backend (global default,
+   per-category, per-seller, per-product overrides + fee holidays).
+4. Built-in page builder — founders with zero tech skill can launch a store.
+5. Seller onboarding REQUIRED: register -> KYC -> admin approval -> store live.
+6. Sellers self-serve store setup via fast onboarding wizard + page builder.
+7. Local payments first (gateway-abstracted; e.g., MY: FPX/TNG/GrabPay via
+   Curlec/ToyyibPay/Stripe-MY; ID: Midtrans/Xendit). Cards can ride the same
+   abstraction later.
+8. Custom domain support: CNAME mode AND full nameserver delegation mode.
+9. Integration-ready: per-store marketing pixels (Meta/GA4/TikTok/GTM),
+   outbound webhooks, and a public REST API (works with Zapier/Make).
+10. Admin backend = command centre. Every operational knob, every log, every
+    state is controllable/observable from admin. Nothing requires DB access.
+
+--------------------------------------------------------------------------------
+0.3 ARCHITECTURE (ASCII)
+--------------------------------------------------------------------------------
+                       Cloudflare (DNS, CDN, WAF, SSL-for-SaaS)
+                                      |
+        +-----------------------------+-----------------------------+
+        |                             |                             |
+  {slug}.shopmesh.site         seller custom domains          admin.shopmesh.io
+  market.shopmesh.io           (custom hostnames)             (admin SPA)
+        |                             |                             |
+        +----------------+ Next.js SSR (storefront renderer) + Next.js admin
+                         host-based multi-tenancy
+                                      |
+                              NestJS REST API (v1)
+        +---------------+-------------+--------------+---------------+
+        |               |             |              |               |
+   PostgreSQL 16     Redis 7      Meilisearch     S3 / R2         Providers
+   (system of       (cache,      (marketplace    (media,        - Payment gw
+    record)          queue,       search)         exports)      - Email/SMS/WA
+                     BullMQ)                                    - Bank payout
+                                      |
+                         Workers (BullMQ): payouts, webhooks,
+                         notifications, image pipeline, search indexer,
+                         stats rollup, ledger invariant job, outbox dispatcher
+
+Multi-tenancy: single database, shared schema, every tenant table carries
+store_id/seller_id. Scoping enforced in repository layer; Postgres RLS added in
+Phase 5 as defense-in-depth. One seller = one store in v1 (schema allows N).
+
+--------------------------------------------------------------------------------
+0.4 TECH STACK (PRIMARY + ACCEPTED ALTERNATES)
+--------------------------------------------------------------------------------
+Layer          Primary                       Alternate
+API            NestJS + TypeScript           Laravel 11 (if team is PHP)
+DB             PostgreSQL 16                 — (non-negotiable: must be PG)
+Cache/Queue    Redis 7 + BullMQ              Sidekiq (if Laravel)
+Search         Meilisearch                   OpenSearch
+Storefront     Next.js 14 (SSR/ISR)          Remix
+Admin          Next.js (separate app)        React + Vite
+Migrations     node-pg-migrate (plain SQL)   dbmate / Prisma (SQL preview on)
+Storage        Cloudflare R2 (S3 API)        AWS S3
+Email          Resend or SES + SMTP driver   —
+SMS/WhatsApp   Provider abstraction (v1: 1 driver) —
+Payments       Driver interface (see PART 3 M07) —
+Error tracking Sentry                       —
+CI             GitHub Actions                GitLab CI
+
+--------------------------------------------------------------------------------
+0.5 MONOREPO LAYOUT
+--------------------------------------------------------------------------------
+/shopmesh
+  /apps
+    /api          NestJS REST API (modules mirror PART 3)
+    /storefront   Next.js SSR storefront renderer (host-based tenancy)
+    /admin        Next.js admin SPA
+    /workers      BullMQ processors
+  /packages
+    /shared       TS types + zod schemas (source of OpenAPI generation)
+    /ui           Shared React components (admin + page-builder sections)
+  /db
+    /migrations   Plain SQL, numbered, immutable once merged
+    /seeds
+  /docs
+    /contracts    Generated: openapi.json, schema.md  (CI-verified, see PART 6)
+    /blueprints   PART0..PART6 of this document
+  /infra          docker-compose, terraform (later), runbooks
+
+--------------------------------------------------------------------------------
+0.6 DOMAIN PLAN
+--------------------------------------------------------------------------------
+market.shopmesh.io        marketplace discovery
+{slug}.shopmesh.site      default storefront subdomain
+checkout.shopmesh.io      hosted checkout (PCI-light, redirect flow)
+api.shopmesh.io           REST API
+admin.shopmesh.io         admin command centre
+seller.shopmesh.io        seller dashboard (or /seller on admin app)
+Custom domains            via Cloudflare for SaaS custom hostnames
+
+--------------------------------------------------------------------------------
+0.7 GLOBAL CONVENTIONS (apply to ALL parts)
+--------------------------------------------------------------------------------
+- Money: BIGINT minor units + CHAR(3) currency. NEVER floats. Helper: minor(x).
+- Time: TIMESTAMPTZ, UTC everywhere; render in store.timezone.
+- IDs: UUID v4 (gen_random_uuid). Human refs: order_number, payout reference_no.
+- Soft delete: deleted_at TIMESTAMPTZ on catalog/store tables; orders/money
+  rows are NEVER deleted (immutable + reversing entries).
+- Enums: TEXT + CHECK constraints (easy migration), documented in DDL.
+- Pagination: page/size (max 100) + total; cursor for ledger/webhook logs.
+- Errors: { "error": { "code": "MACHINE_CODE", "message": "...", "details": {} } }
+- Idempotency: Idempotency-Key header REQUIRED on POST that moves money.
+- Naming: DB snake_case; API camelCase; mapping is mechanical (see PART 5 §5.2).
+- Secrets: app-level AES-256-GCM for *_enc columns; keys in KMS/env.
+- Audit: EVERY admin mutation writes admin_audit_logs with before/after JSONB.
+  Enforced by an API interceptor, verified by nightly job (PART 6).
+
+--------------------------------------------------------------------------------
+0.8 BUILD PHASES (suggested, 2-person team)
+--------------------------------------------------------------------------------
+Phase 0 (wk 1-2)   Infra, CI (PART 6), auth (admin+seller), tenancy skeleton,
+                   admin shell + audit interceptor.
+Phase 1 (wk 3-5)   Catalog, media, page builder + section renderer, storefront
+                   SSR + caching, seller dashboard v1.
+Phase 2 (wk 6-8)   Cart, checkout, payment driver + first local gateway,
+                   orders pipeline, emails.
+Phase 3 (wk 9-10)  Commission engine, wallets, double-entry ledger, payouts.
+Phase 4 (wk 11-13) Marketplace discovery + search, custom domains, integrations
+                   (pixels, webhooks, public API), notifications, coupons.
+Phase 5 (wk 14-15) Reports/exports, support desk, RLS, hardening, load test,
+                   restore drill, LAUNCH.
+MVP cutline: Phases 0-3 + minimal admin = launchable with manual marketplace
+curation and manual payouts.
+
+--------------------------------------------------------------------------------
+0.9 BLUEPRINT INDEX
+--------------------------------------------------------------------------------
+PART0_MASTER_PLAN.txt          this file
+PART1_PRODUCT_SPEC.txt         product rules, flows, policies
+PART2_DATABASE_DDL.sql         full PostgreSQL schema (all tables)
+PART3_MODULE_SPECS.txt         17 modules: tables, APIs, screens, state machines
+PART4_ADMIN_WIREFRAMES.txt     admin + seller screens, screen by screen
+PART5_OPENAPI_CONTRACT.yaml    API contract (paths + schemas + conventions)
+PART6_ICCO_ORCHESTRATOR.txt    codebase integrity control orchestrator (CI/CD,
+                               invariants, AI-era guardrails)
