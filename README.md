@@ -66,6 +66,31 @@ db/custom.db                  # SQLite database (seeded)
 upload/                       # original product specification documents
 ```
 
+## Store Generator (Nexova-style)
+
+Paste a Shopee / TikTok Shop URL (or a demo fixture link) on the **"Sell / Generate store"** page → SHOPMESH validates the link, imports the authorised catalogue (products, variants, images), auto-generates SEO, and creates a **claimable draft storefront**. The verified owner claims it (token + account + marketplace authorisation), configures it in the seller portal (**Imports & Publish**, **SEO**), publishes, and trades — checkout, orders, payments and ledger all reuse the platform's existing commerce engine.
+
+- Docs: `docs/handover.md` (full technical handover), `docs/marketplace-integration-research.md` (official API verification), `docs/codebase-inventory.md`, `docs/implementation-plan.md`
+- Import APIs: `POST /api/import/resolve`, `POST /api/import/jobs`, `GET /api/import/jobs/{id}?token=…`, `POST /api/import/jobs/{id}/resume?token=…`, `POST /api/claim/bind`, `POST /api/store/publish`
+- Demo imports use `https://demo.shopmesh.fixture/shop/{name}` and are labelled "Demo data" everywhere; they never masquerade as live marketplace imports.
+
+## Marketplace Configuration (env)
+
+Live imports require the official platform credentials (server-side only — never exposed to the client):
+
+```bash
+SHOPEE_PARTNER_ID=...        # Shopee Open Platform partner id
+SHOPEE_PARTNER_KEY=...       # Shopee partner key
+SHOPEE_ENV=sandbox|live
+TIKTOK_SHOP_APP_KEY=...      # TikTok Shop Partner Center app key
+TIKTOK_SHOP_APP_SECRET=...
+TIKTOK_SHOP_SERVICE_ID=...   # optional
+PUBLIC_APP_ORIGIN=https://your-domain   # OAuth redirect + canonical URLs
+IMPORT_TOKEN_ENC_KEY=...     # AES key for sealing marketplace tokens
+```
+
+Without them, the UI shows "Server credentials missing" and real-marketplace jobs park in `awaiting_authorisation` — by design (official APIs require seller authorisation; URL-only scraping is neither possible nor permitted). See `docs/research-shopee.md` / `docs/research-tiktok.md` for the verified endpoint contracts and registration steps.
+
 ## Demo Accounts (after seeding)
 
 Check `prisma/seed.ts` for seeded credentials (admin, sellers, and demo shoppers) and `worklog.md` for the full build history and decisions.

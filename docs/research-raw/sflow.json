@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://techdocs.cyware.com",
+    "name": "Configure Open API Rate Limits",
+    "snippet": "No information is available for this page. Learn why",
+    "host_name": "techdocs.cyware.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://api.docs.shoptet.com",
+    "name": "Rate limiting",
+    "snippet": "The API is available in two access modes: for \"Shoptet partner” developers who create the interconnection with the services and extend the Shoptet system's ... Read more",
+    "host_name": "api.docs.shoptet.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.salesforce.com",
+    "name": "Load Shedding and Rate Limiting | SCAPI",
+    "snippet": "SLAS enforces rate limits separately. Production instances: 24,000 requests per minute (RPM) per instance. Non-production instances: 500 RPM per instance.",
+    "host_name": "developer.salesforce.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://open.shopee.com",
+    "name": "1. [BR] Payment APIs Adjust KIT Related Field Names",
+    "snippet": "Jul 24, 2026 — Check out timely updates on our API offerings and developer services improvements in Shopee Open Platform via our announcements.",
+    "host_name": "open.shopee.com",
+    "rank": 3,
+    "date": "Jul 24, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://blog.security-warehouse.com",
+    "name": "Open Shopee API 1.0 Deprecation Plan – 2.0",
+    "snippet": "May 11, 2022 — Shopee will gradually deprecate Open API 1.0. The deprecation plan will happen across 3 phases, with each lasting for 90 days.",
+    "host_name": "blog.security-warehouse.com",
+    "rank": 4,
+    "date": "May 11, 2022",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.shopline.com",
+    "name": "Rate limiting",
+    "snippet": "The REST Admin API enforces rate limits on requests from each app to each store, allowing a maximum of 4 requests per second .",
+    "host_name": "developer.shopline.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://community.openai.com",
+    "name": "API rate limitations / api speed - #11 by jochenschultz - API",
+    "snippet": "Jun 2, 2023 — From different IPs? I mean without parallel api calls and 2 at best and up to 45 seconds api response times why do we even have a 60 rpm limit ? Read more",
+    "host_name": "community.openai.com",
+    "rank": 6,
+    "date": "Jun 2, 2023",
+    "favicon": ""
+  }
+]

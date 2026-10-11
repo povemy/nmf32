@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://open.shopee.com",
+    "name": "Brand Portal Service API Integration Guide",
+    "snippet": "Jul 22, 2026 — Shopee Open Platform will provide APIs for Brand Portal performance data. Developers can use these APIs to retrieve sales performance, ...",
+    "host_name": "open.shopee.com",
+    "rank": 0,
+    "date": "Jul 22, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://api2cart.com",
+    "name": "Shopee API Guide: Open Platform, Seller API, Auth & Docs",
+    "snippet": "API Rate Limits Marketplace APIs enforce request limits to maintain platform stability. As a result, applications should monitor API usage, queue requests, and ...",
+    "host_name": "api2cart.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://context7.com",
+    "name": "Shopee Open Platform (websites/open_shopee_developer",
+    "snippet": "Shopee Open Platform provides a comprehensive suite of Open APIs and services for developers to create customized software solutions for Shopee sellers, ...",
+    "host_name": "context7.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "congminh1254/shopee-sdk: A lightweight, fully-featured",
+    "snippet": "A lightweight, fully-featured TypeScript SDK for the Shopee Open API v2. Features automatic request signing, pluggable token storage, robust error handling, and ... Read more",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://apis.io",
+    "name": "Shopee Rate Limits",
+    "snippet": "Shopee Rate Limits is the machine-readable rate-limit profile for Shopee on the APIs.io network, conforming to the API Commons Rate Limits specification.",
+    "host_name": "apis.io",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

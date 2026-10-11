@@ -147,15 +147,16 @@ model Session {
 
 model Store {
   id              String    @id @default(cuid())
-  sellerId        String    @unique
-  seller          Seller    @relation(fields: [sellerId], references: [id])
+  sellerId        String?   @unique // nullable: generated-but-unclaimed stores have no owner yet
+  seller          Seller?   @relation(fields: [sellerId], references: [id])
   name            String
   slug            String    @unique
   tagline         String?
   logoUrl         String?
   bannerUrl       String?
   description     String?
-  status          String    @default("draft") // draft | live | maintenance
+  status          String    @default("draft") // draft | live | maintenance | generating | pending_verification | pending_claim | claimed | suspended | archived
+  lifecycleSource String    @default("native") // native | import
   currency        String    @default("MYR")
   timezone        String    @default("Asia/Kuala_Lumpur")
   themeJson       String    @default("{}")
@@ -175,6 +176,9 @@ model Store {
   integrations    StoreIntegration[]
   webhookEndpoints WebhookEndpoint[]
   apiKeys         ApiKey[]
+  claims          StoreClaim[]
+  connections     MarketplaceConnection[]
+  importJobs      ImportJob[]
 }
 
 model StoreDomain {
@@ -247,6 +251,18 @@ model Product {
   ratingCount               Int       @default(0)
   isFeatured                Boolean   @default(false)
   publishedAt               DateTime?
+  // --- marketplace import source fields (Phase 4) ---
+  sourcePlatform            String? // shopee | tiktok | fixture
+  sourceShopId              String?
+  sourceProductId           String?
+  sourceUrl                 String?
+  sourceBrand               String?
+  sourceStatus              String? // availability at source
+  isFixture                 Boolean  @default(false) // imported from the demo fixture connector
+  lastSyncedAt              DateTime?
+  overridesJson             String    @default("{}") // seller-owned fields: {title:true,...} survive re-import
+  seoTitle                  String?
+  seoDescription            String?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
   images                    ProductImage[]
@@ -255,8 +271,12 @@ model Product {
   orderItems                OrderItem[]
   collections               CollectionProduct[]
   featuredSlots             FeaturedSlot[]
+  importItems               ImportJobItem[]
 
   @@unique([storeId, slug])
+  @@unique([storeId, sourcePlatform, sourceProductId])
+  @@index([storeId, status])
+  @@index([sourcePlatform, sourceShopId])
 }
 
 model ProductImage {
@@ -264,6 +284,7 @@ model ProductImage {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   url       String
+  alt       String? // accessibility + SEO alt text (import)
   sortOrder Int     @default(0)
 }
 
@@ -274,6 +295,8 @@ model ProductVariant {
   name               String   @default("Default")
   optionName         String?
   optionValue        String?
+  sourceModelId      String?  // marketplace variant identifier (import sync)
+  imageUrl           String?  // variant-specific image (import)
   priceMinor         Int
   compareAtPriceMinor Int?
   stock              Int      @default(0)
@@ -792,4 +815,125 @@ model ExportJob {
   fileUrl    String?
   createdAt  DateTime  @default(now())
   finishedAt DateTime?
+}
+
+// ------------------------------------------------- MARKETPLACE IMPORT (Phase 4)
+
+model MarketplaceConnection {
+  id              String    @id @default(cuid())
+  storeId         String?   // bound after store claim / for seller-scoped connections
+  store           Store?    @relation(fields: [storeId], references: [id])
+  platform        String    // shopee | tiktok
+  status          String    @default("pending") // pending | authorising | connected | expired | disconnected | needs_credentials
+  envConfigured   Boolean   @default(false) // platform app credentials present server-side
+  shopId          String?   // source shop identifier (shopee shop_id / tiktok shop_id)
+  shopName        String?
+  shopCipher      String?   // tiktok shop_cipher (required by product APIs)
+  region          String?   // e.g. MY
+  accessTokenEnc  String?   // AES-256-GCM encrypted — never returned via API
+  refreshTokenEnc String?   // AES-256-GCM encrypted
+  scopesJson      String    @default("[]")
+  expiresAt       DateTime?
+  lastRefreshAt   DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  jobs            ImportJob[]
+
+  @@unique([platform, shopId])
+  @@index([storeId])
+}
+
+model ImportJob {
+  id              String    @id @default(cuid())
+  // public tracking token so a guest can watch progress without an account
+  trackingToken   String    @unique
+  storeId         String?
+  store           Store?    @relation(fields: [storeId], references: [id])
+  connectionId    String?
+  connection      MarketplaceConnection? @relation(fields: [connectionId], references: [id])
+  platform        String    // shopee | tiktok | fixture
+  inputUrl        String
+  urlType         String    @default("unknown") // shop | product | unknown
+  sourceShopId    String?
+  sourceProductId String?   // set when the pasted URL is a single product
+  // queued | validating | awaiting_authorisation | connecting | fetching_shop |
+  // importing_products | importing_variants | processing_images | generating_seo |
+  // generating_storefront | awaiting_claim | completed | completed_with_warnings | failed
+  status          String    @default("queued")
+  phaseDetail     String?
+  progressJson    String    @default("{}") // {discovered, processed, succeeded, skipped, failed, imagesCopied}
+  errorJson       String    @default("{}") // {code, message}
+  summaryJson     String    @default("{}") // shop info + limitations found during import
+  isFixture       Boolean   @default(false)
+  storeCreated    Boolean   @default(false)
+  claimedById     String?   // seller id after claim links job → store
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items           ImportJobItem[]
+
+  @@index([status])
+  @@index([platform, createdAt])
+}
+
+model ImportJobItem {
+  id              String    @id @default(cuid())
+  jobId           String
+  job             ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product?  @relation(fields: [productId], references: [id])
+  sourcePlatform  String
+  sourceShopId    String?
+  sourceProductId String
+  title           String?
+  // pending | ok | skipped | failed
+  status          String    @default("pending")
+  error           String?
+  warningsJson    String    @default("[]") // e.g. ["description missing at source","variant price unavailable"]
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@unique([jobId, sourcePlatform, sourceProductId])
+  @@index([jobId, status])
+}
+
+model StoreClaim {
+  id                   String    @id @default(cuid())
+  storeId              String
+  store                Store     @relation(fields: [storeId], references: [id])
+  jobId                String?   // import job that produced the store
+  tokenHash            String    @unique // sha256(token) — raw token never stored
+  // active | used | expired | revoked
+  status               String    @default("active")
+  verificationMethod   String    @default("pending") // pending | oauth_shopee | oauth_tiktok | claim_code | admin_manual
+  verificationResultJson String  @default("{}")
+  expiresAt            DateTime
+  usedById             String?   // seller id that claimed
+  usedAt               DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([storeId, status])
+}
+
+model SeoMeta {
+  id                 String   @id @default(cuid())
+  entityType         String   // store | product | category
+  entityId           String
+  seoTitle           String?
+  seoDescription     String?
+  ogImage            String?
+  canonicalUrl       String?
+  noindex            Boolean  @default(false)
+  structuredDataJson String   @default("{}")
+  lockedFieldsJson   String   @default("[]") // ["seoTitle", ...] — protected from re-import
+  warningsJson       String   @default("[]")
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
 }

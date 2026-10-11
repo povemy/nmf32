@@ -1,0 +1,1613 @@
+Open Platform
+Documentation
+Support Center
+Announcement
+Console
+AI Assistant 
+English
+Log In
+V2.0 Tables of Contents
+- > v2.product.get_model_list
+Request
+Request Address
+Common Request Parameters
+Request Parameters
+Request Example
+Response
+Response Parameters
+Response Example
+Error Codes
+Error Example
+API Permissions
+API Tools
+Update Log
+AMS
+get_open_campaign_added_product
+get_open_campaign_not_added_product
+batch_add_products_to_open_campaign
+add_all_products_to_open_campaign
+get_auto_add_new_product_toggle_status
+update_auto_add_new_product_setting
+batch_edit_products_open_campaign_setting
+edit_all_products_open_campaign_setting
+batch_remove_products_open_campaign_setting
+remove_all_products_open_campaign_setting
+get_open_campaign_batch_task_result
+get_optimization_suggestion_product
+batch_get_products_suggested_rate
+get_shop_suggested_rate
+get_targeted_campaign_addable_product_list
+get_recommended_affiliate_list
+get_managed_affiliate_list
+query_affiliate_list
+create_new_targeted_campaign
+get_targeted_campaign_list
+get_targeted_campaign_settings
+update_basic_info_of_targeted_campaign
+edit_product_list_of_targeted_campaign
+edit_affiliate_list_of_targeted_campaign
+terminate_targeted_campaign
+get_performance_data_update_time
+get_shop_performance
+get_product_performance
+get_affiliate_performance
+get_content_performance
+get_campaign_key_metrics_performance
+get_open_campaign_performance
+get_targeted_campaign_performance
+get_conversion_report
+get_validation_list
+get_validation_report
+Video
+get_cover_list
+edit_video_info
+post_video
+get_video_list
+get_video_detail
+delete_video
+get_overview_performance
+get_metric_trend
+get_user_demographics
+get_video_performance_list
+get_prodcut_performance_list
+get_video_detail_performance
+get_video_detail_metric_trend
+get_video_detail_audience_distribution
+get_video_detail_product_performance
+Product
+get_category
+get_attribute_tree
+get_brand_list
+get_item_limit
+get_item_list
+get_item_base_info
+get_item_extra_info
+add_item
+update_item
+delete_item
+init_tier_variation
+update_tier_variation
+get_model_list
+add_model
+update_model
+delete_model
+unlist_item
+update_price
+update_stock
+boost_item
+get_boosted_list
+get_item_promotion
+update_sip_item_price
+search_item
+get_comment
+reply_comment
+category_recommend
+register_brand
+get_recommend_attribute
+get_weight_recommendation
+get_size_chart_list
+get_size_chart_detail
+get_item_violation_info
+get_variations
+get_all_vehicle_list
+get_vehicle_list_by_compatibility_detail
+get_item_content_diagnosis_result
+get_item_list_by_content_diagnosis
+get_kit_item_limit
+add_kit_item
+update_kit_item
+get_kit_item_info
+get_aitem_by_pitem_id
+search_attribute_value_list
+get_main_item_list
+get_direct_item_list
+get_direct_shop_recommended_price
+get_product_certification_rule
+v2.product.publish_item_to_outlet_shop
+get_mart_item_mapping_by_id
+search_unpackaged_model_list
+generate_kit_image
+get_mart_item_by_outlet_item_id
+batch_update_outlet_price
+batch_update_outlet_stock
+get_batch_task_result
+batch_add_item
+batch_publish_item_to_outlet_shop
+get_ssp_detail
+get_ssp_recommendation
+search_ssp_list
+link_item_to_ssp
+unlink_item_from_ssp
+GlobalProduct
+get_category
+get_attribute_tree
+get_brand_list
+get_global_item_limit
+get_global_item_list
+get_global_item_info
+add_global_item
+update_global_item
+delete_global_item
+init_tier_variation
+update_tier_variation
+add_global_model
+update_global_model
+delete_global_model
+get_global_model_list
+support_size_chart
+update_size_chart
+create_publish_task
+get_publishable_shop
+get_publish_task_result
+get_published_list
+update_price
+update_stock
+set_sync_field
+get_global_item_id
+category_recommend
+get_recommend_attribute
+get_shop_publishable_status
+get_variations
+get_size_chart_detail
+get_size_chart_list
+search_global_attribute_value_list
+get_local_adjustment_rate
+update_local_adjustment_rate
+MediaSpace
+init_video_upload
+upload_video_part
+complete_video_upload
+get_video_upload_result
+cancel_video_upload
+upload_image
+Media
+upload_image
+init_video_upload
+upload_video_part
+complete_video_upload
+get_video_upload_result
+cancel_video_upload
+Shop
+get_shop_info
+get_profile
+update_profile
+get_warehouse_detail
+get_shop_notification
+get_authorised_reseller_brand
+get_br_shop_onboarding_info
+get_shop_holiday_mode
+set_shop_holiday_mode
+Merchant
+get_merchant_info
+get_shop_list_by_merchant
+get_merchant_warehouse_location_list
+get_merchant_warehouse_list
+get_warehouse_eligible_shop_list
+get_merchant_prepaid_account_list
+Order
+get_order_list
+get_order_detail
+get_shipment_list
+search_package_list
+get_package_detail
+split_order
+unsplit_order
+cancel_order
+handle_buyer_cancellation
+set_note
+get_pending_buyer_invoice_order_list
+get_buyer_invoice_info
+upload_invoice_doc
+download_invoice_doc
+handle_prescription_check
+get_warehouse_filter_config
+get_booking_list
+get_booking_detail
+generate_fbs_invoices
+get_fbs_invoices_result
+download_fbs_invoices
+get_estimate_cancel_value
+Logistics
+get_shipping_parameter
+get_mass_shipping_parameter
+ship_order
+mass_ship_order
+update_shipping_order
+get_tracking_number
+get_mass_tracking_number
+get_shipping_document_parameter
+create_shipping_document
+get_shipping_document_result
+download_shipping_document
+get_shipping_document_data_info
+get_tracking_info
+get_address_list
+set_address_config
+update_address
+delete_address
+get_channel_list
+update_channel
+get_operating_hours
+get_operating_hour_restrictions
+update_operating_hours
+delete_special_operating_hour
+batch_update_tpf_warehouse_tracking_status
+batch_ship_order
+update_tracking_status
+get_booking_shipping_parameter
+ship_booking
+get_booking_tracking_number
+get_booking_shipping_document_parameter
+create_booking_shipping_document
+get_booking_shipping_document_result
+download_booking_shipping_document
+get_booking_shipping_document_data_info
+get_booking_tracking_info
+download_to_label
+create_shipping_document_job
+get_shipping_document_job_status
+download_shipping_document_job
+update_self_collection_order_logistics
+get_mart_packaging_info
+set_mart_packaging_info
+upload_serviceable_polygon
+check_polygon_update_status
+get_pause_status
+set_pause_status
+FirstMile
+get_unbind_order_list
+get_detail
+generate_first_mile_tracking_number
+bind_first_mile_tracking_number
+unbind_first_mile_tracking_number
+get_tracking_number_list
+get_waybill
+get_channel_list
+get_courier_delivery_channel_list
+get_transit_warehouse_list
+generate_and_bind_first_mile_tracking_number
+bind_courier_delivery_first_mile_tracking_number
+unbind_first_mile_tracking_number_all
+get_courier_delivery_detail
+get_courier_delivery_waybill
+get_courier_delivery_tracking_number_list
+Payment
+get_escrow_detail
+set_shop_installment_status
+get_shop_installment_status
+get_payout_detail
+set_item_installment_status
+get_item_installment_status
+get_payment_method_list
+get_wallet_transaction_list
+get_escrow_list
+get_payout_info
+get_billing_transaction_info
+get_escrow_detail_batch
+generate_income_statement
+get_income_statement
+generate_income_report
+get_income_report
+get_income_overview
+get_income_detail
+Discount
+add_discount
+add_discount_item
+delete_discount
+delete_discount_item
+get_discount
+get_discount_list
+update_discount
+update_discount_item
+end_discount
+get_sip_discounts
+set_sip_discount
+delete_sip_discount
+Bundle Deal
+add_bundle_deal
+add_bundle_deal_item
+get_bundle_deal_list
+get_bundle_deal
+get_bundle_deal_item
+update_bundle_deal
+update_bundle_deal_item
+end_bundle_deal
+delete_bundle_deal
+delete_bundle_deal_item
+Add-On Deal
+add_add_on_deal
+add_add_on_deal_main_item
+add_add_on_deal_sub_item
+delete_add_on_deal
+delete_add_on_deal_main_item
+delete_add_on_deal_sub_item
+get_add_on_deal_list
+get_add_on_deal
+get_add_on_deal_main_item
+get_add_on_deal_sub_item
+update_add_on_deal
+update_add_on_deal_main_item
+update_add_on_deal_sub_item
+end_add_on_deal
+Voucher
+add_voucher
+delete_voucher
+end_voucher
+update_voucher
+get_voucher
+get_voucher_list
+ShopFlashSale
+get_time_slot_id
+create_shop_flash_sale
+get_item_criteria
+add_shop_flash_sale_items
+get_shop_flash_sale_list
+get_shop_flash_sale
+get_shop_flash_sale_items
+update_shop_flash_sale
+update_shop_flash_sale_items
+delete_shop_flash_sale
+delete_shop_flash_sale_items
+Follow Prize
+add_follow_prize
+delete_follow_prize
+end_follow_prize
+update_follow_prize
+get_follow_prize_detail
+get_follow_prize_list
+TopPicks
+get_top_picks_list
+add_top_picks
+update_top_picks
+delete_top_picks
+ShopCategory
+add_shop_category
+get_shop_category_list
+delete_shop_category
+update_shop_category
+add_item_list
+get_item_list
+delete_item_list
+Returns
+get_return_list
+get_return_detail
+confirm
+dispute
+get_available_solutions
+offer
+accept_offer
+convert_image
+upload_proof
+query_proof
+get_return_dispute_reason
+cancel_dispute
+get_shipping_carrier
+upload_shipping_proof
+get_reverse_tracking_info
+AccountHealth
+get_shop_performance
+get_metric_source_detail
+get_penalty_point_history
+get_punishment_history
+get_listings_with_issues
+get_late_orders
+Ads
+get_total_balance
+get_shop_toggle_info
+get_recommended_keyword_list
+get_recommended_item_list
+get_all_cpc_ads_hourly_performance
+get_all_cpc_ads_daily_performance
+(coming offline soon) v2.ads.create_auto_product_ads
+(coming offline soon) v2.ads.edit_auto_product_ads
+get_product_campaign_daily_performance
+get_product_campaign_hourly_performance
+get_product_level_campaign_id_list
+get_product_level_campaign_setting_info
+create_manual_product_ads
+edit_manual_product_ad_keywords
+edit_manual_product_ads
+get_create_product_ad_budget_suggestion
+get_product_recommended_roi_target
+get_ads_fácil_shop_rate
+check_create_gms_product_campaign_eligibility
+create_gms_product_campaign
+edit_gms_product_campaign
+list_gms_user_deleted_item
+edit_gms_item_product_campaign
+get_gms_campaign_performance
+get_gms_item_performance
+Public
+get_shops_by_partner
+get_merchants_by_partner
+get_access_token
+refresh_access_token
+get_token_by_resend_code
+get_shopee_ip_ranges
+Push
+set_app_push_config
+get_app_push_config
+get_lost_push_message
+confirm_consumed_lost_push_message
+SBS
+get_bound_whs_info
+get_current_inventory
+get_expiry_report
+get_stock_aging
+get_stock_movement
+get_fulfillment_mapping_inventory_list
+FBS
+query_br_shop_enrollment_status
+query_br_shop_invoice_error
+query_br_shop_block_status
+query_br_sku_block_status
+Livestream
+upload_image
+create_session
+update_session
+start_session
+end_session
+get_session_detail
+add_item_list
+delete_item_list
+update_item_list
+get_item_count
+get_item_list
+update_show_item
+delete_show_item
+get_show_item
+get_like_item_list
+get_recent_item_list
+get_item_set_list
+get_item_set_item_list
+apply_item_set
+get_session_metric
+get_session_item_metric
+get_latest_comment_list
+post_comment
+ban_user_comment
+unban_user_comment
+BrandPortal
+get_shop_sales_performance_detail
+get_principal_sales_performance_detail
+get_shop_affiliate_performance
+get_principal_affiliate_performance
+get_content_affiliate_performance
+get_shop_livestream_performance
+get_principal_livestream_performance
+get_session_livestream_performance
+get_shop_video_performance
+get_principal_video_performance
+get_clip_video_performance
+Buybox
+get_buybox_models_by_shop_id（only for BR now）
+get_buybox_models_by_model_id（only for BR now）
+get_buybox_shop_performance（only for BR now）
+get_buybox_model_performance（only for BR now）
+update_buybox_model_enrollment（only for BR now）
+BusinessInsights
+get_marketing_hot_listing（only BR now）
+v2.product.get_model_list
+GET
+/api/v2/product/get_model_list
+API Description
+Collapse
+
+Get model list of an item.
+
+Request
+Request Address
+More
+Common Request Parameters
+More
+Request Parameters
+Collapse
+Name
+	
+Type
+	
+Required
+	
+Sample
+	
+Description
+
+
+item_id
+	
+int64
+	
+True
+	
+178312
+	
+The ID of the item
+Request Example
+Collapse
+Copy
+Java
+PHP
+cURL
+Python
+Unirest.setTimeouts(0, 0);
+HttpResponse<String> response = Unirest.get("https://partner.shopeemobile.com/api/v2/product/get_model_list?access_token=access_token&item_id=178312&partner_id=partner_id&shop_id=shop_id&sign=sign&timestamp=timestamp")
+.asString();
+Response
+Response Parameters
+Collapse
+Name
+	
+Type
+	
+Sample
+	
+Description
+
+
+message
+	
+string
+	
+	
+Indicate error details if hit error. Empty if no error happened.
+
+
+warning
+	
+string
+	
+	
+Warning message.
+
+
+request_id
+	
+string
+	
+75c2b01e50764cec8cfdc61e75c1f26d
+	
+The identifier for an API request for error tracking.
+
+
+response
+	
+object
+	
+	
+
+
+tier_variation
+	
+object[]
+	
+	
+Variation config of item.
+
+
+option_list
+	
+object[]
+	
+	
+Option list.
+
+
+option
+	
+string
+	
+testsku1
+	
+Option name.
+
+
+image
+	
+object
+	
+	
+
+
+image_id
+	
+string
+	
+	
+Id of image
+
+
+image_url
+	
+string
+	
+	
+Url of image.
+
+
+name
+	
+string
+	
+	
+Variation name.
+
+
+model
+	
+object[]
+	
+	
+Model list.
+
+
+price_info
+	
+object[]
+	
+	
+
+Price info.
+
+For SG/MY/BR/MX/PL/ES/AR seller: Sellers can set the price with two decimal place, other regions can only set the price as an integer.
+
+
+
+
+currency
+	
+string
+	
+TWD
+	
+
+Currency for the item price.
+
+
+
+current_price
+	
+float
+	
+100.0
+	
+Current price of item.
+
+
+original_price
+	
+float
+	
+100.0
+	
+Original price of item.
+
+
+inflated_price_of_original_price
+	
+float
+	
+100.0
+	
+Original price of item after tax.
+
+
+inflated_price_of_current_price
+	
+float
+	
+100.0
+	
+Current price of item after tax.
+
+
+sip_item_price
+	
+float
+	
+100.0
+	
+
+SIP item price. If item is from SIP primary shop, this field will be returned.
+
+
+
+sip_item_price_source
+	
+string
+	
+manual
+	
+
+SIP item price source, could be manual or auto.If item is from SIP primary shop, this field will be returned.
+
+
+
+sip_item_price_currency
+	
+string
+	
+CNY
+	
+
+The currency of sip_item_price.If item is from SIP primary shop, this field will be returned.
+
+
+
+
+local_price
+	
+float
+	
+122.02
+	
+
+The original price multiplied by the local adjustment rate equals the local price. The local price is denominated in the local currency and is rounded to two decimal places.
+
+<path></path>
+
+
+
+
+local_promotion_price
+	
+float
+	
+122.02
+	
+
+During the promotion period, the CB price is multiplied by the local adjustment rate. Once the promotion starts, the price remains unchanged. During the promotion, the local_promotion_price= current_price, which is denominated in the local currency and retained to two decimal places.
+
+
+<path></path>
+
+
+
+
+model_id
+	
+int64
+	
+2000458802
+	
+Model ID.
+
+
+tier_index
+	
+int32[]
+	
+[0, 1]
+	
+Tier index of this model.
+
+
+promotion_id
+	
+uint64
+	
+0
+	
+Current promotion ID of this model.
+
+
+has_promotion
+	
+boolean
+	
+true
+	
+
+Indicates whether the model is currently under any ongoing promotion.
+
+
+
+
+
+
+model_sku
+	
+string
+	
+blue bag
+	
+SKU of this model. the length should be under 100.
+
+
+model_status
+	
+string
+	
+MODEL_NORMAL
+	
+
+The model status. Should be MODEL_NORMAL or MODEL_UNAVAILABLE. MODEL_NORMAL models can be sold on the buyer's side, and MODEL_UNAVAILABLE models cannot be sold on the buyer's side.
+
+
+
+pre_order
+	
+object
+	
+	
+(Only whitelisted users can use)
+
+
+is_pre_order
+	
+boolean
+	
+false
+	
+Pre-order.
+
+
+days_to_ship
+	
+int32
+	
+3
+	
+The days to ship.
+
+
+stock_info_v2
+	
+object
+	
+	
+
+new stock info.
+
+
+Please check this FAQ for more detail: https://open.shopee.com/faq?top=162&sub=166&page=1&faq=230
+
+
+
+summary_info
+	
+object
+	
+	
+
+stock summary Info
+
+
+
+
+total_reserved_stock
+	
+int32
+	
+	
+
+Stock reserved for promotion.
+
+
+
+
+
+Note: For SIP P Item, will return the total reserved stock for P Item and all A Items under the P Item.
+
+
+
+total_available_stock
+	
+int32
+	
+	
+
+Stock can be sold currently
+
+
+
+
+seller_stock
+	
+object[]
+	
+	
+
+Seller-managed stock
+
+
+
+
+location_id
+	
+string
+	
+	
+
+location id
+
+
+
+
+stock
+	
+int32
+	
+	
+
+stock in the current warehouse
+
+
+
+
+if_saleable
+	
+boolean
+	
+true
+	
+
+To return if the stock of the location id is saleable
+
+
+
+
+shopee_stock
+	
+object[]
+	
+	
+
+Shopee warehouse stock
+
+
+
+
+location_id
+	
+string
+	
+	
+
+location id
+
+
+
+
+stock
+	
+string
+	
+	
+
+stock
+
+
+
+
+advance_stock
+	
+object
+	
+	
+
+Only for PH/VN/ID/MY local selected shops.
+
+
+
+sellable_advance_stock
+	
+int32
+	
+	
+
+Refers to Advance Fulfillment stock that Seller has shipped out and is available to be used to fulfill an order.
+
+
+
+
+in_transit_advance_stock
+	
+int32
+	
+	
+
+Refers to Advance Fulfillment stock that seller has shipped out and is still in transit and unavailable to be used to fulfill an order.
+
+
+
+
+gtin_code
+	
+string
+	
+	
+
+(Only TW seller and BR local seller available) gtin code.
+
+
+
+weight
+	
+string
+	
+"1.1"
+	
+
+The weight of this model, the unit is KG.
+
+If don't set the weight of this model, will use the weight of item by default.
+
+
+
+dimension
+	
+object
+	
+	
+
+The dimension of this model.
+
+If don't set the dimension of this model, will use the dimension of item by default.
+
+
+
+package_height
+	
+int32
+	
+11
+	
+
+The height of package for this model, the unit is CM.
+
+
+
+
+package_length
+	
+int32
+	
+11
+	
+
+The length of package for this model, the unit is CM.
+
+
+
+
+package_width
+	
+int32
+	
+11
+	
+
+The width of package for this model, the unit is CM.
+
+
+
+
+is_fulfillment_by_shopee
+	
+boolean
+	
+	
+
+whether model is fulfillment by shopee
+
+
+
+ssp_id
+	
+int64
+	
+	
+
+The ID of the Standardized Shop Product (SSP) to associate with the default model of the new item. The value must be greater than 0 when provided. If ssp_id is provided, cssp_id must also be provided.
+
+
+
+cssp_id
+	
+int64
+	
+	
+
+The ID of the country-specific Standardized Shop Product (CSSP) to associate with the default model of the new item. The value must be greater than 0 when provided. This field is required when ssp_id is provided.
+
+
+
+standardise_tier_variation
+	
+object[]
+	
+	
+
+Standardise Variation config of item.
+
+
+
+
+variation_id
+	
+int64
+	
+	
+
+Standardise Variation ID
+
+
+
+
+variation_name
+	
+string
+	
+	
+
+Standardise Variation Name
+
+
+
+
+variation_group_id
+	
+int64
+	
+	
+
+Standardise Variation Group ID
+
+
+
+
+variation_option_list
+	
+object[]
+	
+	
+
+Standardise Variation Option List
+
+
+
+
+variation_option_id
+	
+int64
+	
+	
+
+Standardise Option ID
+
+
+
+
+variation_option_name
+	
+string
+	
+	
+
+Standardise Option Name
+
+
+
+
+image_id
+	
+string
+	
+	
+
+ID of image
+
+
+
+
+image_url
+	
+string
+	
+	
+
+URL of image
+
+
+
+
+error
+	
+string
+	
+	
+Indicate error type if hit error. Empty if no error happened.
+Response Example
+Collapse
+Copy
+JSON
+{
+	"message": "-",
+	"warning": "-",
+	"request_id": "75c2b01e50764cec8cfdc61e75c1f26d",
+	"response": {
+		"tier_variation": [
+			{
+				"option_list": [
+					{
+						"option": "testsku1",
+						"image": {
+							"image_id": "-",
+							"image_url": "-"
+						}
+					}
+				],
+				"name": "-"
+			}
+		],
+		"model": [
+			{
+				"price_info": [
+					{
+						"currency": "TWD",
+						"current_price": 100,
+						"original_price": 100,
+						"inflated_price_of_original_price": 100,
+						"inflated_price_of_current_price": 100,
+						"sip_item_price": 100,
+						"sip_item_price_source": "manual",
+						"sip_item_price_currency": "CNY"
+					}
+				],
+				"model_sku": "blue bag",
+				"model_status": "MODEL_NORMAL",
+				"pre_order": {
+					"is_pre_order": false,
+					"days_to_ship": 3
+				},
+				"stock_info_v2": {
+					"summary_info": {
+						"total_reserved_stock": 0,
+						"total_available_stock": 0
+					},
+					"seller_stock": [
+						{
+							"location_id": "-",
+							"stock": 0,
+							"if_saleable": true
+						}
+					],
+					"shopee_stock": [
+						{
+							"location_id": "-",
+							"stock": "-"
+						}
+					]
+				},
+				"gtin_code": "-",
+				"weight": "1.1",
+                                "dimension": {
+                                    "package_height": 11,
+                                    "package_length": 11,
+                                    "package_width": 11
+                },
+			}
+		],
+		"standardise_tier_variation": [
+			{
+				"variation_name": "-",
+				"variation_option_list": [
+					{
+						"variation_option_name": "-",
+						"image_id": "-",
+						"image_url": "-"
+					}
+				]
+			}
+		]
+	},
+	"error": "-"
+}
+Error Codes
+Collapse
+Business Error Codes
+Error
+	
+Error Description
+	
+Details and Guidance
+
+
+error_network
+	
+Inner http call failed
+	
+
+
+error_data
+	
+parse data failed
+	
+
+
+error_data
+	
+data not exist
+	
+
+
+error_param
+	
+parameter invalid
+	
+
+
+error_param
+	
+The information you queried is not found.
+	
+
+
+error_param
+	
+Wrong parameters, detail: {msg}.
+	
+
+
+error_server
+	
+Something wrong. Please try later.
+	
+
+
+error_shop
+	
+shopid is invalid
+	
+
+
+error_param
+	
+request not from gateway
+	
+
+
+error_shop_not_found
+	
+Shop is not found.
+	
+
+
+error_item_not_found
+	
+Item_id is not found.
+	
+
+
+error_param_shop_id_not_found
+	
+Shop_id is not found.
+	
+
+
+error_data
+	
+error data
+	
+
+
+error_inner
+	
+Our system is taking some time to respond, please try later.
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_item_not_found
+	
+Product not found
+	
+
+
+error_inner
+	
+Update item failed {{.error_info}}
+	
+
+
+error_inner
+	
+Update item failed {{.error_info}}
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_auth
+	
+The location_id input is not matched the shop's location_id(more/wrong). Please double check.
+	
+
+
+error_auth
+	
+Lack of location_id, please double check.
+	
+
+
+error_auth
+	
+Please wait for the holiday mode set then to edit item. Please try later.
+	
+
+
+error_auth
+	
+Total stock must be more than reserved stock.
+	
+
+
+error_param
+	
+{{.error_info}}
+	
+
+
+error_auth
+	
+Your shop can not use model level dts
+	
+
+
+error_auth
+	
+You do not have right to use seller location_id, please only fill seller_stock filed.
+	
+
+
+error.param
+	
+Can not update item with stock less than reserved stock
+	
+
+
+error_param
+	
+Can not update item with different stock structure. Can only update seller stock with location id when existing seller stock have location id. Can only update seller stock without location id when existing seller stock without location id.
+	
+
+
+error_param
+	
+Can not update item with stock less than reserve stock
+	
+
+
+error_auth
+	
+Stock should be larger than reserved stock.
+	
+
+
+error_system_busy
+	
+Our system is taking some time to respond, please try later.
+	
+
+
+error_param
+	
+Can not update item with different stock structure. Can only update seller stock with location id when existing seller stock have location id. Can only update seller stock without location id when existing seller stock without location id.
+	
+Common Error Codes
+Error Example
+Collapse
+Copy
+JSON
+{
+    "error": "product.error_param",
+    "message": "invalid field ItemId: value must  Not Null",
+    "request_id": "a48d523f688e20f593446846638360d9"
+}
+API Permissions
+Collapse
+APP types that can call this API.
+ERP System
+Seller In House System
+Product Management
+Accounting And Finance
+Customer Service
+Customized APP
+Ads Service
+Swam ERP
+Livestream Management
+Ads Facil
+Affiliate Marketing Solution Management
+Shopee Video Management
+API Tools
+Collapse
+API Test Tools
+API Access Log
+Update Log
+Collapse
+Date
+	
+Update Details
+
+
+2026-07-31
+	
+promotion_id type change to uint64
+
+
+2025-11-07
+	
+add new response field "has_promotion"
+
+
+2025-09-05
+	
+add to new response field "local_promotion_price"and "local_price"
+
+
+2025-02-17
+	
+Add is_fulfillment_by_shopee
+
+
+2024-11-01
+	
+Update the description of total_reserved_stock to return the total reserved stock for P Item and all A Items under the P Item
+User Guide
+Developer Guide
+API reference
+Push Mechanism
+Shopee Open Platform Data Protection Policy
+Shopee Markets
+Service Market
+Seller Education Hub (Singapore)
+Seller Education Hub (Malaysia)
+Seller Education Hub (Thailand)
+Seller Education Hub (Vietnam)
+Seller Education Hub (Indonesia)
+Seller Education Hub (Philippines)
+Seller Education Hub (Brazil)
+Seller Education Hub (Japan)
+Seller Education Hub (Korea)
+Seller Education Hub (Hongkong)
+虾皮卖家学习中心
+Support
+Announcement
+FAQ
+Raise Ticket
+Copyright @ Shopee 2025

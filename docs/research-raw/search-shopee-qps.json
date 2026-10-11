@@ -1,0 +1,29 @@
+[
+  {
+    "url": "https://apps.apple.com",
+    "name": "Shop: Track, Pay, Discover - App Store - Apple",
+    "snippet": "- Follow stores to get notified about new products, restocks, and price drops. - Save items for later and organize things into collections (like “winter boots” ... Read more",
+    "host_name": "apps.apple.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://play.google.com/store/apps/details?id=com.shopify.arrive&hl=en_US",
+    "name": "Shop: Track, Pay, Discover - Apps on Google Play",
+    "snippet": "All built on Shopify, the world's best commerce platform. - Follow stores to get notified about new products, restocks, and price drops. - Save items for later ... Read more",
+    "host_name": "play.google.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.healthcare.gov",
+    "name": "SHOP Coverage for Employers",
+    "snippet": "Small businesses with 1 to 50 employees can get health coverage for workers in the SHOP Marketplace at Healthcare.gov. Visit today to see options.",
+    "host_name": "www.healthcare.gov",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  }
+]

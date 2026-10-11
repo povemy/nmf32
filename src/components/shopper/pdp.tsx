@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { breadcrumbJsonLd, injectJsonLd, productJsonLd, setMeta } from "@/lib/seo";
 import {
   fetchJson,
   postJson,
@@ -109,6 +110,42 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
       alive = false;
     };
   }, [slug, pSlug]);
+
+  // SEO: meta tags + Product/Breadcrumb JSON-LD from real stored data (Phase 9)
+  useEffect(() => {
+    if (!data) return;
+    const { product, store } = data;
+    const seoTitle = `${product.title} | ${store.name}`;
+    setMeta(seoTitle, product.description?.slice(0, 155) ?? null, `/?sf=${store.slug}&sp=${product.slug}`);
+    injectJsonLd(
+      "sm-jsonld-product",
+      productJsonLd({
+        title: product.title,
+        description: product.description,
+        image: product.images[0] ?? null,
+        priceMinor: product.priceMinor,
+        currency: "MYR",
+        storeName: store.name,
+        storeSlug: store.slug,
+        productSlug: product.slug,
+        ratingAvg: product.ratingAvg,
+        ratingCount: product.ratingCount,
+        urlPath: `/?sf=${store.slug}&sp=${product.slug}`,
+      })
+    );
+    injectJsonLd(
+      "sm-jsonld-breadcrumb",
+      breadcrumbJsonLd([
+        { name: "Market", urlPath: "/" },
+        { name: store.name, urlPath: `/?sf=${store.slug}` },
+        { name: product.title, urlPath: `/?sf=${store.slug}&sp=${product.slug}` },
+      ])
+    );
+    return () => {
+      injectJsonLd("sm-jsonld-product", null);
+      injectJsonLd("sm-jsonld-breadcrumb", null);
+    };
+  }, [data]);
 
   const variant = useMemo(() => data?.product.variants.find((v) => v.id === variantId) ?? null, [data, variantId]);
   const price = variant?.priceMinor ?? data?.product.priceMinor ?? 0;

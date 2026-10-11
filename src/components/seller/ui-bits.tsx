@@ -74,8 +74,10 @@ export type BankAccount = {
 
 export type SellerViewName =
   | "dashboard"
+  | "imports"
   | "products"
   | "orders"
+  | "seo"
   | "wallet"
   | "builder"
   | "domains"

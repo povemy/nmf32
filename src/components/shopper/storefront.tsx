@@ -34,6 +34,7 @@ import {
   type ThemeTokens,
 } from "@/lib/sections";
 import { cn } from "@/lib/utils";
+import { setMeta } from "@/lib/seo";
 import {
   fetchJson,
   fetchEnvelope,
@@ -284,7 +285,8 @@ function AnnouncementBar({ props }: { props: Record<string, unknown> }) {
 // --- 2. header ---------------------------------------------------------------
 
 function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
-  const { store, nav, openCart, sfSearch, onSearch } = rctx;
+  const { store, openCart, sfSearch, onSearch } = rctx;
+  const nav = rctx.nav.nav; // ShopperCtx → nav function
   const sticky = bool(props, "sticky", true);
   const showSearch = bool(props, "showSearch", true);
   const [local, setLocal] = useState(sfSearch);
@@ -437,7 +439,8 @@ function ImageBanner({ props, rctx }: { props: Record<string, unknown>; rctx: Sf
 // --- 5. product_grid -----------------------------------------------------------
 
 function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
-  const { store, nav, sfSearch } = rctx;
+  const { store, sfSearch } = rctx;
+  const nav = rctx.nav.nav; // ShopperCtx → nav function
   const source = str(props, "source", "latest");
   const collectionSlug = str(props, "collectionSlug");
   const limit = num(props, "limit", 8);
@@ -501,7 +504,7 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
       ) : (
         <div className={cn("grid gap-3 sm:gap-4", colClass)}>
           {products.map((p) => (
-            <ProductCard key={p.id} p={p} showStore={false} hidePrice={!showPrice} onOpen={(pp) => openProduct(nav, pp)} />
+            <ProductCard key={p.id} p={p} showStore={false} hidePrice={!showPrice} onOpen={(pp) => openProduct(rctx.nav, pp)} />
           ))}
         </div>
       )}
@@ -792,7 +795,8 @@ const SOCIAL_ICONS: Record<string, typeof Instagram> = {
 };
 
 function SfFooter({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
-  const { store, nav } = rctx;
+  const { store } = rctx;
+  const nav = rctx.nav.nav; // ShopperCtx → nav function
   const aboutText = str(props, "aboutText");
   const links = list<{ label?: string; url?: string }>(props, "links");
   const showSocial = bool(props, "showSocial", true);
@@ -815,7 +819,7 @@ function SfFooter({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
               <li key={i}>
                 <button
                   type="button"
-                  onClick={() => resolveSfLink(l.url ?? "", store, nav)}
+                  onClick={() => resolveSfLink(l.url ?? "", store, rctx.nav)}
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground min-h-[44px]"
                 >
                   {l.label ?? `Link ${i + 1}`}
@@ -868,7 +872,8 @@ function SfFooter({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
 // --- 15. marketplace_strip --------------------------------------------------------------------
 
 function MarketplaceStrip({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
-  const { nav, store } = rctx;
+  const { store } = rctx;
+  const nav = rctx.nav.nav; // ShopperCtx → nav function
   const title = str(props, "title");
   const limit = Math.min(12, Math.max(2, num(props, "limit", 6)));
   const [items, setItems] = useState<ProductCardT[] | null>(null);
@@ -910,7 +915,7 @@ function MarketplaceStrip({ props, rctx }: { props: Record<string, unknown>; rct
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {items.filter((p) => p.storeSlug !== store.slug).slice(0, limit).map((p) => (
-            <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(nav, pp)} />
+            <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(rctx.nav, pp)} />
           ))}
         </div>
       )}
@@ -979,6 +984,20 @@ export default function StorefrontView({ ctx, slug }: { ctx: ShopperCtx; slug: s
       alive = false;
     };
   }, [slug]);
+
+  // SEO: store meta from real records (Phase 9)
+  useEffect(() => {
+    if (!data) return;
+    const { store } = data;
+    setMeta(
+      `${store.name} — Official Store`,
+      store.tagline ?? store.description ?? null,
+      `/?sf=${store.slug}`
+    );
+    return () => {
+      setMeta("SHOPMESH — Multi-vendor Marketplace");
+    };
+  }, [data]);
 
   if (notFound) return <SfUnavailable onBack={() => ctx.nav({ name: "market" })} />;
   if (!data) return <SfLoading />;

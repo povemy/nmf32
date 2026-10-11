@@ -3,7 +3,10 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, slugify, logActivity, notify } from "@/lib/api";
-import { defaultHomeSections, defaultPageSections, toJson } from "@/lib/sections";
+// NOTE (p10-a fix): toJson lives in "@/lib/json" — importing it from "@/lib/sections"
+// (which no longer exports it) broke compilation of this route (and wedged dev).
+import { toJson } from "@/lib/json";
+import { defaultHomeSections, defaultPageSections } from "@/lib/sections";
 import { ensureWalletAccounts } from "@/lib/ledger";
 
 // POST /api/auth/register — seller self-service signup (M02)

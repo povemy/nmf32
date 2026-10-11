@@ -26,6 +26,8 @@ import SellerDomains from "./domains";
 import SellerCoupons from "./marketing";
 import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
+import SellerImports from "./imports";
+import SellerSeo from "./seo";
 import { Toaster } from "@/components/ui/sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -37,6 +39,7 @@ import {
   BadgeCheck,
   Blocks,
   Clock3,
+  DatabaseZap,
   ExternalLink,
   Globe,
   LayoutDashboard,
@@ -45,6 +48,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Search,
   Settings,
   ShieldAlert,
   ShoppingBag,
@@ -56,8 +60,10 @@ import {
 
 const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "imports", label: "Imports & Publish", icon: DatabaseZap },
   { key: "products", label: "Products", icon: Package },
   { key: "orders", label: "Orders", icon: ShoppingCart },
+  { key: "seo", label: "SEO", icon: Search },
   { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
   { key: "domains", label: "Domains", icon: Globe },
@@ -246,6 +252,7 @@ export default function SellerShell() {
             className="mx-auto w-full max-w-6xl p-4 sm:p-6"
           >
             {nav.view === "dashboard" && <SellerDashboard onNavigate={navigate} />}
+            {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
             {nav.view === "wallet" && <SellerWallet />}
@@ -259,6 +266,7 @@ export default function SellerShell() {
             )}
             {nav.view === "domains" && <SellerDomains storeSlug={storeSlug} />}
             {nav.view === "coupons" && <SellerCoupons />}
+            {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}
             {nav.view === "integrations" && <SellerIntegrations />}
             {nav.view === "settings" && <SellerSettings onNavigate={navigate} storeMe={storeMe} refreshStoreMe={refreshStoreMe} />}
           </motion.div>

@@ -1,0 +1,1612 @@
+Open Platform
+Documentation
+Support Center
+Announcement
+Console
+AI Assistant 
+English
+Log In
+
+Tables of Contents
+
+Getting Started
+ > 
+Authorization and Authentication
+The authorization process
+Generating the authorization link
+Redirect URL Domain Validation Requirements
+Notes on Redirect URL Domain Validation
+Authorization Link Examples
+Acquiring authorizations from shop(s)
+Authorizing from a shop account
+Authorizing from a main account
+Getting and using the authorization code
+Getting and refreshing the access_token
+GetAccesstoken
+RefreshAccessToken
+Refreshing the access_token and refresh_token on a shop account
+Refreshing the access_token and refresh_token on a main account
+Canceling authorization
+Canceling authorization by changing the authorization URL
+Canceling authorization on Seller Center
+FAQs on authorization and authentication
+Getting Started
+Introduction
+Developer account registration
+App management
+Service Market
+API calls
+Push Mechanism notifications
+Authorization and Authentication
+Sandbox Testing V2
+Service Partner Program
+V2.0 API Call Flow
+CNSC API Integration Guide
+KRSC API Integration Guide
+V2.0 Data Definition
+Requesting Access to Sensitive Data
+TW New Developer Audit
+BR SPI App Creation User Guide
+BRASIL | Jornada do Desenvolvedor
+Sua trilha começa aqui!
+Desenvolva uma integração
+Crie um login
+Crie a conta de desenvolvedor
+Crie seu App
+Realize testes (Sandbox)
+Publique seu App (Go Live)
+Autorize sua primeira loja
+Dados Sensíveis (Sensitive Data)
+Faça sua primeira chamada de API
+Push Notifications (Webhooks)
+Perguntas Frequentes
+Referências
+Boas práticas antes de abrir um ticket
+API Guidelines and Flows
+Guidelines for Creating Product
+Product creation preparation
+Creating product
+Creating global product
+Publishing global product
+Variant management
+Product base info management
+Stock & Price Management
+Order Management
+First Mile Binding
+Return Refund Management
+SIP best practices
+Shopee On-Platform Ads API Guide
+Shopee Xpress - Package-free Integration Guide
+BRAZIL | Specific Local Guides
+APIs de Order (Pedido)
+APIs de Logistics (Logística)
+Como subir a NF-e através da OpenAPI e Mascaramento de Dados
+AUTO PARTS: COMPATIBILIDADE DE AUTOPEÇAS
+Shopee Entrega Direta
+Fulfilled by Shopee (BR)
+Logística do Vendedor (API de Cotação)
+Turbo Delivery (Quotation API)
+Ferramenta de Log da Open Platform
+Instant Mart Integration Guide
+Livestream API Integration Guide
+Shopee AMS API Integration Guide
+Shopee Video API Integration Guide
+Brand Portal Service API Integration Guide
+Instant Order Fulfillment Guide
+Terms of Use
+Terms of Service
+Data Protection Policy
+Platform Partner Rules
+TW Developer Screening
+Chatbot Terms of Service
+Declare seus IPs
+Authorization and Authentication
+Last Updated: 2026-07-23
+Language Supported: English / 简体中文 / 繁體中文 / Português (Brasil) / ไทย
+
+
+
+
+Authorization is an important step to using Open API. You need to be authorized by the seller in order for your App to call non-public APIs required for shop management.
+
+
+
+
+You will be authenticated based on the public parameters passed to Open API. If the authentication fails, your call will fail and an error will be returned.
+
+⚠️ Note
+Authorization Validity
+The maximum validity period for each authorization is 365 days. Sellers may customize the authorization expiration time during the authorization process. Once the authorization expires, you will need to contact the seller to re-authorize your App.
+
+SIP Shops Authorization
+If a CB SIP primary shop grants authorization to an application, all SIP linked shops will automatically receive the same authorization. However, API access permissions for linked shops are limited. For more details, please refer to the FAQ .
+The authorization process
+
+
+
+
+There are 3 steps to complete authorization: generating the authorization link, acquiring authorization from shop(s), and getting and refreshing the access_token.
+
+
+
+
+These will be explained in detail below, along with information on what to prepare before authorization, details of the authorization process, and how to use the information returned after authorization to pass the authentication of the platform.
+
+Generating the authorization link
+
+
+
+
+To improve integration efficiency, the platform provides a new method for generating authorization links. The authorization link is composed of a fixed authorization URL and authorization parameters. All types of Apps can generate authorization links according to the specifications below.
+
+
+
+
+Note:
+
+For Seller in House System Apps, you can log in to the Open Platform > App list > click “Authorize” > fill in Redirect URL to generate an authorization link.
+For all other type of App: there is no "Authorize" display, you need to create an authorization link with the following specifications. The authorization link comprises a fixed authorization URL and other required parameters.
+
+
+
+
+(Seller in House System Apps)
+
+
+
+
+(Other Apps)
+
+
+
+
+
+
+
+Fixed authorization URL:
+
+Environment	Region	URL
+Production	Global (excluding Mainland China and Brazil)	https://open.shopee.com/auth
+Mainland China	https://open.shopee.cn/auth
+Brazil	https://open.shopee.com.br/auth
+Sandbox	Global (excluding Mainland China and Brazil)	https://open.sandbox.test-stable.shopee.com/auth
+Mainland China	https://open.sandbox.test-stable.shopee.cn/auth
+Brazil	https://open.sandbox.test-stable.shopee.com.br/auth
+
+
+
+
+Other required parameters:
+
+Parameter name	Type	Required	Description
+partner_id	int	Yes	partner_id obtained from the App.
+auth_type	string	Yes	The role type to be authorized. Enum values:- seller: used when authorizing a shop or merchant;- supplier: used when authorizing suppliers (for SCS users);- user: used when authorizing users (for livestream-related apps, seehttps://open.shopee.com/announcements/1190 。
+redirect_uri	string	Yes	The URL where the authorization code (code) is received after the seller completes authorization.
+Production environment: If the production callback URL domain of the app is empty, the redirect_uri domain is not validated; otherwise, it must match the configured production callback URL domain.
+Sandbox environment: If the sandbox callback URL domain is empty, the redirect_uri domain is not validated; otherwise, it must match the configured sandbox callback URL domain.
+response_type	string	Yes	The authorization type. Fixed value: "code".
+state	string	No                     	A random, unguessable string used to prevent CSRF attacks. It will be returned as-is to the redirect_uri after authorization is completed.
+Redirect URL Domain Validation Requirements
+
+
+
+
+To ensure seller data security, the platform has introduced domain validation for the callback address (redirect_uri) in authorization links. All developers are required to configure the Test Redirect URL Domain and Live Redirect URL Domain for each App in the Console.
+
+
+
+
+The redirect_uri parameter mentioned above refers to the callback URL configured in the App information page. You can view it as follows:
+
+
+
+
+
+
+
+Notes on Redirect URL Domain Validation
+
+
+
+
+1. For Apps that have already been created but have not yet declared a callback URL domain, developers should log in to the Console and complete the configuration in the App edit page as soon as possible. Before the configuration is completed, the platform will not enforce domain validation, and the existing authorization process will not be affected.
+
+2. If the domain of the redirect_uri parameter (or the redirect parameter in legacy links) does not match the Redirect URL Domain configured in the Console when generating an authorization link, the platform will return the following error:
+
+"The domain of redirect_uri is not consistent with the Redirect URL Domain declared in console"
+(The domain of the callback URL does not match the Redirect URL Domain declared in the Console.)
+
+
+
+
+Authorization Link Examples
+
+
+
+
+The following are examples of authorization links for both the Production and Sandbox environments for your reference.
+
+
+
+
+Production Environment:
+
+https://open.shopee.com/auth?partner_id=10090&auth_type=seller&redirect_uri=https://open.shopee.com&response_type=code
+
+
+
+
+Sandbox Environment:
+
+https://open.test-stable.shopee.com/auth?partner_id=1000016&auth_type=seller&redirect_uri=https://open.test-stable.shopee.com&response_type=code
+
+⚠️ NoteThe timestamp used to calculate the sign is only valid for 5 minutes. After the timestamp and the sign expire, the authorization link will no longer be valid, and you need to generate a new link.
+Acquiring authorizations from shop(s)
+
+
+
+
+After you share the authorization link with the seller, the seller needs to log in to their account, fill in the verification code sent to their mobile phone, and enter the authorization page.
+
+
+
+
+Account types:
+
+Shop account: can authorize a single shop;
+Main account: can authorize multiple merchants / shops;
+Sub-account: cannot log in to the authorization page.
+Authorizing from a shop account
+
+
+
+
+1. The seller fills in their login details and selects Log In.
+
+
+
+
+2. The seller fills in the verification code sent to their mobile phone and selects Verify.
+
+
+
+
+3. Upon logging in, the seller selects Confirm Authorization.
+
+
+
+
+4. The system will display an authorization validity period selector. Sellers can choose from preset durations (7 days, 30 days, 90 days, 180 days, or 365 days), or select “Customize Expiration Time” to set any expiration date within 365 days.
+
+
+
+
+5. After authorization is completed, the frontend page will redirect to the redirect_uri specified in the authorization link, along with the authorization code (code) and shop ID (shop_id):
+
+https://open.shopee.com/?code=xxxxxxxxxx&shop_id=xxxxxx
+
+Authorizing from a main account
+
+
+
+
+1. To log in to a main account, the seller selects Switch to Sub Account on the login page.
+
+
+
+
+2. The seller can then fill in their login details and select Log In.
+
+
+
+
+3. The seller selects the shops that need to be authorized.
+
+Note: For cross border sellers, If you need to call the merchant’s API, please remind the seller to select the Auth Merchant checkbox.
+
+Local main account authorization:
+
+4. If the authorization checkbox is not selected, the system will display a reminder popup.
+
+5. The seller selects Confirm Authorization to confirm their selection.
+
+6. After authorization is completed, the frontend page will redirect to the redirect_uri specified in the authorization link, along with the authorization code (code) and main account ID (main_account_id):
+
+https://open.shopee.com/?code=xxxxxx&main_account_id=xxxxxx
+
+Getting and using the authorization code
+
+
+
+
+After the seller completes authorization, the frontend page will redirect to the redirect_uri specified in the authorization link, along with the authorization code (code) and shop_id / main_account_id. Taking main_account_id as an example:
+
+https://open.shopee.com/?code=xxxxxx&main_account_id=xxxxxx
+
+
+
+
+You can use this authorization code (code) to obtain the initial access token (access_token).
+
+
+
+
+Parameters Returned in the Redirect URL
+
+Parameter name	Type	Description
+code	string	Returned when the call is successful. This code is used to obtain access_token and refresh_token. It is valid for only once and expires after 10 minutes.
+shop_id	int	The ID of the shop that just granted authorization to your App. Returned after authorization was done on a shop account.
+main_account_id	int	The ID of the main account that just granted authorization to your shop. . Returned after authorization was done on a main account.
+
+
+
+
+Note: If the domain of the redirect_uri parameter (or the redirect parameter in legacy links) does not match the Redirect URL Domain declared in the Console when generating the authorization link, the following error will be returned:
+
+“The domain of redirect_uri is not consistent with the Redirect URL Domain declared in console”
+(The domain of the callback URL is inconsistent with the Redirect URL Domain declared in the Console.)
+
+Getting and refreshing the access_token
+
+
+
+
+The access_token is a dynamic token required for calling non-public APIs. It is valid for 4 hours and can be used multiple times within its validity period.
+
+
+
+
+Before the access_token expires, you need to use the refresh_token to call the Refresh Access Token API (RefreshAccessToken) to obtain a new access_token. The refresh_token is valid for 30 days.
+
+
+
+
+⚠️ Note
+
+The access_token and refresh_token corresponding to each shop_id / merchant_id / user_id / supplier_id must be stored separately;
+After a new access_token is generated, the previous access_token will remain valid for another 5 minutes;
+Re-authorization will refresh both the refresh_token and access_token;
+The RefreshAccessToken API must be called within the authorization validity period;
+If the latest available refresh_token and access_token are lost, please refer to the relevant FAQ.
+GetAccesstoken
+
+
+
+
+After successful authorization, use the code and shop_id or main_account_id in the redirect URL to call this API. This helps you obtain the shop_id, merchant_id, access_token and refresh_token.
+
+
+
+
+Request Information
+
+Path	Details
+Production Environment	https://partner.shopeemobile.com/api/v2/auth/token/get
+Sandbox Environment	https://openplatform.sandbox.test-stable.shopee.sg/api/v2/auth/token/get
+Request Method	POST
+
+
+
+
+Common parameters
+
+Parameter name	Type	Required	Description
+sign	string	True	The signature obtained by sign base string (order: partner_id, api path, timestamp...) HMAC-SHA256 hashing with the partner_key.
+partner_id	int	True	The partner_id obtained from the App. This partner_id is put into the query.
+timestamp	int	True	Timestamp, valid for 5 minutes.
+
+
+
+
+Request parameters:
+
+Parameter name	Type	Required	Description
+code	string	True	The code in the redirect URL after authorization. It is only valid once and expires after 10 minutes.
+partner_id	int	True	The partner_id obtained from the App. This partner_id is put into the request body.
+shop_id	int	
+True, input 1 only.	For the shop_id authorized to you, either the shop_id or main_account_id can be selected as the input parameter.
+main_account_id	int	For the main_account_id authorized to you, either the shop_id or main_account_id can be selected as the input parameter.
+
+
+
+
+Response parameters:
+
+Parameter name	Type	Description
+request_id	string	ID of API requests; always returned. Used to diagnose problems.
+error	string	Error codes for API requests; always returned.When the API call is successful, the error code returned is empty.
+refresh_token	string	Returned when the API call is successful.Use refresh_token to get a new access_token. Valid for each shop_id and merchant_id respectively, for 30 days.
+access_token	string	Returned when the API call is successful.A dynamic token that can be used multiple times and expires after 4 hours.
+expire_in	int	Returned when the API call is successful.The validity period of the access_token, in seconds.
+message	string	Always returned. Provides detailed error information.
+merchant_id_list	int[ ]	Returned when there is main_account_id in the input parameter, including all the merchant_ids authorized this time under the main account.
+shop_id_list	int[ ]	Returned when there is main_account_id in the input parameter, including all shop_ids authorized this time under the main account.
+supplier_id_list	int[]	Returned when auth_type=supplier
+user_id_list	int[]	Returned when auth_type=user
+
+
+
+
+Calculating the sign parameter
+
+
+
+
+The sign parameter is not only a component of the authorization link, but also a parameter used for authentication each time it is called. This section will explain how to create a sign base string and calculate the authentication signature through HMAC-SHA256.
+
+
+
+
+Creating a sign base string
+
+There are 3 types of APIs that require the use of different parameters to create the sign base string. (consistent with its common parameters).
+
+
+
+
+Concatenate the API path (without host) and the common parameters below into a single sign base string in the following order:
+
+
+
+
+For Shop APIs: partner_id, api path, timestamp, access_token, shop_id
+For Merchant APIs: partner_id, api path, timestamp, access_token, merchant_id
+For Public APIs: partner_id, api path, timestamp
+
+
+
+
+Calculating the authentication signature
+
+Use HMAC-SHA256 to hash the sign base string, and use the partner key as the encryption key. The hexadecimal all-lowercase hash value is the authentication signature.
+
+
+
+
+Python Code Demo:
+
+Python
+
+import hmac
+import json
+import time
+import requests
+import hashlib
+
+
+def shop_auth():
+    timest = int(time.time())
+    host = "https://partner.shopeemobile.com"
+    path = "/api/v2/shop/auth_partner"
+    redirect_url = "https://www.baidu.com/"
+    partner_id = 80001
+    tmp = "test...."
+    partner_key = tmp.encode()
+    tmp_base_string = "%s%s%s" % (partner_id, path, timest)
+    base_string = tmp_base_string.encode()
+    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+    ##generate api
+    url = host + path + "?partner_id=%s&timestamp=%s&sign=%s&redirect=%s" % (partner_id, timest, sign, redirect_url)
+    print(url)
+
+
+
+
+
+Go Code Demo:
+
+Go
+
+func auth_shop(){
+	timest := strconv.FormatInt(time.Now().Unix(),10)
+	host := "https://openplatform.sandbox.test-stable.shopee.sg"
+	path := "/api/v2/shop/auth_partner"
+	redirectUrl := "https://www.baidu.com/"
+	partnerId := strconv.Itoa(2006566)
+	partnerKey := "1391fd986fe8ec7569bebed75b0c33ee35eb5a305bed7038657a5cd5f75b1c88"
+	baseString := fmt.Sprintf("%s%s%s", partnerId,path,timest)
+	h := hmac.New(sha256.New,[]byte(partnerKey))
+	h.Write([]byte(baseString))
+	sign := hex.EncodeToString(h.Sum(nil))
+	url := fmt.Sprintf(host+path+"?partner_id=%s&timestamp=%s&sign=%s&redirect=%s", partnerId,timest,sign, redirectUrl)
+	fmt.Println(url)
+}
+
+
+
+
+Java Code Demo:
+
+Java
+
+    //generate auth url
+    public static void shop_auth(){
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://partner.shopeemobile.com";
+        String path = "/api/v2/shop/auth_partner";
+        String redirect_url = "https://www.baidu.com/";
+        long partner_id = 123456L;
+        String tmp_partner_key = "...";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        String sign = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = String.format("%064x",new BigInteger(1,mac.doFinal(base_string)));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s&redirect=%s", partner_id,timest, sign, redirect_url);
+        System.out.println(url);
+    }
+
+
+
+
+PHP Code Demo:
+
+PHP
+
+<?php 
+
+
+function authShop($partnerId, $partnerKey) {   
+    global $host;
+    $path = "/api/v2/shop/auth_partner";
+    $redirectUrl = "https://www.baidu.com/";
+
+    $timest = time();
+    $baseString = sprintf("%s%s%s", $partnerId, $path, $timest);
+    $sign = hash_hmac('sha256', $baseString, $partnerKey);
+    $url = sprintf("%s%s?partner_id=%s&timestamp=%s&sign=%s&redirect=%s", $host, $path, $partnerId, $timest, $sign, $redirectUrl);
+    return $url;
+}
+
+$host="https://openplatform.sandbox.test-stable.shopee.sg";
+
+$partnerId = 847892;
+$partnerKey = "57615053704d6470644f554a78656d50484143644964436a5568777544524579";
+
+echo authShop($partnerId, $partnerKey);
+?>
+
+
+
+
+
+
+
+GetAccesstoken Demo
+
+
+
+
+Python Code Demo:
+
+Python
+
+print(shop_auth())
+# first time request token
+def get_token_shop_level(code, partner_id, tmp_partner_key, shop_id):
+    timest = int(time.time())
+    host = "https://partner.shopeemobile.com"
+    path = "/api/v2/auth/token/get"
+    body = {"code": code, "shop_id": shop_id, "partner_id": partner_id}
+    tmp_base_string = "%s%s%s" % (partner_id, path, timest)
+    base_string = tmp_base_string.encode()
+    partner_key = tmp_partner_key.encode()
+    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+    url = host + path + "?partner_id=%s&timestamp=%s&sign=%s" % (partner_id, timest, sign)
+    # print(url)
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(url, json=body, headers=headers)
+    ret = json.loads(resp.content)
+    access_token = ret.get("access_token")
+    new_refresh_token = ret.get("refresh_token")
+    return access_token, new_refresh_token
+
+
+def get_token_account_level(code, partner_id, tmp_partner_key, main_account_id):
+    timest = int(time.time())
+    host = "https://openplatform.sandbox.test-stable.shopee.sg"
+    path = "/api/v2/auth/token/get"
+    body = {"code": code, "main_account_id": main_account_id, "partner_id": partner_id}
+    tmp_base_string = "%s%s%s" % (partner_id, path, timest)
+    base_string = tmp_base_string.encode()
+    partner_key = tmp_partner_key.encode()
+    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+    url = host + path + "?partner_id=%s&timestamp=%s&sign=%s" % (partner_id, timest, sign)
+
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(url, json=body, headers=headers)
+    ret = json.loads(resp.content)
+    access_token = ret.get("access_token")
+    new_refresh_token = ret.get("refresh_token")
+    return access_token, new_refresh_token
+
+
+
+
+Java Code Demo:
+
+Java
+
+import com.alibaba.fastjson.JSONObject;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.io.*;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.util.HashMap;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Map;
+import com.alibaba.fastjson.JSON;
+
+
+public class shop_auth {
+    public static void main(String[] args) throws ParseException, IOException {
+        shop_auth();
+        //get_token_shop_level(code,partner_id,partner_key,shop_id);
+    }
+    //generate auth url
+    public static void shop_auth(){
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://partner.shopeemobile.com";
+        String path = "/api/v2/shop/auth_partner";
+        String redirect_url = "https://www.baidu.com/";
+        long partner_id = 123456L;
+        String tmp_partner_key = "...";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        String sign = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = String.format("%064x",new BigInteger(1,mac.doFinal(base_string)));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s&redirect=%s", partner_id,timest, sign, redirect_url);
+        System.out.println(url);
+    }
+
+    //shop request for access token for the first time
+    public static String[] get_token_shop_level(String code,long partner_id,String tmp_partner_key,long shop_id) throws ParseException,IOException{
+        String[] res = new String[2];
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://partner.shopeemobile.com";
+        String path = "/api/v2/auth/token/get";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        BigInteger sign = null;
+        String result = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = new BigInteger(1,mac.doFinal(base_string));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String tmp_url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s", partner_id,timest, String.format("%032x",sign));
+        URL url = new URL(tmp_url);
+        HttpURLConnection conn = null;
+        PrintWriter out = null;
+        BufferedReader in = null;
+        try {
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            Map<String,Object> map = new HashMap<>();
+            map.put("code",code);
+            map.put("shop_id",shop_id);
+            map.put("partner_id",partner_id);
+            String json = JSON.toJSONString(map);
+            conn.connect();
+            out = new PrintWriter(conn.getOutputStream());
+            out.print(json);
+            out.flush();
+            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String line = "";
+            while((line=in.readLine())!=null){
+                result +=line;
+            }
+            JSONObject jsonObject = JSONObject.parseObject(result);
+            res[0] = (String) jsonObject.get("access_token");
+            res[1] = (String) jsonObject.get("refresh_token");
+        } catch(Exception e){
+            e.printStackTrace();
+        }finally {
+            try{
+                if(out != null){
+                    out.close();
+                }
+                if(in != null){
+                    in.close();
+                }
+            }catch (IOException ioe){
+                ioe.printStackTrace();
+            }
+        }
+        return res;
+    }
+
+    //main account request for the access token for the first time
+    public static String[] get_token_account_level(String code,long partner_id,String tmp_partner_key,long main_account_id) throws ParseException,IOException{
+        String[] res = new String[2];
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://openplatform.sandbox.test-stable.shopee.sg";
+        String path = "/api/v2/auth/token/get";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        BigInteger sign = null;
+        String result = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = new BigInteger(1,mac.doFinal(base_string));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String tmp_url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s", partner_id,timest, String.format("%032x",sign));
+        URL url = new URL(tmp_url);
+        HttpURLConnection conn = null;
+        PrintWriter out = null;
+        BufferedReader in = null;
+        try {
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            Map<String,Object> map = new HashMap<>();
+            map.put("code",code);
+            map.put("main_account_id",main_account_id);
+            map.put("partner_id",partner_id);
+            String json = JSON.toJSONString(map);
+            conn.connect();
+            out = new PrintWriter(conn.getOutputStream());
+            out.print(json);
+            out.flush();
+            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String line = "";
+            while((line=in.readLine())!=null){
+                result +=line;
+            }
+            JSONObject jsonObject = JSONObject.parseObject(result);
+            res[0] = (String) jsonObject.get("access_token");
+            res[1] = (String) jsonObject.get("refresh_token");
+        } catch(Exception e){
+            e.printStackTrace();
+        }finally {
+            try{
+                if(out != null){
+                    out.close();
+                }
+                if(in != null){
+                    in.close();
+                }
+            }catch (IOException ioe){
+                ioe.printStackTrace();
+            }
+        }
+        return res;
+    }
+
+
+
+
+PHP Code Demo:
+
+PHP
+
+<?php 
+
+function getTokenShopLevel($code, $partnerId, $partnerKey, $shopId) {
+    global $host;
+    $path = "/api/v2/auth/token/get";
+    
+    $timest = time();
+    $body = array("code" => $code,  "shop_id" => $shopId, "partner_id" => $partnerId);
+    $baseString = sprintf("%s%s%s", $partnerId, $path, $timest);
+    $sign = hash_hmac('sha256', $baseString, $partnerKey);
+    $url = sprintf("%s%s?partner_id=%s&timestamp=%s&sign=%s", $host, $path, $partnerId, $timest, $sign);
+    
+
+    $c = curl_init($url);
+    curl_setopt($c, CURLOPT_POST, 1);
+    curl_setopt($c, CURLOPT_POSTFIELDS, json_encode($body));
+    curl_setopt($c, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($c, CURLOPT_RETURNTRANSFER, 1);
+    $resp = curl_exec($c);
+    echo "raw result: $resp";
+
+    $ret = json_decode($resp, true);
+    $accessToken = $ret["access_token"];
+    $newRefreshToken = $ret["refresh_token"];
+    echo "\naccess_token: $accessToken, refresh_token: $newRefreshToken raw: $ret"."\n";
+    return $ret;
+}
+
+
+function getTokenAccountLevel($code, $partnerId, $partnerKey, $mainAccountId) {
+    global $host;
+    $path = "/api/v2/auth/token/get";
+    
+    $timest = time();
+    $body = array("code" => $code,  "main_account_id" => $mainAccountId, "partner_id" => $partnerId);
+    $baseString = sprintf("%s%s%s", $partnerId, $path, $timest);
+
+    $sign = hash_hmac('sha256', $baseString, $partnerKey);
+    $url = sprintf("%s%s?partner_id=%s&timestamp=%s&sign=%s", $host, $path, $partnerId, $timest, $sign);
+
+    $c = curl_init($url);
+    curl_setopt($c, CURLOPT_POST, 1);
+    curl_setopt($c, CURLOPT_POSTFIELDS, json_encode($body));
+    curl_setopt($c, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($c, CURLOPT_RETURNTRANSFER, 1);
+    $result = curl_exec($c);
+    echo "\nraw result ".$result."\n";
+
+    $ret = json_decode($result, true);
+    $accessToken = $ret["access_token"];
+    $newRefreshToken = $ret["refresh_token"];
+    echo "\naccess_token: ".$accessToken.", refresh_token: ".$newRefreshToken."\n";
+    return $ret;
+}
+
+$host="https://partner.shopeemobile.com";
+
+$partnerId = 847892;
+$partnerKey = "57615053704d6470644f554a78656d50484143644964436a5568777544524579";
+
+$code="494d7a4a4f5a66524556776f66425453";
+
+// $shopId=200520705;
+// getTokenShopLevel($code, $partnerId, $partnerKey, $shopId);
+
+$accountId=19479;
+getTokenAccountLevel($code, $partnerId, $partnerKey, $accountId)
+
+?>
+RefreshAccessToken
+
+
+
+
+Before the access_token expires, use the refresh_token to call this API to obtain a new access_token and refresh_token. The new refresh_token must be used for the next refresh request.
+
+
+
+
+Request Information
+
+Path	Details
+Production Environment	https://partner.shopeemobile.com/api/v2/auth/access_token/get
+Sandbox Environment	https://openplatform.sandbox.test-stable.shopee.sg/api/v2/auth/access_token/get
+Request Method	POST
+⚠️ Note
+For the same main_account_id, the initial access_token and refresh_token obtained from GetAccessToken are identical. After calling the RefreshAccessToken API separately for each shop_id and merchant_id, each shop_id and merchant_id will generate its own independent new access_token and refresh_token.
+For example:
+1. The initial access_token / refresh_token obtained from GetAccessToken is assigned to 7 shop_ids and 3 merchant_ids.
+2. After the initial access_token expires, you use the initial refresh_token to call RefreshAccessToken,and obtain 10 independent sets of access_token and refresh_token for each shop_id and merchant_id.
+3. After this, shop_id and merchant_id will no longer share any access_token or refresh_token.
+
+
+
+
+Public parameters:
+
+
+
+
+Consistent with the common parameters of the GetAccessToken API.
+
+Parameter name	Type	Required	Description
+sign	string	True	The signature obtained by sign base string (order: partner_id, api path, timestamp...) HMAC-SHA256 hashing with the partner_key.
+partner_id	int	True	The partner_id obtained from the APP. This partner_id is put into the query.
+timestamp	int	True	Timestamp, valid for 5 minutes.
+
+
+
+
+Request parameters:
+
+Parameter name	Type	Required	Description
+refresh_token	string	True	Use refresh_token to get a new access_token. Each refresh_token is valid for 30 days, and can only be used once by either a shop_id or merchant_id.
+partner_id	int	True	The partner_id obtained from the App. This partner_id is inserted into the body.
+shop_id	int	
+
+Yes, input 1 only.	The shop_id of the main account that granted authorization to your App. Only the shop_id or merchant_id can be selected as the input parameter, and they must be refreshed separately.
+
+merchant_id	int	The merchant_id for identifying the main account that granted authorization to your App. Only the shop_id or merchant_id can be selected as the input parameter, and they must be refreshed separately.
+
+
+
+
+
+Response parameters:
+
+Parameter name	Type	Description
+request_id	string	ID of API requests; always returned.Used to diagnose problems.
+
+error	string	Error codes for API requests; always returned.When the API call is successful, the error code returned is empty.
+refresh_token	string	New refresh_tokenReturned when the API call is successful.Use a refresh_token to get a new access_token.Each refresh_token is valid for 30 days, and can only be used once by either a shop_id or merchant_id.
+access_token	string	Returned when the API call is successful.Each new access_token is a dynamic token that can be used multiple times. It expires after 4 hours.
+expire_in	int	Returned when the API call is successful.The validity period of the access_token, in seconds.
+message	string	Always returned. Provides detailed error information.
+merchant_id	int	Returned when the API call is successful.The merchant_id for this refresh, for identifying each merchant.
+shop_id	int	Returned when the API call is successful.The shop_id for this refresh
+partner_id	int	Returned when the API call is successful.The partner_id you used for this refresh
+supplier_id_list	int[]	Return when auth_type=supplier
+user_id_list	int[]	Return when auth_type=user
+
+
+
+
+RefreshAccessToken Demo
+
+
+
+
+Python Code Demo:
+
+Python
+
+# refresh token
+
+
+def get_access_token_shop_level(shop_id, partner_id, tmp_partner_key, refresh_token):
+    timest = int(time.time())
+    host = "https://openplatform.sandbox.test-stable.shopee.sg"
+    path = "/api/v2/auth/access_token/get"
+    body = {"shop_id": shop_id, "refresh_token": refresh_token,"partner_id":partner_id}
+    tmp_base_string = "%s%s%s" % (partner_id, path, timest)
+    base_string = tmp_base_string.encode()
+    partner_key = tmp_partner_key.encode()
+    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+    url = host + path + "?partner_id=%s&timestamp=%s&sign=%s" % (partner_id, timest, sign)
+    # print(url)
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(url, json=body, headers=headers)
+    ret = json.loads(resp.content)
+    access_token = ret.get("access_token")
+    new_refresh_token = ret.get("refresh_token")
+    return access_token, new_refresh_token
+
+
+def get_access_token_merchant_level(merchant_id, partner_id, tmp_partner_key, refresh_token):
+    timest = int(time.time())
+    host = "https://openplatform.sandbox.test-stable.shopee.sg"
+    path = "/api/v2/auth/access_token/get"
+    body = {"merchant_id": merchant_id, "refresh_token": refresh_token}
+    tmp_base_string = "%s%s%s" % (partner_id, path, timest)
+    base_string = tmp_base_string.encode()
+    partner_key = tmp_partner_key.encode()
+    sign = hmac.new(partner_key, base_string, hashlib.sha256).hexdigest()
+    url = host + path + "?partner_id=%s&timestamp=%s&sign=%s" % (partner_id, timest, sign)
+
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(url, json=body, headers=headers)
+    ret = json.loads(resp.content)
+    access_token = ret.get("access_token")
+    new_refresh_token = ret.get("refresh_token")
+    return access_token, new_refresh_token
+
+partner_id = 2006566
+partner_key = "1a78dde5d6c3342f56ac939cbdd81607654c0e87725e118736ba5e3ae31c579c"
+shop_id = 602226924
+main_account_id = 31219
+merchant_id = 45719
+code = "c01204cada7b4cd0e4688154f5a256ca"
+print(shop_auth())
+# access_token,refresh_token = get_token_shop_level(code,partner_id,partner_key,602226924)
+# print(access_token)
+# print(refresh_token)
+# print(get_access_token_shop_level(shop_id,partner_id,partner_key,refresh_token))
+
+
+access_token,refresh_token = get_token_account_level(code,partner_id,partner_key,main_account_id)
+print(access_token)
+print(refresh_token)
+print(get_access_token_merchant_level(merchant_id,partner_id,partner_key,refresh_token))
+   
+
+
+
+
+Java Code Demo:
+
+Java
+
+
+    //shop refresh the access token
+    public static String[] get_access_token_shop_level(String refresh_token,long partner_id,String tmp_partner_key,long shop_id) throws ParseException,IOException{
+        String[] res = new String[2];
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://partner.shopeemobile.com";
+        String path = "/api/v2/auth/access_token/get";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        BigInteger sign = null;
+        String result = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = new BigInteger(1,mac.doFinal(base_string));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String tmp_url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s", partner_id,timest, String.format("%032x",sign));
+        URL url = new URL(tmp_url);
+        HttpURLConnection conn = null;
+        PrintWriter out = null;
+        BufferedReader in = null;
+        try {
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            Map<String,Object> map = new HashMap<>();
+            map.put("refresh_token",refresh_token);
+            map.put("shop_id",shop_id);
+            map.put("partner_id",partner_id);
+            String json = JSON.toJSONString(map);
+            conn.connect();
+            out = new PrintWriter(conn.getOutputStream());
+            out.print(json);
+            out.flush();
+            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String line = "";
+            while((line=in.readLine())!=null){
+                result +=line;
+            }
+            JSONObject jsonObject = JSONObject.parseObject(result);
+            res[0] = (String) jsonObject.get("access_token");
+            res[1] = (String) jsonObject.get("refresh_token");
+        } catch(Exception e){
+            e.printStackTrace();
+        }finally {
+            try{
+                if(out != null){
+                    out.close();
+                }
+                if(in != null){
+                    in.close();
+                }
+            }catch (IOException ioe){
+                ioe.printStackTrace();
+            }
+        }
+        return res;
+    }
+
+    //merchant refresh the access token
+    public static String[] get_access_token_merchant_level(String refresh_token,long partner_id,String tmp_partner_key,long merchant_id) throws ParseException,IOException{
+        String[] res = new String[2];
+        long timest = System.currentTimeMillis() / 1000L;
+        String host = "https://partner.shopeemobile.com";
+        String path = "/api/v2/auth/access_token/get";
+        String tmp_base_string = String.format("%s%s%s", partner_id, path, timest);
+        byte[] partner_key;
+        byte[] base_string;
+        BigInteger sign = null;
+        String result = "";
+        try {
+            base_string = tmp_base_string.getBytes("UTF-8");
+            partner_key = tmp_partner_key.getBytes("UTF-8");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secret_key = new SecretKeySpec(partner_key, "HmacSHA256");
+            mac.init(secret_key);
+            sign = new BigInteger(1,mac.doFinal(base_string));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String tmp_url = host + path + String.format("?partner_id=%s&timestamp=%s&sign=%s", partner_id,timest, String.format("%032x",sign));
+        URL url = new URL(tmp_url);
+        HttpURLConnection conn = null;
+        PrintWriter out = null;
+        BufferedReader in = null;
+        try {
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            Map<String,Object> map = new HashMap<>();
+            map.put("refresh_token",refresh_token);
+            map.put("merchant_id",merchant_id);
+            map.put("partner_id",partner_id);
+            String json = JSON.toJSONString(map);
+            conn.connect();
+            out = new PrintWriter(conn.getOutputStream());
+            out.print(json);
+            out.flush();
+            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String line = "";
+            while((line=in.readLine())!=null){
+                result +=line;
+            }
+            JSONObject jsonObject = JSONObject.parseObject(result);
+            res[0] = (String) jsonObject.get("access_token");
+            res[1] = (String) jsonObject.get("refresh_token");
+        } catch(Exception e){
+            e.printStackTrace();
+        }finally {
+            try{
+                if(out != null){
+                    out.close();
+                }
+                if(in != null){
+                    in.close();
+                }
+            }catch (IOException ioe){
+                ioe.printStackTrace();
+            }
+        }
+        return res;
+    }
+}
+
+
+
+
+PHP Code Demo:
+
+PHP
+
+<?php 
+
+function getAccessTokenShopLevel($partnerId, $partnerKey, $shopId, $refreshToken) {
+    global $host;
+    $path = "/api/v2/auth/access_token/get";
+    
+    $timest = time();
+    $body = array("partner_id" => $partnerId, "shop_id" => $shopId, "refresh_token" => $refreshToken);
+    $baseString = sprintf("%s%s%s", $partnerId, $path, $timest);
+    $sign = hash_hmac('sha256', $baseString, $partnerKey);
+    $url = sprintf("%s%s?partner_id=%s&timestamp=%s&sign=%s", $host, $path, $partnerId, $timest, $sign);
+
+
+    $c = curl_init($url);
+    curl_setopt($c, CURLOPT_POST, 1);
+    curl_setopt($c, CURLOPT_POSTFIELDS, json_encode($body));
+    curl_setopt($c, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($c, CURLOPT_RETURNTRANSFER, 1);
+
+    $result = curl_exec($c);
+    echo "\nraw result ".$result."\n";
+
+    $ret = json_decode($result, true);
+
+    $accessToken = $ret["access_token"];
+    $newRefreshToken = $ret["refresh_token"];
+    echo "\naccess_token: ".$accessToken.", refresh_token: ".$newRefreshToken."\n";
+    return $ret;
+}
+
+function getAccessTokenMerchantLevel($partnerId, $partnerKey, $merchantId, $refreshToken) {
+    global $host;
+    $path = "/api/v2/auth/access_token/get";
+    
+    $timest = time();
+    $body = array("partner_id" => $partnerId, "merchant_id" => $merchantId, "refresh_token" => $refreshToken);
+    $baseString = sprintf("%s%s%s", $partnerId, $path, $timest);
+    $sign = hash_hmac('sha256', $baseString, $partnerKey);
+    $url = sprintf("%s%s?partner_id=%s&timestamp=%s&sign=%s", $host, $path, $partnerId, $timest, $sign);
+
+
+    $c = curl_init($url);
+    curl_setopt($c, CURLOPT_POST, 1);
+    curl_setopt($c, CURLOPT_POSTFIELDS, json_encode($body));
+    curl_setopt($c, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($c, CURLOPT_RETURNTRANSFER, 1);
+    $result = curl_exec($c);
+    echo "\nraw result ".$result."\n";
+
+    $ret = json_decode($result, true);
+    $accessToken = $ret["access_token"];
+    $newRefreshToken = $ret["refresh_token"];
+    echo "\naccess_token: ".$accessToken.", refresh_token: ".$newRefreshToken."\n";
+    return $ret;
+}
+
+$host="https://partner.shopeemobile.com";
+
+$partnerId = 847892;
+$partnerKey = "57615053704d6470644f554a78656d50484143644964436a5568777544524579";
+
+
+
+
+// $shopId=200520705;
+// $shopRefreshToken="71724c4e68746b546965424c70617244";
+// getAccessTokenShopLevel($partnerId, $partnerKey, $shopId, $shopRefreshToken)
+
+$merchantId=1018829;
+$merchantRefreshToken="546e5064627042696756455277774f53";
+getAccessTokenMerchantLevel($partnerId, $partnerKey, $merchantId, $merchantRefreshToken)
+
+?>
+Refreshing the access_token and refresh_token on a shop account
+
+
+
+
+1. Use the code and shop_id from the redirect URL https://open.shopee.com/?code=7867624d4e76616648544f6e52625557&shop_id=54804 to call the GetAccessToken API to obtain the first pair of access_token and refresh_token.
+
+
+
+
+Query: https://partner.shopeemobile.com/api/v2/auth/token/get?partner_id=1000016&timestamp=1657263479&sign=9c685bc7e4a74e90f45fe1933f1d72b2d9705acda4093a9fb1ec7e2b57ccea2a
+
+
+
+
+{"shop_id":54804,
+
+"code":"7867624d4e76616648544f6e52625557",
+
+"partner_id":1000016
+
+}
+
+
+
+
+2.Save the first pair of access_token and refresh_token returned.
+
+{
+
+  "refresh_token": "456e416149664b76745a6a794156794a",
+
+  "access_token": "6a55746e61546f707579627656637464",
+
+  "expire_in": 13859,
+
+  "request_id": "c040b886cfcabdfa5a23af51c595cd1b",
+
+  "error": "",
+
+  "message": ""
+
+}
+
+
+
+
+3.Call the RefreshAccessToken API to refresh the access_token and refresh_token.
+
+Query: https://partner.shopeemobile.com/api/v2/auth/access_token/get?partner_id=1000016&timestamp=1657263479&sign=9c685bc7e4a74e90f45fe1933f1d72b2d9705acda4093a9fb1ec7e2b57ccea2a
+
+
+
+
+{"shop_id":54804,
+
+"refresh_token":"456e416149664b76745a6a794156794a",
+
+"partner_id":1000016
+
+}
+
+
+
+
+4.Save the new access_token and refresh_token.
+
+{
+
+  "partner_id": 1000016,
+
+  "refresh_token": "666478546b6c63464867685554477a57",
+
+  "access_token": "7a5970754768697552654a466f425573",
+
+  "expire_in": 14400,
+
+  "request_id": "6d79dd0ffe4e070e185c71ca5153cd51",
+
+  "error": "",
+
+  "message": "",
+
+  "shop_id": 54804
+
+}
+
+Refreshing the access_token and refresh_token on a main account
+
+
+
+
+1.Use the code and main_account_id from the URL obtained during authorization to call the GetAccessToken API and obtain the first pair of access_token and refresh_token.
+
+Redirect URL: : https://open.shopee.com/?code=644d4e48787873706c5a444c776d4b59&main_account_id=10208
+
+
+
+
+Query: https://partner.shopeemobile.com/api/v2/auth/token/get?partner_id=1000016&timestamp=1657263479&sign=9c685bc7e4a74e90f45fe1933f1d72b2d9705acda4093a9fb1ec7e2b57ccea2a
+
+{"main_account_id":10208,
+
+"code":"644d4e48787873706c5a444c776d4b59",
+
+"partner_id":1000016
+
+}
+
+
+
+
+2.Save the first pair of access_token and refresh_token returned.
+
+
+
+
+{
+
+  "refresh_token": "684d42685667777868597a4477587455",
+
+  "access_token": "44776151594778486943647644745361",
+
+  "expire_in": 14344,
+
+  "request_id": "9199e13ee74b22411498209cb5516e24",
+
+  "merchant_id_list": [
+
+      1001705
+
+  ],
+
+  "shop_id_list": [
+
+      33142,
+
+      46154
+
+  ],
+
+  "error": "",
+
+  "message": ""
+
+}
+
+
+
+
+3.Call the RefreshAccessToken API to refresh the access_token and refresh_token of shop_id and merchant_id respectively
+
+
+
+
+Query: https://partner.shopeemobile.com/api/v2/auth/access_token/get?partner_id=1000016&timestamp=1657868745&sign=b78833ddcf533903cfae818bbfcf2b6b630e3bc0c941dd65453632f63bf7b495
+
+{"shop_id":33142,
+
+"refresh_token":"684d42685667777868597a4477587455",
+
+"partner_id":1000016
+
+}
+
+Query: https://partner.shopeemobile.com/api/v2/auth/access_token/get?partner_id=1000016&timestamp=1657868745&sign=b78833ddcf533903cfae818bbfcf2b6b630e3bc0c941dd65453632f63bf7b495
+
+{"merchant_id":1001705,
+
+"refresh_token":"684d42685667777868597a4477587455",
+
+"partner_id":1000016
+
+}
+
+
+
+
+4.Save the new access_token and refresh_token.
+
+
+
+
+{
+
+  "partner_id": 1000016,
+
+  "refresh_token": "417472546e73504949676279576c477a",
+
+  "access_token": "646d474965714a696177764963775743",
+
+  "expire_in": 14400,
+
+  "request_id": "78e64d11cb6dec6f6669282839fca916",
+
+  "error": "",
+
+  "message": "",
+
+  "shop_id": 33142
+
+}
+
+{
+
+  "partner_id": 1000016,
+
+  "refresh_token": "715075736d6c6570544364774f437369",
+
+  "access_token": "69634c664a7350696c6b466d5a53714a",
+
+  "expire_in": 14400,
+
+  "request_id": "51eacbc81bd6fa8fddddf1e0ef2dee16",
+
+  "error": "",
+
+  "message": "",
+
+  "merchant_id": 1001705
+
+}
+
+
+
+
+By following the steps above, you can call the RefreshAccessToken API  within 4 hours to get new access_token and refresh_token. Maintaining the API call loop will ensure you can continue to obtain new sets of access_token and refresh_token within the authorization validity period.
+
+⚠️ NoteIf you did not save the new refresh_token and access_token returned, see possible solutions.
+Canceling authorization
+
+
+
+
+You can cancel an authorization by changing the authorization URL or via Seller Center.
+
+Canceling authorization by changing the authorization URL
+
+
+
+
+Authorization can be revoked either by generating a cancellation authorization link or by performing the operation in Seller Center.
+
+
+
+
+Revoking authorization via cancellation link
+
+
+The method for generating a cancellation authorization link is the same as that for the authorization link, except that the fixed authorization URL should be replaced with the fixed cancellation authorization URL.
+
+
+
+
+Fixed Cancellation Authorization URL
+
+Environment	Region	URL
+Production	Global (excluding Mainland China and Brazil)	https://open.shopee.com/cancel_auth
+Mainland China	https://open.shopee.cn/cancel_auth
+Brazil	https://open.shopee.com.br/cancel_auth
+Sandbox	Global (excluding Mainland China and Brazil)	https://open.sandbox.test-stable.shopee.com/cancel_auth
+Mainland China	https://open.sandbox.test-stable.shopee.cn/cancel_auth
+Brazil	https://open.sandbox.test-stable.shopee.com.br/cancel_auth
+
+
+
+
+Cancellation Authorization Link Examples
+
+
+
+
+Production Environment:
+
+https://open.shopee.com/cancel_auth?partner_id=10090&auth_type=seller&redirect_uri=https://open.shopee.com&response_type=code  
+
+
+
+
+Sandbox Environment:
+
+https://open.test-stable.shopee.com/cancel_auth?partner_id=1000016&auth_type=seller&redirect_uri=https://open.test-stable.shopee.com&response_type=code 
+
+
+
+
+Cancellation Process
+
+
+
+
+1. Generate the cancellation authorization link according to the specifications above;
+
+2. The seller logs in via the cancellation authorization link;
+
+3. The seller clicks “Cancel Authorization” to complete the process. After cancellation, the application will no longer have access to the seller’s information.
+
+Canceling authorization on Seller Center
+
+
+
+
+Local Sellers:
+
+The seller logs in to Seller Center and navigates to “Home Page > Platform Partner”;
+On the Platform Partner page, the seller can view all apps authorized by the shop / main account, along with their authorization expiration time;
+The seller clicks “Separate” in the action column to revoke authorization for the corresponding application.
+
+
+
+
+CNSC/KRSC Sellers
+
+“Home Page > Open Platform Management”: Sellers can view which apps have been authorized by the main account. In the authorization management page, sellers can directly revoke the authorization relationship for the merchant or shop.
+
+FAQs on authorization and authentication
+
+
+
+
+If you encounter errors during the authorization process, you can refer to our FAQs on authorization and authentication.
+
+User Guide
+Developer Guide
+API reference
+Push Mechanism
+Shopee Open Platform Data Protection Policy
+Shopee Markets
+Service Market
+Seller Education Hub (Singapore)
+Seller Education Hub (Malaysia)
+Seller Education Hub (Thailand)
+Seller Education Hub (Vietnam)
+Seller Education Hub (Indonesia)
+Seller Education Hub (Philippines)
+Seller Education Hub (Brazil)
+Seller Education Hub (Japan)
+Seller Education Hub (Korea)
+Seller Education Hub (Hongkong)
+虾皮卖家学习中心
+Support
+Announcement
+FAQ
+Raise Ticket
+Copyright @ Shopee 2025

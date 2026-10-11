@@ -24,7 +24,8 @@ export type ShopperView =
   | { name: "pay"; ref: string }
   | { name: "order-status"; orderNumber: string }
   | { name: "lookup" }
-  | { name: "store-page"; slug: string; pageSlug: string };
+  | { name: "store-page"; slug: string; pageSlug: string }
+  | { name: "generate" };
 
 export type ShopperCtx = {
   nav: (v: ShopperView) => void;

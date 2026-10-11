@@ -15,6 +15,7 @@ import {
   PackageSearch,
   Trash2,
   Store,
+  Sparkles,
   ArrowRight,
   Loader2,
 } from "lucide-react";
@@ -51,6 +52,7 @@ import MarketHome, { ResultsView, categoryIcon } from "./market";
 import PdpView from "./pdp";
 import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView } from "./checkout";
+import GenerateStoreView, { ClaimView } from "./generate";
 
 const VIEW_KEY = "sm_shopper_view";
 
@@ -67,14 +69,39 @@ export default function ShopperShell() {
   const [ready, setReady] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [headerSearch, setHeaderSearch] = useState("");
+  // Deep-link override for claim landing (?claim_job=…&claim_token=…):
+  // intentionally NOT part of ShopperView — a synthetic render override.
+  const [claimLink, setClaimLink] = useState<{ jobId: string; token: string } | null>(null);
   const restored = useRef(false);
 
   // ---- mount: activeStoreSlug override, else restore last view --------------
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
+    // claim deep-link wins over everything
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const cj = params.get("claim_job");
+      const ct = params.get("claim_token");
+      if (cj && ct) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link reset
+        setClaimLink({ jobId: cj, token: ct });
+        setReady(true);
+        return;
+      }
+      // SEO deep links (sitemap): /?sf={storeSlug} and /?sf={storeSlug}&sp={productSlug}
+      const sf = params.get("sf");
+      if (sf) {
+        const sp = params.get("sp");
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link reset
+        setView(sp ? { name: "pdp", slug: sf, pSlug: sp } : { name: "storefront", slug: sf });
+        setReady(true);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
     if (activeStoreSlug) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
       setView({ name: "storefront", slug: activeStoreSlug });
       setActiveStoreSlug(null);
     } else {
@@ -139,18 +166,24 @@ export default function ShopperShell() {
           transition={{ duration: 0.18, ease: "easeOut" }}
           className="flex-1 flex flex-col"
         >
-          {view.name === "market" ? <MarketHome ctx={ctx} /> : null}
-          {view.name === "search" ? <ResultsView ctx={ctx} mode={{ kind: "search", q: view.q }} /> : null}
-          {view.name === "category" ? (
-            <ResultsView ctx={ctx} mode={{ kind: "category", categorySlug: view.categorySlug, label: view.label }} />
-          ) : null}
-          {view.name === "storefront" ? <StorefrontView ctx={ctx} slug={view.slug} /> : null}
-          {view.name === "store-page" ? <StorePageView ctx={ctx} slug={view.slug} pageSlug={view.pageSlug} /> : null}
-          {view.name === "pdp" ? <PdpView ctx={ctx} slug={view.slug} pSlug={view.pSlug} /> : null}
-          {view.name === "checkout" ? <CheckoutView ctx={ctx} /> : null}
-          {view.name === "pay" ? <PayView ctx={ctx} paymentRef={view.ref} /> : null}
-          {view.name === "order-status" ? <OrderStatusView ctx={ctx} orderNumber={view.orderNumber} /> : null}
-          {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
+          {claimLink ? null : (
+            <>
+              {view.name === "market" ? <MarketHome ctx={ctx} /> : null}
+              {view.name === "search" ? <ResultsView ctx={ctx} mode={{ kind: "search", q: view.q }} /> : null}
+              {view.name === "category" ? (
+                <ResultsView ctx={ctx} mode={{ kind: "category", categorySlug: view.categorySlug, label: view.label }} />
+              ) : null}
+              {view.name === "storefront" ? <StorefrontView ctx={ctx} slug={view.slug} /> : null}
+              {view.name === "store-page" ? <StorePageView ctx={ctx} slug={view.slug} pageSlug={view.pageSlug} /> : null}
+              {view.name === "pdp" ? <PdpView ctx={ctx} slug={view.slug} pSlug={view.pSlug} /> : null}
+              {view.name === "checkout" ? <CheckoutView ctx={ctx} /> : null}
+              {view.name === "pay" ? <PayView ctx={ctx} paymentRef={view.ref} /> : null}
+              {view.name === "order-status" ? <OrderStatusView ctx={ctx} orderNumber={view.orderNumber} /> : null}
+              {view.name === "generate" ? <GenerateStoreView ctx={ctx} /> : null}
+              {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
+            </>
+          )}
+          {claimLink ? <ClaimView jobId={claimLink.jobId} token={claimLink.token} onExit={() => setClaimLink(null)} /> : null}
         </motion.main>
       </AnimatePresence>
 
@@ -159,6 +192,7 @@ export default function ShopperShell() {
           onSeller={() => setSurface("seller")}
           onLookup={() => nav({ name: "lookup" })}
           onMarket={() => nav({ name: "market" })}
+          onGenerate={() => nav({ name: "generate" })}
         />
       ) : null}
 
@@ -347,6 +381,21 @@ function MarketHeader({
         </div>
 
         <div className="ml-auto md:ml-0 flex items-center gap-1.5">
+          {/* sell / generate store (desktop + mobile) */}
+          <button
+            type="button"
+            onClick={() => nav({ name: "generate" })}
+            aria-label="Sell — generate your store from a marketplace link"
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold transition-colors sm:px-3",
+              view.name === "generate" ? "bg-brand-gradient text-white shadow-sm" : "text-teal-800 hover:bg-teal-50"
+            )}
+          >
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Sell / Generate store</span>
+            <span className="sm:hidden">Sell</span>
+          </button>
+
           {/* track order */}
           <button
             type="button"
@@ -392,10 +441,12 @@ function ShopperFooter({
   onSeller,
   onLookup,
   onMarket,
+  onGenerate,
 }: {
   onSeller: () => void;
   onLookup: () => void;
   onMarket: () => void;
+  onGenerate: () => void;
 }) {
   return (
     <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 text-teal-50">
@@ -419,6 +470,13 @@ function ShopperFooter({
               className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-teal-50/20 px-4 text-xs font-semibold text-teal-100 hover:bg-teal-50/10 transition-colors"
             >
               <Store className="h-3.5 w-3.5" /> Browse stores
+            </button>
+            <button
+              type="button"
+              onClick={onGenerate}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-teal-50/20 px-4 text-xs font-semibold text-teal-100 hover:bg-teal-50/10 transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Generate your store from a marketplace link
             </button>
             <button
               type="button"

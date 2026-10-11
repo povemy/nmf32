@@ -1,0 +1,1387 @@
+# MASTER UPGRADE INSTRUCTION — TRANSFORM THE EXISTING WEBAPP INTO A NEXOVA-STYLE AUTOMATED E-COMMERCE STORE GENERATOR
+
+## 1. YOUR ROLE
+
+Act as a principal full-stack engineer, software architect, marketplace API integration specialist, database engineer, e-commerce systems engineer, SEO engineer, security engineer, and QA engineer.
+
+Your task is to upgrade my **existing web application** so that it can deliver a complete automated e-commerce store-generation experience comparable in functionality to Nexova:
+
+Reference website: https://www.nexova.my/
+
+The goal is not merely to create a landing page that accepts a Shopee or TikTok Shop URL. The goal is to implement a complete, connected system that transforms a supported marketplace URL into an imported product catalogue, a generated storefront, a claimable store account, an operational checkout system, configurable payment integration, domain and subdomain management, advanced SEO controls, and a fully functional seller command centre.
+
+The user-facing experience should be as simple as possible:
+
+1. The user opens my platform.
+2. The user pastes a Shopee shop link or TikTok Shop product/shop link into an import field.
+3. The system identifies the marketplace and validates the URL.
+4. The system retrieves all product information that it is authorised and technically able to access.
+5. The system creates structured product and variant records in my application's database.
+6. The system generates a draft e-commerce storefront populated with the imported products, product images, descriptions, prices, variants, and categories.
+7. The system automatically prepares SEO metadata and storefront settings.
+8. The system creates a store that can be claimed by its rightful owner.
+9. The verified owner claims the store, configures their business information, payment settings, delivery settings and domain, and publishes it.
+10. The owner manages the entire store from an integrated backend command centre.
+
+The final result must be a real e-commerce platform, not a mocked demonstration.
+
+**CRITICAL RULE: Upgrade the existing application. Do not replace the application with an unrelated starter project, build a disconnected prototype, or unnecessarily rewrite existing working features.**
+
+---
+
+## 2. FIRST PRINCIPLE — INVESTIGATE THE EXISTING CODEBASE BEFORE MAKING CHANGES
+
+Before implementing anything, systematically inspect the entire existing codebase.
+
+Do not assume that the project uses a particular framework, database, authentication system, payment provider, or architectural structure. Discover these from the actual source code and configuration.
+
+Inspect, at minimum:
+
+- Repository structure and existing application entry points.
+- Frontend framework, routing conventions, shared layouts, components, styles and state management.
+- Backend architecture, API routes, controllers, services, server actions, jobs and background workers.
+- Database technology, schema, migrations, relationships, constraints, indexes and existing data.
+- Authentication, registration, account ownership, roles and access control.
+- Existing seller, merchant, store, product, category, variant, image, order, payment and domain models.
+- Existing e-commerce checkout and payment implementations.
+- Existing file uploads, object storage, image processing and content delivery mechanisms.
+- Existing SEO implementation, metadata utilities, structured data, sitemap and robots configuration.
+- Existing integrations, webhook endpoints, notification mechanisms and scheduled jobs.
+- Environment variables, configuration files, deployment settings and infrastructure requirements.
+- Existing error handling, logging, monitoring and testing conventions.
+- Existing UI design system and responsive layouts.
+- Any unfinished functionality, hardcoded data, placeholder actions, mock API responses or disconnected UI controls that relate to the requested upgrade.
+
+Trace existing functionality from the interface through the backend and database. Determine what already works, what partially works, what is missing and what would be duplicated by the proposed implementation.
+
+Do not modify files immediately simply because a replacement implementation appears easier. Understand why the existing implementation exists and whether it should be retained, extended or replaced.
+
+Create a technical inventory and dependency map before changing the code.
+
+**Preservation requirements:**
+
+- Keep existing working features operational.
+- Reuse existing authentication, database connections, payment integrations, UI components and domain infrastructure wherever suitable.
+- Follow the project's actual architectural conventions.
+- Avoid unnecessary dependencies and redundant database models.
+- Use backward-compatible database migrations wherever practical.
+- Never overwrite production data or delete existing records during a migration.
+- Do not reset the database, regenerate the project, or remove existing functionality as a shortcut.
+- Do not expose credentials or private configuration values in diagnostic output.
+
+After this inspection, proceed through the implementation phases below in order.
+
+---
+
+## 3. MANDATORY OFFICIAL API DOCUMENTATION RESEARCH
+
+This phase is mandatory. Do not skip it and do not start implementing a marketplace connector based only on a search-result summary or a single endpoint example.
+
+You must read the complete relevant official documentation, including linked child pages, nested sections, expandable request and response schemas, examples, authentication instructions, version information, changelogs, limitations and relevant sub-content.
+
+### 3.1 Shopee Open Platform
+
+Start with the exact API link I provided:
+
+https://open.shopee.com/documents/v2/v2.ams.get_open_campaign_added_product?module=127&type=1
+
+Also inspect the official Shopee Open Platform:
+
+https://open.shopee.com/
+
+**Important:** The supplied endpoint must be investigated first, but do not automatically assume it is the correct API for importing an entire seller's normal product catalogue. Its endpoint name suggests campaign-related functionality. Establish its actual purpose, input parameters, output fields, authorisation requirements, market restrictions and limitations from the official documentation.
+
+You must determine whether it supports any of the following:
+
+- Retrieving ordinary seller shop details.
+- Identifying a shop from its shop URL.
+- Listing all products belonging to a seller.
+- Retrieving individual product details.
+- Retrieving product descriptions and categories.
+- Retrieving original, thumbnail and variant-specific image URLs.
+- Retrieving SKU identifiers and variant combinations.
+- Retrieving product and variant prices.
+- Retrieving inventory or stock information.
+- Handling pagination and large product catalogues.
+- Retrieving product status, availability and other relevant fields.
+- Accessing only campaign, affiliate or other specially scoped products.
+- Accessing data from an authorised shop versus a public listing.
+- Accessing data in the Malaysian marketplace and any other supported markets.
+
+If the supplied endpoint does not support the intended workflow, inspect the rest of the official documentation to identify the correct supported APIs.
+
+Investigate the relevant official documentation for:
+
+1. Application registration and credentials.
+2. Shop authorisation and consent.
+3. Access-token acquisition, expiration, refresh and revocation.
+4. Request signing and authentication.
+5. Shop information APIs.
+6. Product listing or product retrieval APIs.
+7. Individual product detail APIs.
+8. Product and variant specifications.
+9. Image and media access.
+10. Pagination and rate limiting.
+11. Response structures and error codes.
+12. Webhooks and supported product-change notifications.
+13. API versions, deprecations, migrations and changelogs.
+14. Market, app-review, permission and operational restrictions.
+15. Relevant terms, usage limitations and requirements for handling imported content.
+
+Follow links within the documentation to discover the correct endpoints. Do not invent endpoint names, permissions or payload structures.
+
+If the supplied documentation is blocked, dynamically rendered, dependent on JavaScript, or inaccessible to the IDE's normal web-fetching mechanism, use the best available documentation-reading method provided by the development environment, such as an authorised browser session, browser-rendered page, official downloadable reference, or other legitimate retrieval mechanism.
+
+Do not treat a 403 response, failed browser request, empty page or inaccessible page as proof that an API does not exist.
+
+If official access remains unavailable, record the exact blocker and continue researching accessible official documentation. Never fabricate findings to fill the gap.
+
+### 3.2 TikTok Shop Open Platform
+
+Investigate the official TikTok Shop API documentation. Do not assume that a general TikTok Developer API provides the same functionality as the TikTok Shop seller APIs.
+
+Start with:
+
+**Official API documentation index:**
+https://partner.tiktokshop.com/docv2/api-document
+
+**Product search API:**
+https://partner.tiktokshop.com/docv2/page/search-products-202309
+
+**Product detail API reference:**
+https://partner.tiktokshop.com/docv2/page/get-product-202309
+
+**Authorised shops API reference:**
+https://partner.tiktokshop.com/docv2/page/get-authorized-shops-202309
+
+**Seller authorisation guide:**
+https://partner.tiktokshop.com/docv2/page/seller-authorization-guide
+
+**Common API parameters:**
+https://partner.tiktokshop.com/docv2/page/common-parameters
+
+**API versioning:**
+https://partner.tiktokshop.com/docv2/page/api-versioning
+
+These links are starting points, not an exhaustive list. If an individual URL has changed, locate the corresponding page through the official documentation navigation rather than guessing a replacement endpoint.
+
+Read all relevant linked material for:
+
+1. Application registration and approval.
+2. Seller authorisation and OAuth-related flows.
+3. Shop identification and authorised shop retrieval.
+4. App keys, access tokens, token refresh and expiration.
+5. Request-signing algorithms and required headers.
+6. Product search and product detail operations.
+7. Product images, descriptions, specifications and categories.
+8. SKU-level variants, price and inventory fields.
+9. Shop and catalogue pagination.
+10. API quotas, rate limits and retries.
+11. Supported regions and Malaysian market eligibility.
+12. Permissions and scopes required for every API.
+13. Webhooks or event notifications relevant to product changes.
+14. API version differences and migration instructions.
+15. Error responses and common authorisation failures.
+16. Relevant terms of service, app restrictions and data-handling requirements.
+
+Follow the documentation's links to all child guides, API reference sections, request examples, response schemas, authentication pages, changelogs and version-specific notes relevant to this importer.
+
+In particular, establish whether TikTok Shop supports importing all the seller's catalogue products through its authorised seller APIs, and whether the seller must authorise my application before the catalogue becomes accessible.
+
+Distinguish APIs for TikTok Shop sellers from APIs intended for creators, affiliate campaigns, showcases or unrelated TikTok services. Do not substitute one API category for another merely because its name contains the word “product”.
+
+### 3.3 How to read the documentation completely
+
+For both marketplaces, follow this documentation-reading procedure:
+
+1. Open the exact page.
+2. Read the entire page rather than only its title or first paragraph.
+3. Expand and inspect relevant tabs, accordions, version selectors, request parameters, response fields and examples.
+4. Follow internal links to referenced authentication, signature-generation, authorisation, product, pagination, rate-limit and error-handling guides.
+5. Follow additional relevant links recursively until the documentation needed for the entire import workflow has been established.
+6. Inspect current changelogs and version-specific warnings.
+7. Verify the endpoint's method, path, permissions, parameter names, response structure and availability from official material.
+8. Record the source URL for each confirmed technical requirement.
+9. Clearly distinguish verified facts from assumptions and unresolved questions.
+10. Store the resulting integration notes in an appropriate project documentation file, such as `docs/marketplace-integration-research.md`, adjusted to the existing repository's documentation conventions.
+
+Do not spend time traversing unrelated API families that cannot contribute to this feature. However, do not omit relevant linked sub-content simply because it is lengthy or inconvenient.
+
+If two documentation pages conflict, investigate versioning and changelogs and determine which applies to the intended market and operation.
+
+### 3.4 Documentation research deliverable
+
+Before implementation, produce a research summary that identifies:
+
+- The correct Shopee endpoint or supported set of endpoints for catalogue import.
+- The correct TikTok Shop endpoint or supported set of endpoints for catalogue import.
+- The required registration, authorisation and approval steps for each marketplace.
+- Available product fields and any missing or restricted fields.
+- Whether URL-only import is technically supported for each input type.
+- Whether seller authorisation must be introduced when public URL access cannot provide the complete catalogue.
+- Token storage and refresh requirements.
+- Pagination, rate limits, concurrency and retry requirements.
+- Relevant API restrictions and legal or policy concerns.
+- The recommended connector architecture for the existing application.
+- Required environment variables and deployment configuration.
+- Features that can be implemented immediately and features that depend on external credentials, approval or permissions.
+
+**Do not falsely claim that a marketplace integration works if its API application has not been approved, credentials are missing, or the integration has not been tested.**
+
+---
+
+## 4. CORE USER EXPERIENCE — PASTE A LINK AND GENERATE A STORE
+
+Build a dedicated, polished store-generation experience integrated into my existing application's UI.
+
+The design should feel simple to a non-technical merchant. They should not need to manually create every product, category, product image, description and SEO field individually.
+
+### 4.1 Import interface
+
+Provide an obvious entry point, which may live on the existing dashboard, a store-creation page or the appropriate existing route.
+
+The form should include:
+
+- A marketplace selector or automatic marketplace detection.
+- A URL input accepting supported Shopee and TikTok Shop links.
+- A clear action such as “Import & Generate Store”.
+- Input validation and helpful error messages.
+- A clear statement of what the importer can retrieve.
+- An authorisation step only when required by the verified integration method.
+- An import preview and progress interface.
+- A way to retry failed imports without starting from scratch.
+
+Support the actual input types confirmed by each official integration.
+
+Do not claim that every form of Shopee or TikTok URL is supported unless verified. Distinguish shop URLs from product URLs and resolve them correctly.
+
+### 4.2 URL parsing and marketplace detection
+
+Implement a backend URL resolver that:
+
+- Validates the URL and its scheme.
+- Recognises supported marketplace hostnames.
+- Handles legitimate redirects and regional domains.
+- Identifies whether the input refers to an individual product, a shop or another page type.
+- Extracts or resolves the correct shop/product identifiers through supported methods.
+- Rejects unrelated websites and malformed inputs.
+- Handles shortened or redirected URLs where supported.
+- Prevents server-side request forgery and requests to arbitrary internal or private network addresses.
+- Enforces request timeouts, size limits and safe redirect handling.
+
+Do not rely exclusively on substring matching or a frontend-only validation check.
+
+The backend must determine which connector to use and return a clear result to the frontend.
+
+### 4.3 Import progress
+
+Large catalogues may require multiple API requests and background processing.
+
+Implement a real import-job system that can report statuses such as:
+
+- Queued.
+- Validating URL.
+- Awaiting seller authorisation.
+- Connecting to marketplace.
+- Retrieving shop information.
+- Importing products.
+- Importing product variants.
+- Processing product images.
+- Generating SEO metadata.
+- Generating storefront.
+- Awaiting store claim.
+- Completed with warnings.
+- Failed.
+
+These statuses must reflect actual backend state, not an animated progress bar that merely simulates work.
+
+The user must be able to see the number of discovered, processed, successful, skipped and failed products where those counts are available.
+
+For long-running tasks, use the job-processing mechanism appropriate to the existing stack. Support retryable jobs, idempotency, persistence and recovery from interrupted processes.
+
+---
+
+## 5. AUTOMATED PRODUCT CATALOGUE IMPORT
+
+This is one of the most important modules.
+
+The importer must transform marketplace information into real, structured records in the existing application's product database or an appropriately extended catalogue schema.
+
+### 5.1 Required product information
+
+Import every available and authorised field needed to operate a useful independent store, including:
+
+- Original marketplace and source URL.
+- Source platform identifier.
+- Source shop identifier.
+- Source product identifier.
+- Product title.
+- Product description.
+- Product status, when available.
+- Product category and relevant taxonomy.
+- Product brand, when available.
+- Product images and image ordering.
+- Thumbnail and primary-image selection.
+- Variant-specific images where provided.
+- Base price and sale price where available.
+- Currency and price precision.
+- SKU identifiers where available.
+- Variant names, options and values.
+- Variant combinations.
+- Variant-level pricing.
+- Variant-level availability and stock where accessible.
+- Weight, dimensions or shipping-related attributes where available and relevant.
+- Original creation or update information where accessible.
+- Marketplace-specific metadata that is safe and useful to retain.
+- Import timestamp and last successful synchronization timestamp.
+
+Use nullable fields or typed metadata for optional marketplace fields. Do not fill unavailable information with invented data.
+
+Preserve the source identifiers necessary to associate updates with the correct imported records.
+
+### 5.2 Full-catalogue processing
+
+For supported shop-level imports, do not stop after importing the first product or the first API page.
+
+Implement correct pagination, continuation tokens, page limits and large-catalogue handling based on the official API contract.
+
+Support:
+
+- Large shops.
+- Partial failures.
+- Individual product failures.
+- Retriable image downloads.
+- Duplicate product detection.
+- Duplicate variant detection.
+- Resumable imports.
+- Rate-limit handling.
+- Product updates on repeated imports.
+- Products that become unavailable or are deleted at the source.
+- Reporting for products that cannot be imported.
+
+An unsuccessful product must not terminate the entire shop import unnecessarily.
+
+### 5.3 Product data normalisation
+
+Create a common internal product schema used by both Shopee and TikTok Shop connectors.
+
+Marketplace-specific connectors should translate their source responses into that schema. The storefront should not require separate rendering code for every marketplace.
+
+Preserve the distinction between:
+
+- A parent product.
+- Its sellable variants.
+- Variant-specific price and availability.
+- Product-level media.
+- Variant-level media.
+- Imported source data.
+- Seller-edited storefront data.
+
+Where source information is incomplete, make the limitation visible in the import report and provide the appropriate seller editing controls.
+
+Do not invent SKUs, stock counts, discounts, reviews, sales numbers or product specifications.
+
+### 5.4 Images and media storage
+
+Implement a durable media-management process.
+
+Depending on available permissions, storage infrastructure and image-use restrictions, the platform should either retain valid authorised source references or copy images into its own storage when permitted.
+
+Where images are copied:
+
+- Use the existing storage provider if appropriate.
+- Validate file types and size limits.
+- Verify that downloaded content is actually an image.
+- Generate safe filenames.
+- Preserve image order and variant associations.
+- Generate thumbnails when supported by the existing architecture.
+- Prevent arbitrary remote URLs from being downloaded.
+- Report image failures without losing the associated product record.
+
+Do not assume an image URL will remain permanent or that marketplace hotlinking is permitted.
+
+Provide a sensible fallback image and allow sellers to replace images in the product editor.
+
+### 5.5 Safe re-import and synchronisation
+
+The importer must not create duplicate products every time the same URL is submitted.
+
+Use appropriate idempotency keys and unique constraints, based on the source platform, source shop and source product identifiers.
+
+Repeated imports should update the source-managed fields of existing records instead of blindly creating duplicates.
+
+Keep source-managed information separate from seller overrides. If a seller customises a title, description, image or SEO field on their independent store, a later synchronisation must not silently destroy that customisation.
+
+Create explicit field ownership rules, such as:
+
+- Managed directly by the source marketplace.
+- Seller-editable.
+- Automatically generated by the platform.
+- Manually reviewed or locked by the seller.
+
+If a product disappears from the marketplace, do not automatically destroy an existing store's sales history, order references or other dependent records.
+
+Use an appropriate unavailable, archived or inactive state.
+
+---
+
+## 6. AUTOMATIC STOREFRONT GENERATION
+
+After a successful import, automatically create a complete, responsive storefront using the existing application's design system and rendering architecture.
+
+Avoid building an entirely separate website application for every seller unless the existing project genuinely requires that approach.
+
+Use a reusable, configurable storefront system with tenant-specific content and branding.
+
+### 6.1 Store structure
+
+The generated store should include:
+
+- Homepage.
+- Product catalogue page.
+- Category pages where relevant.
+- Individual product detail pages.
+- Product image gallery.
+- Product variant selection.
+- Cart.
+- Checkout.
+- Order confirmation.
+- Store contact and business-information pages.
+- Shipping and delivery information.
+- Return, refund and privacy-policy configuration.
+- Search and filtering where supported by the existing product volume and architecture.
+- Responsive mobile layouts.
+- Loading, empty, error and unavailable-product states.
+
+Store pages must use imported product records rather than hardcoded demonstration data.
+
+### 6.2 Product detail pages
+
+Every product detail page must support the actual imported product information.
+
+Implement:
+
+- Product name and description.
+- Product gallery.
+- Price and any valid sale-price presentation.
+- Variant selectors.
+- SKU selection where applicable.
+- Stock and availability display when reliably available.
+- Quantity selection with server-side validation.
+- Add-to-cart actions.
+- Buy-now or equivalent checkout entry where appropriate.
+- Breadcrumbs where useful.
+- Related products based on real catalogue data.
+- Product SEO metadata and structured data.
+
+For products with variants, prevent checkout until all required selections have been made.
+
+The server must validate the chosen variant and its current price and availability. Never trust price or inventory values submitted by the browser.
+
+### 6.3 Store branding
+
+Where reliable data is available, prepopulate:
+
+- Store name.
+- Store logo or permitted brand image.
+- Primary colour.
+- Product-category navigation.
+- Contact information.
+- Store description.
+- Homepage hero content.
+
+Allow the rightful owner to modify these settings after claiming the store.
+
+Do not fabricate official brand relationships, certifications, seller reviews, legal identities or other claims that cannot be verified.
+
+---
+
+## 7. STORE CREATION, OWNERSHIP VERIFICATION AND CLAIMING
+
+The generated store must be claimable by its rightful owner.
+
+This is not merely a database flag or a public button. It is an ownership and account-security workflow.
+
+### 7.1 Store generation states
+
+Implement a clear store lifecycle suitable for the existing application, including states such as:
+
+- Generating.
+- Draft.
+- Pending ownership verification.
+- Pending claim.
+- Claimed.
+- Published.
+- Suspended.
+- Archived.
+
+Use a state machine or equivalent controlled transitions so invalid state changes cannot occur.
+
+A generated store should not become publicly purchasable before the required claim, seller setup and publication checks have passed.
+
+If the existing platform supports private previews, allow a pending store to be previewed without making it an unauthorised public shop.
+
+### 7.2 Claim workflow
+
+Implement the following flow:
+
+1. The user submits a supported marketplace URL.
+2. The importer retrieves the available data.
+3. The application creates the draft store and imports its catalogue.
+4. The system generates a unique, secure claim process.
+5. The rightful seller registers or logs in.
+6. The seller completes the ownership-verification method appropriate to the marketplace and available authorisation.
+7. The backend verifies the ownership result.
+8. The store is securely associated with the verified account.
+9. The seller completes any required business, payment, delivery and domain settings.
+10. The seller can preview, configure and publish the storefront.
+
+### 7.3 Ownership must actually be verified
+
+Do not let anyone claim any Shopee or TikTok store merely by entering a public URL.
+
+Implement an appropriate verification strategy, prioritising official marketplace seller authorisation where supported.
+
+If a platform does not expose a suitable official verification method, investigate a legitimate alternative, such as a supported domain-verification or challenge process. Clearly communicate what evidence is required and validate it on the server.
+
+A marketplace OAuth connection must be bound to the correct shop identity. Do not assume that any successful marketplace login proves ownership of the particular shop being imported.
+
+Claim links must be:
+
+- Securely generated.
+- Unpredictable.
+- Stored safely.
+- Time-limited where appropriate.
+- Single-use when appropriate.
+- Invalidated after successful claiming or expiration.
+- Protected against replay and account enumeration.
+- Rechecked on the server at the moment of claiming.
+
+Use database constraints and transactions to prevent two accounts claiming the same store concurrently.
+
+Implement an audited recovery process for legitimate ownership disputes and abandoned claims.
+
+### 7.4 Unclaimed stores
+
+Unclaimed stores must not provide one user with access to another seller's private information.
+
+Separate permitted imported catalogue information from private seller data, credentials, orders and payment information.
+
+An unclaimed store must not receive payment credentials or expose unpublished management functions.
+
+---
+
+## 8. SELLER BACKEND COMMAND CENTRE
+
+Build a real management interface for the claimed store.
+
+Reuse existing dashboard components and routes where appropriate. Every visible action must be connected to an appropriate backend operation, permission check and state update.
+
+The command centre should include the following modules.
+
+### 8.1 Overview dashboard
+
+Display real data, where available, including:
+
+- Total products.
+- Published and draft products.
+- Out-of-stock or unavailable products.
+- Import jobs and import errors.
+- Orders and their statuses.
+- Payment status.
+- Recent transactions.
+- Store publication status.
+- Domain and configuration status.
+- Relevant sales metrics and traffic analytics.
+
+Do not populate dashboards with fabricated sales or placeholder financial figures.
+
+Show empty states when there is no data.
+
+### 8.2 Product management
+
+Provide a working product-management interface with:
+
+- Product search.
+- Filtering and sorting.
+- Pagination.
+- Product-detail editing.
+- Product creation and deletion or archival.
+- Image management.
+- Category assignment.
+- Variant and SKU management.
+- Price management.
+- Availability and stock management.
+- Product status.
+- Bulk actions where appropriate.
+- Import-source information.
+- Last-import and synchronisation information.
+- Per-product SEO editing.
+- Import and validation warnings.
+
+Use the actual stored catalogue and enforce ownership on every read and write.
+
+### 8.3 Category management
+
+Allow the seller to create, edit, organise, publish and archive categories as appropriate.
+
+Support assigning imported products to categories and correcting category assignments.
+
+Prevent invalid category relationships and preserve product references when a category is renamed or archived.
+
+### 8.4 Store settings
+
+Provide functional settings for:
+
+- Store name and branding.
+- Logo and image assets.
+- Store description.
+- Contact details.
+- Business address where needed.
+- Regional language.
+- Currency and formatting.
+- Delivery rules and shipping information.
+- Return and refund information.
+- Store visibility and publication status.
+- Store URL and domain.
+- Relevant legal and policy pages.
+- Notification preferences.
+
+Respect the store's actual currency and any supported market configuration. Do not silently convert prices or mix currencies.
+
+### 8.5 Import centre
+
+Provide a dedicated place for sellers to:
+
+- View all import jobs.
+- Review import summaries.
+- Inspect products that failed validation.
+- See missing fields and unavailable variants.
+- Retry failed imports.
+- Reconcile duplicate records.
+- Trigger supported re-imports or synchronisation.
+- View connection and authorisation status.
+- Disconnect a marketplace where permitted.
+- Understand when the imported catalogue was last successfully updated.
+
+Show actionable errors rather than generic “Something went wrong” messages wherever possible.
+
+### 8.6 Orders, payments and transactions
+
+Integrate the storefront with the application's existing order and payment infrastructure.
+
+A checkout must create a real order in the application's database. Payment status must be updated from the verified payment flow, not solely from a browser redirect.
+
+Implement or reuse the appropriate mechanisms for:
+
+- Order creation.
+- Order-item records.
+- Server-verified product prices.
+- Variant validation.
+- Stock validation and reservation where appropriate.
+- Shipping information.
+- Payment-session creation.
+- Authenticated payment callbacks or webhooks.
+- Idempotent processing of payment events.
+- Payment failure and cancellation handling.
+- Refund handling where supported.
+- Order history.
+- Order-status transitions.
+- Transaction records and audit logs.
+
+Determine from the existing application whether the payment gateway and merchant-account model support the intended seller model.
+
+Do not assume every seller can immediately receive payouts through a single platform-level merchant account. Determine whether the architecture requires seller onboarding, connected merchant accounts, a marketplace payment arrangement or another supported configuration.
+
+Do not claim payment functionality is complete until a real sandbox or equivalent end-to-end test has passed.
+
+### 8.7 Roles and permissions
+
+Ensure each store's owner can manage only the store and records they are authorised to access.
+
+Where supported by the existing application, implement appropriate store roles, such as owner, administrator and staff.
+
+Enforce access control in backend services and database queries. Hiding a button in the frontend is not sufficient.
+
+---
+
+## 9. AUTOMATIC ADVANCED SEO
+
+Implement an advanced SEO system for every generated store and its product catalogue.
+
+SEO must be generated from real stored records, be editable by the seller, and remain consistent with the actual published pages.
+
+Do not generate meaningless metadata just to populate SEO fields.
+
+### 9.1 Automatic product SEO
+
+On import, create sensible initial values for:
+
+- SEO title.
+- Meta description.
+- URL slug.
+- Canonical URL.
+- Open Graph title.
+- Open Graph description.
+- Open Graph image.
+- Social-sharing metadata where appropriate.
+- Product structured data.
+- Image alt text where meaningful.
+- Breadcrumb metadata where supported.
+- Search-engine indexability settings.
+
+Generate these values deterministically from verified product fields wherever possible. If an AI service exists in the codebase and is appropriate for enrichment, it may help produce readable titles and descriptions.
+
+However, AI must not invent product specifications, material composition, certifications, discounts, performance claims or other factual attributes.
+
+Provide sensible fallbacks when AI is unavailable.
+
+### 9.2 SEO management backend
+
+Give the seller a dedicated SEO interface covering:
+
+- Store-level SEO defaults.
+- Homepage SEO.
+- Product-level SEO.
+- Category-level SEO.
+- Editable metadata.
+- Custom slugs.
+- Social preview information.
+- Canonical URL controls where appropriate.
+- Index/no-index controls.
+- Structured-data settings.
+- Sitemap status.
+- Robots directives.
+- Redirect management where supported.
+- Basic SEO validation.
+- Missing metadata reports.
+- Duplicate title and description warnings.
+- Broken or missing product-image warnings.
+
+Allow sellers to override automatically generated fields. Do not overwrite manually locked SEO fields during a routine product re-import.
+
+### 9.3 Technical SEO
+
+Where supported by the application's rendering architecture, implement:
+
+- Search-engine crawlable product pages.
+- Unique stable product URLs.
+- Correct canonical URLs.
+- XML sitemap generation.
+- Sitemap index support if needed at scale.
+- Appropriate robots.txt rules.
+- Correct HTTP status codes.
+- Redirects for changed published slugs.
+- Open Graph metadata.
+- Valid product structured data.
+- Breadcrumb structured data where appropriate.
+- Mobile-responsive output.
+- Optimised image delivery.
+- Sensible caching and rendering.
+- Protection against indexing internal dashboard and private claim pages.
+
+Ensure published product pages reflect the seller's own storefront identity and URLs.
+
+Do not accidentally canonicalise every product page back to the marketplace listing. The store is intended to be an independently operated storefront.
+
+Do not index private drafts, claim pages or unpublished stores.
+
+### 9.4 SEO generation timing
+
+Automatically generate or update SEO metadata at appropriate points:
+
+1. Initial product import.
+2. Successful product creation.
+3. Relevant product-detail updates.
+4. Category changes.
+5. Store branding changes that affect SEO defaults.
+6. Slug changes.
+7. Store publication.
+8. Relevant re-imports, except for seller-locked overrides.
+
+Use a defined precedence system between source fields, automatic suggestions and seller overrides.
+
+Record SEO validation warnings so the seller can resolve problems.
+
+---
+
+## 10. SUBDOMAIN AND CUSTOM DOMAIN MANAGEMENT
+
+Implement store routing and domain management using the existing hosting and infrastructure architecture.
+
+### 10.1 Platform subdomains
+
+Each store should have a stable, unique platform subdomain.
+
+The system must:
+
+- Generate or reserve a unique subdomain.
+- Validate allowed characters and length.
+- Prevent reserved and prohibited names.
+- Prevent duplicate assignments.
+- Resolve the hostname to the correct store.
+- Keep tenant data isolated across stores.
+- Support draft and published states.
+- Handle subdomain changes safely.
+- Return appropriate not-found or unpublished-store responses.
+
+Do not rely solely on frontend routing to establish tenant ownership.
+
+### 10.2 Custom domains
+
+Allow a store owner to add a custom domain, subject to the infrastructure available in the current deployment.
+
+Provide:
+
+- Domain input and validation.
+- DNS configuration instructions.
+- Domain ownership verification.
+- Domain-to-store association.
+- HTTPS provisioning through the supported infrastructure.
+- Verification and activation status.
+- Clear instructions for resolving configuration errors.
+- Domain removal and reassignment safeguards.
+
+Do not display a domain as active merely because the seller typed it into a form.
+
+If the hosting environment requires external configuration or credentials, implement the application-side workflow and document the exact remaining deployment requirements.
+
+### 10.3 Domain security and SEO
+
+Prevent one custom domain from being silently bound to multiple stores.
+
+Check that canonical URLs, redirects, sitemap entries, cookies and storefront links use the active domain consistently.
+
+When a domain changes, use an appropriate redirection strategy and avoid creating infinite redirects or duplicate indexable storefront URLs.
+
+---
+
+## 11. MARKETPLACE CONNECTION AND SYNCHRONISATION LAYER
+
+Implement separate marketplace adapters behind a common internal interface.
+
+The existing application's services should not depend directly on Shopee-specific or TikTok-specific response formats.
+
+Design a suitable interface for operations such as:
+
+- Validate supported URL.
+- Resolve product or shop.
+- Begin authorisation.
+- Exchange or refresh credentials.
+- Retrieve authorised shop information.
+- List products.
+- Retrieve product details.
+- Retrieve permitted image and variant data.
+- Retrieve continuation or pagination data.
+- Handle rate limits and errors.
+- Process supported product-change notifications.
+- Disconnect an integration.
+
+Only implement an operation when the official API actually supports it and the application's authorised access permits it.
+
+For example, conceptual operations such as `listShopProducts` must map to confirmed endpoints and valid permission scopes. They must not be invented API paths.
+
+Use a clean separation between:
+
+- Marketplace connection credentials.
+- Store ownership and identity.
+- Imported product source identifiers.
+- Internal catalogue records.
+- Seller edits.
+- Independent store orders.
+- Optional marketplace synchronisation.
+
+### 11.1 URL-first user experience
+
+The desired user-facing experience starts with a pasted URL.
+
+Implement URL-first import wherever the official APIs and permitted public data make it possible.
+
+However, do not falsely claim that a URL alone grants access to a private seller catalogue. If a marketplace requires the seller to authorise the application, integrate that step into the workflow without abandoning the overall store-generation experience.
+
+The process should explain why authorisation is needed and resume the pending import after successful authorisation.
+
+If only public or partial product information is available, show an honest import preview and clearly identify missing fields.
+
+Do not silently generate fake catalogue entries to make a partial import look complete.
+
+### 11.2 Prohibited shortcuts
+
+Do not implement or rely on:
+
+- Bypassing marketplace authentication.
+- Evading access controls.
+- CAPTCHA circumvention.
+- Rotating proxies to defeat restrictions.
+- Stolen, shared or hardcoded seller tokens.
+- Unauthorised private API endpoints.
+- Undocumented internal endpoints as a production dependency.
+- Unbounded crawling of marketplace pages.
+- Fabricated API responses.
+- Mocked data presented as real imports.
+
+Where an official API lacks an essential field, identify a supported alternative, ask for a legitimate seller-authorised data source, or expose the limitation.
+
+---
+
+## 12. BACKEND DATABASE AND DATA MODEL
+
+Inspect the existing database before introducing migrations.
+
+Extend the existing models where sensible. Do not create duplicate Product, User, Store or Order models if suitable models already exist.
+
+Based on the actual architecture, make sure the data model can represent the following concepts:
+
+- Stores and store lifecycle states.
+- Store ownership and user associations.
+- Store claim attempts and claim verification.
+- Marketplace connections.
+- Authorisation and token metadata.
+- Import jobs and progress.
+- Import errors and warnings.
+- Source shops and source products.
+- Normalised products and variants.
+- Product images and media metadata.
+- Categories and product-category relationships.
+- Source-to-internal record mappings.
+- Seller-overridden product fields.
+- SEO metadata and seller overrides.
+- Domains and verification status.
+- Cart and cart items where needed.
+- Orders and order items.
+- Payment sessions and transactions.
+- Inventory or availability records.
+- Webhook receipts or processed-event identifiers.
+- Audit logs.
+- Relevant store settings.
+
+Use appropriate primary keys, foreign keys, unique constraints, indexes and transaction boundaries.
+
+Prevent duplicate source products through appropriate uniqueness rules.
+
+Prevent cross-tenant associations and enforce ownership constraints wherever possible.
+
+Treat external identifiers as untrusted input and avoid unsafe assumptions about their format.
+
+Sensitive token values must be encrypted or otherwise protected according to the deployment architecture. Do not return tokens in normal API responses or frontend props.
+
+Use schema migrations and update related ORM types, generated clients, validation schemas and tests as required by the existing stack.
+
+After each migration, verify that existing application functionality still works.
+
+---
+
+## 13. SECURITY AND PRODUCTION RELIABILITY
+
+Treat this upgrade as a production commerce feature.
+
+### 13.1 API credentials and secrets
+
+Keep application secrets, marketplace credentials, access tokens, refresh tokens and payment keys on the server.
+
+Use environment variables or the existing secure configuration mechanism.
+
+Never expose private keys or merchant credentials through:
+
+- Frontend bundles.
+- Public API responses.
+- Browser console logs.
+- HTML source.
+- Client-accessible environment variables.
+- Error messages.
+- Repository commits.
+
+Provide an environment-variable example file containing only placeholder names and safe example formats, never live secrets.
+
+### 13.2 Authentication and authorisation
+
+Authenticate every protected operation and verify the user's permission to access its target store and records.
+
+Protect product editing, store claiming, order management, payment settings, domains and marketplace connections.
+
+Apply appropriate CSRF protection, rate limiting, input validation, output encoding and other controls consistent with the existing application.
+
+### 13.3 Safe external requests
+
+Treat pasted URLs and marketplace responses as untrusted.
+
+Prevent SSRF, unsafe redirects, private-network access and unexpected protocols.
+
+Limit payload sizes, downloads, response sizes, redirects, processing time and concurrent jobs.
+
+Validate external image URLs and content types before downloading anything.
+
+### 13.4 Idempotency and event processing
+
+Design import jobs, webhook handling, payment callbacks, store claims and order creation to tolerate duplicate requests safely.
+
+Do not create two stores or two orders because the user double-clicked a button or a network request was retried.
+
+Verify payment events using the gateway's supported authentication mechanism.
+
+Never mark an order paid merely because the customer landed on a success URL.
+
+### 13.5 Errors and auditability
+
+Log meaningful operational events while redacting secrets and sensitive personal information.
+
+Record enough information to diagnose:
+
+- Authorisation failures.
+- Token expiration.
+- API rate limits.
+- Invalid signatures.
+- Import pagination failures.
+- Product-validation errors.
+- Image-processing failures.
+- Database constraint violations.
+- Store-claim conflicts.
+- Payment reconciliation failures.
+- Domain activation problems.
+
+Provide useful error messages to authorised users without exposing internal stack traces or credentials.
+
+---
+
+## 14. FRONTEND REQUIREMENTS
+
+Use the existing design system and established component patterns.
+
+The experience should be polished, responsive and consistent across desktop and mobile.
+
+Implement the real frontend states for:
+
+- URL input.
+- Marketplace detection.
+- Validation.
+- Seller authorisation.
+- Import progress.
+- Import preview.
+- Product counts.
+- Missing fields.
+- Warnings and failures.
+- Store preview.
+- Claim instructions.
+- Ownership verification.
+- Store publication.
+- Product editing.
+- SEO editing.
+- Domain configuration.
+- Payment configuration.
+- Backend dashboard.
+
+All visible buttons, forms, menus, tabs, search functions, filters, pagination controls, product selectors and status actions must perform their advertised functions.
+
+Do not leave decorative buttons, fake progress indicators, dead links, mock charts or non-functional menus.
+
+Handle empty states, loading states, network failures, validation errors and permission failures explicitly.
+
+Reuse existing components where appropriate rather than creating visually inconsistent duplicate controls.
+
+---
+
+## 15. TESTING AND VERIFICATION
+
+Testing is mandatory. A feature is not finished merely because the interface renders or the code compiles.
+
+Write tests consistent with the project's testing framework.
+
+### 15.1 Unit tests
+
+Cover important functions including:
+
+- URL validation and marketplace detection.
+- Identifier extraction and safe redirect handling.
+- API response normalisation.
+- Product and variant mapping.
+- Duplicate detection.
+- Import idempotency.
+- SEO generation.
+- Slug generation and conflict handling.
+- Store state transitions.
+- Claim-token validation.
+- Permission checks.
+- Payment-event idempotency.
+- Variant pricing and inventory validation.
+
+### 15.2 Integration tests
+
+Verify the actual interaction between:
+
+- API connectors and the normalisation layer.
+- Import jobs and database persistence.
+- Product import and image processing.
+- Imported products and storefront rendering.
+- Store claiming and account ownership.
+- Store publishing and hostname routing.
+- SEO metadata and product routes.
+- Cart and server-side pricing.
+- Checkout and order creation.
+- Payment gateway callbacks and order status.
+- Domain records and store resolution.
+
+Mock external APIs only in isolated automated tests. Clearly label fixtures and ensure they are not used as evidence of successful live marketplace integration.
+
+### 15.3 End-to-end tests
+
+Test the complete workflow:
+
+1. Open the store-generation interface.
+2. Submit a supported marketplace URL.
+3. Validate and identify the input.
+4. Complete authorisation when required.
+5. Import multiple products and their variants.
+6. Verify product images and price mappings.
+7. Handle at least one missing or failed field gracefully.
+8. Generate a store draft.
+9. Complete ownership verification.
+10. Claim the store.
+11. Edit product or SEO information.
+12. Configure required settings.
+13. Publish the store.
+14. Open the public storefront.
+15. Add a product to the cart.
+16. Select valid variants.
+17. Validate the order total.
+18. Complete a payment in an appropriate test environment.
+19. Verify the stored order and payment status.
+20. Confirm that a different user's account cannot access the store's private backend.
+
+Also test repeat imports, duplicate submissions, expired tokens, API errors, partial failures, pagination boundaries and concurrent claim attempts.
+
+### 15.4 Live integration status
+
+If application credentials or marketplace approval are unavailable, do not fabricate a successful live import.
+
+Implement the connector, configuration validation and test suite as far as the available environment permits.
+
+Clearly distinguish:
+
+- Unit-tested behaviour.
+- Integration-tested behaviour using test fixtures.
+- Behaviour verified against an authorised API sandbox.
+- Behaviour verified against a live marketplace account.
+- Behaviour blocked by missing credentials or external approval.
+
+---
+
+## 16. REQUIRED IMPLEMENTATION ORDER
+
+Follow the steps below **strictly in sequence**. Do not skip a phase, begin unrelated phases simultaneously or make several large, unverified changes at once.
+
+### Phase 1 — Codebase discovery
+
+Inspect the existing project and identify the actual framework, database, authentication system, e-commerce logic, integrations and architectural conventions.
+
+Deliverable: codebase inventory and integration-impact map.
+
+### Phase 2 — Official documentation research
+
+Read the Shopee and TikTok Shop documentation specified in Section 3. Follow the relevant linked pages and determine the exact API capabilities, required permissions, available fields and blockers.
+
+Deliverable: marketplace research document and endpoint/permission matrix.
+
+### Phase 3 — Architecture and implementation plan
+
+Compare the documentation findings with the existing application.
+
+Identify which existing modules can be reused, which need modification and which genuinely need to be added.
+
+Define the database changes, API contracts, import lifecycle, claim workflow, SEO pipeline, background jobs and testing strategy.
+
+Deliverable: a concrete, repository-specific implementation plan.
+
+Do not provide a generic architecture that ignores the codebase.
+
+### Phase 4 — Database and backend foundation
+
+Implement safe migrations, core data models, validation, service interfaces, access control and logging.
+
+Run migrations in the appropriate development or test environment and verify existing functionality.
+
+Do not continue if the foundational schema or security tests are failing.
+
+### Phase 5 — Marketplace connectors
+
+Implement the Shopee connector using confirmed and permitted endpoints.
+
+Test it independently.
+
+Then implement the TikTok Shop connector using confirmed and permitted endpoints.
+
+Test it independently.
+
+Do not combine both connectors into an untestable block of code.
+
+### Phase 6 — Import job and product catalogue
+
+Implement pagination, mapping, variants, image processing, idempotency, duplicate handling, retries, partial-failure reporting and persisted import progress.
+
+Verify that imported records are genuinely saved and retrievable from the database.
+
+### Phase 7 — Generated storefront and claim system
+
+Implement store-draft creation, product rendering, store preview, ownership verification, claim-token handling and secure account association.
+
+Test claim collisions and access control before exposing the flow.
+
+### Phase 8 — Checkout, payment and order integration
+
+Reuse and integrate the existing commerce infrastructure. Add missing capabilities only where necessary.
+
+Test product validation, variant handling, order persistence, payment callbacks, duplicate events and failure handling.
+
+Do not advertise functional checkout before the critical paths are verified.
+
+### Phase 9 — SEO and domain management
+
+Implement metadata generation, editable SEO controls, technical SEO output, subdomain routing, custom-domain verification and publication safeguards.
+
+Verify that published pages generate correct public URLs and that private pages remain private.
+
+### Phase 10 — Seller command centre
+
+Connect the product, import, store settings, domain, SEO, payment, order and analytics interfaces to the completed backend services.
+
+Do not build dashboard sections against imaginary records or placeholder APIs.
+
+### Phase 11 — End-to-end testing and regression checks
+
+Run the full test suite, relevant migrations, type checks, linting, production build and end-to-end tests supported by the repository.
+
+Fix failures introduced by the upgrade.
+
+Verify that existing functionality remains operational.
+
+### Phase 12 — Final technical audit
+
+Review the completed implementation against all requirements and acceptance criteria below.
+
+Report any external setup or remaining limitations honestly.
+
+**After completing each phase, validate the work before proceeding to the next phase. If a step fails, diagnose and fix it before continuing. Do not skip the failed step and hide the issue in a later phase.**
+
+---
+
+## 17. ACCEPTANCE CRITERIA — WHAT COUNTS AS FINISHED
+
+The upgrade is complete only when every applicable criterion below has been implemented and verified.
+
+### Marketplace import
+
+- [ ] The interface accepts supported Shopee URLs.
+- [ ] The interface accepts supported TikTok Shop URLs.
+- [ ] The backend identifies and validates marketplace inputs.
+- [ ] Correct official API endpoints have been selected and documented.
+- [ ] Required authorisation and permissions are implemented.
+- [ ] Supported shop imports handle pagination.
+- [ ] Product details are normalised correctly.
+- [ ] Product images are handled through an appropriate permitted storage or reference strategy.
+- [ ] Product variants and SKU-level pricing are represented correctly where available.
+- [ ] Missing or inaccessible information is reported honestly.
+- [ ] Import jobs support progress, retries and partial failures.
+- [ ] Repeated imports do not create unintended duplicate products.
+- [ ] Imported products are persisted in the real application database.
+
+### Generated store and claiming
+
+- [ ] The system creates a store draft from a successful import.
+- [ ] The draft storefront renders real imported products.
+- [ ] Products have working detail pages and variant selection where applicable.
+- [ ] Store previews work.
+- [ ] The rightful seller can claim the store through a secure verification process.
+- [ ] Unauthorised users cannot claim or manage another seller's store.
+- [ ] Store publication follows the required verification and configuration checks.
+
+### Commerce operations
+
+- [ ] Cart operations work.
+- [ ] Server-side prices and variants are validated.
+- [ ] Orders are written to the database.
+- [ ] Payment operations use a real configured integration.
+- [ ] Payment events are authenticated and idempotent.
+- [ ] Order and payment statuses remain consistent.
+- [ ] Seller-specific access control is enforced.
+
+### Backend administration
+
+- [ ] Product management is connected to the real catalogue.
+- [ ] Variant and category management work.
+- [ ] Import histories and errors are available.
+- [ ] Store settings save and persist correctly.
+- [ ] Domain settings reflect actual verification status.
+- [ ] Orders and transaction information are retrieved from real data.
+- [ ] No major advertised dashboard control is left unconnected.
+
+### SEO and publication
+
+- [ ] Product metadata is generated automatically.
+- [ ] Seller SEO overrides are preserved.
+- [ ] Product pages have appropriate canonical URLs and metadata.
+- [ ] Structured product data reflects the actual product.
+- [ ] Sitemaps and robots directives behave appropriately.
+- [ ] Private claim pages and unpublished stores are protected from indexing.
+- [ ] Subdomains route to the correct store.
+- [ ] Custom domains are not shown as active before successful verification and setup.
+- [ ] Domain changes do not create broken redirects or cross-store routing.
+
+### Quality and security
+
+- [ ] Database migrations preserve existing data.
+- [ ] Relevant unit, integration and end-to-end tests pass.
+- [ ] Existing features continue to work.
+- [ ] Secrets remain server-side.
+- [ ] Cross-tenant access is blocked.
+- [ ] No critical functionality relies on fake data or fabricated API responses.
+- [ ] Production build and relevant static checks pass.
+- [ ] External dependencies and setup requirements are documented.
+
+If a feature depends on external API approval, production credentials, DNS configuration or another external prerequisite, clearly record the remaining dependency and its verification status. Do not mark that feature fully operational until its actual acceptance criteria are satisfied.
+
+---
+
+## 18. FINAL REQUIRED DELIVERABLES
+
+When implementation is complete, provide a technical handover containing:
+
+1. **Initial codebase findings:** Existing features and architecture discovered before implementation.
+
+2. **Documentation findings:** The official Shopee and TikTok Shop API pages reviewed, the confirmed endpoints selected, relevant permissions, available fields and limitations.
+
+3. **Implementation summary:** The modules created and modified, with the actual repository file paths.
+
+4. **Database changes:** Migrations, model changes, indexes and important data relationships.
+
+5. **Marketplace configuration:** Required environment-variable names, app registrations, seller-authorisation setup and credential requirements. Never include actual secret values.
+
+6. **Import behaviour:** Supported link formats, import limitations, pagination behaviour, product/variant handling and retry strategy.
+
+7. **Store claim flow:** How ownership is verified, how a store becomes associated with an account and how unclaimed stores are protected.
+
+8. **Commerce integration:** Checkout, payment, order and transaction behaviour, including any external setup required.
+
+9. **SEO and domains:** Implemented SEO capabilities, publication behaviour, subdomain routing and custom-domain requirements.
+
+10. **Testing report:** Commands executed, tests passed, failures fixed and any unverified live integrations.
+
+11. **Outstanding limitations:** Only genuine remaining blockers or unimplemented requirements, with their reasons and necessary next steps.
+
+12. **Acceptance checklist:** The final status of every criterion in Section 17.
+
+Do not merely return an architectural plan, write documentation and stop, or create an interface without its backend implementation.
+
+The requested outcome is an actual upgrade to the existing application.
+
+---
+
+## 19. FINAL DIRECTIVE
+
+Prioritise correctness, working integration, data integrity, maintainability, security and completeness over implementation speed.
+
+Do not assume API capabilities without reading the official documentation. Do not assume that a successful HTTP request means every product field has been imported. Do not assume that a generated-looking storefront is ready to transact. Do not assume that a store is safe to claim without validating ownership.
+
+Preserve existing working code, perform changes sequentially, verify the results of each phase and ensure that every new feature is connected through the frontend, backend, database and external services as applicable.
+
+**The final product should reproduce the core user-facing experience of Nexova: enter a supported Shopee shop URL or TikTok Shop link, automatically build a store from available authorised catalogue data, allow the rightful seller to claim that store, and provide a functioning independent e-commerce business with product management, checkout, payments, domain management, advanced SEO and a connected seller command centre.**
+
+Begin with Phase 1 now, Inspect the existing project thoroughly, then continue through every phase in the specified order. DO NOT STOP after producing the plan.

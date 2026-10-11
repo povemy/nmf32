@@ -1,0 +1,2688 @@
+Open Platform
+Documentation
+Support Center
+Announcement
+Console
+AI Assistant 
+English
+Log In
+V2.0 Tables of Contents
+- > v2.product.get_item_base_info
+Request
+Request Address
+Common Request Parameters
+Request Parameters
+Request Example
+Response
+Response Parameters
+Response Example
+Error Codes
+Error Example
+API Permissions
+API Tools
+Update Log
+AMS
+get_open_campaign_added_product
+get_open_campaign_not_added_product
+batch_add_products_to_open_campaign
+add_all_products_to_open_campaign
+get_auto_add_new_product_toggle_status
+update_auto_add_new_product_setting
+batch_edit_products_open_campaign_setting
+edit_all_products_open_campaign_setting
+batch_remove_products_open_campaign_setting
+remove_all_products_open_campaign_setting
+get_open_campaign_batch_task_result
+get_optimization_suggestion_product
+batch_get_products_suggested_rate
+get_shop_suggested_rate
+get_targeted_campaign_addable_product_list
+get_recommended_affiliate_list
+get_managed_affiliate_list
+query_affiliate_list
+create_new_targeted_campaign
+get_targeted_campaign_list
+get_targeted_campaign_settings
+update_basic_info_of_targeted_campaign
+edit_product_list_of_targeted_campaign
+edit_affiliate_list_of_targeted_campaign
+terminate_targeted_campaign
+get_performance_data_update_time
+get_shop_performance
+get_product_performance
+get_affiliate_performance
+get_content_performance
+get_campaign_key_metrics_performance
+get_open_campaign_performance
+get_targeted_campaign_performance
+get_conversion_report
+get_validation_list
+get_validation_report
+Video
+get_cover_list
+edit_video_info
+post_video
+get_video_list
+get_video_detail
+delete_video
+get_overview_performance
+get_metric_trend
+get_user_demographics
+get_video_performance_list
+get_prodcut_performance_list
+get_video_detail_performance
+get_video_detail_metric_trend
+get_video_detail_audience_distribution
+get_video_detail_product_performance
+Product
+get_category
+get_attribute_tree
+get_brand_list
+get_item_limit
+get_item_list
+get_item_base_info
+get_item_extra_info
+add_item
+update_item
+delete_item
+init_tier_variation
+update_tier_variation
+get_model_list
+add_model
+update_model
+delete_model
+unlist_item
+update_price
+update_stock
+boost_item
+get_boosted_list
+get_item_promotion
+update_sip_item_price
+search_item
+get_comment
+reply_comment
+category_recommend
+register_brand
+get_recommend_attribute
+get_weight_recommendation
+get_size_chart_list
+get_size_chart_detail
+get_item_violation_info
+get_variations
+get_all_vehicle_list
+get_vehicle_list_by_compatibility_detail
+get_item_content_diagnosis_result
+get_item_list_by_content_diagnosis
+get_kit_item_limit
+add_kit_item
+update_kit_item
+get_kit_item_info
+get_aitem_by_pitem_id
+search_attribute_value_list
+get_main_item_list
+get_direct_item_list
+get_direct_shop_recommended_price
+get_product_certification_rule
+v2.product.publish_item_to_outlet_shop
+get_mart_item_mapping_by_id
+search_unpackaged_model_list
+generate_kit_image
+get_mart_item_by_outlet_item_id
+batch_update_outlet_price
+batch_update_outlet_stock
+get_batch_task_result
+batch_add_item
+batch_publish_item_to_outlet_shop
+get_ssp_detail
+get_ssp_recommendation
+search_ssp_list
+link_item_to_ssp
+unlink_item_from_ssp
+GlobalProduct
+get_category
+get_attribute_tree
+get_brand_list
+get_global_item_limit
+get_global_item_list
+get_global_item_info
+add_global_item
+update_global_item
+delete_global_item
+init_tier_variation
+update_tier_variation
+add_global_model
+update_global_model
+delete_global_model
+get_global_model_list
+support_size_chart
+update_size_chart
+create_publish_task
+get_publishable_shop
+get_publish_task_result
+get_published_list
+update_price
+update_stock
+set_sync_field
+get_global_item_id
+category_recommend
+get_recommend_attribute
+get_shop_publishable_status
+get_variations
+get_size_chart_detail
+get_size_chart_list
+search_global_attribute_value_list
+get_local_adjustment_rate
+update_local_adjustment_rate
+MediaSpace
+init_video_upload
+upload_video_part
+complete_video_upload
+get_video_upload_result
+cancel_video_upload
+upload_image
+Media
+upload_image
+init_video_upload
+upload_video_part
+complete_video_upload
+get_video_upload_result
+cancel_video_upload
+Shop
+get_shop_info
+get_profile
+update_profile
+get_warehouse_detail
+get_shop_notification
+get_authorised_reseller_brand
+get_br_shop_onboarding_info
+get_shop_holiday_mode
+set_shop_holiday_mode
+Merchant
+get_merchant_info
+get_shop_list_by_merchant
+get_merchant_warehouse_location_list
+get_merchant_warehouse_list
+get_warehouse_eligible_shop_list
+get_merchant_prepaid_account_list
+Order
+get_order_list
+get_order_detail
+get_shipment_list
+search_package_list
+get_package_detail
+split_order
+unsplit_order
+cancel_order
+handle_buyer_cancellation
+set_note
+get_pending_buyer_invoice_order_list
+get_buyer_invoice_info
+upload_invoice_doc
+download_invoice_doc
+handle_prescription_check
+get_warehouse_filter_config
+get_booking_list
+get_booking_detail
+generate_fbs_invoices
+get_fbs_invoices_result
+download_fbs_invoices
+get_estimate_cancel_value
+Logistics
+get_shipping_parameter
+get_mass_shipping_parameter
+ship_order
+mass_ship_order
+update_shipping_order
+get_tracking_number
+get_mass_tracking_number
+get_shipping_document_parameter
+create_shipping_document
+get_shipping_document_result
+download_shipping_document
+get_shipping_document_data_info
+get_tracking_info
+get_address_list
+set_address_config
+update_address
+delete_address
+get_channel_list
+update_channel
+get_operating_hours
+get_operating_hour_restrictions
+update_operating_hours
+delete_special_operating_hour
+batch_update_tpf_warehouse_tracking_status
+batch_ship_order
+update_tracking_status
+get_booking_shipping_parameter
+ship_booking
+get_booking_tracking_number
+get_booking_shipping_document_parameter
+create_booking_shipping_document
+get_booking_shipping_document_result
+download_booking_shipping_document
+get_booking_shipping_document_data_info
+get_booking_tracking_info
+download_to_label
+create_shipping_document_job
+get_shipping_document_job_status
+download_shipping_document_job
+update_self_collection_order_logistics
+get_mart_packaging_info
+set_mart_packaging_info
+upload_serviceable_polygon
+check_polygon_update_status
+get_pause_status
+set_pause_status
+FirstMile
+get_unbind_order_list
+get_detail
+generate_first_mile_tracking_number
+bind_first_mile_tracking_number
+unbind_first_mile_tracking_number
+get_tracking_number_list
+get_waybill
+get_channel_list
+get_courier_delivery_channel_list
+get_transit_warehouse_list
+generate_and_bind_first_mile_tracking_number
+bind_courier_delivery_first_mile_tracking_number
+unbind_first_mile_tracking_number_all
+get_courier_delivery_detail
+get_courier_delivery_waybill
+get_courier_delivery_tracking_number_list
+Payment
+get_escrow_detail
+set_shop_installment_status
+get_shop_installment_status
+get_payout_detail
+set_item_installment_status
+get_item_installment_status
+get_payment_method_list
+get_wallet_transaction_list
+get_escrow_list
+get_payout_info
+get_billing_transaction_info
+get_escrow_detail_batch
+generate_income_statement
+get_income_statement
+generate_income_report
+get_income_report
+get_income_overview
+get_income_detail
+Discount
+add_discount
+add_discount_item
+delete_discount
+delete_discount_item
+get_discount
+get_discount_list
+update_discount
+update_discount_item
+end_discount
+get_sip_discounts
+set_sip_discount
+delete_sip_discount
+Bundle Deal
+add_bundle_deal
+add_bundle_deal_item
+get_bundle_deal_list
+get_bundle_deal
+get_bundle_deal_item
+update_bundle_deal
+update_bundle_deal_item
+end_bundle_deal
+delete_bundle_deal
+delete_bundle_deal_item
+Add-On Deal
+add_add_on_deal
+add_add_on_deal_main_item
+add_add_on_deal_sub_item
+delete_add_on_deal
+delete_add_on_deal_main_item
+delete_add_on_deal_sub_item
+get_add_on_deal_list
+get_add_on_deal
+get_add_on_deal_main_item
+get_add_on_deal_sub_item
+update_add_on_deal
+update_add_on_deal_main_item
+update_add_on_deal_sub_item
+end_add_on_deal
+Voucher
+add_voucher
+delete_voucher
+end_voucher
+update_voucher
+get_voucher
+get_voucher_list
+ShopFlashSale
+get_time_slot_id
+create_shop_flash_sale
+get_item_criteria
+add_shop_flash_sale_items
+get_shop_flash_sale_list
+get_shop_flash_sale
+get_shop_flash_sale_items
+update_shop_flash_sale
+update_shop_flash_sale_items
+delete_shop_flash_sale
+delete_shop_flash_sale_items
+Follow Prize
+add_follow_prize
+delete_follow_prize
+end_follow_prize
+update_follow_prize
+get_follow_prize_detail
+get_follow_prize_list
+TopPicks
+get_top_picks_list
+add_top_picks
+update_top_picks
+delete_top_picks
+ShopCategory
+add_shop_category
+get_shop_category_list
+delete_shop_category
+update_shop_category
+add_item_list
+get_item_list
+delete_item_list
+Returns
+get_return_list
+get_return_detail
+confirm
+dispute
+get_available_solutions
+offer
+accept_offer
+convert_image
+upload_proof
+query_proof
+get_return_dispute_reason
+cancel_dispute
+get_shipping_carrier
+upload_shipping_proof
+get_reverse_tracking_info
+AccountHealth
+get_shop_performance
+get_metric_source_detail
+get_penalty_point_history
+get_punishment_history
+get_listings_with_issues
+get_late_orders
+Ads
+get_total_balance
+get_shop_toggle_info
+get_recommended_keyword_list
+get_recommended_item_list
+get_all_cpc_ads_hourly_performance
+get_all_cpc_ads_daily_performance
+(coming offline soon) v2.ads.create_auto_product_ads
+(coming offline soon) v2.ads.edit_auto_product_ads
+get_product_campaign_daily_performance
+get_product_campaign_hourly_performance
+get_product_level_campaign_id_list
+get_product_level_campaign_setting_info
+create_manual_product_ads
+edit_manual_product_ad_keywords
+edit_manual_product_ads
+get_create_product_ad_budget_suggestion
+get_product_recommended_roi_target
+get_ads_fácil_shop_rate
+check_create_gms_product_campaign_eligibility
+create_gms_product_campaign
+edit_gms_product_campaign
+list_gms_user_deleted_item
+edit_gms_item_product_campaign
+get_gms_campaign_performance
+get_gms_item_performance
+Public
+get_shops_by_partner
+get_merchants_by_partner
+get_access_token
+refresh_access_token
+get_token_by_resend_code
+get_shopee_ip_ranges
+Push
+set_app_push_config
+get_app_push_config
+get_lost_push_message
+confirm_consumed_lost_push_message
+SBS
+get_bound_whs_info
+get_current_inventory
+get_expiry_report
+get_stock_aging
+get_stock_movement
+get_fulfillment_mapping_inventory_list
+FBS
+query_br_shop_enrollment_status
+query_br_shop_invoice_error
+query_br_shop_block_status
+query_br_sku_block_status
+Livestream
+upload_image
+create_session
+update_session
+start_session
+end_session
+get_session_detail
+add_item_list
+delete_item_list
+update_item_list
+get_item_count
+get_item_list
+update_show_item
+delete_show_item
+get_show_item
+get_like_item_list
+get_recent_item_list
+get_item_set_list
+get_item_set_item_list
+apply_item_set
+get_session_metric
+get_session_item_metric
+get_latest_comment_list
+post_comment
+ban_user_comment
+unban_user_comment
+BrandPortal
+get_shop_sales_performance_detail
+get_principal_sales_performance_detail
+get_shop_affiliate_performance
+get_principal_affiliate_performance
+get_content_affiliate_performance
+get_shop_livestream_performance
+get_principal_livestream_performance
+get_session_livestream_performance
+get_shop_video_performance
+get_principal_video_performance
+get_clip_video_performance
+Buybox
+get_buybox_models_by_shop_id（only for BR now）
+get_buybox_models_by_model_id（only for BR now）
+get_buybox_shop_performance（only for BR now）
+get_buybox_model_performance（only for BR now）
+update_buybox_model_enrollment（only for BR now）
+BusinessInsights
+get_marketing_hot_listing（only BR now）
+v2.product.get_item_base_info
+GET
+/api/v2/product/get_item_base_info
+API Description
+Collapse
+Use this api to get basic info of item by item_id list.
+Request
+Request Address
+More
+Common Request Parameters
+More
+Request Parameters
+Collapse
+Name
+	
+Type
+	
+Required
+	
+Sample
+	
+Description
+
+
+item_id_list
+	
+int64[]
+	
+True
+	
+[34001,34002]
+	
+item_id list; limit [0,50]
+
+
+need_tax_info
+	
+boolean
+	
+False
+	
+true
+	
+if true will response tax_info
+
+
+need_complaint_policy
+	
+boolean
+	
+False
+	
+true
+	
+if true will response complaint_policy
+Request Example
+Collapse
+Copy
+Java
+PHP
+cURL
+Python
+Unirest.setTimeouts(0, 0);
+HttpResponse<String> response = Unirest.get("https://partner.shopeemobile.com/api/v2/product/get_item_base_info?timestamp=timestamp&sign=sign&shop_id=shop_id&need_tax_info=true&item_id_list=[34001 34002]&partner_id=partner_id&need_complaint_policy=true&access_token=access_token")
+.asString();
+Response
+Response Parameters
+Collapse
+Name
+	
+Type
+	
+Sample
+	
+Description
+
+
+error
+	
+string
+	
+	
+Indicate error type if hit error. Empty if no error happened.
+
+
+message
+	
+string
+	
+	
+Indicate error details if hit error. Empty if no error happened.
+
+
+warning
+	
+string
+	
+	
+Indicate waring details if hit waring. Empty if no waring happened.
+
+
+request_id
+	
+string
+	
+7b9da0c6926642199c33ee9dd3a266f5
+	
+The identifier for an API request for error tracking.
+
+
+response
+	
+object
+	
+	
+
+
+item_list
+	
+object[]
+	
+	
+
+
+item_id
+	
+int64
+	
+34002
+	
+Shopee's unique identifier for an item.
+
+
+category_id
+	
+int32
+	
+14646
+	
+Shopee's unique identifier for a category.
+
+
+item_name
+	
+string
+	
+seller discount
+	
+Name of the item in local language.
+
+
+description
+	
+string
+	
+first product 001first product
+	
+if description_type is normal , Description information will be returned through this field，else description will be empty
+
+
+item_sku
+	
+string
+	
+	
+An item SKU (stock keeping unit) is an identifier defined by a seller, sometimes called parent SKU. Item SKU can be assigned to an item in Shopee Listings.
+
+
+create_time
+	
+timestamp
+	
+1600572637
+	
+Timestamp that indicates the date and time that the item was created.
+
+
+update_time
+	
+timestamp
+	
+1600572640
+	
+Timestamp that indicates the last time that there was a change in value of the item, such as price/stock change.
+
+
+attribute_list
+	
+object[]
+	
+	
+
+
+attribute_id
+	
+int32
+	
+4811
+	
+The Identify of each category.
+
+
+original_attribute_name
+	
+string
+	
+Brand: L2 Default [14644]
+	
+The name of each attribute.
+
+
+is_mandatory
+	
+boolean
+	
+true
+	
+This is to indicate whether this attribute is mandantory.
+
+
+attribute_value_list
+	
+object[]
+	
+	
+
+
+value_id
+	
+int32
+	
+0
+	
+Unique identifier for value of this item attribute.
+
+
+original_value_name
+	
+string
+	
+Default
+	
+Value name of this item attribute.
+
+
+value_unit
+	
+string
+	
+g
+	
+Value unit of this item attribute.
+
+
+price_info
+	
+object[]
+	
+	
+If the item has models, price_info will not be returned. Please get the price of each model through the get_model_list api
+
+
+currency
+	
+string
+	
+SGD
+	
+The three-digit code representing the currency unit used for the item in Shopee Listings.
+
+
+original_price
+	
+float
+	
+122.02
+	
+The original price of the item in the listing currency.
+
+
+current_price
+	
+float
+	
+122.02
+	
+The current price of the item in the listing currency. If product under a onging promotion, current_price will be the promotion price
+
+
+inflated_price_of_original_price
+	
+float
+	
+222.02
+	
+The After-tax original price of the item in the listing currency.
+
+
+inflated_price_of_current_price
+	
+float
+	
+111.02
+	
+The After-tax current price of the item in the listing currency.
+
+
+sip_item_price
+	
+float
+	
+100.02
+	
+The price of the item in sip.If item is for CNSC primary shop, this field will not be returned
+
+
+sip_item_price_source
+	
+string
+	
+auto
+	
+source of sip' price. ( auto or manual).If item is for CNSC SIP primary shop, this field will not be returned
+
+
+local_price
+	
+float
+	
+122.02
+	
+
+The original price multiplied by the local adjustment rate equals the local price. The local price is denominated in the local currency and is rounded to two decimal places.
+
+
+
+local_promotion_price
+	
+float
+	
+122.02
+	
+
+During the promotion period, the CB price is multiplied by the local adjustment rate. Once the promotion starts, the price remains unchanged. During the promotion, the local_promotion_price= current_price, which is denominated in the local currency and retained to two decimal places.
+
+
+
+
+image
+	
+object
+	
+	
+
+
+image_url_list
+	
+string[]
+	
+	
+List of image url.
+
+
+image_id_list
+	
+string[]
+	
+	
+List of image id.
+
+
+image_ratio
+	
+string
+	
+	
+
+Image ratio
+
+
+
+
+weight
+	
+string
+	
+"10.02"
+	
+
+The weight of this item, the unit is KG.
+
+If set the weight of models under this item, will return the max weight of all models during the switching period to ensure system compatibility, please switch to call v2.product.get_model_list to get the weight of models.
+
+
+
+dimension
+	
+object
+	
+	
+
+The dimension of this item.
+
+If set the dimension of models under this item, will return the dimension with largest volume calculated by height*length*width during the switching period to ensure system compatibility, please switch to call v2.product.get_model_list to get the dimension of models.
+
+
+
+package_length
+	
+int32
+	
+11
+	
+
+The length of package for this item, the unit is CM.
+
+
+
+package_width
+	
+int32
+	
+12
+	
+
+The width of package for this item, the unit is CM.
+
+
+
+package_height
+	
+int32
+	
+13
+	
+
+The height of package for this item, the unit is CM.
+
+
+
+logistic_info
+	
+object[]
+	
+	
+The logistics list.
+
+
+logistic_id
+	
+int32
+	
+80012
+	
+The identity of logistic channel.
+
+
+logistic_name
+	
+string
+	
+	
+The name of logistic.
+
+
+enabled
+	
+boolean
+	
+true
+	
+Related to shopee.logistics.GetLogistics result.logistics.enabled only affect current item.
+
+
+shipping_fee
+	
+float
+	
+5.02
+	
+Only needed when logistics fee_type = CUSTOM_PRICE.
+
+
+size_id
+	
+int32
+	
+	
+If specify logistic fee_type is SIZE_SELECTION size_id is required.
+
+
+is_free
+	
+boolean
+	
+false
+	
+when seller chooses this option, the shipping fee of this channel on item will be set to 0. Default value is False.
+
+
+estimated_shipping_fee
+	
+float
+	
+4.02
+	
+Estimated shipping fee calculated by weight. Don't exist if channel is no-integrated.
+
+
+pre_order
+	
+object
+	
+	
+
+
+is_pre_order
+	
+boolean
+	
+false
+	
+Pre-order will be set true.
+
+
+days_to_ship
+	
+int32
+	
+3
+	
+
+The days to ship. Only work for pre-orde.
+
+
+
+wholesales
+	
+object[]
+	
+	
+The wholesales tier list.
+
+
+min_count
+	
+int32
+	
+1
+	
+The min count of this tier wholesale.
+
+
+max_count
+	
+int32
+	
+2
+	
+The max count of this tier wholesale.
+
+
+unit_price
+	
+float
+	
+4.02
+	
+The current price of the wholesale in the listing currency.If item is in promotion, this price is useless.
+
+
+inflated_price_of_unit_price
+	
+float
+	
+5.02
+	
+The After-tax Price of the wholesale show to buyer.
+
+
+condition
+	
+string
+	
+NEW/USED
+	
+Is it second-hand.
+
+
+size_chart
+	
+string
+	
+	
+Url of size chart image.
+
+
+item_status
+	
+string
+	
+NORMAL
+	
+
+Enumerated type that defines the current status of the item. Applicable values: NORMAL, BANNED, UNLIST, SELLER_DELETE, SHOPEE_DELETE, REVIEWING.
+
+
+
+
+deboost
+	
+boolean
+	
+false
+	
+
+If deboost is true, means that the item's search ranking is lowered.
+
+
+
+
+has_model
+	
+boolean
+	
+false
+	
+Does it contain model.
+
+
+has_promotion
+	
+boolean
+	
+true
+	
+
+Indicates whether the item is currently under any ongoing promotion.
+
+
+
+video_info
+	
+object[]
+	
+	
+Info of video list.
+
+
+video_url
+	
+string
+	
+	
+Url of video.
+
+
+thumbnail_url
+	
+string
+	
+	
+Thumbnail of video.
+
+
+duration
+	
+int32
+	
+	
+
+Duration of video.
+
+
+
+brand
+	
+object
+	
+	
+
+
+brand_id
+	
+int32
+	
+123
+	
+Id of brand.
+
+
+original_brand_name
+	
+string
+	
+nike
+	
+Original name of brand.
+
+
+item_dangerous
+	
+int32
+	
+0
+	
+This field is only applicable for local sellers in Indonesia and Malaysia. Use this field to identify whether a product is a dangerous product. 0 for non-dangerous product and 1 for dangerous product. For more information, please visit the market's respective Seller Education Hub.
+
+
+gtin_code
+	
+string
+	
+	
+
+gtin code for br region, will return this code only item has default model
+
+
+
+
+Note: gtin_code = "00" means that this item is “Item without GTIN”
+
+
+
+
+size_chart_id
+	
+int64
+	
+	
+
+id of new size chart.
+
+
+
+
+promotion_image
+	
+object
+	
+	
+
+
+image_id_list
+	
+string[]
+	
+	
+
+Promotion image
+
+
+
+
+image_url_list
+	
+string[]
+	
+	
+
+Promiton image urls
+
+
+
+image_ratio
+	
+string
+	
+	
+
+Promotion image ratio
+
+
+
+compatibility_info
+	
+object
+	
+	
+
+
+vehicle_info_list
+	
+object[]
+	
+	
+
+
+brand_id
+	
+int64
+	
+1234
+	
+
+ID of the brand.
+
+
+
+model_id
+	
+int64
+	
+2345
+	
+
+ID of the model.
+
+
+
+
+year_id
+	
+int64
+	
+3456
+	
+
+ID of the year.
+
+
+
+
+version_id
+	
+int64
+	
+4567
+	
+
+ID of the version.
+
+
+
+
+scheduled_publish_time
+	
+timestamp
+	
+1733590920
+	
+
+Scheduled publish time of this item.
+
+
+
+authorised_brand_id
+	
+int64
+	
+	
+
+ID of authorised reseller brand.
+
+
+
+
+ssp_id
+	
+int64
+	
+	
+
+Shopee's unique identifier for Shopee Standard Product.
+
+
+
+
+is_fulfillment_by_shopee
+	
+boolean
+	
+	
+
+return true if the item only has a default model and it is FBS model
+
+
+
+tag
+	
+object
+	
+	
+
+
+kit
+	
+boolean
+	
+	
+
+Indicate if the item is kit item.
+
+
+
+purchase_limit_info
+	
+object
+	
+	
+
+purchase limit info
+
+
+
+min_purchase_limit
+	
+int32
+	
+	
+
+minimum purchase count for each order
+
+
+
+max_purchase_limit
+	
+object
+	
+	
+
+
+purchase_limit
+	
+int32
+	
+	
+
+maximum purchase limit for each order
+
+
+
+medicine_id
+	
+int64
+	
+	
+
+[Only for ID local sellers] as a unique identifier for each standardized medicine.
+
+
+
+certification_info
+	
+object
+	
+	
+
+For PH product certification input
+Required for some category and attribute option
+
+
+
+certification_list
+	
+object[]
+	
+	
+
+Array of certification records for the product, each containing type, certificate number, permit ID, and proof documents.
+
+
+
+permit_id
+	
+int32
+	
+	
+
+Permit ID, get from v2.product.get_product_certification_rule
+
+
+
+certification_no
+	
+string
+	
+	
+
+Certification No.
+
+
+
+expiry_date
+	
+int32
+	
+	
+
+expiry timestamp
+
+
+
+certification_proofs
+	
+object[]
+	
+	
+
+An array of proof documents for the certification; each element represents one proof file.
+
+
+
+image_id
+	
+string
+	
+	
+
+The unique image ID of the certification proof, returned by the image upload API.
+
+
+
+ratio
+	
+float
+	
+	
+
+image weight/ image height.
+
+
+
+file_name
+	
+string
+	
+	
+
+The name of the uploaded certification proof file.
+
+
+
+image_url
+	
+string
+	
+	
+
+The image url of the proof
+
+
+
+complaint_policy
+	
+object
+	
+	
+Complaint policy.Only returned for local PL sellers, and need_complaint_policy in request is true.
+
+
+warranty_time
+	
+string
+	
+ONE_YEAR
+	
+Time for a warranty claim.Value should be in one of ONE_YEAR TWO_YEARS OVER_TWO_YEARS.
+
+
+exclude_entrepreneur_warranty
+	
+boolean
+	
+	
+If True means "I exclude warranty complaints for entrepreneur"
+
+
+complaint_address_id
+	
+int64
+	
+	
+The identity of complaint address.
+
+
+additional_information
+	
+string
+	
+	
+Additional information for complaint policy
+
+
+tax_info
+	
+object
+	
+	
+Tax information
+
+
+ncm
+	
+string
+	
+	
+
+Mercosur Common Nomenclature, it is a convention between Mercosur member countries to easily recognize goods, services and productive factors negotiated among themselves.(BR region)
+
+
+
+
+Note: ncm = "00" means that this item doesn't have a NCM.
+
+
+
+diff_state_cfop
+	
+string
+	
+	
+Tax Code of Operations and Installments for orders that seller and buyer are in different states. It identifies a specific operation by category at the time of issuing the invoice. (BR region)
+
+
+csosn
+	
+string
+	
+	
+Code of Operation Status – Simples Nacional, code for company operations to identify the origin of the goods and the taxation regime of the operations. (BR region)
+
+
+origin
+	
+string
+	
+	
+Product source, domestic or foreig (BR region)
+
+
+cest
+	
+string
+	
+	
+
+Tax Replacement Specifying Code (CEST), to separate within the same NCM products that do or do not have ICMS tax substitution. (BR region)
+
+
+
+
+
+Note: cest = "00" means that this item doesn't have a CEST.
+
+
+
+
+measure_unit
+	
+string
+	
+	
+(BR region)
+
+
+invoice_option
+	
+string
+	
+	
+Value shuold be one of NO_INVOICES VAT_MARGIN_SCHEME_INVOICES VAT_INVOICES NON_VAT_INVOICES and if value is NON_VAT_INVOICE vat_rate should be null (PL region)
+
+
+vat_rate
+	
+string
+	
+	
+Value should be one of 0% 5% 8% 23% NO_VAT_RATE (PL region)
+
+
+hs_code
+	
+string
+	
+	
+HS Code (Only for IN region)
+
+
+tax_code
+	
+string
+	
+	
+Tax Code (Only for IN region)
+
+
+tax_type
+	
+int32
+	
+	
+
+tax_type only for TW whitelist shop. Shopee will referred Tax type when substitute sellers for issuing e-receipts to buyers. All variations share the same tax type. The meaning of value: 
+
+0: no tax type
+
+1: tax-able
+
+2: tax-free
+
+
+
+
+pis
+	
+string
+	
+	
+
+Only for BR shop.
+
+PIS - Programa de Integração Social (Social Integration Program). It is a government tax to collect resources for the payment of unemployment insurance and other employee related rights.
+
+PIS % - the tax applied to this product
+
+
+
+cofins
+	
+string
+	
+	
+
+Only for BR shop.
+
+
+COFINS – Contribuição para Financiamento da Seguridade Social (Contribution for Social Security Funding). It is a government tax to collect resources for public health system and social security.
+
+COFINS % - the tax applied to this product
+
+
+
+icms_cst
+	
+string
+	
+	
+
+Only for BR shop.
+
+
+ICMS - Imposto sobre Circulação de Mercadorias e Serviços (Circulation of Goods and Services Tax). 
+
+CST - Código da Situação Tributária (Tax Situation Code) is represented by a combination of 3 numbers with the purpose of demonstrating the origin of a product and determining the form of taxation that will apply to it. Therefore, each digit in the CST Table has a specific meaning: the first digit indicates the origin of the operation, the second digit represents the ICMS taxation on the operation and the third digit provides additional information about the form of taxation.
+
+
+
+pis_cofins_cst
+	
+string
+	
+	
+
+Only for BR shop.
+
+The CST PIS/Cofins is a code on the Electronic Invoice (NF-e) that identifies the tax situation of PIS (Programa de Integração Social) and Cofins (Contribuição para o Financiamento da Seguridade Social) in sales of goods.
+
+
+
+federal_state_taxes
+	
+string
+	
+	
+
+Only for BR shop.
+
+Enter the total percentage of the combination of federal, state, and municipal taxes, using up to two decimals.
+
+
+
+operation_type
+	
+string
+	
+	
+
+Only for BR shop.
+
+1: Retailer
+
+2: Manufacturer
+
+
+
+ex_tipi
+	
+string
+	
+	
+
+Only for BR shop.
+
+
+The EXTIPI field in the NF-e (Nota Fiscal Eletrônica) is used to indicate if there's an exception to the IPI (Imposto sobre Produtos Industrializados) tax rate for a specific product.
+
+
+
+fci_num
+	
+string
+	
+	
+
+Only for BR shop.
+
+
+The FCI Control Number is a unique identifier assigned to each import FCI (Import Content Form). It's mandatory on the corresponding NF-e (electronic invoice) to ensure compliance with Brazilian import tax regulations.
+
+
+
+recopi_num
+	
+string
+	
+	
+
+Only for BR shop.
+
+RECOPI NACIONAL is a Brazilian government system that facilitates the registration and management of tax-exempt operations involving paper destined for printing books, newspapers, and periodicals (known as "papel imune" in Portuguese).
+
+
+
+additional_info
+	
+string
+	
+	
+
+Only for BR shop.
+
+Include relevant information to display on Invoice.
+
+
+
+group_item_info
+	
+object
+	
+	
+
+Only for BR shop.
+
+Required if the item is a group item.
+
+
+
+group_qtd
+	
+string
+	
+	
+
+Example: The package contains 6 soda cans. Whether you are selling a pack of 6 cans (fardo) or a single can (unit), enter 6.
+
+
+
+
+group_unit
+	
+string
+	
+	
+
+Example: The package contains 6 soda cans. Whether you are selling a pack of 6 cans (fardo) or a single can (unit), enter UNI for the individual can.
+
+
+
+
+group_unit_value
+	
+string
+	
+	
+
+Example: The package contains 6 soda cans. Whether you are selling a pack of 6 cans (fardo) or a single can (unity), enter the value of the individual can.
+
+
+
+
+original_group_price
+	
+string
+	
+	
+
+Example: The item is a package that contains 6 soda cans. Enter the price of the whole package.
+
+
+
+
+group_gtin_sscc
+	
+string
+	
+	
+
+Example: The item is a package that contains 6 soda cans. Please inform the GTIN SSCC code for the package.
+
+
+
+
+group_grai_gtin_sscc
+	
+string
+	
+	
+
+Example: The item is box, that contain 6 packages. Each package contains 6 soda cans. Please inform the GRAI GTIN SSCC code for the Box.
+
+
+
+
+export_cfop
+	
+string
+	
+	
+
+7101 - for sales of self-produced goods
+
+7102 - resale of third-party goods
+
+
+
+
+a tax code used in Brazil to classify and identify the nature of goods or services transactions for tax purposes. This is used for goods export to other counties
+
+
+
+description_info
+	
+object
+	
+	
+New description field. Only whitelist sellers can use it.
+
+
+extended_description
+	
+object
+	
+	
+If description_type is extended , Description information will be returned through this field.
+
+
+field_list
+	
+object[]
+	
+	
+Field of extended description
+
+
+field_type
+	
+string
+	
+	
+Type of extended description field ：values: See Data Definition- description_field_type (text , image).
+
+
+text
+	
+string
+	
+	
+If field_type is text, text information will be returned through this field.
+
+
+image_info
+	
+object
+	
+	
+If field_type is image, image url will be returned through this field.
+
+
+image_id
+	
+string
+	
+	
+Image id
+
+
+image_url
+	
+string
+	
+	
+Image url.
+
+
+description_type
+	
+string
+	
+	
+Type of description : values: See Data Definition- description_type (normal , extended).
+
+
+stock_info_v2
+	
+object
+	
+	
+
+new stock object
+
+
+
+
+summary_info
+	
+object
+	
+	
+
+stock summary info
+
+
+
+
+total_reserved_stock
+	
+int32
+	
+	
+
+Stock reserved for promotion.
+
+
+
+
+Note: For SIP P Item, will return the total reserved stock for P Item and all A Items under the P Item;
+
+
+
+total_available_stock
+	
+int32
+	
+	
+
+total available stock
+
+
+
+seller_stock
+	
+object[]
+	
+	
+
+seller stock
+
+
+
+
+location_id
+	
+string
+	
+	
+
+location id
+
+
+
+
+stock
+	
+int32
+	
+	
+
+stock in the current warehouse
+
+
+
+
+if_saleable
+	
+boolean
+	
+	
+
+To return if the stock of the location id is saleable
+
+
+
+
+shopee_stock
+	
+object[]
+	
+	
+
+shopee stock
+
+
+
+
+location_id
+	
+string
+	
+	
+
+location id
+
+
+
+stock
+	
+int32
+	
+	
+
+stock in the current warehouse
+
+
+
+advance_stock
+	
+object
+	
+	
+
+Only for PH/VN/ID/MY local selected shops.
+
+
+
+sellable_advance_stock
+	
+int32
+	
+	
+
+Refers to Advance Fulfillment stock that Seller has shipped out and is available to be used to fulfill an order.
+
+
+
+
+in_transit_advance_stock
+	
+int32
+	
+	
+
+Refers to Advance Fulfillment stock that seller has shipped out and is still in transit and unavailable to be used to fulfill an order.
+
+
+Response Example
+Collapse
+Copy
+JSON
+{
+    "error": "-",
+    "message": "-",
+    "warning": "-",
+    "request_id": "7b9da0c6926642199c33ee9dd3a266f5",
+    "response": {
+        "item_list": [
+            {
+                "item_id": 34002,
+                "category_id": 14646,
+                "item_name": "seller discount",
+                "description": "first product 001first product",
+                "item_sku": "-",
+                "create_time": 1600572637,
+                "update_time": 1600572640,
+                "attribute_list": [
+                    {
+                        "attribute_id": 4811,
+                        "original_attribute_name": "Brand: L2 Default [14644]",
+                        "is_mandatory": true,
+                        "attribute_value_list": [
+                            {
+                                "value_id": 0,
+                                "original_value_name": "Default",
+                                "value_unit": "g"
+                            }
+                        ]
+                    }
+                ],
+                "price_info": [
+                    {
+                        "currency": "SGD",
+                        "original_price": 122.02,
+                        "current_price": 122.02,
+                        "inflated_price_of_original_price": 222.02,
+                        "inflated_price_of_current_price": 111.02,
+                        "sip_item_price": 100.02,
+                        "sip_item_price_source": "auto"
+                    }
+                ],
+                "image": {
+                    "image_url_list": [
+                        "-"
+                    ],
+                    "image_id_list": [
+                        "-"
+                    ]
+                },
+                "weight": "10.02",
+                "dimension": {
+                    "package_length": 11,
+                    "package_width": 12,
+                    "package_height": 13
+                },
+                "logistic_info": [
+                    {
+                        "logistic_id": 80012,
+                        "logistic_name": "-",
+                        "enabled": true,
+                        "shipping_fee": 5.02,
+                        "size_id": 0,
+                        "is_free": true,
+                        "estimated_shipping_fee": 4.02
+                    }
+                ],
+                "pre_order": {
+                    "is_pre_order": true,
+                    "days_to_ship": 3
+                },
+                "wholesales": [
+                    {
+                        "min_count": 1,
+                        "max_count": 2,
+                        "unit_price": 4.02,
+                        "inflated_price_of_unit_price": 5.02
+                    }
+                ],
+                "condition": "NEW/USED",
+                "size_chart": "-",
+                "item_status": "NORMAL",
+                "deboost": "false",
+                "has_model": true,
+                "promotion_id": 13123,
+                "video_info": [
+                    {
+                        "video_url": "-",
+                        "thumbnail_url": "-",
+                        "duration": 0
+                    }
+                ],
+                "brand": {
+                    "brand_id": 123,
+                    "original_brand_name": "nike"
+                },
+                "item_dangerous": 0,
+                "complaint_policy": {
+                    "warranty_time": " ONE_YEAR",
+                    "exclude_entrepreneur_warranty": true,
+                    "complaint_address_id": 0,
+                    "additional_information": "-"
+                },
+                "tax_info": {
+                    "ncm": "-",
+                    "diff_state_cfop": "-",
+                    "csosn": "-",
+                    "origin": "-",
+                    "cest": "-",
+                    "measure_unit": "-",
+                    "invoice_option": "-",
+                    "vat_rate": "-",
+                    "hs_code": "-",
+                    "tax_code": "-"
+                },
+                "description_info": {
+                    "extended_description": {
+                        "field_list": [
+                            {
+                                "field_type": "-",
+                                "text": "-",
+                                "image_info": {
+                                    "image_id": "-",
+                                    "image_url": "-"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "description_type": "-",
+                "stock_info_v2": {
+                    "summary_info": {
+                        "total_reserved_stock": 100,
+                        "total_available_stock": 100
+                    },
+                    "seller_stock": [
+                        {
+                            "location_id": "-",
+                            "stock": 10
+                        }
+                    ],
+                    "shopee_stock": [
+                        {
+                            "location_id": "-",
+                            "stock": 0
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}
+Error Codes
+Collapse
+Business Error Codes
+Error
+	
+Error Description
+	
+Details and Guidance
+
+
+error_network
+	
+Inner http call failed
+	
+
+
+error_data
+	
+parse data failed
+	
+
+
+error_data
+	
+data not exist
+	
+
+
+error_param
+	
+parameter invalid
+	
+
+
+error_param
+	
+The information you queried is not found.
+	
+
+
+error_param
+	
+Wrong parameters, detail: {msg}.
+	
+
+
+error_server
+	
+Something wrong. Please try later.
+	
+
+
+error_shop
+	
+shopid is invalid
+	
+
+
+error_param
+	
+request not from gateway
+	
+
+
+error_item_not_found
+	
+Item_id is not found.
+	
+
+
+error_param_shop_id_not_found
+	
+Shop_id is not found.
+	
+
+
+error_invalid_language
+	
+Invalid language.
+	
+
+
+error_get_shop_fail
+	
+Get shop failed. please try later.
+	
+
+
+error_inner
+	
+Our system is taking some time to respond, please try later.
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_item_not_found
+	
+Product not found
+	
+
+
+error_inner
+	
+Update item failed {{.error_info}}
+	
+
+
+error_inner
+	
+Update item failed {{.error_info}}
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_inner
+	
+System error, please try again later or contact the OpenAPI support team.
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_auth
+	
+The location_id input is not matched the shop's location_id(more/wrong). Please double check.
+	
+
+
+error_auth
+	
+Lack of location_id, please double check.
+	
+
+
+error_auth
+	
+Please wait for the holiday mode set then to edit item. Please try later.
+	
+
+
+error_auth
+	
+Total stock must be more than reserved stock.
+	
+
+
+error_param
+	
+{{.error_info}}
+	
+
+
+error_auth
+	
+Your shop can not use model level dts
+	
+
+
+error_param
+	
+{{.error_info}}
+	
+
+
+error_auth
+	
+You do not have right to use seller location_id, please only fill seller_stock filed.
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_desc_image_no_pass
+	
+{{.error_info}}
+	
+
+
+error_param
+	
+{{.error_info}}
+	
+
+
+error.param
+	
+Can not update item with stock less than reserved stock
+	
+
+
+error_param
+	
+Can not update item with different stock structure. Can only update seller stock with location id when existing seller stock have location id. Can only update seller stock without location id when existing seller stock without location id.
+	
+
+
+error_param
+	
+Can not update item with stock less than reserve stock
+	
+
+
+error_auth
+	
+Stock should be larger than reserved stock.
+	
+
+
+error_system_busy
+	
+Our system is taking some time to respond, please try later.
+	
+
+
+error_param
+	
+Can not update item with different stock structure. Can only update seller stock with location id when existing seller stock have location id. Can only update seller stock without location id when existing seller stock without location id.
+	
+
+
+error_slash_price_load
+	
+Failed to load slash price.
+	
+
+
+error_query_over_itemid_size
+	
+Interal error, please contact openapi team.
+	
+
+
+error_query_condition_list_limit
+	
+Interal error, please contact openapi team.
+	
+
+
+error_query_query_limit_too_large
+	
+Interal error, please contact openapi team.
+	
+Common Error Codes
+Error Example
+More
+API Permissions
+Collapse
+APP types that can call this API.
+ERP System
+Seller In House System
+Product Management
+Order Management
+Accounting And Finance
+Marketing
+Customer Service
+Brand Membership
+Customized APP
+Ads Service
+Custom APP
+Swam ERP
+Livestream Management
+Ads Facil
+Affiliate Marketing Solution Management
+Shopee Video Management
+API Tools
+Collapse
+API Test Tools
+API Access Log
+Update Log
+Collapse
+Date
+	
+Update Details
+
+
+2026-04-03
+	
+remove promotion_id
+
+
+2026-03-13
+	
+add new response field "medicine_id"
+
+
+2025-11-17
+	
+add new response field "purchase_limit_info"
+
+
+2025-11-07
+	
+add new response field "has_promotion"
+
+
+2025-08-22
+	
+add new response field "image_url" under "certification_proofs"
+User Guide
+Developer Guide
+API reference
+Push Mechanism
+Shopee Open Platform Data Protection Policy
+Shopee Markets
+Service Market
+Seller Education Hub (Singapore)
+Seller Education Hub (Malaysia)
+Seller Education Hub (Thailand)
+Seller Education Hub (Vietnam)
+Seller Education Hub (Indonesia)
+Seller Education Hub (Philippines)
+Seller Education Hub (Brazil)
+Seller Education Hub (Japan)
+Seller Education Hub (Korea)
+Seller Education Hub (Hongkong)
+虾皮卖家学习中心
+Support
+Announcement
+FAQ
+Raise Ticket
+Copyright @ Shopee 2025

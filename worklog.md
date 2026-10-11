@@ -295,3 +295,116 @@ Work Log:
 Stage Summary:
 - Successfully created (9): public/products/kuih-raya-tin.png, public/products/sambal-bundle.png, public/products/trail-runner-backpack.png, public/products/trekking-poles-carbon.png, public/stores/warung-satu-logo.png, public/stores/warung-satu-banner.png, public/stores/trailkit-outdoors-logo.png, public/banners/hero-merdeka.png, public/banners/hero-zero-commission.png
 - Failures: none persistent. Notes: (1) 1440x720 direct generation unsupported by API — banners generated at 1344x768 then converted to 1440x720 via PIL crop+resize; (2) hero-zero-commission initial prompt hit content filter once, succeeded after rephrase.
+---
+Task ID: p2
+Agent: api-doc-researcher
+Task: Phase 2 official API documentation research (Shopee + TikTok Shop)
+
+Work Log:
+- Fetched official docs for both platforms. TikTok: z-ai page_reader + curl returned only the SPA shell → discovered the official doc content API `partner.tiktokshop.com/api/v1/document/detail?document_id={slug}` (curl-able, returns clean markdown) + full doc tree `/api/v1/document/tree` (972 nodes); fetched 15+ pages incl. search-products-202309, get-product-202309, get-authorized-shops-202309, seller-authorization-guide, authorization overview, common-parameters, sign-your-API-request, rate limits, access scope, app creation, api-versioning, regions-and-languages, common errors, Developer ToS.
+- Shopee: page_reader/curl return Nuxt SPA shell only → rendered open.shopee.com in headless browser (agent-browser) and extracted innerText per page: AMS campaign endpoint (spec's link), product.get_item_list / get_item_base_info / get_item_extra_info / get_model_list / get_category, shop.get_shop_info, public.get_access_token, public.refresh_access_token, developer-guide/12 (registration), /14 (app management), /16 (API calls + signature algorithm), /20 (authorization & authentication), policy?policy_id=1 (Data Protection Policy), FAQ index.
+- Probed Shopee dev-guide ids 21–25 and FAQ + web-search for rate limits → not found (recorded as UNRESOLVED).
+- No live API calls (no credentials in sandbox). Raw captures archived in docs/research-raw/.
+- Wrote deliverable: docs/marketplace-integration-research.md (8 sections, VERIFIED/INFERRED/UNRESOLVED tagging, endpoint matrix, Prisma field mapping, env var list).
+
+Stage Summary:
+- VERDICT: URL-only (unauthorised) catalogue import is NOT possible on either platform — all catalogue APIs require seller authorization; both platforms' policies forbid unauthorised content access (Shopee DPP "Shopee Content" ownership; TikTok Developer ToS §3.5). Design must be authorization-first; pasted URLs serve only as shop identification.
+- Spec's Shopee link v2.ams.get_open_campaign_added_product = Affiliate Marketing Solution open-campaign API (commission rates only, AMS T&C gated) — NOT a catalogue import API. Correct Shopee path: product.get_item_list (offset/page_size≤100) → get_item_base_info (≤50 ids, name/desc/images/prices) → get_model_list (variants w/ tier_index, price_info, stock_info_v2) → shop.get_shop_info (region check).
+- TikTok correct path: GET /authorization/202309/shops (shop_cipher) → POST /product/202309/products/search (page_size≤100 + opaque page_token; scope seller.product.basic) → GET /product/202309/products/{id} (full schema: main_images, HTML description, skus[] w/ sales_attributes, inventory, list_price).
+- Signing verified: Shopee = HMAC-SHA256(partner_key, partner_id+path+timestamp[+access_token+shop_id]) hex; TikTok = hex HMAC-SHA256(app_secret, secret + sorted{key}{value} + path + body + secret), token in x-tts-access-token header, timestamp window [now−5m, now+30s], shop_cipher required on product endpoints.
+- Token lifecycle verified: Shopee code(10min)→access 4h + refresh 30d single-use (rotate), auth validity ≤365d; TikTok auth_code 30min → access 7d, grant_type literal "authorized_code", refresh = granted duration, expiry webhook T-30d, host auth.tiktok-shops.com/api/v2/token/{get,refresh}.
+- MY market support confirmed on both (Shopee seller eligibility table incl. MY; TikTok region MY/ms-MY/MYR/COD).
+- Rate limits: TikTok dynamic QPS documented (3–10 rps baseline read per App×Shop; 429/36009002); Shopee NOT published on accessible pages → UNRESOLVED, conservative throttle recommended.
+- Env vars for deployer: Shopee SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY/SHOPEE_HOST/SHOPEE_REDIRECT_URI; TikTok TIKTOK_APP_KEY/TIKTOK_APP_SECRET/TIKTOK_REDIRECT_URI (+auth/token/api hosts); per-shop tokens belong in DB (MarketplaceConnection), not env.
+- Blockers: no credentials in sandbox (cannot live-test); Shopee rate-limit table not publicly accessible; TikTok Partner Center pages are SPA-only for browsers (content API used instead).
+
+---
+Task ID: p2-tiktok
+Agent: tiktok-doc-researcher
+Task: Phase 2 TikTok Shop official docs research
+
+Work Log:
+- Method: docs are JS SPAs; used agent-browser CLI per proven pattern (open → sleep 6-8s → innerText in 15k chunks). Discovered that every doc page has a "Download Markdown" button exporting the FULL page incl. nested schema tables → used it for API reference pages (tagged button via eval, clicked via JS, moved UUID-named download).
+- Pages fetched (all https://partner.tiktokshop.com/docv2/page/...): seller-authorization-guide; authorization-overview-202407 (token APIs, user_type, domains); sign-your-api-request (HMAC algorithm + Go/Java/Node/Py samples + worked example); common-parameters (app_key/sign/timestamp/x-tts-access-token/shop_cipher); get-authorized-shops-202309; search-products-202309 (full request+response schema); get-product-202309 (full 434-line response schema incl. skus/price/inventory/sales_attributes/main_images/video/package); rate-limits; regions-and-languages; create-your-app; access-scope; tts-webhooks-overview; common-errors; generate-test-access-token; make-your-first-api-call-overview.
+- Inaccessible: legacy slug authorization-guide-202309 → "No document found"; Partner Center console (login-gated) not researched; no credentials in sandbox → no live API test.
+- Raw page copies saved to ~/.cache/tiktok-docs/*.md (get-product.md 78KB etc.).
+- Deliverable written: docs/research-tiktok.md (9 sections per task spec, source URL per claim).
+
+Stage Summary:
+- Base host for ALL OpenAPI calls (US+ROW): https://open-api.tiktokglobalshop.com; token host https://auth.tiktok-shops.com/api/v2/token/{get,refresh}; seller auth link https://services.tiktokshop.com/open/authorize?service_id={service_id} (US adds .us).
+- grant_type is literally "authorized_code" (NOT authorization_code); auth_code expires 30 min, single use.
+- Access token default validity 7 days (x-tts-access-token header, 202309+); refresh_token valid = authorization duration; 30-day expiry warning webhook (UPCOMING_AUTHORIZATION_EXPIRATION) then daily; revoke → SELLER_DEAUTHORIZATION.
+- Signing = HMAC-SHA256(secret + path + sorted{key}{value} + raw_body(except multipart) + secret), excluding sign & access_token; timestamp 10-digit unix, window [now-5min, now+30s].
+- Common params: app_key, sign, timestamp (query) + x-tts-access-token (header) + shop_cipher (product APIs; from Get Authorized Shops = /authorization/202309/shops → shops[]{id,region,seller_type,cipher}).
+- Products read scope = seller.product.basic ("Product Basic"); even Public scopes still require seller authorization → URL-only/unauthorised import NOT possible (verdict documented with 4 evidence points).
+- Search Products: POST /product/202309/products/search; page_size REQUIRED 1-100; page_token ← next_page_token; total_count; NO has_more; hard cap 10,000 results (err 12052180) → need incremental time-window sync (create_time_ge/le, update_time_ge/le).
+- Get Product: GET /product/202309/products/{product_id}; full schema captured: title, description (HTML), brand{id,name}, category_chains[], main_images[]{urls,thumb_urls,uri,w,h}, video{url,cover_url}, package_dimensions/weight, skus[]{id, seller_sku, price{currency,sale_price,tax_exclusive_price}, inventory[]{warehouse_id,quantity(1-99999)}, sales_attributes[]{name,value_name,sku_img(variant image)}, status_info}, audit block.
+- Status enum: DRAFT/PENDING/FAILED/ACTIVATE/SELLER_DEACTIVATED/PLATFORM_DEACTIVATED/FREEZE/DELETED/SCHEDULED.
+- Rate limits: dynamic QPS (no fixed numbers); isolation unit App ID × Authorized Shop; signals HTTP 429 + business code 36009002; planning baselines per app-shop: reads 3-10 (light 5-20) rps, writes 1-3, heavy 0.2-1; backoff+jitter, honour Retry-After.
+- Markets: 16 regions incl. MY (locale ms-MY, currency MYR, COD flag) on the single global API host.
+- Webhooks: PRODUCT_CREATION / PRODUCT_INFORMATION_CHANGE / PRODUCT_STATUS_CHANGE / PRODUCT_CATEGORY_CHANGE / PRODUCT_AUDIT_STATUS_CHANGE; signature = HMAC-SHA256(app_key+raw_body, app_secret) in Authorization header (no Bearer); docs mandate polling backup.
+- App registration: Partner Center → App & Service; credentials App Key / App Secret / Service ID; Custom apps skip review UNLESS Connector category or ≥25 seller authorizations (our connector case → review expected); env vars proposed: TIKTOK_SHOP_APP_KEY/APP_SECRET/REDIRECT_URI/WEBHOOK_URL.
+- Error codes verified: 105005 scope denied, 105002 token expired, 106001 bad sign, 36009004 family (timestamp/sign/key/shop_cipher), 106013 missing shop_cipher, 36004004 bad auth_code, 36009033 IP allowlist.
+
+---
+Task ID: p2-shopee
+Agent: shopee-doc-researcher
+Task: Phase 2 Shopee Open Platform official docs research
+
+Work Log:
+- Method: docs are JS SPAs — curl/page_reader useless; used agent-browser CLI (--session shopee): open URL → sleep 6-8s → document.body.innerText in 15k chunks; nav items are click-handler divs (no anchors), so real page URLs discovered by clicking + reading window.location.href.
+- API reference pages fetched (/documents/v2/v2.<api>?module=X&type=1): ams.get_open_campaign_added_product (127, incl. collapsed "Common Request Parameters"), product.get_item_list / get_item_base_info / get_item_extra_info / get_model_list / get_category (module 89), shop.get_shop_info / get_profile (92), public.get_access_token / refresh_access_token / get_shops_by_partner (104) — each incl. request/response tables, error codes, API Permissions (app types).
+- Developer guides fetched (/developer-guide/<id>): 12 (dev account registration: account types + per-market seller eligibility incl. MY), 14 (App management: Test/Live Partner ID+Key, Go Live ~24h, app statuses, ≤10 apps), 16 (API calls: hosts + EXACT signing algorithm with worked base-string example + demo code), 20 (Authorization & Authentication: auth link spec, redirect params, token lifecycle rules, GetAccessToken/RefreshAccessToken paths + Python/Java/PHP demos), 27 (API call flow diagrams — images only), 702 (Shopee AMS guide: Open Campaign definition verbatim).
+- FAQ crawled (/faq): Debugging category (2054) → HTTP 429/QPS guidance, "Wrong sign" checklist, full error_auth table, IP whitelist ≤1000; Integration Flow (2049) → push-mechanism rules only.
+- Blocked/inaccessible: Console (login-walled — app key values, Go-Live forms), "Shopee Markets" footer page (no crawlable content), numeric QPS limits (not published anywhere crawled).
+- Deliverable written: docs/research-shopee.md (9 sections, endpoint matrix, field mapping, verified-vs-assumption lists).
+
+Stage Summary:
+- Signing [VERIFIED]: base string = partner_id + api_path + timestamp + access_token + shop_id (Shop API; Public API drops the last two; Merchant swaps merchant_id); sign = HMAC-SHA256(base_string, partner_key) hex; timestamp ±5 min; request params NOT signed.
+- Token lifecycle [VERIFIED]: auth link https://open.shopee.com/auth?partner_id=&auth_type=seller&redirect_uri=&response_type=code → redirect ?code&shop_id (code one-time, 10 min) → POST /api/v2/auth/token/get → access_token (4h) + refresh_token (30d, single-use, ROTATES on every refresh; old access_token lives 5 more min) → POST /api/v2/auth/access_token/get; authorisation validity seller-chosen ≤365 days.
+- Catalogue chain [VERIFIED]: product.get_item_list (offset/page_size≤100/item_status required; has_next_page+next_offset) → product.get_item_base_info (≤50 ids; item_name, description, price_info, image.image_url_list, stock_info_v2, condition, item_status, has_model, category_id) → product.get_model_list (tier_variation[] options+option images; model[] model_id/price_info/stock_info_v2/model_sku/model_status/tier_index) → shop.get_shop_info (shop_name/region/status/auth/expire) + shop.get_profile (shop_logo).
+- URL-only import verdict: NO — every catalogue API is a Shop API requiring seller authorisation (explicit guide quote); no URL/slug-based public endpoint exists (public.* = token mgmt + get_shops_by_partner only); ISV rules forbid services that extract listings off-platform → connector must be authorisation-code-flow based.
+- Spec's campaign endpoint assessed: v2.ams.get_open_campaign_added_product retrieves only products the seller enrolled in the affiliate Open Campaign (commission_rate/campaign_status/periods), is restricted to "Affiliate Marketing Solution Management" app type and gated by AMS T&C acceptance — NOT a catalogue importer; recommend the get_item_list chain instead.
+- MY market: supported (eligibility Mall OR Registered Business OR ≥1 order in L12M; category languages en/ms-my/zh-hans; 2-decimal pricing; region field "MY").
+- Rate limits: only HTTP 429 + "adjust QPS" guidance published — no numeric table; plan self-throttling + backoff. Hosts: partner.shopeemobile.com (prod), openplatform.sandbox.test-stable.shopee.sg (sandbox).
+- Credential mapping: SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY (Test vs Live pair from Console "App Key" section), SHOPEE_SHOP_ID, per-shop tokens in DB not env.
+
+---
+Task ID: p1-p6 (orchestrator)
+Agent: main (Z.ai Code)
+Task: Phases 1-6 of Nexova-style upgrade — inventory, API research, plan, schema migration, connectors, import engine
+
+Work Log:
+- Phase 1: docs/codebase-inventory.md — full stack/model/gap analysis
+- Phase 2: 2 research agents crawled official docs via headless browser → docs/research-shopee.md + docs/research-tiktok.md + merged docs/marketplace-integration-research.md. Verdict: URL-only import impossible on both platforms (seller OAuth required)
+- Phase 3: docs/implementation-plan.md — repo-specific architecture
+- Phase 4: additive Prisma migration (MarketplaceConnection, ImportJob, ImportJobItem, StoreClaim, SeoMeta; Store.sellerId nullable + lifecycle statuses; Product source/SEO fields; ProductVariant.sourceModelId/imageUrl; ProductImage.alt). db push OK, data preserved (5 stores/27 products), wallet cache refreshed
+- Phase 4 libs: src/lib/store-lifecycle.ts (guarded state machine + canPublish gate), src/lib/secretbox.ts (AES-256-GCM token sealing)
+- Phase 5: src/lib/marketplaces/{types,resolver,shopee,tiktok,fixture,index}.ts — official-contract connectors (Shopee V2 signing, TikTok 202309 signing incl. shop_cipher), SSRF-safe URL resolver, clearly-labelled fixture connector
+- Phase 6: src/lib/import/{normalise,summary,runner}.ts — inline job engine: phases, persisted progress, idempotent upserts ((storeId,platform,sourceProductId) unique), partial-failure per item, SSRF-guarded image copy, SEO generation, claim issuance, honest awaiting_authorisation
+- APIs: /api/import/resolve, /api/import/jobs (POST), /api/import/jobs/[id] (GET ?token), /resume, /claim/validate, /api/store/connections (+/disconnect, /[platform]/begin), /api/auth/callback/[platform], /api/claim/bind, /api/store/publish, /api/store/seo, /api/store/imports, src/app/sitemap.ts, src/lib/seo.ts (JSON-LD + meta)
+
+Stage Summary:
+- Self-verification harness: 25/25 PASS (URL patterns, SSRF rejects, full fixture import, unclaimed store, idempotent re-import, claim token lifecycle, shopee-without-creds honesty)
+- Live Shopee/TikTok import requires app credentials (env) + seller authorisation — implemented per official docs, honestly reports needs_credentials/awaiting_authorisation
+- Fixtures labelled demo data; never presented as live imports
+
+---
+Task ID: p7-p12 (orchestrator)
+Agent: main (Z.ai Code)
+Task: Phases 7-12 — claim system, SEO pipeline, seller command centre, E2E verification, final audit
+
+Work Log:
+- Phase 7: /api/claim/bind — atomic ownership binding (hashed single-use token, concurrent-claim guard, registration-placeholder detach, OAuth shopId match for real platforms)
+- Phase 8: verified existing checkout guard (store must be status live) + order/payment/ledger chain reused; E2E order SM-100015 paid, ledger invariants ok, wallet credited net of 8% commission
+- Phase 9: src/lib/seo.ts (JSON-LD Product/Breadcrumb + client meta), PDP + storefront SEO injection, /sitemap.xml (live stores + active products), ?sf= deep links, SEO API (/api/store/seo with lock/unlock)
+- Phase 10: generate.tsx (1445-line paste-URL → progress → claim UX by p10-a agent), seller imports.tsx (Import Centre: connections + publish gate + job history) + seo.tsx (SEO editor), seller nav + routing wired
+- Fixed p10-a agent's apiSend/runMutation signature mismatches; fixed pre-existing runtime crash in storefront chrome (ShopperCtx called as function in SfHeader/SfFooter/ProductGridSection/MarketplaceStrip)
+- Converted 7 route handlers from `return handle(...)` to `export const X = handle(...)` pattern
+- Phase 11 E2E (agent-browser): demo import → claim (register + bind "Store claimed!") → admin KYC approve → support email → publish gate → live storefront via /?sf=aurora-test → PDP JSON-LD → cart → checkout RM38 → mock pay → order paid + ledger balanced; regression: market home / seller / admin all clean, zero console errors
+- Phase 12: docs/handover.md (12-part technical handover + acceptance checklist), README marketplace section, verification harness 25/25 PASS
+
+Stage Summary:
+- Complete Nexova-style store generator: paste URL → import → claim → publish → trade, with honest credential gating (awaiting_authorisation until Shopee/TikTok app creds are configured server-side)
+- All new code: 0 lint errors, 0 tsc errors; existing features regression-verified
+- Deliverables: docs/handover.md, docs/marketplace-integration-research.md, docs/research-{shopee,tiktok}.md, docs/codebase-inventory.md, docs/implementation-plan.md
