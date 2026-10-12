@@ -104,7 +104,13 @@ export default function PortalFab() {
     const p = getFabSnapshot();
     if (!p) return;
     // capture the pointer so fast drags outside the button still track
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    // (defensive: a throw here would abort the tap-to-open flow entirely)
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* pointer already released or not capturable — drag still works while
+         the pointer stays over the button, and taps are unaffected */
+    }
     drag.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: p.x, originY: p.y, moved: false };
   }, []);
 

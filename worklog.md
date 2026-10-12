@@ -475,3 +475,29 @@ Stage Summary:
 - BUG 1 FIXED: admin wallets drawer + ledger explorer crashed on envelope mismatch — both now unwrap { data: { items } } correctly (src/components/admin/wallets-ledger.tsx).
 - BUG 2 FIXED (the reported "cart still empty"): guest cart identity is now stable under blocked storage via memory→localStorage→cookie fallback in src/lib/session-client.ts deviceToken().
 - VERIFIED IN BROWSER (not just lint): cart add/merge/qty/remove in both storage-blocked and normal modes, persistence across reload, full paid checkout (SM-100020), seller portal, admin wallets/ledger, mobile layouts. Lint exit 0; dev.log clean since fixes.
+
+---
+Task ID: 4
+Agent: main (Z.ai Code)
+Task: Restart sandbox session + dev server, then browser-verify the full A/B/C feature batch (seller wallet activity pages, store settings toggle, page-builder testimonials editor, draggable portal FAB, checkout mobile responsiveness, PDF receipt, buyer auth + chat). Fix anything broken found during verification.
+
+Work Log:
+- Restarted dev server (previous background process died with the session; relaunched `node node_modules/.bin/next dev -p 3000` detached via setsid — writing to dev.log; note plain `nohup bun run dev` kept getting reaped in this sandbox). Verified GET / 200 + zero browser errors.
+- Discovered the A/B/C batch was already implemented by prior agent sessions; this run = full browser verification pass (user-mandated "browser check not lint check") + fixes.
+- Discovered the A/B/C batch was already implemented by prior agent sessions; this run = full browser verification pass + fixes.
+- FIX 1 (portal-fab.tsx): wrapped setPointerCapture in try/catch inside onPointerDown — a throwing capture (synthetic/non-active pointerId, pointer released early) aborted the whole tap-to-open flow. Post-fix, tap/drag verified with real UX intact.
+- FIX 2 (shopper-shell.tsx): header nav overflowed 390px viewports by 18px (scrollWidth 408) because the Sell button kept a short "Sell" label below sm; made it icon-only below sm (scrollWidth 390, overflow gone).
+- B verified (1280×800 + 390×844): FAB tap → menu (Market/Seller/Admin radios with aria-checked + Reset position); switching portals swaps surface; drag moves FAB (592,16 → 342,166 = exact delta) and persists to localStorage (survived session restart); Reset position returns to bottom-right default; position clamped on resize.
+- C1 verified at 390×844: full checkout golden path (add Aurora Ceramic Vase → cart → checkout → phase 1 contact/address → phase 2 delivery Standard RM8 → phase 3 payment FPX → terms → Pay RM 97.00 → sandbox gateway → success) — document.body.scrollWidth == 390 at every phase, zero horizontal overflow.
+- C2 verified: Download receipt button on payment-complete + order-status views; GET /api/orders/receipt?email&orderNumber returns a real 2.5KB PDF 1.7; decoded content shows structured receipt (SHOPMESH header, order SM-100022, placed date, Status PAID, SELLER/BILLED TO columns, ITEMS table QTY/UNIT/AMOUNT, subtotal/shipping/TOTAL PAID RM 97.00, payment method fpx_toyyibpay + reference, footer disclaimer).
+- C3 verified (both paths): logged-out Contact seller → SHOPMESH shopper account dialog (Sign in / Create account tabs) → registered aisyah@shopmesh.test / Nur Aisyah → auto-resume carried intent ("Chat opened — You're now chatting with Lumina Living") → message sent and persisted (chatMessage row, thread subject "About order SM-100022"). Logged-in path (from My orders → SM-100022): no gate, straight to chat. Seller side (lumina@shopmesh.io → Messages): thread + shopper message visible, seller reply sent, persisted, chat hub (ports 3003/3103) alive. Note: single shared session token by design — seller login replaces shopper session.
+- A2 verified: Store Settings "Marketplace opt-in" switch OFF → success toast "Store removed from marketplace listings", ON → success toast "Store listed on the SHOPMESH marketplace"; PATCH /api/store/settings 200 both ways; zero browser errors (the reported error popup is gone).
+- A1 verified: seller Wallet & Payouts recent-activity rows are clickable (aria-label "View activity: …"); individual activity page renders title (Order payment received / Manual adjustment), credit/debit badge, activity summary (effect on balance, clearing hold, journal reference), "What this activity belongs to" with order/payout/adjustment context, double-entry journal table with my-wallet legs highlighted; "View order" cross-navigates to the SM-100022 order detail; Back returns to wallet.
+- A3 verified: Page Builder → Home → Testimonials section → Content tab: no JSON anywhere — per-item collapsible cards (quote textarea + author text), Add testimonial (created item, filled quote/author, canvas live-updated after debounce), Move up/down + Remove per item, "Design style" select with all 4 options (Cards/Minimal/Bubbles/Featured) and canvas re-renders on change. Cleaned up after test (removed added item, restored Bubbles style; draft left as found).
+- Desktop spot-check 1280×800: market home no overflow; FAB persistent. Lint exit 0; dev.log clean throughout.
+
+Stage Summary:
+- ALL THREE FEATURE GROUPS (A seller trio, B draggable portal FAB, C checkout trio) verified working end-to-end in the browser — mobile 390px and desktop 1280px.
+- Two fixes applied during verification: portal FAB setPointerCapture hardening (tap-to-open could previously be killed by a capture throw) and mobile header 18px horizontal overflow (Sell button label).
+- E2E artifacts: order SM-100022 paid (RM 97.00, Aurora Ceramic Vase + shipping), PDF receipt structurally verified, shopper account aisyah@shopmesh.test (Nur Aisyah) created, two-way buyer↔seller chat persisted on thread "About order SM-100022".
+- Files changed this run: src/components/portal-fab.tsx, src/components/shopper/shopper-shell.tsx.

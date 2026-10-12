@@ -410,7 +410,6 @@ function MarketHeader({
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
             <span className="hidden sm:inline">Sell / Generate store</span>
-            <span className="sm:hidden">Sell</span>
           </button>
 
           {/* messages (chat with sellers) */}
