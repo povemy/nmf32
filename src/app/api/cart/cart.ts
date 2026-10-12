@@ -1,22 +1,36 @@
-// Cart helpers — cookie token "sm_cart", one cart per store (Task 2-b scope).
-import { cookies } from "next/headers";
+// Cart helpers — token identity via X-Cart-Token header (localStorage-backed on
+// the client) with the "sm_cart" cookie as fallback. The header path keeps the
+// cart working in cross-site iframes, where browsers drop SameSite cookies.
+import { cookies, headers } from "next/headers";
 import { db } from "@/lib/db";
 import { randomToken } from "@/lib/password";
 
 export const CART_COOKIE = "sm_cart";
 const CART_TTL_S = 60 * 60 * 24 * 30; // 30 days
 const FALLBACK_IMG = "/api/img/fallback?w=600&h=600";
+const CART_TOKEN_RE = /^[a-f0-9]{8,64}$/i;
+
+export function isValidCartToken(t: string | null | undefined): t is string {
+  return !!t && CART_TOKEN_RE.test(t);
+}
 
 export async function getCartToken(): Promise<string | null> {
+  const h = await headers();
+  const fromHeader = h.get("x-cart-token");
+  if (isValidCartToken(fromHeader)) return fromHeader;
   const store = await cookies();
-  return store.get(CART_COOKIE)?.value ?? null;
+  const fromCookie = store.get(CART_COOKIE)?.value ?? null;
+  return isValidCartToken(fromCookie) ? fromCookie : null;
 }
 
 export async function setCartToken(token: string): Promise<void> {
   const store = await cookies();
   store.set(CART_COOKIE, token, {
     httpOnly: false,
-    sameSite: "lax",
+    // SameSite=None + Secure: survives cross-site iframe embeds (preview panel).
+    // Chromium/Firefox allow Secure cookies on http://localhost (trustworthy origin).
+    sameSite: "none",
+    secure: true,
     path: "/",
     maxAge: CART_TTL_S,
   });
@@ -46,8 +60,11 @@ export async function findCartByToken(token: string | null) {
   });
 }
 
-export async function createCart(storeId: string) {
-  return db.cart.create({ data: { token: randomToken(16), storeId } });
+/** Create a cart; adopts the client-supplied token when valid so the same
+ *  device keeps seeing its cart even if cookies are unavailable. */
+export async function createCart(storeId: string, preferredToken?: string | null) {
+  const token = isValidCartToken(preferredToken) ? preferredToken : randomToken(16);
+  return db.cart.create({ data: { token, storeId } });
 }
 
 type CartWithItems = NonNullable<Awaited<ReturnType<typeof findCartByToken>>>;

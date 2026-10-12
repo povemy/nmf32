@@ -12,8 +12,12 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ ref: st
   });
   if (!intent) throw new ApiError(404, "NOT_FOUND", "Payment not found");
 
+  // An unpaid session past its expiry is reported as expired (computed, not stored —
+  // a gateway callback could still reconcile it later).
+  const expired = intent.status === "requires_payment" && intent.expiresAt.getTime() < Date.now();
+
   return ok({
-    status: intent.status,
+    status: expired ? "expired" : intent.status,
     orderNumber: intent.order.orderNumber,
     amountMinor: intent.amountMinor,
     storeName: intent.order.store.name,

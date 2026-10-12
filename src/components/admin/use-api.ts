@@ -1,7 +1,9 @@
 "use client";
 // Data fetching helpers for the admin command centre.
-// All requests are same-origin with cookies (session) included automatically.
+// Requests carry the session via cookie AND Authorization Bearer header
+// (localStorage bridge) so auth works even where cookies are unavailable.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { authHeaders } from "@/lib/session-client";
 
 export type ApiMeta = { page: number; size: number; total: number };
 
@@ -21,7 +23,7 @@ function bodyError(body: EnvelopeBody, status: number): string {
 
 /** GET with the standard envelope; throws Error(message) on failure. */
 export async function apiGet<T>(url: string): Promise<{ data: T; meta?: ApiMeta }> {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", headers: authHeaders() });
   const body = await parseBody(res);
   if (!res.ok) throw new Error(bodyError(body, res.status));
   return { data: (body.data ?? null) as T, meta: body.meta };
@@ -36,7 +38,7 @@ export async function apiSend<T = unknown>(
   const res = await fetch(url, {
     method,
     cache: "no-store",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers: { ...authHeaders(), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const parsed = await parseBody(res);

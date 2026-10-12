@@ -1,0 +1,940 @@
+     1→// ============================================================================
+     2→// SHOPMESH v1 — Prisma schema (SQLite adaptation of PART2 PostgreSQL DDL)
+     3→// Conventions: money = Int minor units (cents); percent = Float;
+     4→// JSONB -> String columns holding JSON (parse via src/lib/json.ts);
+     5→// enums -> String + app-level validation; time = DateTime UTC.
+     6→// ============================================================================
+     7→
+     8→generator client {
+     9→  provider = "prisma-client-js"
+    10→}
+    11→
+    12→datasource db {
+    13→  provider = "sqlite"
+    14→  url      = env("DATABASE_URL")
+    15→}
+    16→
+    17→// ---------------------------------------------------------------- A: CONFIG
+    18→
+    19→model Plan {
+    20→  id                String   @id @default(cuid())
+    21→  code              String   @unique
+    22→  name              String
+    23→  monthlyFeeMinor   Int      @default(0)
+    24→  commissionPercent Float?
+    25→  productLimit      Int?
+    26→  mediaLimitMb      Int?
+    27→  staffLimit        Int?
+    28→  isActive          Boolean  @default(true)
+    29→  createdAt         DateTime @default(now())
+    30→  updatedAt         DateTime @updatedAt
+    31→}
+    32→
+    33→model CommissionSetting {
+    34→  id                        Int    @id @default(1)
+    35→  defaultPercent            Float  @default(8.0)
+    36→  appliesToShipping         Boolean @default(false)
+    37→  basePriceRule             String @default("paid_price") // paid_price | list_price
+    38→  fixedFeeMinor             Int    @default(0)
+    39→  minCommissionMinor        Int    @default(0)
+    40→  payoutHoldDays            Int    @default(7)
+    41→  holdReleaseRule           String @default("days_after_paid") // days_after_paid | days_after_delivered
+    42→  graceDaysAfterDelivered   Int    @default(2)
+    43→}
+    44→
+    45→model CommissionOverride {
+    46→  id            String    @id @default(cuid())
+    47→  scope         String // category | seller | product
+    48→  categoryId    String?
+    49→  sellerId      String?
+    50→  productId     String?
+    51→  percent       Float?
+    52→  fixedFeeMinor Int?
+    53→  holdDays      Int?
+    54→  validFrom     DateTime?
+    55→  validTo       DateTime?
+    56→  isActive      Boolean   @default(true)
+    57→  createdBy     String?
+    58→  createdAt     DateTime  @default(now())
+    59→  updatedAt     DateTime  @updatedAt
+    60→}
+    61→
+    62→model FeeHoliday {
+    63→  id        String   @id @default(cuid())
+    64→  name      String
+    65→  scope     String   @default("all") // all | sellers | categories
+    66→  scopeIds  String? // JSON array of ids
+    67→  percent   Float    @default(0)
+    68→  startsAt  DateTime
+    69→  endsAt    DateTime
+    70→  isActive  Boolean  @default(true)
+    71→  createdAt DateTime @default(now())
+    72→  updatedAt DateTime @updatedAt
+    73→}
+    74→
+    75→// ---------------------------------------------------------------- B: IDENTITY
+    76→
+    77→model AdminUser {
+    78→  id           String    @id @default(cuid())
+    79→  email        String    @unique
+    80→  name         String
+    81→  role         String    @default("ops") // superadmin | ops | finance | moderator | support | readonly
+    82→  passwordHash String
+    83→  isActive     Boolean   @default(true)
+    84→  lastLoginAt  DateTime?
+    85→  createdAt    DateTime  @default(now())
+    86→  updatedAt    DateTime  @updatedAt
+    87→}
+    88→
+    89→model Seller {
+    90→  id                        String    @id @default(cuid())
+    91→  email                     String    @unique
+    92→  passwordHash              String
+    93→  fullName                  String
+    94→  displayName               String
+    95→  countryCode               String    @default("MY")
+    96→  phone                     String?
+    97→  status                    String    @default("onboarding") // onboarding | pending_review | active | suspended | terminated | rejected
+    98→  riskTier                  String    @default("low") // low | medium | high
+    99→  commissionOverridePercent Float?
+   100→  holdDaysOverride          Int?
+   101→  kycStatus                 String    @default("pending") // pending | approved | rejected
+   102→  planCode                  String    @default("free")
+   103→  marketplaceOptIn          Boolean   @default(true)
+   104→  rejectReason              String?
+   105→  submittedAt               DateTime?
+   106→  approvedAt                DateTime?
+   107→  createdAt                 DateTime  @default(now())
+   108→  updatedAt                 DateTime  @updatedAt
+   109→  store            Store?
+   110→  wallet           Wallet?
+   111→  kycDocuments     KycDocument[]
+   112→  bankAccounts     BankAccount[]
+   113→  sellerNotes      SellerNote[]
+   114→}
+   115→
+   116→model KycDocument {
+   117→  id          String    @id @default(cuid())
+   118→  sellerId    String
+   119→  seller      Seller    @relation(fields: [sellerId], references: [id])
+   120→  docType     String // ic_front | ic_selfie | business_reg | bank_statement
+   121→  fileName    String
+   122→  status      String    @default("pending") // pending | approved | rejected
+   123→  rejectReason String?
+   124→  reviewedBy  String?
+   125→  reviewedAt  DateTime?
+   126→  createdAt   DateTime  @default(now())
+   127→}
+   128→
+   129→model SellerNote {
+   130→  id        String   @id @default(cuid())
+   131→  sellerId  String
+   132→  seller    Seller   @relation(fields: [sellerId], references: [id])
+   133→  author    String
+   134→  body      String
+   135→  createdAt DateTime @default(now())
+   136→}
+   137→
+   138→model Session {
+   139→  token     String   @id @default(cuid())
+   140→  userType  String // admin | seller
+   141→  userId    String
+   142→  expiresAt DateTime
+   143→  createdAt DateTime @default(now())
+   144→}
+   145→
+   146→// ---------------------------------------------------------------- C: STORES
+   147→
+   148→model Store {
+   149→  id              String    @id @default(cuid())
+   150→  sellerId        String?   @unique // nullable: generated-but-unclaimed stores have no owner yet
+   151→  seller          Seller?   @relation(fields: [sellerId], references: [id])
+   152→  name            String
+   153→  slug            String    @unique
+   154→  tagline         String?
+   155→  logoUrl         String?
+   156→  bannerUrl       String?
+   157→  description     String?
+   158→  status          String    @default("draft") // draft | live | maintenance | generating | pending_verification | pending_claim | claimed | suspended | archived
+   159→  lifecycleSource String    @default("native") // native | import
+   160→  currency        String    @default("MYR")
+   161→  timezone        String    @default("Asia/Kuala_Lumpur")
+   162→  themeJson       String    @default("{}")
+   163→  supportEmail    String?
+   164→  supportPhone    String?
+   165→  whatsapp        String?
+   166→  socialJson      String    @default("{}")
+   167→  templateKey     String    @default("aurora")
+   168→  createdAt       DateTime  @default(now())
+   169→  updatedAt       DateTime  @updatedAt
+   170→  pages           CmsPage[]
+   171→  products        Product[]
+   172→  orders          Order[]
+   173→  domains         StoreDomain[]
+   174→  collections     Collection[]
+   175→  coupons         Coupon[]
+   176→  integrations    StoreIntegration[]
+   177→  webhookEndpoints WebhookEndpoint[]
+   178→  apiKeys         ApiKey[]
+   179→  claims          StoreClaim[]
+   180→  connections     MarketplaceConnection[]
+   181→  importJobs      ImportJob[]
+   182→}
+   183→
+   184→model StoreDomain {
+   185→  id            String    @id @default(cuid())
+   186→  storeId       String
+   187→  store         Store     @relation(fields: [storeId], references: [id])
+   188→  domain        String    @unique
+   189→  mode          String    @default("cname") // cname | ns
+   190→  status        String    @default("pending") // pending | verifying | verified | active | failed
+   191→  sslStatus     String    @default("pending") // pending | issued | failed
+   192→  isPrimary     Boolean   @default(false)
+   193→  lastCheckedAt DateTime?
+   194→  errorReason   String?
+   195→  createdAt     DateTime  @default(now())
+   196→  updatedAt     DateTime  @updatedAt
+   197→}
+   198→
+   199→model CmsPage {
+   200→  id              String   @id @default(cuid())
+   201→  storeId         String
+   202→  store           Store    @relation(fields: [storeId], references: [id])
+   203→  slug            String
+   204→  title           String
+   205→  pageType        String   @default("custom") // home | about | contact | policy | custom
+   206→  draftJson       String   @default("{\"sections\":[]}")
+   207→  publishedJson   String?
+   208→  draftVersion    Int      @default(1)
+   209→  publishedVersion Int     @default(0)
+   210→  hasUnpublished   Boolean @default(false)
+   211→  createdAt       DateTime @default(now())
+   212→  updatedAt       DateTime @updatedAt
+   213→
+   214→  @@unique([storeId, slug])
+   215→}
+   216→
+   217→// ---------------------------------------------------------------- D: CATALOG
+   218→
+   219→model Category {
+   220→  id                String     @id @default(cuid())
+   221→  name              String
+   222→  slug              String     @unique
+   223→  parentId          String?
+   224→  parent            Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+   225→  children          Category[] @relation("CategoryTree")
+   226→  commissionPercent Float?
+   227→  imageUrl          String?
+   228→  sortOrder         Int        @default(0)
+   229→  createdAt         DateTime   @default(now())
+   230→  updatedAt         DateTime   @updatedAt
+   231→  products          Product[]
+   232→}
+   233→
+   234→model Product {
+   235→  id                        String    @id @default(cuid())
+   236→  storeId                   String
+   237→  store                     Store     @relation(fields: [storeId], references: [id])
+   238→  categoryId                String?
+   239→  category                  Category? @relation(fields: [categoryId], references: [id])
+   240→  title                     String
+   241→  slug                      String
+   242→  description               String?
+   243→  status                    String    @default("draft") // draft | pending_review | active | rejected | banned | archived
+   244→  rejectReason              String?
+   245→  priceMinor                Int       @default(0)
+   246→  commissionPercentOverride Float?
+   247→  flagsJson                 String    @default("[]") // moderation flag reasons
+   248→  reportsCount              Int       @default(0)
+   249→  salesCount                Int       @default(0)
+   250→  ratingAvg                 Float     @default(0)
+   251→  ratingCount               Int       @default(0)
+   252→  isFeatured                Boolean   @default(false)
+   253→  publishedAt               DateTime?
+   254→  // --- marketplace import source fields (Phase 4) ---
+   255→  sourcePlatform            String? // shopee | tiktok | fixture
+   256→  sourceShopId              String?
+   257→  sourceProductId           String?
+   258→  sourceUrl                 String?
+   259→  sourceBrand               String?
+   260→  sourceStatus              String? // availability at source
+   261→  isFixture                 Boolean  @default(false) // imported from the demo fixture connector
+   262→  lastSyncedAt              DateTime?
+   263→  overridesJson             String    @default("{}") // seller-owned fields: {title:true,...} survive re-import
+   264→  seoTitle                  String?
+   265→  seoDescription            String?
+   266→  createdAt                 DateTime  @default(now())
+   267→  updatedAt                 DateTime  @updatedAt
+   268→  images                    ProductImage[]
+   269→  variants                  ProductVariant[]
+   270→  reviews                   Review[]
+   271→  orderItems                OrderItem[]
+   272→  collections               CollectionProduct[]
+   273→  featuredSlots             FeaturedSlot[]
+   274→  importItems               ImportJobItem[]
+   275→
+   276→  @@unique([storeId, slug])
+   277→  @@unique([storeId, sourcePlatform, sourceProductId])
+   278→  @@index([storeId, status])
+   279→  @@index([sourcePlatform, sourceShopId])
+   280→}
+   281→
+   282→model ProductImage {
+   283→  id        String  @id @default(cuid())
+   284→  productId String
+   285→  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+   286→  url       String
+   287→  alt       String? // accessibility + SEO alt text (import)
+   288→  sortOrder Int     @default(0)
+   289→}
+   290→
+   291→model ProductVariant {
+   292→  id                 String   @id @default(cuid())
+   293→  productId          String
+   294→  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+   295→  name               String   @default("Default")
+   296→  optionName         String?
+   297→  optionValue        String?
+   298→  sourceModelId      String?  // marketplace variant identifier (import sync)
+   299→  imageUrl           String?  // variant-specific image (import)
+   300→  priceMinor         Int
+   301→  compareAtPriceMinor Int?
+   302→  stock              Int      @default(0)
+   303→  lowStockThreshold  Int      @default(5)
+   304→  sku                String?
+   305→  isActive           Boolean  @default(true)
+   306→  createdAt          DateTime @default(now())
+   307→  updatedAt          DateTime @updatedAt
+   308→  cartItems          CartItem[]
+   309→  orderItems         OrderItem[]
+   310→  inventoryLogs      InventoryLog[]
+   311→}
+   312→
+   313→model InventoryLog {
+   314→  id        String        @id @default(cuid())
+   315→  variantId String
+   316→  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+   317→  delta     Int
+   318→  reason    String
+   319→  refId     String?
+   320→  createdAt DateTime      @default(now())
+   321→}
+   322→
+   323→model Review {
+   324→  id        String   @id @default(cuid())
+   325→  productId String
+   326→  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+   327→  orderId   String?
+   328→  customerName String
+   329→  rating    Int
+   330→  title     String?
+   331→  body      String?
+   332→  reply     String?
+   333→  status    String   @default("published") // published | hidden
+   334→  createdAt DateTime @default(now())
+   335→}
+   336→
+   337→model Collection {
+   338→  id          String   @id @default(cuid())
+   339→  storeId     String
+   340→  store       Store    @relation(fields: [storeId], references: [id])
+   341→  name        String
+   342→  slug        String
+   343→  description String?
+   344→  createdAt   DateTime @default(now())
+   345→  updatedAt   DateTime @updatedAt
+   346→  products    CollectionProduct[]
+   347→
+   348→  @@unique([storeId, slug])
+   349→}
+   350→
+   351→model CollectionProduct {
+   352→  id           String    @id @default(cuid())
+   353→  collectionId String
+   354→  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+   355→  productId    String
+   356→  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+   357→}
+   358→
+   359→// ---------------------------------------------------------------- E: CART / ORDERS
+   360→
+   361→model Cart {
+   362→  id        String   @id @default(cuid())
+   363→  token     String   @unique
+   364→  storeId   String
+   365→  createdAt DateTime @default(now())
+   366→  updatedAt DateTime @updatedAt
+   367→  items     CartItem[]
+   368→}
+   369→
+   370→model CartItem {
+   371→  id        String         @id @default(cuid())
+   372→  cartId    String
+   373→  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+   374→  variantId String
+   375→  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+   376→  qty       Int            @default(1)
+   377→  createdAt DateTime       @default(now())
+   378→}
+   379→
+   380→model Order {
+   381→  id                  String    @id @default(cuid())
+   382→  storeId             String
+   383→  store               Store     @relation(fields: [storeId], references: [id])
+   384→  orderNumber         String    @unique
+   385→  customerName        String
+   386→  customerEmail       String
+   387→  customerPhone       String?
+   388→  status              String    @default("payment_pending") // payment_pending | paid | processing | shipped | delivered | completed | cancelled | refunding | partially_refunded | refunded | closed
+   389→  disputedFlag        Boolean   @default(false)
+   390→  channel             String    @default("storefront") // storefront | market
+   391→  currency            String    @default("MYR")
+   392→  subtotalMinor       Int       @default(0)
+   393→  discountMinor       Int       @default(0)
+   394→  shippingMinor       Int       @default(0)
+   395→  taxMinor            Int       @default(0)
+   396→  totalMinor          Int       @default(0)
+   397→  couponCode          String?
+   398→  shippingAddressJson String    @default("{}")
+   399→  customerNote        String?
+   400→  paymentProvider     String?
+   401→  idemKey             String?   @unique
+   402→  paidAt              DateTime?
+   403→  fulfilledAt         DateTime?
+   404→  shippedAt           DateTime?
+   405→  deliveredAt         DateTime?
+   406→  completedAt         DateTime?
+   407→  cancelledAt         DateTime?
+   408→  trackingNumber      String?
+   409→  trackingProvider    String?
+   410→  riskFlagsJson       String    @default("[]")
+   411→  createdAt           DateTime  @default(now())
+   412→  updatedAt           DateTime  @updatedAt
+   413→  items               OrderItem[]
+   414→  history             OrderStatusHistory[]
+   415→  paymentIntents      PaymentIntent[]
+   416→  refunds             Refund[]
+   417→  disputes            Dispute[]
+   418→}
+   419→
+   420→model OrderItem {
+   421→  id                   String  @id @default(cuid())
+   422→  orderId              String
+   423→  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+   424→  productId            String?
+   425→  product              Product? @relation(fields: [productId], references: [id])
+   426→  variantId            String?
+   427→  variant              ProductVariant? @relation(fields: [variantId], references: [id])
+   428→  title                String
+   429→  variantLabel         String?
+   430→  unitPriceMinor       Int
+   431→  qty                  Int
+   432→  lineSubtotalMinor    Int
+   433→  discountMinor        Int     @default(0)
+   434→  shippingMinor        Int     @default(0)
+   435→  commissionPercent    Float   @default(0)
+   436→  commissionMinor      Int     @default(0)
+   437→  fixedFeeMinor        Int     @default(0)
+   438→  sellerNetMinor       Int     @default(0)
+   439→  breakdownJson        String  @default("{}")
+   440→  refundedMinor        Int     @default(0)
+   441→}
+   442→
+   443→model OrderStatusHistory {
+   444→  id         String   @id @default(cuid())
+   445→  orderId    String
+   446→  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+   447→  fromStatus String?
+   448→  toStatus   String
+   449→  actor      String   @default("system") // system | seller | admin | shopper
+   450→  note       String?
+   451→  createdAt  DateTime @default(now())
+   452→}
+   453→
+   454→model PaymentIntent {
+   455→  id           String    @id @default(cuid())
+   456→  orderId      String
+   457→  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+   458→  provider     String // fpx_toyyibpay | fpx_curlec | tng | grabpay | card_stripe
+   459→  providerRef  String    @unique
+   460→  amountMinor  Int
+   461→  status       String    @default("requires_payment") // requires_payment | processing | succeeded | failed | refunded
+   462→  redirectUrl  String?
+   463→  expiresAt    DateTime
+   464→  createdAt    DateTime  @default(now())
+   465→  updatedAt    DateTime  @updatedAt
+   466→}
+   467→
+   468→model PaymentWebhookLog {
+   469→  id             String   @id @default(cuid())
+   470→  provider       String
+   471→  providerRef    String
+   472→  eventType      String
+   473→  payloadJson    String
+   474→  signatureValid Boolean  @default(false)
+   475→  processed      Boolean  @default(false)
+   476→  orderId        String?
+   477→  createdAt      DateTime @default(now())
+   478→}
+   479→
+   480→model Refund {
+   481→  id                      String    @id @default(cuid())
+   482→  orderId                 String
+   483→  order                   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+   484→  amountMinor             Int
+   485→  reason                  String?
+   486→  status                  String    @default("requested") // requested | approved | processed | rejected
+   487→  requestedBy             String    @default("seller") // seller | admin | shopper
+   488→  restock                 Boolean   @default(true)
+   489→  commissionReversalMinor Int       @default(0)
+   490→  processedAt             DateTime?
+   491→  createdAt               DateTime  @default(now())
+   492→  updatedAt               DateTime  @updatedAt
+   493→}
+   494→
+   495→model Dispute {
+   496→  id         String    @id @default(cuid())
+   497→  orderId    String
+   498→  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+   499→  reason     String
+   500→  status     String    @default("open") // open | under_review | resolved | rejected
+   501→  openedBy   String    @default("shopper")
+   502→  resolution String?
+   503→  resolvedAt DateTime?
+   504→  createdAt  DateTime  @default(now())
+   505→  updatedAt  DateTime  @updatedAt
+   506→}
+   507→
+   508→// ---------------------------------------------------------------- F: MONEY
+   509→
+   510→model Wallet {
+   511→  id                    String  @id @default(cuid())
+   512→  sellerId              String  @unique
+   513→  seller                Seller  @relation(fields: [sellerId], references: [id])
+   514→  currency              String  @default("MYR")
+   515→  pendingMinor          Int     @default(0)
+   516→  availableMinor        Int     @default(0)
+   517→  reservedMinor         Int     @default(0)
+   518→  lifetimeEarnedMinor   Int     @default(0)
+   519→  lifetimeCommissionMinor Int   @default(0)
+   520→  createdAt             DateTime @default(now())
+   521→  updatedAt             DateTime @updatedAt
+   522→}
+   523→
+   524→model LedgerAccount {
+   525→  code        String  @id
+   526→  name        String
+   527→  type        String // asset | liability | revenue | expense
+   528→  walletId    String? // for SELLER:*:PAYABLE accounts
+   529→  createdAt   DateTime @default(now())
+   530→}
+   531→
+   532→model LedgerTransaction {
+   533→  id          String   @id @default(cuid())
+   534→  txnType     String // order_paid | gateway_settlement | payout_initiated | payout_confirmed | payout_failed | refund | admin_adjustment
+   535→  refType     String?
+   536→  refId       String?
+   537→  description String?
+   538→  occurredAt  DateTime @default(now())
+   539→  lines       LedgerLine[]
+   540→}
+   541→
+   542→model LedgerLine {
+   543→  id             String            @id @default(cuid())
+   544→  txnId          String
+   545→  txn            LedgerTransaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
+   546→  accountCode    String
+   547→  direction      String // debit | credit
+   548→  amountMinor    Int
+   549→  currency       String            @default("MYR")
+   550→  walletId       String?
+   551→  availableAt    DateTime?
+   552→  memo           String?
+   553→  createdAt      DateTime          @default(now())
+   554→}
+   555→
+   556→model PayoutBatch {
+   557→  id          String    @id @default(cuid())
+   558→  runType     String    @default("manual") // manual | scheduled
+   559→  status      String    @default("pending") // pending | running | completed | failed
+   560→  currency    String    @default("MYR")
+   561→  totalMinor  Int       @default(0)
+   562→  payoutCount Int       @default(0)
+   563→  startedAt   DateTime  @default(now())
+   564→  finishedAt  DateTime?
+   565→  payouts     Payout[]
+   566→}
+   567→
+   568→model Payout {
+   569→  id             String      @id @default(cuid())
+   570→  batchId        String?
+   571→  batch          PayoutBatch? @relation(fields: [batchId], references: [id])
+   572→  sellerId       String
+   573→  walletId       String
+   574→  referenceNo    String      @unique
+   575→  amountMinor    Int
+   576→  status         String      @default("processing") // processing | paid | failed
+   577→  method         String      @default("manual_csv") // bank_transfer | manual_csv
+   578→  bankAccountId  String?
+   579→  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
+   580→  providerRef    String?
+   581→  statementJson  String      @default("{}")
+   582→  failReason     String?
+   583→  paidAt         DateTime?
+   584→  createdAt      DateTime    @default(now())
+   585→  updatedAt      DateTime    @updatedAt
+   586→}
+   587→
+   588→model BankAccount {
+   589→  id                   String    @id @default(cuid())
+   590→  sellerId             String
+   591→  seller               Seller    @relation(fields: [sellerId], references: [id])
+   592→  holderName           String
+   593→  bankName             String
+   594→  accountNumberMasked  String
+   595→  accountNumberEnc     String
+   596→  verified             Boolean   @default(false)
+   597→  verifiedAt           DateTime?
+   598→  payouts              Payout[]
+   599→  createdAt            DateTime  @default(now())
+   600→}
+   601→
+   602→// ---------------------------------------------------------------- G: MARKETING
+   603→
+   604→model Coupon {
+   605→  id              String    @id @default(cuid())
+   606→  scope           String    @default("platform") // platform | store
+   607→  storeId         String?
+   608→  store           Store?    @relation(fields: [storeId], references: [id])
+   609→  code            String    @unique
+   610→  description     String?
+   611→  type            String    @default("percent") // percent | fixed | freeship
+   612→  percent         Float?
+   613→  amountMinor     Int?
+   614→  minSpendMinor   Int       @default(0)
+   615→  maxRedemptions  Int?
+   616→  perCustomerLimit Int      @default(1)
+   617→  startsAt        DateTime?
+   618→  endsAt          DateTime?
+   619→  isActive        Boolean   @default(true)
+   620→  timesUsed       Int       @default(0)
+   621→  createdAt       DateTime  @default(now())
+   622→  updatedAt       DateTime  @updatedAt
+   623→}
+   624→
+   625→model CouponRedemption {
+   626→  id            String  @id @default(cuid())
+   627→  couponId      String
+   628→  orderId       String
+   629→  customerEmail String
+   630→  discountMinor Int
+   631→  createdAt     DateTime @default(now())
+   632→}
+   633→
+   634→model MarketplaceBanner {
+   635→  id        String    @id @default(cuid())
+   636→  title     String
+   637→  imageUrl  String
+   638→  linkUrl   String?
+   639→  sortOrder Int       @default(0)
+   640→  isActive  Boolean   @default(true)
+   641→  createdAt DateTime  @default(now())
+   642→}
+   643→
+   644→model FeaturedSlot {
+   645→  id        String   @id @default(cuid())
+   646→  productId String
+   647→  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+   648→  slot      String   @default("home_grid")
+   649→  sortOrder Int      @default(0)
+   650→  isActive  Boolean  @default(true)
+   651→  createdAt DateTime @default(now())
+   652→}
+   653→
+   654→// ---------------------------------------------------------------- H: INTEGRATIONS & OPS
+   655→
+   656→model StoreIntegration {
+   657→  id          String   @id @default(cuid())
+   658→  storeId     String
+   659→  store       Store    @relation(fields: [storeId], references: [id])
+   660→  provider    String // meta_pixel | ga4 | tiktok_pixel | gtm
+   661→  configJson  String   @default("{}")
+   662→  isEnabled   Boolean  @default(false)
+   663→  updatedAt   DateTime @updatedAt
+   664→
+   665→  @@unique([storeId, provider])
+   666→}
+   667→
+   668→model WebhookEndpoint {
+   669→  id        String   @id @default(cuid())
+   670→  storeId   String
+   671→  store     Store    @relation(fields: [storeId], references: [id])
+   672→  url       String
+   673→  secret    String
+   674→  eventsJson String  @default("[\"order.paid\"]")
+   675→  isActive  Boolean  @default(true)
+   676→  createdAt DateTime @default(now())
+   677→  deliveries WebhookDelivery[]
+   678→}
+   679→
+   680→model WebhookDelivery {
+   681→  id            String   @id @default(cuid())
+   682→  endpointId    String
+   683→  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+   684→  event         String
+   685→  payloadJson   String
+   686→  status        String   @default("pending") // pending | success | failed | dead
+   687→  attempts      Int      @default(0)
+   688→  responseCode  Int?
+   689→  lastAttemptAt DateTime?
+   690→  createdAt     DateTime @default(now())
+   691→}
+   692→
+   693→model ApiKey {
+   694→  id         String    @id @default(cuid())
+   695→  storeId    String
+   696→  store      Store     @relation(fields: [storeId], references: [id])
+   697→  name       String
+   698→  prefix     String
+   699→  hash       String
+   700→  scopesJson String    @default("[\"read\"]")
+   701→  lastUsedAt DateTime?
+   702→  revokedAt  DateTime?
+   703→  createdAt  DateTime  @default(now())
+   704→}
+   705→
+   706→model Setting {
+   707→  key         String   @id
+   708→  valueJson   String
+   709→  description String?
+   710→  updatedAt   DateTime @updatedAt
+   711→}
+   712→
+   713→model FeatureFlag {
+   714→  key             String  @id
+   715→  description     String?
+   716→  isEnabled       Boolean @default(false)
+   717→  rolloutPercent  Int     @default(100)
+   718→}
+   719→
+   720→model AdminAuditLog {
+   721→  id         String   @id @default(cuid())
+   722→  adminId    String
+   723→  adminEmail String
+   724→  action     String
+   725→  entityType String
+   726→  entityId   String?
+   727→  beforeJson String?
+   728→  afterJson  String?
+   729→  createdAt  DateTime @default(now())
+   730→}
+   731→
+   732→model ActivityLog {
+   733→  id         String   @id @default(cuid())
+   734→  actorType  String // admin | seller | system | shopper
+   735→  actorId    String?
+   736→  actorLabel String?
+   737→  action     String
+   738→  entityType String?
+   739→  entityId   String?
+   740→  metaJson   String?
+   741→  createdAt  DateTime @default(now())
+   742→}
+   743→
+   744→model NotificationTemplate {
+   745→  id        String   @id @default(cuid())
+   746→  event     String
+   747→  channel   String // email | whatsapp | inapp
+   748→  subject   String?
+   749→  body      String
+   750→  isActive  Boolean  @default(true)
+   751→  version   Int      @default(1)
+   752→  createdAt DateTime @default(now())
+   753→  updatedAt DateTime @updatedAt
+   754→
+   755→  @@unique([event, channel])
+   756→}
+   757→
+   758→model NotificationLog {
+   759→  id         String   @id @default(cuid())
+   760→  event      String
+   761→  channel    String
+   762→  recipient  String
+   763→  subject    String?
+   764→  status     String   @default("queued") // queued | sent | failed
+   765→  error      String?
+   766→  createdAt  DateTime @default(now())
+   767→}
+   768→
+   769→model SupportTicket {
+   770→  id          String   @id @default(cuid())
+   771→  storeId     String?
+   772→  sellerEmail String?
+   773→  subject     String
+   774→  status      String   @default("open") // open | pending | closed
+   775→  priority    String   @default("normal") // low | normal | high | urgent
+   776→  contextType String?
+   777→  contextId   String?
+   778→  createdAt   DateTime @default(now())
+   779→  updatedAt   DateTime @updatedAt
+   780→  messages    SupportMessage[]
+   781→}
+   782→
+   783→model SupportMessage {
+   784→  id          String   @id @default(cuid())
+   785→  ticketId    String
+   786→  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+   787→  authorType  String // admin | seller
+   788→  authorLabel String
+   789→  body        String
+   790→  createdAt   DateTime @default(now())
+   791→}
+   792→
+   793→model Announcement {
+   794→  id        String    @id @default(cuid())
+   795→  title     String
+   796→  body      String?
+   797→  audience  String    @default("all") // all | sellers | admins
+   798→  startsAt  DateTime?
+   799→  endsAt    DateTime?
+   800→  isActive  Boolean   @default(true)
+   801→  createdAt DateTime  @default(now())
+   802→}
+   803→
+   804→model Counter {
+   805→  key   String @id
+   806→  value Int    @default(0)
+   807→}
+   808→
+   809→model ExportJob {
+   810→  id         String    @id @default(cuid())
+   811→  type       String
+   812→  status     String    @default("queued") // queued | running | done | failed
+   813→  paramsJson String    @default("{}")
+   814→  rowCount   Int       @default(0)
+   815→  fileUrl    String?
+   816→  createdAt  DateTime  @default(now())
+   817→  finishedAt DateTime?
+   818→}
+   819→
+   820→// ------------------------------------------------- MARKETPLACE IMPORT (Phase 4)
+   821→
+   822→model MarketplaceConnection {
+   823→  id              String    @id @default(cuid())
+   824→  storeId         String?   // bound after store claim / for seller-scoped connections
+   825→  store           Store?    @relation(fields: [storeId], references: [id])
+   826→  platform        String    // shopee | tiktok
+   827→  status          String    @default("pending") // pending | authorising | connected | expired | disconnected | needs_credentials
+   828→  envConfigured   Boolean   @default(false) // platform app credentials present server-side
+   829→  shopId          String?   // source shop identifier (shopee shop_id / tiktok shop_id)
+   830→  shopName        String?
+   831→  shopCipher      String?   // tiktok shop_cipher (required by product APIs)
+   832→  region          String?   // e.g. MY
+   833→  accessTokenEnc  String?   // AES-256-GCM encrypted — never returned via API
+   834→  refreshTokenEnc String?   // AES-256-GCM encrypted
+   835→  scopesJson      String    @default("[]")
+   836→  expiresAt       DateTime?
+   837→  lastRefreshAt   DateTime?
+   838→  lastError       String?
+   839→  createdAt       DateTime  @default(now())
+   840→  updatedAt       DateTime  @updatedAt
+   841→
+   842→  jobs            ImportJob[]
+   843→
+   844→  @@unique([platform, shopId])
+   845→  @@index([storeId])
+   846→}
+   847→
+   848→model ImportJob {
+   849→  id              String    @id @default(cuid())
+   850→  // public tracking token so a guest can watch progress without an account
+   851→  trackingToken   String    @unique
+   852→  storeId         String?
+   853→  store           Store?    @relation(fields: [storeId], references: [id])
+   854→  connectionId    String?
+   855→  connection      MarketplaceConnection? @relation(fields: [connectionId], references: [id])
+   856→  platform        String    // shopee | tiktok | fixture
+   857→  inputUrl        String
+   858→  urlType         String    @default("unknown") // shop | product | unknown
+   859→  sourceShopId    String?
+   860→  sourceProductId String?   // set when the pasted URL is a single product
+   861→  // queued | validating | awaiting_authorisation | connecting | fetching_shop |
+   862→  // importing_products | importing_variants | processing_images | generating_seo |
+   863→  // generating_storefront | awaiting_claim | completed | completed_with_warnings | failed
+   864→  status          String    @default("queued")
+   865→  phaseDetail     String?
+   866→  progressJson    String    @default("{}") // {discovered, processed, succeeded, skipped, failed, imagesCopied}
+   867→  errorJson       String    @default("{}") // {code, message}
+   868→  summaryJson     String    @default("{}") // shop info + limitations found during import
+   869→  isFixture       Boolean   @default(false)
+   870→  storeCreated    Boolean   @default(false)
+   871→  claimedById     String?   // seller id after claim links job → store
+   872→  startedAt       DateTime?
+   873→  finishedAt      DateTime?
+   874→  createdAt       DateTime  @default(now())
+   875→  updatedAt       DateTime  @updatedAt
+   876→
+   877→  items           ImportJobItem[]
+   878→
+   879→  @@index([status])
+   880→  @@index([platform, createdAt])
+   881→}
+   882→
+   883→model ImportJobItem {
+   884→  id              String    @id @default(cuid())
+   885→  jobId           String
+   886→  job             ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+   887→  productId       String?
+   888→  product         Product?  @relation(fields: [productId], references: [id])
+   889→  sourcePlatform  String
+   890→  sourceShopId    String?
+   891→  sourceProductId String
+   892→  title           String?
+   893→  // pending | ok | skipped | failed
+   894→  status          String    @default("pending")
+   895→  error           String?
+   896→  warningsJson    String    @default("[]") // e.g. ["description missing at source","variant price unavailable"]
+   897→  processedAt     DateTime?
+   898→  createdAt       DateTime  @default(now())
+   899→
+   900→  @@unique([jobId, sourcePlatform, sourceProductId])
+   901→  @@index([jobId, status])
+   902→}
+   903→
+   904→model StoreClaim {
+   905→  id                   String    @id @default(cuid())
+   906→  storeId              String
+   907→  store                Store     @relation(fields: [storeId], references: [id])
+   908→  jobId                String?   // import job that produced the store
+   909→  tokenHash            String    @unique // sha256(token) — raw token never stored
+   910→  // active | used | expired | revoked
+   911→  status               String    @default("active")
+   912→  verificationMethod   String    @default("pending") // pending | oauth_shopee | oauth_tiktok | claim_code | admin_manual
+   913→  verificationResultJson String  @default("{}")
+   914→  expiresAt            DateTime
+   915→  usedById             String?   // seller id that claimed
+   916→  usedAt               DateTime?
+   917→  createdAt            DateTime  @default(now())
+   918→
+   919→  @@index([storeId, status])
+   920→}
+   921→
+   922→model SeoMeta {
+   923→  id                 String   @id @default(cuid())
+   924→  entityType         String   // store | product | category
+   925→  entityId           String
+   926→  seoTitle           String?
+   927→  seoDescription     String?
+   928→  ogImage            String?
+   929→  canonicalUrl       String?
+   930→  noindex            Boolean  @default(false)
+   931→  structuredDataJson String   @default("{}")
+   932→  lockedFieldsJson   String   @default("[]") // ["seoTitle", ...] — protected from re-import
+   933→  warningsJson       String   @default("[]")
+   934→  updatedAt          DateTime @updatedAt
+   935→  createdAt          DateTime @default(now())
+   936→
+   937→  @@unique([entityType, entityId])
+   938→  @@index([entityType])
+   939→}
+   940→

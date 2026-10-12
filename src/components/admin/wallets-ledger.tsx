@@ -168,8 +168,9 @@ function formatMinorSafe(v: number): string {
 }
 
 function WalletActivity({ walletId }: { walletId: string }) {
-  const { data, error, loading } = useApi<LedgerTxn[]>(`/api/admin/ledger/transactions?walletId=${encodeURIComponent(walletId)}`);
-  const txns = data ?? [];
+  // API envelope: { data: { items, nextCursor, count } } — unwrap `items`.
+  const { data, error, loading } = useApi<{ items: LedgerTxn[] }>(`/api/admin/ledger/transactions?walletId=${encodeURIComponent(walletId)}`);
+  const txns = data?.items ?? [];
   return (
     <div className="mt-4 border-t px-4 py-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent ledger activity</p>
@@ -325,12 +326,11 @@ function LedgerTransactions() {
     setError(null);
     try {
       const res = await fetch(url, { cache: "no-store" });
-      const body = (await res.json()) as { data?: LedgerTxn[] };
+      const body = (await res.json()) as { data?: { items?: LedgerTxn[]; nextCursor?: string | null } };
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const rows = body.data ?? [];
+      const rows = body.data?.items ?? [];
       setTxns((prev) => (append ? [...prev, ...rows] : rows));
-      const last = rows.length > 0 ? rows[rows.length - 1].id : null;
-      setNextCursor(rows.length > 0 ? last : null);
+      setNextCursor(rows.length > 0 ? (body.data?.nextCursor ?? null) : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load ledger");
     } finally {

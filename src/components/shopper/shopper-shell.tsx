@@ -6,6 +6,7 @@
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { io, type Socket } from "socket.io-client";
 import {
   ShoppingBag,
   Search,
@@ -17,12 +18,22 @@ import {
   Store,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   Loader2,
+  Package,
+  MessagesSquare,
+  LogIn,
+  LogOut,
+  Send,
+  User,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -35,15 +46,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
+import { setSessionToken } from "@/lib/session-client";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import {
   fetchJson,
   patchJson,
   deleteJson,
+  postJson,
+  notifyCartUpdated,
   useCart,
   EmptyState,
   QtyStepper,
+  fmtDateTime,
   type CategoryT,
   type ShopperCtx,
   type ShopperView,
@@ -51,7 +66,7 @@ import {
 import MarketHome, { ResultsView, categoryIcon } from "./market";
 import PdpView from "./pdp";
 import StorefrontView, { StorePageView } from "./storefront";
-import { CheckoutView, PayView, OrderStatusView, LookupView } from "./checkout";
+import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
 import GenerateStoreView, { ClaimView } from "./generate";
 
 const VIEW_KEY = "sm_shopper_view";
@@ -93,7 +108,6 @@ export default function ShopperShell() {
       const sf = params.get("sf");
       if (sf) {
         const sp = params.get("sp");
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link reset
         setView(sp ? { name: "pdp", slug: sf, pSlug: sp } : { name: "storefront", slug: sf });
         setReady(true);
         return;
@@ -146,6 +160,7 @@ export default function ShopperShell() {
   return (
     <div className="flex-1 flex flex-col min-h-screen">
       <Toaster position="top-center" richColors />
+      <ShopperAuthDialog />
 
       {showChrome ? (
         <MarketHeader
@@ -159,7 +174,7 @@ export default function ShopperShell() {
 
       <AnimatePresence mode="wait">
         <motion.main
-          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : ""}`}
+          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : ""}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
@@ -179,8 +194,10 @@ export default function ShopperShell() {
               {view.name === "checkout" ? <CheckoutView ctx={ctx} /> : null}
               {view.name === "pay" ? <PayView ctx={ctx} paymentRef={view.ref} /> : null}
               {view.name === "order-status" ? <OrderStatusView ctx={ctx} orderNumber={view.orderNumber} /> : null}
+              {view.name === "orders" ? <OrdersView ctx={ctx} /> : null}
               {view.name === "generate" ? <GenerateStoreView ctx={ctx} /> : null}
               {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
+              {view.name === "messages" ? <MessagesView ctx={ctx} initialThreadId={view.threadId} /> : null}
             </>
           )}
           {claimLink ? <ClaimView jobId={claimLink.jobId} token={claimLink.token} onExit={() => setClaimLink(null)} /> : null}
@@ -396,12 +413,39 @@ function MarketHeader({
             <span className="sm:hidden">Sell</span>
           </button>
 
+          {/* messages (chat with sellers) */}
+          <button
+            type="button"
+            onClick={() => nav({ name: "messages" })}
+            aria-label="My messages"
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              view.name === "messages" && "text-teal-800 bg-teal-50"
+            )}
+          >
+            <MessagesSquare className="h-4 w-4" />
+            <span className="hidden md:inline">Messages</span>
+          </button>
+
+          {/* orders */}
+          <button
+            type="button"
+            onClick={() => nav({ name: "orders" })}
+            aria-label="My orders"
+            className={cn(
+              "hidden sm:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              view.name === "orders" && "text-teal-800 bg-teal-50"
+            )}
+          >
+            <Package className="h-4 w-4" /> Orders
+          </button>
+
           {/* track order */}
           <button
             type="button"
             onClick={() => nav({ name: "lookup" })}
             className={cn(
-              "hidden sm:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              "hidden md:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
               view.name === "lookup" && "text-teal-800 bg-teal-50"
             )}
           >
@@ -427,9 +471,444 @@ function MarketHeader({
               </motion.span>
             ) : null}
           </button>
+
+          {/* account (shopper auth) */}
+          <AccountButton nav={nav} />
         </div>
       </div>
     </header>
+  );
+}
+
+// =============================================================================================
+// Shopper account (sign-in chip / dropdown) + auth dialog + messages view
+// =============================================================================================
+
+function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const logout = useApp((s) => s.logout);
+  const refreshMe = useApp((s) => s.refreshMe);
+  const shopper = me.loaded ? me.shopper : null;
+
+  if (!shopper) {
+    return (
+      <button
+        type="button"
+        onClick={() => openShopperAuth()}
+        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
+        aria-label="Sign in to SHOPMESH"
+      >
+        <LogIn className="h-4 w-4" />
+        <span className="hidden sm:inline">Sign in</span>
+      </button>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
+          aria-label={`Signed in as ${shopper.fullName}`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-extrabold text-white">
+            {shopper.fullName.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="hidden sm:inline max-w-28 truncate">{shopper.fullName.split(" ")[0]}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <div className="px-3 py-2">
+          <p className="truncate text-sm font-semibold">{shopper.fullName}</p>
+          <p className="truncate text-xs text-muted-foreground">{shopper.email}</p>
+        </div>
+        <Separator />
+        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "messages" })}>
+          <MessagesSquare className="h-4 w-4 text-teal-700" /> My messages
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="min-h-[44px] text-rose-600"
+          onClick={async () => {
+            await logout();
+            await refreshMe();
+            toast.success("Signed out");
+          }}
+        >
+          <LogOut className="h-4 w-4" /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ShopperAuthDialog() {
+  const open = useApp((s) => s.shopperAuthOpen);
+  const close = useApp((s) => s.closeShopperAuth);
+  const after = useApp((s) => s.afterShopperAuth);
+  const refreshMe = useApp((s) => s.refreshMe);
+  const [tab, setTab] = useState("login");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) setTab("login");
+  }, [open]);
+
+  const finish = async () => {
+    await refreshMe();
+    close();
+    after?.();
+  };
+
+  const submitLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (busy) return;
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    try {
+      const res = await postJson<{ token?: string }>("/api/auth/shopper/login", { email: f.get("email"), password: f.get("password") });
+      setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
+      toast.success("Welcome back!");
+      await finish();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Sign in failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitRegister = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (busy) return;
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    try {
+      const res = await postJson<{ token?: string }>("/api/auth/shopper/register", {
+        fullName: f.get("fullName"),
+        email: f.get("email"),
+        password: f.get("password"),
+      });
+      setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
+      toast.success("Account created!", { description: "You can now chat with sellers and track orders." });
+      await finish();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Registration failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => (!o ? close() : null)}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <User className="h-5 w-5 text-teal-700" /> SHOPMESH shopper account
+          </DialogTitle>
+          <DialogDescription>Sign in to chat with sellers, or create a free account in seconds.</DialogDescription>
+        </DialogHeader>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="login">Sign in</TabsTrigger>
+            <TabsTrigger value="register">Create account</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login">
+            <form onSubmit={submitLogin} className="space-y-3 pt-2">
+              <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" className="min-h-[44px]" aria-label="Email" />
+              <Input name="password" type="password" required placeholder="Password" autoComplete="current-password" className="min-h-[44px]" aria-label="Password" />
+              <Button type="submit" disabled={busy} className="w-full min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Sign in
+              </Button>
+            </form>
+          </TabsContent>
+          <TabsContent value="register">
+            <form onSubmit={submitRegister} className="space-y-3 pt-2">
+              <Input name="fullName" required placeholder="Full name" autoComplete="name" className="min-h-[44px]" aria-label="Full name" />
+              <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" className="min-h-[44px]" aria-label="Email" />
+              <Input name="password" type="password" required minLength={8} placeholder="Password (min 8 characters)" autoComplete="new-password" className="min-h-[44px]" aria-label="Password" />
+              <Button type="submit" disabled={busy} className="w-full min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <User className="h-4 w-4" />} Create free account
+              </Button>
+            </form>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------- messages (chat)
+
+type ThreadRow = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  storeSlug: string;
+  orderNumber: string | null;
+  subject: string | null;
+  lastMessageAt: string;
+  lastMessage: { body: string; senderType: string; createdAt: string } | null;
+};
+
+type ChatMsg = { id: string; senderType: "shopper" | "seller"; senderName: string; body: string; createdAt: string };
+
+function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThreadId?: string }) {
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const shopper = me.loaded ? me.shopper : null;
+
+  const [threads, setThreads] = useState<ThreadRow[] | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(initialThreadId ?? null);
+  const [messages, setMessages] = useState<ChatMsg[] | null>(null);
+  const [activeThread, setActiveThread] = useState<{ storeName: string; orderNumber: string | null; subject: string | null } | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const loadThreads = useCallback(async () => {
+    try {
+      const rows = await fetchJson<ThreadRow[]>("/api/chat/threads");
+      setThreads(rows);
+      return rows;
+    } catch {
+      setThreads([]);
+      return [];
+    }
+  }, []);
+
+  const loadMessages = useCallback(async (threadId: string) => {
+    try {
+      const d = await fetchJson<{ thread: { storeName: string; orderNumber: string | null; subject: string | null }; messages: ChatMsg[] }>(
+        `/api/chat/threads/${threadId}`
+      );
+      setMessages(d.messages);
+      setActiveThread(d.thread);
+    } catch {
+      setMessages([]);
+    }
+  }, []);
+
+  // initial load
+  useEffect(() => {
+    if (!shopper) return;
+    let alive = true;
+    loadThreads().then((rows) => {
+      if (!alive) return;
+      if (initialThreadId) {
+        setActiveId(initialThreadId);
+      } else if (rows.length > 0) {
+        setActiveId((cur) => cur ?? rows[0].id);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [shopper, initialThreadId, loadThreads]);
+
+  // load conversation when thread changes
+  useEffect(() => {
+    if (!activeId) return;
+    setMessages(null);
+    loadMessages(activeId);
+  }, [activeId, loadMessages]);
+
+  // live updates via the socket.io chat hub
+  useEffect(() => {
+    if (!shopper) return;
+    const socket = io("/?XTransformPort=3003", {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      timeout: 10000,
+    });
+    socketRef.current = socket;
+    socket.on("connect", () => {
+      // join all thread rooms so the sidebar stays fresh too
+      const rooms = (threads ?? []).map((t) => `thread:${t.id}`);
+      socket.emit("join", { rooms });
+    });
+    socket.on("chat:message", (msg: ChatMsg & { threadId?: string }) => {
+      if (msg.threadId && msg.threadId === activeId) {
+        setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
+      }
+      loadThreads();
+    });
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [shopper, threads, activeId, loadThreads]);
+
+  // auto-scroll to latest
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || !activeId || sending) return;
+    setSending(true);
+    try {
+      const msg = await postJson<ChatMsg>(`/api/chat/threads/${activeId}/messages`, { body: text });
+      setMessages((prev) => (prev ? [...prev, msg] : [msg]));
+      setDraft("");
+      loadThreads();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send the message");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!shopper) {
+    return (
+      <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        <EmptyState
+          icon={MessagesSquare}
+          title="Sign in to see your messages"
+          hint="Create a free SHOPMESH account to chat with sellers about orders, deliveries and returns."
+          action={
+            <Button onClick={() => openShopperAuth(() => ctx.nav({ name: "messages" }))} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
+              <LogIn className="h-4 w-4" /> Sign in or create account
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:py-8">
+      <div className="pb-4">
+        <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight">
+          <MessagesSquare className="h-6 w-6 text-teal-700" /> Messages
+        </h1>
+        <p className="text-sm text-muted-foreground">Chat with sellers about your orders — replies arrive in real time.</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-[300px_1fr]">
+        {/* thread list */}
+        <aside className={cn("rounded-2xl border bg-card p-2 shadow-soft", activeId && "hidden md:block")}>
+          {threads === null ? (
+            <div className="flex justify-center p-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : threads.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              No conversations yet — use “Contact seller” on any order to start one.
+            </p>
+          ) : (
+            <ul className="space-y-1 max-h-96 md:max-h-[520px] overflow-y-auto">
+              {threads.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveId(t.id);
+                      setActiveThread({ storeName: t.storeName, orderNumber: t.orderNumber, subject: t.subject });
+                    }}
+                    className={cn(
+                      "w-full rounded-xl p-3 text-left transition-colors min-h-[60px]",
+                      activeId === t.id ? "bg-teal-50 ring-1 ring-teal-200" : "hover:bg-muted"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[11px] font-extrabold text-white">
+                        {t.storeName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t.storeName}</span>
+                    </div>
+                    <p className="truncate pt-1 pl-10 text-xs text-muted-foreground">
+                      {t.lastMessage?.body ?? "Say hello…"}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+
+        {/* conversation */}
+        <section className={cn("flex flex-col rounded-2xl border bg-card shadow-soft", !activeId && "hidden md:flex", "min-h-[420px] md:min-h-[520px]")}>
+          {activeId && activeThread ? (
+            <>
+              <header className="flex items-center gap-2 border-b p-3">
+                <button
+                  type="button"
+                  className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted"
+                  onClick={() => setActiveId(null)}
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{activeThread.storeName}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {activeThread.orderNumber ? `Order ${activeThread.orderNumber}` : activeThread.subject ?? "Direct message"}
+                  </p>
+                </div>
+              </header>
+
+              <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4 max-h-80 md:max-h-[380px]">
+                {messages === null ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <p className="pt-10 text-center text-sm text-muted-foreground">No messages yet — say hello!</p>
+                ) : (
+                  messages.map((m) => (
+                    <div key={m.id} className={cn("flex", m.senderType === "shopper" ? "justify-end" : "justify-start")}>
+                      <div
+                        className={cn(
+                          "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                          m.senderType === "shopper" ? "bg-brand-gradient text-white rounded-br-md" : "bg-muted rounded-bl-md"
+                        )}
+                      >
+                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                        <p className={cn("pt-1 text-[10px]", m.senderType === "shopper" ? "text-white/70" : "text-muted-foreground")}>
+                          {m.senderType === "seller" ? `${m.senderName} · ` : ""}
+                          {fmtDateTime(m.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <footer className="border-t p-3">
+                <div className="flex items-end gap-2">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Type a message… (Enter to send)"
+                    aria-label="Message"
+                    className="min-h-[44px] resize-none"
+                  />
+                  <Button onClick={send} disabled={sending || !draft.trim()} className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110" aria-label="Send message">
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    <span className="hidden sm:inline">Send</span>
+                  </Button>
+                </div>
+              </footer>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
+              Pick a conversation to start chatting.
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -487,7 +966,7 @@ function ShopperFooter({
             </button>
             <Button
               onClick={onSeller}
-              className="min-h-[44px] rounded-full bg-amber-400 text-teal-950 hover:bg-amber-300 font-bold"
+              className="min-h-[44px] shrink whitespace-normal rounded-full bg-amber-400 px-4 text-left text-teal-950 hover:bg-amber-300 font-bold"
             >
               Powered by SHOPMESH — launch your free store <ArrowRight className="h-4 w-4" />
             </Button>
@@ -512,6 +991,7 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
     try {
       if (qty <= 0) await deleteJson(`/api/cart/items/${itemId}`);
       else await patchJson(`/api/cart/items/${itemId}`, { qty });
+      notifyCartUpdated(); // keep badge + every useCart() instance in sync
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update cart");
     } finally {

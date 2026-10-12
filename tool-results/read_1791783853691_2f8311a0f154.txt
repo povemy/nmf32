@@ -1,0 +1,867 @@
+     1→# MASTER INSTRUCTION: REVAMP AND FULLY CONNECT THE ANDROID E-COMMERCE CHECKOUT SYSTEM
+     2→
+     3→## 1. PRIMARY OBJECTIVE
+     4→
+     5→Revamp the existing Android application's entire e-commerce checkout experience into a modern, reliable, Shopify-inspired, three-phase checkout system.
+     6→
+     7→This is not merely a UI redesign. It is a full checkout-flow improvement and functionality-integration task.
+     8→
+     9→The objective is to transform the existing checkout system into a complete, functional, end-to-end shopping experience in which every relevant button, component, feature, action, state transition, API call, database operation, and checkout-related business rule is properly connected and operational.
+    10→
+    11→Currently, many functions and features in the application appear to be hardcoded, partially implemented, simulated, disconnected, or not connected to their intended backend functionality. Investigate the existing implementation and resolve these issues systematically.
+    12→
+    13→You must work with the actual codebase, existing architecture, current database structure, existing APIs, authentication system, business logic, and available integrations. Do not invent an entirely new architecture when the existing implementation can be improved.
+    14→
+    15→Treat this as a functional engineering task that includes UI, state management, backend integration, data persistence, validation, error handling, security, and testing.
+    16→
+    17→### Core goals
+    18→
+    19→1. Introduce a clear three-phase checkout experience inspired by Shopify.
+    20→2. Make the checkout responsive, intuitive, consistent, and suitable for an Android e-commerce application.
+    21→3. Connect all checkout components to real application state and appropriate backend operations.
+    22→4. Identify and remove inappropriate hardcoded or mocked production behavior.
+    23→5. Ensure customer, address, delivery, cart, pricing, discount, payment, and order data remain consistent throughout checkout.
+    24→6. Ensure every relevant action has a defined and working outcome.
+    25→7. Prevent incomplete, duplicate, inconsistent, or invalid orders.
+    26→8. Connect the checkout to the existing product catalog, cart, user account, inventory, payment infrastructure, and order management system wherever those capabilities already exist.
+    27→9. Preserve existing working functionality and integrations.
+    28→10. Verify that the complete customer journey works, rather than considering the task complete when the screen looks correct.
+    29→
+    30→Do not assume a specific technology stack, framework, payment provider, database, or backend platform. Inspect the project and adapt the implementation to what actually exists.
+    31→
+    32→---
+    33→
+    34→## 2. FIRST STEP: AUDIT THE EXISTING PROJECT BEFORE MAKING CHANGES
+    35→
+    36→Before implementing the new checkout, inspect the codebase to understand how the application currently works.
+    37→
+    38→Do not immediately replace existing components without investigating their dependencies.
+    39→
+    40→Identify:
+    41→
+    42→- The Android application framework and programming language.
+    43→- The current project architecture and code organization.
+    44→- The navigation system and existing screen transitions.
+    45→- The current cart implementation and cart data source.
+    46→- The product, variant, quantity, pricing, and inventory models.
+    47→- The customer account and authentication system.
+    48→- The customer address management system.
+    49→- The available delivery or shipping functionality.
+    50→- The discount, coupon, voucher, tax, and fee calculations, where applicable.
+    51→- The payment integration and its current implementation status.
+    52→- The order creation and order history systems.
+    53→- The existing APIs, repositories, database tables, and data-access layers.
+    54→- The state management approach and lifecycle handling.
+    55→- Any existing loading indicators, error handling, form validation, and success screens.
+    56→- The existing checkout-related configuration and environment variables.
+    57→- Any hardcoded values, temporary mock responses, dummy data, placeholder actions, or simulated success states.
+    58→
+    59→Trace the actual execution path for the checkout process, starting from the shopping cart and continuing through order creation and order confirmation.
+    60→
+    61→Determine where each piece of information originates, where it is stored, how it is updated, and which components depend on it.
+    62→
+    63→### Required audit output
+    64→
+    65→Before making major structural changes, produce a concise implementation assessment containing:
+    66→
+    67→1. The existing checkout flow.
+    68→2. The existing architecture and relevant files.
+    69→3. The three-phase checkout structure you intend to implement.
+    70→4. Existing functionality that can be reused.
+    71→5. Disconnected, hardcoded, mocked, incomplete, or broken features.
+    72→6. Missing backend capabilities or integrations.
+    73→7. Potential security, data consistency, and transaction risks.
+    74→8. The implementation sequence and verification strategy.
+    75→
+    76→Use the assessment to guide the implementation. Do not stop after producing the assessment; continue with the actual code changes.
+    77→
+    78→If a dependency is missing, investigate whether a suitable implementation already exists elsewhere in the project before creating a replacement.
+    79→
+    80→---
+    81→
+    82→## 3. IMPLEMENT A THREE-PHASE CHECKOUT FLOW
+    83→
+    84→Create a Shopify-inspired checkout experience with three distinct phases.
+    85→
+    86→The interface should make it immediately clear which phase the customer is in, what information is required, what has already been completed, and what action is needed next.
+    87→
+    88→Use a clear progress indicator with three labeled stages:
+    89→
+    90→1. Information
+    91→2. Delivery
+    92→3. Payment
+    93→
+    94→Use the terminology that best fits the application's existing language and product context, while retaining the three-phase structure.
+    95→
+    96→### Global checkout behavior
+    97→
+    98→The three phases must form one continuous checkout process rather than three independent screens with unrelated state.
+    99→
+   100→The checkout should maintain a consistent view of the current cart, calculated totals, customer details, selected address, delivery option, discount information, and applicable fees.
+   101→
+   102→Implement appropriate navigation between phases.
+   103→
+   104→Customers should be able to return to a previous phase to correct their information without unnecessarily losing valid data already entered.
+   105→
+   106→Moving forward must perform the appropriate validation before allowing the next phase to open.
+   107→
+   108→Do not allow a customer to skip required steps simply by navigating directly to a later screen.
+   109→
+   110→Preserve checkout state appropriately during normal screen transitions, configuration changes, and temporary interruptions. Persist sensitive or transaction-critical information only through appropriate mechanisms.
+   111→
+   112→### PHASE 1: INFORMATION
+   113→
+   114→This phase collects and verifies the information needed to prepare the order.
+   115→
+   116→Inspect the existing customer and account functionality and reuse it wherever practical.
+   117→
+   118→Depending on the capabilities supported by the application, this phase should cover:
+   119→
+   120→- Customer name.
+   121→- Email address or other required contact information.
+   122→- Phone number, when required.
+   123→- Recipient information, where different from the account holder.
+   124→- Delivery address selection.
+   125→- Existing saved customer addresses.
+   126→- Adding a new address.
+   127→- Editing an existing address.
+   128→- Selecting a default address when appropriate.
+   129→- Any additional fields required by the application's actual fulfillment process.
+   130→
+   131→For guest checkout, support it only if the application's current business rules and backend architecture permit it. Do not introduce guest checkout simply by bypassing existing authentication requirements.
+   132→
+   133→#### Functional requirements
+   134→
+   135→- Populate available customer information from the appropriate source.
+   136→- Allow customers to modify editable fields.
+   137→- Validate required fields and applicable formats.
+   138→- Display useful, field-specific validation messages.
+   139→- Save address changes through the correct persistence mechanism when appropriate.
+   140→- Ensure the selected address is associated with the correct customer or permitted guest session.
+   141→- Preserve entered information when navigating backward and forward.
+   142→- Clearly indicate loading, save failures, and other relevant states.
+   143→- Prevent progression when mandatory information is invalid or missing.
+   144→
+   145→When the customer continues, carry the validated information into the shared checkout state and proceed to Phase 2.
+   146→
+   147→Do not make the Continue button navigate to the next phase without validating and retaining the required data.
+   148→
+   149→### PHASE 2: DELIVERY
+   150→
+   151→This phase handles the delivery or fulfillment details for the current order.
+   152→
+   153→Inspect the existing shipping, vendor fulfillment, pickup, and delivery implementations before deciding how to present the available options.
+   154→
+   155→Use only delivery methods that the application can genuinely support.
+   156→
+   157→Depending on the current business model, available options may include:
+   158→
+   159→- Standard delivery.
+   160→- Express delivery.
+   161→- Other supported shipping methods.
+   162→- Store or vendor pickup.
+   163→- Collection or other supported fulfillment arrangements.
+   164→
+   165→Do not display delivery methods that are merely decorative or unavailable to the actual order fulfillment system.
+   166→
+   167→#### Functional requirements
+   168→
+   169→- Retrieve or calculate available delivery options using the appropriate source.
+   170→- Determine eligibility based on the delivery address, cart contents, vendor restrictions, inventory, order value, location, or other applicable business rules.
+   171→- Display actual shipping fees where supported.
+   172→- Allow the customer to select an available delivery option.
+   173→- Update the shared checkout state when the selection changes.
+   174→- Recalculate the order total whenever delivery charges change.
+   175→- Handle unavailable shipping methods and invalid address combinations.
+   176→- Request address correction when a destination cannot be served.
+   177→- Retain the chosen delivery option when navigating between phases, provided it remains valid.
+   178→- Revalidate availability and cost before order submission when necessary.
+   179→- Support separate fulfillment arrangements for multi-vendor carts if the existing architecture requires them.
+   180→
+   181→If delivery fees depend on external services, vendor rules, or backend calculations, connect to the existing integration rather than hardcoding prices into the UI.
+   182→
+   183→The customer must be able to understand the selected fulfillment method and its associated charges before proceeding.
+   184→
+   185→When the customer continues, validate the selection and proceed to Phase 3.
+   186→
+   187→### PHASE 3: PAYMENT AND ORDER REVIEW
+   188→
+   189→This phase presents a final order review and allows the customer to complete payment using the payment methods genuinely supported by the application.
+   190→
+   191→The customer should see a clear summary of the information relevant to the final purchase.
+   192→
+   193→Where applicable, include:
+   194→
+   195→- Products and selected variants.
+   196→- Product images.
+   197→- Product names and relevant item options.
+   198→- Individual item prices.
+   199→- Quantities.
+   200→- Subtotals.
+   201→- Discounts and applied vouchers.
+   202→- Delivery charges.
+   203→- Taxes and additional fees.
+   204→- The selected delivery method.
+   205→- The delivery address or collection details.
+   206→- The final payable amount.
+   207→- Available payment methods.
+   208→- Relevant order terms and required acknowledgements.
+   209→
+   210→The exact displayed fields should follow the application's existing data model and business requirements.
+   211→
+   212→#### Payment functionality
+   213→
+   214→Investigate the existing payment integration before modifying the flow.
+   215→
+   216→Use the supported payment provider or payment backend that already exists. If multiple methods are supported, connect each eligible method to its corresponding real payment flow.
+   217→
+   218→Requirements:
+   219→
+   220→- Display only payment methods that are genuinely available.
+   221→- Handle payment-method selection and any required validation.
+   222→- Initiate payment through the correct provider integration or backend endpoint.
+   223→- Handle authentication challenges, redirects, callbacks, cancellations, and failures as required by the provider.
+   224→- Verify payment status through a trusted backend or provider-authoritative mechanism.
+   225→- Prevent the UI from treating an unverified payment response as proof of successful payment.
+   226→- Prevent repeated taps or retry operations from generating unintended duplicate transactions.
+   227→- Clearly communicate payment processing, success, cancellation, failure, and pending states.
+   228→- Provide a safe retry or recovery path when supported.
+   229→- Reconcile the final payment result with the application's order status.
+   230→
+   231→Never simulate a real successful payment in the production checkout flow.
+   232→
+   233→If production payment credentials or a required provider integration are unavailable, implement the appropriate integration boundary and clearly identify the missing configuration. Do not claim the payment process is fully functional until it has been verified.
+   234→
+   235→#### Final order submission
+   236→
+   237→When the customer confirms the order, execute the correct order submission workflow.
+   238→
+   239→Before accepting the order, ensure the backend or trusted transaction-processing layer validates the necessary information, including:
+   240→
+   241→- Current product and variant availability.
+   242→- Valid quantities.
+   243→- Authoritative product prices.
+   244→- Applicable discounts and pricing rules.
+   245→- Delivery eligibility and charges.
+   246→- Applicable taxes and fees.
+   247→- The final payable amount.
+   248→- Customer and delivery information.
+   249→- Payment requirements.
+   250→- Any additional business rules required by the existing application.
+   251→
+   252→Do not trust the final amount, discount, stock availability, or other financially significant information supplied only by the Android client.
+   253→
+   254→Use the backend as the source of truth wherever the existing architecture permits.
+   255→
+   256→Implement appropriate transactional behavior, idempotency, and order/payment state management according to the existing backend capabilities.
+   257→
+   258→Do not create duplicate orders when a user taps the confirmation button repeatedly, refreshes the screen, retries an uncertain request, or returns from a payment provider.
+   259→
+   260→After processing, display a clear and accurate result based on the actual order and payment status.
+   261→
+   262→---
+   263→
+   264→## 4. COMPLETE THE ENTIRE CHECKOUT LIFECYCLE
+   265→
+   266→The checkout must not end at the payment screen.
+   267→
+   268→Trace and connect the complete customer journey:
+   269→
+   270→Product discovery → Product details → Add to cart → Cart management → Checkout → Information → Delivery → Payment and review → Order creation → Payment reconciliation → Order confirmation → Order history → Order details.
+   271→
+   272→Use the corresponding existing screens and services where available.
+   273→
+   274→### Cart integration
+   275→
+   276→Ensure the checkout receives the correct current cart contents.
+   277→
+   278→Verify that:
+   279→
+   280→- Adding an item from a product screen updates the cart.
+   281→- Changing item quantities updates the correct cart item.
+   282→- Removing an item removes it from the applicable cart.
+   283→- Product variants and options are retained correctly.
+   284→- Cart quantities and availability are validated.
+   285→- Cart totals update when the underlying items or quantities change.
+   286→- The checkout reflects relevant cart changes instead of relying on stale, independently maintained data.
+   287→- Empty carts cannot proceed to checkout.
+   288→- Invalid cart states are handled gracefully.
+   289→- The cart is updated or cleared after successful order creation according to the existing business rules.
+   290→
+   291→Do not assume that a successful navigation event means the cart operation has actually succeeded.
+   292→
+   293→### Order integration
+   294→
+   295→Verify that successful checkout creates the appropriate order records through the actual order management system.
+   296→
+   297→Where applicable, confirm that:
+   298→
+   299→- The order is linked to the correct customer.
+   300→- The purchased items and quantities are recorded correctly.
+   301→- The agreed delivery information is retained.
+   302→- Monetary totals and pricing breakdowns are consistent.
+   303→- Payment and order statuses are tracked independently where necessary.
+   304→- Vendor-specific order records or fulfillment records are created when required by the existing architecture.
+   305→- Inventory updates follow the intended transaction and reservation rules.
+   306→- Order history displays the new order.
+   307→- Order detail screens show the actual order information.
+   308→- Failed or cancelled payment attempts do not create misleading completed orders.
+   309→- The customer receives an accurate confirmation result.
+   310→
+   311→Use the existing order lifecycle and data model unless there is a demonstrable need to change them.
+   312→
+   313→Do not invent new order statuses or change existing status meanings without checking their impact on other application features.
+   314→
+   315→---
+   316→
+   317→## 5. PROJECT-WIDE FUNCTIONALITY AUDIT: ELIMINATE DISCONNECTED FEATURES
+   318→
+   319→The checkout revamp is also an opportunity to identify and correct broken or disconnected functionality in the existing application.
+   320→
+   321→Audit the code related to checkout and its dependencies rather than focusing only on the three checkout screens.
+   322→
+   323→Inspect relevant UI components, buttons, menus, input fields, dialogs, navigation actions, service calls, repositories, state holders, models, and database interactions.
+   324→
+   325→Look for the following types of problems.
+   326→
+   327→### A. Hardcoded production behavior
+   328→
+   329→Identify values or behaviors that should be derived from application data, configuration, user choices, or backend rules.
+   330→
+   331→Examples include:
+   332→
+   333→- Fixed product prices.
+   334→- Hardcoded delivery charges.
+   335→- Hardcoded tax or discount values.
+   336→- Fake customer details.
+   337→- Placeholder order numbers.
+   338→- Static shipping methods presented as available without checking eligibility.
+   339→- Fake payment success responses.
+   340→- Dummy cart contents.
+   341→- Hardcoded order status.
+   342→- Fixed inventory quantities.
+   343→- Static addresses presented as persisted customer addresses.
+   344→- Mock API responses used in production paths.
+   345→- Placeholder values that never update when the underlying data changes.
+   346→
+   347→Replace such behavior with the correct existing data source, calculation, integration, or configuration.
+   348→
+   349→However, not every hardcoded value is wrong. UI labels, design constants, enum definitions, default presentation values, and intentional static configuration may legitimately remain hardcoded.
+   350→
+   351→Use engineering judgment. The goal is to eliminate incorrect hardcoded business behavior, not mechanically remove all constants from the project.
+   352→
+   353→### B. Disconnected buttons and actions
+   354→
+   355→Inspect every checkout-related button and interaction.
+   356→
+   357→Examples include:
+   358→
+   359→- Add to cart.
+   360→- Increase or decrease quantity.
+   361→- Remove item.
+   362→- Apply or remove coupon.
+   363→- Select address.
+   364→- Save address.
+   365→- Select delivery method.
+   366→- Continue.
+   367→- Go back.
+   368→- Select payment method.
+   369→- Confirm order.
+   370→- Retry payment.
+   371→- View order details.
+   372→- Return to shopping.
+   373→
+   374→Verify that each control performs its advertised action, updates the appropriate state, invokes the correct service when necessary, and produces the correct resulting UI.
+   375→
+   376→Remove decorative click handlers that do nothing.
+   377→
+   378→If an action is unsupported by the application's actual capabilities, do not falsely present it as a working feature. Either implement its intended behavior or represent it honestly as unavailable, following the existing product requirements.
+   379→
+   380→### C. Broken integrations
+   381→
+   382→Investigate:
+   383→
+   384→- API requests that are never called.
+   385→- UI state that does not reflect API responses.
+   386→- Data that is fetched but never used.
+   387→- Data that is modified locally but never persisted.
+   388→- Incorrect repository or service connections.
+   389→- Navigation destinations that cannot be reached.
+   390→- Callback or event handlers that are missing.
+   391→- Incorrect parameter passing.
+   392→- Inconsistent model mappings.
+   393→- Errors that are swallowed without user feedback.
+   394→- Outdated state or cached values.
+   395→- Incomplete create, read, update, and delete operations.
+   396→- Failed operations incorrectly represented as successful.
+   397→
+   398→Trace each feature from the UI to the appropriate business logic and data source.
+   399→
+   400→### D. Incomplete states
+   401→
+   402→Every relevant feature must handle:
+   403→
+   404→- Initial state.
+   405→- Loading state.
+   406→- Successful state.
+   407→- Empty state.
+   408→- Invalid input.
+   409→- Network failure.
+   410→- Backend rejection.
+   411→- Authentication expiration, where applicable.
+   412→- Retry behavior, where appropriate.
+   413→- Unexpected response or data.
+   414→- Duplicate requests.
+   415→- Cancellation or interruption.
+   416→- Relevant permission or configuration failures.
+   417→
+   418→Do not allow failed operations to leave the interface in an ambiguous or permanently loading state.
+   419→
+   420→---
+   421→
+   422→## 6. ESTABLISH A SINGLE, CONSISTENT CHECKOUT STATE
+   423→
+   424→Inspect and improve the application's existing state management so that all checkout phases share the same logical checkout context.
+   425→
+   426→Avoid independently maintained copies of the cart, shipping selection, price breakdown, and payment status that can become inconsistent.
+   427→
+   428→The shared checkout context should contain or reference the necessary information for the current session, such as:
+   429→
+   430→- Current cart or cart identifier.
+   431→- Customer contact details.
+   432→- Selected delivery address.
+   433→- Selected fulfillment method.
+   434→- Eligible delivery options.
+   435→- Applied discounts or vouchers.
+   436→- Current pricing breakdown.
+   437→- Available payment methods.
+   438→- Checkout progress.
+   439→- Validation results.
+   440→- Submission and payment status.
+   441→- Relevant order identifiers after submission.
+   442→
+   443→Derive values whenever possible instead of maintaining redundant copies.
+   444→
+   445→Use the application's existing state management approach and architecture.
+   446→
+   447→For example, adapt to the existing ViewModel and StateFlow pattern, repository-based architecture, reactive state management, or whatever mechanism the project already uses.
+   448→
+   449→Do not introduce another state management system just for the checkout unless there is a compelling architectural reason.
+   450→
+   451→### State consistency requirements
+   452→
+   453→- UI components must render from the appropriate state source.
+   454→- User actions must trigger explicit state changes or business operations.
+   455→- API results must update the correct state.
+   456→- Stale asynchronous responses must not overwrite newer valid choices.
+   457→- Loading indicators must reflect actual operations.
+   458→- Failed actions must not accidentally commit invalid state.
+   459→- Changing an earlier phase must invalidate dependent values when necessary.
+   460→- Totals must be recalculated when their underlying inputs change.
+   461→- Navigating between phases must not silently discard valid information.
+   462→- The screen must recover correctly after common Android lifecycle events.
+   463→- Sensitive payment information must not be stored in ordinary application state or logs when inappropriate.
+   464→
+   465→Implement clear ownership of checkout data and avoid unnecessary duplication between screens, repositories, and view models.
+   466→
+   467→---
+   468→
+   469→## 7. PRICING, DISCOUNTS, AND TOTAL CALCULATION
+   470→
+   471→Ensure that checkout pricing is internally consistent and derived from valid data.
+   472→
+   473→Determine how the existing application calculates:
+   474→
+   475→- Item subtotals.
+   476→- Quantity-based totals.
+   477→- Discounts.
+   478→- Coupons and vouchers.
+   479→- Delivery charges.
+   480→- Taxes.
+   481→- Service fees.
+   482→- Other applicable charges.
+   483→- Final payable amount.
+   484→
+   485→Reuse the existing pricing rules whenever they are correct.
+   486→
+   487→Do not create conflicting pricing calculations in different checkout screens.
+   488→
+   489→Where the client needs to display an estimated total, use a consistent pricing model. Before the order is accepted, ensure the authoritative backend or trusted transaction-processing layer validates the final amount.
+   490→
+   491→Define and maintain a clear monetary calculation strategy, including currency handling and rounding behavior.
+   492→
+   493→Use suitable numeric representations for money; avoid floating-point calculations that can introduce financial inaccuracies.
+   494→
+   495→If a price changes between cart creation and order submission, apply the existing pricing policy and communicate relevant changes to the customer before final confirmation when required.
+   496→
+   497→Do not silently charge a different amount from the amount confirmed by the customer.
+   498→
+   499→---
+   500→
+   501→## 8. PAYMENT, ORDER, AND TRANSACTION RELIABILITY
+   502→
+   503→Treat financial operations as transaction-sensitive functionality.
+   504→
+   505→Inspect the existing payment and order architecture and introduce safeguards appropriate to its capabilities.
+   506→
+   507→### Requirements
+   508→
+   509→- Prevent duplicate order submissions.
+   510→- Prevent duplicate payment initiation caused by repeated clicks.
+   511→- Use idempotency mechanisms where supported.
+   512→- Do not trust client-side payment success flags.
+   513→- Verify payment results using the appropriate trusted source.
+   514→- Handle delayed or asynchronous provider callbacks.
+   515→- Account for pending payments and uncertain network outcomes.
+   516→- Distinguish payment cancellation, failure, pending status, and success.
+   517→- Keep order and payment statuses consistent with the actual transaction outcome.
+   518→- Handle inventory reservations or stock updates according to existing business rules.
+   519→- Recover safely when an operation succeeds remotely but the client does not receive the response.
+   520→- Avoid clearing the customer's cart prematurely.
+   521→- Avoid exposing secret keys, tokens, credentials, or sensitive payment information.
+   522→
+   523→Where the system supports multiple vendors or multiple fulfillment groups, ensure that order submission and payment handling conform to the existing business model.
+   524→
+   525→Do not claim that order submission and payment are atomic unless the backend actually guarantees that behavior.
+   526→
+   527→If a required transactional safeguard cannot be implemented entirely within the Android application, identify the backend change needed and implement the client-side integration accordingly.
+   528→
+   529→---
+   530→
+   531→## 9. USER EXPERIENCE AND ANDROID DESIGN QUALITY
+   532→
+   533→Create a polished, production-quality checkout experience inspired by Shopify's usability principles without copying Shopify's exact branding.
+   534→
+   535→Prioritize clarity, trust, speed, and low interaction friction.
+   536→
+   537→### Visual requirements
+   538→
+   539→- Clear three-phase progress indicator.
+   540→- Consistent spacing and typography.
+   541→- Clear section headings.
+   542→- Readable product and order summaries.
+   543→- Obvious primary and secondary actions.
+   544→- Appropriate form field layouts.
+   545→- Clearly selected address, delivery, and payment options.
+   546→- Clear pricing hierarchy.
+   547→- Appropriate visual feedback for completed phases.
+   548→- Consistent error, warning, and success messaging.
+   549→- Responsive layouts for supported screen sizes.
+   550→- Accessible controls and touch targets.
+   551→- Compatibility with the project's existing design system.
+   552→- Proper handling of keyboard visibility and screen insets.
+   553→
+   554→Prefer a focused, mobile-first layout rather than cramming all information into one long, confusing screen.
+   555→
+   556→Use collapsible order details or other appropriate layout techniques if they improve readability without hiding essential information.
+   557→
+   558→Avoid unnecessary animations, excessive dialogs, decorative components without functional value, and interactions that slow down checkout.
+   559→
+   560→### Interaction requirements
+   561→
+   562→- Show progress when operations genuinely take time.
+   563→- Disable duplicate submissions when appropriate.
+   564→- Explain validation failures near the relevant field.
+   565→- Preserve correct state when dialogs are dismissed.
+   566→- Provide a clear path back to editing previous information.
+   567→- Avoid losing form input during routine navigation.
+   568→- Display useful messages instead of raw technical exceptions.
+   569→- Prevent the interface from reporting success before the underlying operation has succeeded.
+   570→- Make unavailable actions visibly unavailable rather than allowing them to fail silently.
+   571→
+   572→Follow the existing application's Android design conventions and supported accessibility requirements.
+   573→
+   574→---
+   575→
+   576→## 10. BACKEND, API, AND DATABASE INTEGRATION
+   577→
+   578→Inspect existing integrations and connect the checkout to the actual sources of truth.
+   579→
+   580→Do not introduce unnecessary duplicate databases, parallel API layers, or replacement services.
+   581→
+   582→Where the project already has established patterns, follow them.
+   583→
+   584→### Verify the existing data flow
+   585→
+   586→For every important checkout operation, determine:
+   587→
+   588→1. Which UI action triggers the operation.
+   589→2. Which state holder or business-logic component processes it.
+   590→3. Which repository or service is responsible.
+   591→4. Which API, provider, or database operation is executed.
+   592→5. How success and failure are returned.
+   593→6. How the state is updated.
+   594→7. How the UI responds to the result.
+   595→
+   596→Use appropriate request and response models, error handling, and mapping between backend data and UI state.
+   597→
+   598→If the checkout requires a backend capability that does not exist, identify the smallest appropriate addition rather than creating an unrelated parallel system.
+   599→
+   600→For database changes:
+   601→
+   602→- Inspect the current schema first.
+   603→- Preserve existing relationships and constraints.
+   604→- Follow the project's migration practices.
+   605→- Avoid destructive schema changes unless genuinely necessary.
+   606→- Preserve existing customer, vendor, product, and order data.
+   607→- Ensure applicable authorization and ownership checks exist.
+   608→- Never bypass database security to make the checkout appear functional.
+   609→
+   610→For API changes:
+   611→
+   612→- Follow existing endpoint conventions.
+   613→- Handle authentication and authorization correctly.
+   614→- Validate responses before using them.
+   615→- Handle network timeouts and service errors.
+   616→- Avoid silently substituting fake data for failed production requests.
+   617→
+   618→Clearly identify any operation that still depends on a missing backend endpoint, credential, provider setup, or configuration.
+   619→
+   620→---
+   621→
+   622→## 11. SECURITY AND DATA PROTECTION
+   623→
+   624→Review the checkout for common security weaknesses.
+   625→
+   626→At minimum:
+   627→
+   628→- Enforce ownership checks for customer addresses, carts, and orders.
+   629→- Do not expose one customer's information to another customer.
+   630→- Do not trust client-supplied prices, discounts, totals, stock quantities, or payment statuses.
+   631→- Keep privileged credentials on the appropriate trusted server.
+   632→- Do not embed server secrets into the Android application.
+   633→- Avoid logging sensitive personal, authentication, or payment data.
+   634→- Use appropriate token storage and session handling.
+   635→- Validate backend requests and business rules.
+   636→- Prevent unauthorized access to order details.
+   637→- Use secure transport and the existing authentication mechanisms.
+   638→- Ensure checkout recovery does not allow unauthorized order modification.
+   639→
+   640→Inspect applicable database policies and backend authorization rules if those systems are part of the project.
+   641→
+   642→Do not weaken authentication, authorization, or security controls to make a feature easier to connect.
+   643→
+   644→---
+   645→
+   646→## 12. CODE QUALITY AND ARCHITECTURAL INTEGRATION
+   647→
+   648→Implement the revamp using the project's existing architectural conventions.
+   649→
+   650→Do not place all checkout logic inside a UI screen or component.
+   651→
+   652→Keep presentation, business logic, data access, and external integrations separated according to the existing architecture.
+   653→
+   654→Requirements:
+   655→
+   656→- Reuse existing components and services when appropriate.
+   657→- Remove duplicate business logic.
+   658→- Use clear state ownership.
+   659→- Avoid unnecessary global mutable state.
+   660→- Avoid arbitrary delays used to simulate backend responses.
+   661→- Avoid empty click handlers.
+   662→- Avoid swallowed exceptions.
+   663→- Avoid fake success responses in production paths.
+   664→- Avoid untracked asynchronous operations.
+   665→- Avoid hardcoded environment-specific configuration.
+   666→- Maintain consistent naming and error-handling conventions.
+   667→- Preserve unrelated application functionality.
+   668→- Make code changes maintainable and understandable.
+   669→
+   670→Do not rewrite the entire application merely because the checkout requires changes.
+   671→
+   672→Prioritize targeted changes that deliver the complete functionality with the least unnecessary disruption.
+   673→
+   674→If a larger architectural change is genuinely necessary, explain the dependency and implement it consistently across the affected components.
+   675→
+   676→---
+   677→
+   678→## 13. TESTING AND VERIFICATION
+   679→
+   680→Do not consider the work complete merely because the application compiles or the checkout screens render.
+   681→
+   682→Verify the actual behavior.
+   683→
+   684→Use the existing testing framework and available development tools.
+   685→
+   686→### A. Build and static verification
+   687→
+   688→- Build the relevant Android application modules.
+   689→- Run applicable static analysis and lint checks.
+   690→- Check for compilation errors.
+   691→- Check for unresolved dependencies and broken references.
+   692→- Check for relevant navigation issues.
+   693→- Check for type or model mismatches.
+   694→- Check that existing tests still pass where applicable.
+   695→
+   696→Fix problems introduced by the implementation.
+   697→
+   698→### B. Functional tests
+   699→
+   700→Verify at least these scenarios:
+   701→
+   702→1. Customer checks out with valid information.
+   703→2. Customer attempts to continue with missing required information.
+   704→3. Customer edits a previously entered address.
+   705→4. Customer returns to an earlier phase.
+   706→5. Customer chooses an available delivery option.
+   707→6. A delivery option becomes invalid or unavailable.
+   708→7. Delivery charges change and the total updates correctly.
+   709→8. Customer applies an eligible coupon.
+   710→9. Customer applies an invalid, expired, or ineligible coupon, where coupons are supported.
+   711→10. Product availability or pricing changes before submission.
+   712→11. Customer selects an available payment method.
+   713→12. Payment succeeds through the configured integration.
+   714→13. Payment fails.
+   715→14. Payment is cancelled.
+   716→15. Payment remains pending, where supported.
+   717→16. The customer repeatedly taps the confirmation button.
+   718→17. A network interruption occurs during submission.
+   719→18. The server processes a request but the client does not receive its response.
+   720→19. The customer has an empty or invalid cart.
+   721→20. The order is successfully created and appears in order history.
+   722→21. A failed checkout does not incorrectly appear as a completed purchase.
+   723→22. The application is backgrounded or recreated during the checkout process.
+   724→23. An authenticated customer cannot access another customer's protected order or address.
+   725→24. The applicable multi-vendor or pickup flow works correctly, if supported by the existing application.
+   726→
+   727→Adapt these tests to the actual features supported by the project. Do not invent support for features that do not exist.
+   728→
+   729→### C. UI and navigation testing
+   730→
+   731→Verify that:
+   732→
+   733→- All three phases display the correct progress state.
+   734→- Back and Continue controls work correctly.
+   735→- Invalid input produces understandable feedback.
+   736→- Loading indicators appear and disappear appropriately.
+   737→- Selected values remain consistent.
+   738→- The order summary matches the checkout's actual state.
+   739→- Buttons cannot trigger duplicate financial operations.
+   740→- The final confirmation screen reflects the real backend result.
+   741→
+   742→Use automated tests where practical and perform manual or emulator verification for important integration paths where available.
+   743→
+   744→### D. Real integration versus test simulation
+   745→
+   746→Tests may use mocks, fixtures, or a payment provider's sandbox mode where appropriate.
+   747→
+   748→Keep test simulation isolated from production behavior.
+   749→
+   750→Do not treat a mock-based test as proof that the real backend, database, or payment provider is working.
+   751→
+   752→Clearly distinguish between functionality verified with real integrations, functionality verified using test infrastructure, and functionality that remains blocked by missing external dependencies.
+   753→
+   754→---
+   755→
+   756→## 14. IMPLEMENTATION WORKFLOW
+   757→
+   758→Follow this sequence, adapting the details to the actual project.
+   759→
+   760→### Step 1: Inspect
+   761→
+   762→Understand the existing checkout, cart, order, authentication, payment, and delivery implementation.
+   763→
+   764→Identify all relevant files, dependencies, and existing working features.
+   765→
+   766→### Step 2: Map
+   767→
+   768→Document the current flow and map the proposed three-phase checkout to the actual project architecture.
+   769→
+   770→Identify where hardcoded, mocked, or disconnected behavior must be corrected.
+   771→
+   772→### Step 3: Plan
+   773→
+   774→Determine the necessary changes to UI components, state management, business logic, repositories, APIs, database operations, and integrations.
+   775→
+   776→Keep the scope focused on delivering a complete, working result.
+   777→
+   778→### Step 4: Implement
+   779→
+   780→Refactor the checkout into the three phases and connect them to the real data sources, services, and business rules.
+   781→
+   782→Complete the supporting cart, delivery, pricing, payment, and order integrations required by the flow.
+   783→
+   784→### Step 5: Audit
+   785→
+   786→Inspect every changed component and its relevant dependencies for missing connections, hardcoded production behavior, empty handlers, unimplemented actions, inconsistent state, and ignored errors.
+   787→
+   788→### Step 6: Verify
+   789→
+   790→Build the application and execute the applicable tests.
+   791→
+   792→Correct regressions and integration failures caused by the changes.
+   793→
+   794→### Step 7: Report
+   795→
+   796→Summarize the implementation, verification results, files changed, remaining external dependencies, and any known limitations.
+   797→
+   798→Do not stop after describing what should be implemented. Carry out the implementation using the tools and access available in the current development environment.
+   799→
+   800→If part of the task cannot be completed because an external service, credential, backend endpoint, or required permission is missing, complete the other feasible work and document the exact blocker.
+   801→
+   802→Do not conceal incomplete functionality or replace it with fake success behavior.
+   803→
+   804→---
+   805→
+   806→## 15. DEFINITION OF DONE
+   807→
+   808→The implementation is considered complete only when the applicable requirements below have been satisfied.
+   809→
+   810→### Checkout experience
+   811→
+   812→- The three-phase checkout is implemented.
+   813→- Progress and navigation work correctly.
+   814→- Required information is validated.
+   815→- Delivery selection works with the actual supported options.
+   816→- Payment methods connect to the appropriate existing integration.
+   817→- The final order review uses consistent pricing and order data.
+   818→- Order submission and confirmation reflect actual backend results.
+   819→
+   820→### Functional connectivity
+   821→
+   822→- Checkout controls invoke the correct actions.
+   823→- Cart changes propagate to checkout.
+   824→- Customer and delivery information are correctly retained.
+   825→- UI state reflects real operation results.
+   826→- API and database operations are integrated where required.
+   827→- Relevant downstream order and order-history functionality works.
+   828→- No critical checkout control is left disconnected.
+   829→
+   830→### Data integrity and reliability
+   831→
+   832→- Pricing and order data are validated by the appropriate trusted layer.
+   833→- Duplicate submissions are appropriately prevented.
+   834→- Failures and uncertain transaction outcomes are handled safely.
+   835→- Failed payment attempts do not incorrectly appear as successful payments.
+   836→- Sensitive data is handled appropriately.
+   837→- Existing application data and unrelated features are preserved.
+   838→
+   839→### Code and verification
+   840→
+   841→- Relevant hardcoded or mocked production behavior has been addressed.
+   842→- No known critical checkout path is knowingly left as a placeholder.
+   843→- The applicable build and tests have been run.
+   844→- Any failures or unverified integrations are explicitly documented.
+   845→- New functionality follows the existing project's architecture.
+   846→
+   847→A feature must not be marked complete simply because a button is clickable or a screen opens. It is complete only when its intended behavior is connected, its result is handled correctly, and its relevant data remains consistent.
+   848→
+   849→---
+   850→
+   851→## 16. FINAL INSTRUCTION
+   852→
+   853→Treat this request as an instruction to investigate, improve, implement, connect, and verify the checkout system—not merely redesign its visual appearance.
+   854→
+   855→Make decisions based on the codebase you actually inspect. Reuse existing functionality whenever appropriate, follow established project conventions, and implement the missing connections needed to deliver a complete checkout experience.
+   856→
+   857→Do not guess that a function works because its UI exists. Trace its actual behavior.
+   858→
+   859→Do not assume that a backend operation succeeds because the client sends a request. Verify how the result is received and reflected in the application.
+   860→
+   861→Do not assume that an order is successful because the customer reaches a confirmation screen. Verify that the relevant order and payment states support that result.
+   862→
+   863→Do not leave relevant buttons, features, state transitions, API integrations, or data operations hanging without a defined and functioning outcome.
+   864→
+   865→Where functionality cannot be completed, explain exactly what is missing and why.
+   866→
+   867→**The ultimate objective is a production-quality, Shopify-inspired, three-phase Android checkout in which all supported functionality is properly integrated, the end-to-end shopping journey works, and no critical feature is falsely presented as functional when it remains incomplete.**

@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
-import { computePricing } from "../pricing";
+import { computePricing, assertShippingAvailable } from "../pricing";
 import { computeOrderCommissions } from "@/lib/commission";
 import { randomToken } from "@/lib/password";
 import { toJson } from "@/lib/json";
+import { getCartToken } from "../../cart/cart";
 
 export const dynamic = "force-dynamic";
 
@@ -43,14 +44,26 @@ export const POST = handle(async (req: Request) => {
   const customerPhone = customer.phone != null ? String(customer.phone).trim() : null;
   if (!customerName) throw new ApiError(400, "VALIDATION", "customer.name is required");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new ApiError(400, "VALIDATION", "customer.email is invalid");
+  if (customerPhone && !/^[+()\d\s-]{6,20}$/.test(customerPhone)) throw new ApiError(400, "VALIDATION", "customer.phone is invalid");
 
   const provider = String(body.provider ?? "fpx_toyyibpay");
   if (!KNOWN_PROVIDERS.includes(provider)) {
     throw new ApiError(400, "INVALID_PROVIDER", `provider must be one of: ${KNOWN_PROVIDERS.join(", ")}`);
   }
 
-  const shippingAddress = body.shippingAddress ?? {};
-  const shippingAddressJson = typeof shippingAddress === "string" ? toJson({ address: shippingAddress }) : toJson(shippingAddress);
+  // Shipping address — full destination is REQUIRED (drives delivery eligibility).
+  const shippingAddress = (body.shippingAddress ?? {}) as Record<string, unknown>;
+  const addr = {
+    line1: String(shippingAddress.line1 ?? "").trim(),
+    city: String(shippingAddress.city ?? "").trim(),
+    state: String(shippingAddress.state ?? "").trim(),
+    postcode: String(shippingAddress.postcode ?? "").trim(),
+  };
+  if (!addr.line1 || !addr.city || !addr.state || !addr.postcode) {
+    throw new ApiError(400, "VALIDATION", "shippingAddress.line1, city, state and postcode are required");
+  }
+  if (!/^\d{5}$/.test(addr.postcode)) throw new ApiError(400, "VALIDATION", "shippingAddress.postcode must be a 5-digit Malaysian postcode");
+  const shippingAddressJson = toJson(addr);
 
   // Recompute totals EXACTLY like quote — never trust client numbers.
   const pricing = await computePricing({
@@ -58,7 +71,11 @@ export const POST = handle(async (req: Request) => {
     items: (body.items ?? []) as { variantId: string; qty: number }[],
     couponCode: body.couponCode != null ? String(body.couponCode) : null,
     shippingRateId: body.shippingRateId != null ? String(body.shippingRateId) : null,
+    state: addr.state,
   });
+
+  // Destination-aware delivery rule, enforced server-side.
+  assertShippingAvailable(pricing.shippingRateId, addr.state);
 
   const comm = await computeOrderCommissions({
     sellerId: store.sellerId,
@@ -106,6 +123,7 @@ export const POST = handle(async (req: Request) => {
         shippingAddressJson,
         customerNote: body.customerNote != null ? String(body.customerNote) : null,
         paymentProvider: provider,
+        cartToken: (await getCartToken()) ?? null,
         idemKey,
       },
     });

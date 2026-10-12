@@ -18,9 +18,11 @@ export const POST = handle(async (req: NextRequest) => {
       return fail(401, "INVALID_CREDENTIALS", "Invalid admin credentials");
     }
     await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
-    await createSession("admin", admin.id);
+    const token = await createSession("admin", admin.id);
     await logActivity({ actorType: "admin", actorId: admin.id, actorLabel: admin.email, action: "admin.login" });
-    return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role } });
+    // token: client stores it in localStorage and sends it as a Bearer header —
+    // keeps the session alive where cookies are unavailable (cross-site iframes).
+    return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
   }
 
   const seller = await db.seller.findUnique({ where: { email } });
@@ -30,7 +32,7 @@ export const POST = handle(async (req: NextRequest) => {
   if (seller.status === "terminated") {
     return fail(403, "ACCOUNT_TERMINATED", "This account has been terminated");
   }
-  await createSession("seller", seller.id);
+  const token = await createSession("seller", seller.id);
   await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.login" });
   const store = await db.store.findUnique({ where: { sellerId: seller.id } });
   return ok({
@@ -39,5 +41,6 @@ export const POST = handle(async (req: NextRequest) => {
       id: seller.id, email: seller.email, fullName: seller.fullName, displayName: seller.displayName,
       status: seller.status, storeId: store?.id ?? null, storeSlug: store?.slug ?? null, storeName: store?.name ?? null,
     },
+    token,
   });
 });

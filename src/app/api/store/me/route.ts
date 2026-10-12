@@ -76,7 +76,8 @@ export const GET = handle(async () => {
       supportEmail: store.supportEmail,
       supportPhone: store.supportPhone,
       whatsapp: store.whatsapp,
-      marketplaceOptIn: store.marketplaceOptIn,
+      // marketplaceOptIn lives on the Seller record — surface it under store for the settings UI
+      marketplaceOptIn: sellerRow?.marketplaceOptIn ?? true,
       theme: store.themeJson,
     },
     wallet,

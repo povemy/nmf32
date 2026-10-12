@@ -116,6 +116,12 @@ export async function processPaymentWebhook(input: {
 
   await transitionOrder({ orderId: order.id, toStatus: "paid", actor: "system", note: `Payment ${providerRef} succeeded via ${intent.provider}`, timestamps: { paidAt } });
 
+  // Server-side cart clearing — the guest cart that produced this order is emptied
+  // only on verified payment success (never on failure/pending, never client-driven).
+  if (order.cartToken) {
+    await db.cartItem.deleteMany({ where: { cart: { token: order.cartToken } } });
+  }
+
   // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.
   const wallet = order.store.seller.wallet;
   if (wallet) {

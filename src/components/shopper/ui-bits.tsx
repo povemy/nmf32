@@ -5,6 +5,7 @@
 // ============================================================================
 import { useCallback, useEffect, useState } from "react";
 import { formatMinor } from "@/lib/money";
+import { deviceHeaders } from "@/lib/session-client";
 import { Star, StarHalf, PackageOpen, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +24,9 @@ export type ShopperView =
   | { name: "checkout" }
   | { name: "pay"; ref: string }
   | { name: "order-status"; orderNumber: string }
+  | { name: "orders" }
   | { name: "lookup" }
+  | { name: "messages"; threadId?: string }
   | { name: "store-page"; slug: string; pageSlug: string }
   | { name: "generate" };
 
@@ -103,6 +106,8 @@ export type LookupResultT = {
   status: string;
   totalMinor: number;
   storeName: string;
+  storeId?: string;
+  storeSlug?: string;
   createdAt: string;
   items: { title: string; qty: number }[];
   history: { toStatus: string; createdAt: string }[];
@@ -123,7 +128,13 @@ export class ApiFail extends Error {
 }
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { cache: "no-store", ...init });
+  const res = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    // Device identity headers (cart + shopper token) — keeps guest state working
+    // where cookies are unavailable (cross-site iframe preview panels).
+    headers: { ...deviceHeaders(), ...(init?.headers ?? {}) },
+  });
   let body: unknown = null;
   try {
     body = await res.json();
@@ -142,7 +153,11 @@ export async function fetchEnvelope<T>(
   url: string,
   init?: RequestInit
 ): Promise<{ data: T; meta?: { page: number; size: number; total: number } }> {
-  const res = await fetch(url, { cache: "no-store", ...init });
+  const res = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    headers: { ...deviceHeaders(), ...(init?.headers ?? {}) },
+  });
   let body: unknown = null;
   try {
     body = await res.json();
@@ -184,6 +199,36 @@ export const CART_EVENT = "sm-cart-updated";
 
 export function notifyCartUpdated() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CART_EVENT));
+}
+
+// ---------------------------------------------------------------------------
+// Local order tracking — this device's order refs (email + orderNumber only,
+// hydrated through the ownership-safe /api/orders/lookup endpoint).
+// ---------------------------------------------------------------------------
+
+export type OrderRefT = { orderNumber: string; email: string; at: number };
+export const ORDER_REFS_KEY = "sm_order_refs";
+
+export function trackOrderRef(orderNumber: string, email: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(ORDER_REFS_KEY) ?? "[]") as OrderRefT[];
+    const clean = raw.filter((r) => r.orderNumber !== orderNumber);
+    clean.unshift({ orderNumber, email: email.toLowerCase(), at: Date.now() });
+    window.localStorage.setItem(ORDER_REFS_KEY, JSON.stringify(clean.slice(0, 25)));
+  } catch {
+    /* corrupted list — ignore */
+  }
+}
+
+export function readOrderRefs(): OrderRefT[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(ORDER_REFS_KEY) ?? "[]") as OrderRefT[];
+    return Array.isArray(raw) ? raw.filter((r) => r && r.orderNumber && r.email) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Fetch the guest cart and live-refresh on sm-cart-updated events. */
@@ -491,6 +536,12 @@ export function StatusTimeline({ history, current }: { history: { toStatus: stri
 export function dateShort(iso: string | Date | null | undefined): string {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** "12 Oct 2026, 2:56 pm" — used by chat timestamps. */
+export function fmtDateTime(iso: string | Date | null | undefined): string {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-MY", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kuala_Lumpur" }).format(new Date(iso));
 }
 
 export function discountPercent(price: number, compareAt: number | null | undefined): number | null {

@@ -689,7 +689,11 @@ function FieldControl({
 
     case "select":
       return (
-        <Select value={String(value ?? "")} onValueChange={(v) => updateProp(sectionId, field.key, v)}>
+        <Select
+          // fall back to the first option when the prop is unset (older drafts)
+          value={String(value ?? field.options?.[0]?.value ?? "")}
+          onValueChange={(v) => updateProp(sectionId, field.key, v)}
+        >
           <SelectTrigger id={`f-${sectionId}-${field.key}`} aria-label={field.label}>
             <SelectValue />
           </SelectTrigger>
@@ -749,6 +753,10 @@ function FieldControl({
           ) : null}
         </div>
       );
+    }
+
+    case "item_list": {
+      return <ItemListEditor field={field} value={value} sectionId={sectionId} updateProp={updateProp} />;
     }
 
     case "json": {
@@ -885,5 +893,150 @@ function ThemeDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------- item list editor
+// Replaces raw-JSON editing with one friendly card per item (quote/author, q/a,
+// footer links…). Newcomer-friendly: type in boxes, add / reorder / delete.
+
+function parseListValue(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter((v) => v && typeof v === "object") as Record<string, unknown>[];
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function ItemListEditor({
+  field,
+  value,
+  sectionId,
+  updateProp,
+}: {
+  field: SectionField;
+  value: unknown;
+  sectionId: string;
+  updateProp: (id: string, key: string, value: unknown) => void;
+}) {
+  const [openIdx, setOpenIdx] = useState<number | null>(0);
+  const items = parseListValue(value);
+  const itemFields = field.itemFields ?? [];
+  const titleKey = field.itemTitleKey ?? itemFields[0]?.key;
+
+  const commit = (next: Record<string, unknown>[]) => updateProp(sectionId, field.key, next);
+
+  const setItemValue = (idx: number, key: string, v: unknown) => {
+    const next = items.map((it, i) => (i === idx ? { ...it, [key]: v } : it));
+    commit(next);
+  };
+
+  const addItem = () => {
+    const next = [...items, JSON.parse(JSON.stringify(field.addTemplate ?? {}))];
+    commit(next);
+    setOpenIdx(next.length - 1);
+  };
+
+  const removeItem = (idx: number) => {
+    commit(items.filter((_, i) => i !== idx));
+    setOpenIdx((cur) => (cur === idx ? null : cur !== null && cur > idx ? cur - 1 : cur));
+  };
+
+  const moveItem = (idx: number, dir: -1 | 1) => {
+    const to = idx + dir;
+    if (to < 0 || to >= items.length) return;
+    const next = [...items];
+    [next[idx], next[to]] = [next[to], next[idx]];
+    commit(next);
+    setOpenIdx(to);
+  };
+
+  return (
+    <div className="space-y-2">
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+          Nothing here yet — add your first item below.
+        </p>
+      ) : (
+        items.map((item, idx) => {
+          const summary = String(item[titleKey ?? ""] ?? "").trim();
+          const open = openIdx === idx;
+          return (
+            <div key={idx} className={cn("rounded-lg border bg-card transition-colors", open && "border-primary/40")}>
+              {/* div-as-button: the row contains real buttons, and HTML forbids button-in-button */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpenIdx(open ? null : idx)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOpenIdx(open ? null : idx);
+                  }
+                }}
+                aria-expanded={open}
+                className="flex w-full cursor-pointer select-none items-center gap-2 p-2.5 text-left"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                  {idx + 1}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                  {summary || <span className="italic text-muted-foreground">Untitled item</span>}
+                </span>
+                <span
+                  className="flex shrink-0 items-center gap-0.5"
+                  onClick={(e) => e.stopPropagation()}
+                  role="group"
+                  aria-label={`Item ${idx + 1} actions`}
+                >
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={idx === 0} aria-label="Move up" onClick={() => moveItem(idx, -1)}>
+                    <ArrowUp className="h-3 w-3" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={idx === items.length - 1} aria-label="Move down" onClick={() => moveItem(idx, 1)}>
+                    <ArrowDown className="h-3 w-3" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500 hover:text-rose-600" aria-label="Remove item" onClick={() => removeItem(idx)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </span>
+              </div>
+              {open ? (
+                <div className="space-y-2.5 border-t p-3">
+                  {itemFields.map((f) => (
+                    <div key={f.key} className="space-y-1">
+                      <Label className="text-[11px] font-medium text-muted-foreground">{f.label}</Label>
+                      {f.type === "textarea" ? (
+                        <Textarea
+                          id={`f-${sectionId}-${field.key}-${idx}-${f.key}`}
+                          rows={3}
+                          value={typeof item[f.key] === "string" ? (item[f.key] as string) : ""}
+                          onChange={(e) => setItemValue(idx, f.key, e.target.value)}
+                          placeholder={f.placeholder}
+                        />
+                      ) : (
+                        <Input
+                          id={`f-${sectionId}-${field.key}-${idx}-${f.key}`}
+                          value={typeof item[f.key] === "string" ? (item[f.key] as string) : ""}
+                          onChange={(e) => setItemValue(idx, f.key, e.target.value)}
+                          placeholder={f.placeholder}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })
+      )}
+      <Button type="button" variant="outline" size="sm" className="h-8 w-full gap-1.5 text-xs" onClick={addItem}>
+        <Plus className="h-3.5 w-3.5" /> {field.addLabel ?? "Add item"}
+      </Button>
+    </div>
   );
 }

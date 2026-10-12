@@ -408,3 +408,70 @@ Stage Summary:
 - Complete Nexova-style store generator: paste URL → import → claim → publish → trade, with honest credential gating (awaiting_authorisation until Shopee/TikTok app creds are configured server-side)
 - All new code: 0 lint errors, 0 tsc errors; existing features regression-verified
 - Deliverables: docs/handover.md, docs/marketplace-integration-research.md, docs/research-{shopee,tiktok}.md, docs/codebase-inventory.md, docs/implementation-plan.md
+
+---
+Task ID: checkout-3phase
+Agent: main (Z.ai Code)
+Task: Implement the pasted MASTER INSTRUCTION — revamp the shopper checkout into a Shopify-inspired three-phase flow (Information → Delivery → Payment) and connect every control to real backend operations (audit → schema → APIs → UI → E2E verification)
+
+Work Log:
+- Audit: traced existing flow (single-page checkout, cookie guest cart, /api/checkout/quote|create, sandbox payment with HMAC-signed webhook pipeline, email+orderNumber lookup). Found: no 3-phase structure, duplicate-order idempotency bug (randomUUID inside placeOrder click), shipping options hardcoded in UI, cart cleared client-side via N best-effort DELETEs, no address book, no order history, no payment-expired state, no stock caps on cart qty
+- Schema (additive, db:push OK): Address model (ownerToken = sm_shopper_id device cookie, @@index) + Order.cartToken
+- pricing.ts: SHIPPING_RATES + eta; shippingOptionsFor() server-derived options; assertShippingAvailable() — express ineligible for Sabah/Sarawak/Labuan (enforced at create → 409 SHIPPING_UNAVAILABLE)
+- quote API: returns shippingOptions[] + per-line stock; create API: requires full destination, validates postcode/phone formats, persists cartToken, enforces delivery eligibility server-side
+- New address-book API: /api/checkout/addresses (+[id] PATCH/DELETE) with device-token ownership checks, default promotion/demotion, per-field validation (5-digit MY postcode, phone format)
+- Payment reliability: GET payments/[ref] computes authoritative "expired" state past expiresAt; NEW /retry endpoint re-opens only FAILED sessions (409 ALREADY_PAID otherwise) — fixes poll-vs-retry flip bug; process.ts clears the producing cart server-side on verified success only
+- Cart integrity: POST add + PATCH qty capped at variant stock (409/notice), PDP surfaces stock-limit toast
+- checkout.tsx rewritten: 3-phase stepper (completed steps clickable), Phase 1 contact+address book (add/edit/delete/default, per-field errors, validation gate), Phase 2 server-delivered options + free-ship progress + auto-fallback on ineligible pick, Phase 3 review blocks with Edit links + payment methods + required terms + note; sessionStorage draft with STABLE idempotency key per checkout session; coupon box with remove; stock-warning banner
+- New OrdersView (order history from device refs via ownership-safe lookup) + header "Orders" nav; trackOrderRef persisted on create/payment/lookup; PayView expired + honest cancel states
+- E2E browser verification (desktop 1440×900 + mobile 390×844): empty-form validation gate → address create (auto-select) → phase nav retains data → express RM104/standard RM97 recalculation → Sabah rule (toast + disabled express + fallback) → terms gate → order create → sandbox pay → decline → retry (via /retry) → success → order paid + timeline → cart badge emptied (server-side) → order history lists SM-100018 → seller portal shows Paid RM97.00 in To-fulfill; ledger 3 lines balanced, commission 712/net 8988 of 9700; idempotent replay + oversell 409 verified via curl; fixed pre-existing cart-drawer stale-state bug (setQty now notifies CART_EVENT)
+
+Stage Summary:
+- Three-phase checkout fully implemented and connected end-to-end; client never trusted for money math, stock, delivery eligibility or payment status
+- Remaining external dependency (documented, not faked): real payment-provider credentials — sandbox gateway is the explicit integration boundary, clearly labelled, server-verified; stock stays reserved on abandoned unpaid orders until admin cancellation (no auto-release job exists)
+- Files: prisma/schema.prisma, src/app/api/checkout/{pricing.ts,quote,create,addresses/*,payments/[ref]/{route,retry,simulate}}, src/app/api/cart/items/*, src/app/api/webhooks/payments/process.ts, src/components/shopper/{checkout.tsx,ui-bits.tsx,shopper-shell.tsx,pdp.tsx}
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Full browser-verified investigation of "add to cart → cart still empty" bug + fix + E2E verification of all portals.
+
+Work Log:
+- Reproduced & root-caused via dev.log + DB: POST /api/cart/items returned 201 but the browser never persisted the `sm_cart` cookie (SameSite=Lax is silently dropped in the app's cross-site iframe preview panel). Evidence: 11 orphan carts in DB — one created per add attempt, tokens never reused.
+- Fix (server): cart.ts getCartToken() now reads validated `X-Cart-Token` header first, cookie fallback; createCart() adopts client-supplied token; cookies upgraded to SameSite=None+Secure. Same treatment for checkout/owner.ts (`X-Shopper-Token`) and lib/auth.ts (Authorization Bearer fallback + None+Secure session cookie).
+- Fix (server): /api/auth/login + /api/auth/register now return `token` in the response body.
+- New src/lib/session-client.ts: localStorage bridge — sm_cart_token / sm_shopper_token (32-hex via crypto.randomUUID) → deviceHeaders(); sm_session_token → authHeaders().
+- Fix (client): shopper ui-bits fetchJson/fetchEnvelope merge deviceHeaders(); seller ui-bits apiGet/apiGetPaged/apiSend and admin use-api apiGet/apiSend merge authHeaders(); app-store refreshMe/logout send Bearer + clear token on logout; token stored at all 4 login/register call sites (seller-shell login+register, admin-shell, generate.tsx claim flow).
+- Bug found during browser testing: CartDrawer qty stepper threw "notifyCartUpdated is not defined" (missing import in shopper-shell.tsx — pre-existing). Fixed import; PATCH now refreshes all cart badges.
+- Fixed TS errors in cart/items/route.ts (created cart assignment typed via const created).
+- Verification: lint clean; tsc clean in all touched files; curl header-only flows pass (add → read → merge qty; login → Bearer me/store/dashboard; X-Shopper-Token address persistence); dev server restarted after an abrupt kill.
+- agent-browser E2E top-level: home → PDP → add (badge 0→1) → drawer shows item → qty stepper 2→3 → checkout → address saved → delivery → payment → order SM-100019 paid → cart auto-cleared (badge 0). Seller portal: demo login + dashboard renders showing SM-100019. Admin: login + command centre renders (GMV RM 364 matches).
+- Cross-site iframe repro (host page on 127.0.0.1:4321 embedding localhost:3000 — the user's preview-panel context): add to cart badge 0→1→2, DB shows ONE cart token reused with qty merged, zero new orphan carts. Mobile 390px: PDP, order status, home grid render correctly.
+
+Stage Summary:
+- Root cause: SameSite=Lax cookies are rejected in cross-site iframe contexts (preview panel), so guest cart/session/device cookies never stuck.
+- All guest + portal identity now travels via headers (X-Cart-Token / X-Shopper-Token / Authorization Bearer) backed by localStorage, with cookies as fallback — works top-level AND in iframes regardless of third-party cookie policy.
+- Bonus fix: cart drawer qty stepper crash (missing notifyCartUpdated import).
+- Files: src/app/api/cart/cart.ts, src/app/api/cart/items/route.ts, src/app/api/checkout/owner.ts, src/lib/auth.ts, src/app/api/auth/login/route.ts, src/app/api/auth/register/route.ts, src/lib/session-client.ts (new), src/lib/app-store.ts, src/components/shopper/ui-bits.tsx, src/components/shopper/shopper-shell.tsx, src/components/shopper/generate.tsx, src/components/seller/ui-bits.tsx, src/components/seller/seller-shell.tsx, src/components/admin/use-api.ts, src/components/admin/admin-shell.tsx.
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Fix runtime TypeError "txns.slice is not a function" (admin wallets-ledger) AND full-check the "cart still empty after add to cart" bug via real browser verification.
+
+Work Log:
+- Root-caused the admin crash: GET /api/admin/ledger/transactions returns envelope { data: { items, nextCursor, count } } but WalletActivity used useApi<LedgerTxn[]> then txns.slice(...) on the object. Fixed wallets-ledger.tsx to unwrap data?.items. Same latent bug fixed in LedgerTransactions.load() (was reading body.data as an array; now reads body.data.items and uses server-provided nextCursor for pagination).
+- Swept codebase for the same envelope-mismatch pattern elsewhere: /api/admin/notifications and /api/admin/ledger/accounts return raw arrays — no other mismatches.
+- Cart bug investigation: DB showed POST /api/cart/items WAS creating carts with items, but the SAME product was added into 3 DIFFERENT carts with 3 different tokens within 20 min → client identity instability.
+- Root cause: in the preview-panel sandboxed/cross-site iframe, window.localStorage access throws SecurityError; deviceToken()'s catch-path returned a NEW random token on EVERY call, so "add to cart" (token A) and "get cart" (token B) hit different carts → cart always empty. Cookie fallback also blocked in third-party iframes.
+- Fix in src/lib/session-client.ts: deviceToken() now resolves identity via 3 layers — in-memory Map memo (guarantees all calls in one page share a token) → localStorage → sm_cart cookie fallback (recovers server-issued cart token across reloads when localStorage is blocked but cookies work). Added CART_COOKIE_NAME constant.
+- Browser reproduction (agent-browser): blocked localStorage via Object.defineProperty throw, clicked Add to cart → toast "Added to cart" but badge flipped to "0 items" and drawer showed "Your cart is empty" (bug reproduced exactly); 2 orphan carts created in DB confirming diagnosis.
+- Post-fix browser verification with localStorage still blocked: add to cart → badge "1 item" → drawer shows item → qty +1 → remove item all work. Normal (unblocked) path re-verified after reload, plus persistence across reload.
+- End-to-end checkout golden path verified in browser: add to cart → checkout → save address → delivery (Standard RM 8) → payment (FPX) → terms accepted → Pay → sandbox gateway Pay Now → order SM-100020 "Payment confirmed" (RM 97.00), cart auto-emptied after order.
+- Verified seller portal (login lumina@shopmesh.io: dashboard stats, orders table, page builder pages) and admin portal (Wallets drawer ledger activity now renders; Ledger Explorer transactions + journal-line expansion) — zero browser errors.
+- Mobile 390×844 spot-check: market grid 2-col dense layout, category chips, hero banner, add-to-cart badge, full-width cart drawer all verified.
+- Cleaned up 3 test carts created during debugging (createdAt > 07:30 UTC); user's historical carts untouched.
+
+Stage Summary:
+- BUG 1 FIXED: admin wallets drawer + ledger explorer crashed on envelope mismatch — both now unwrap { data: { items } } correctly (src/components/admin/wallets-ledger.tsx).
+- BUG 2 FIXED (the reported "cart still empty"): guest cart identity is now stable under blocked storage via memory→localStorage→cookie fallback in src/lib/session-client.ts deviceToken().
+- VERIFIED IN BROWSER (not just lint): cart add/merge/qty/remove in both storage-blocked and normal modes, persistence across reload, full paid checkout (SM-100020), seller portal, admin wallets/ledger, mobile layouts. Lint exit 0; dev.log clean since fixes.

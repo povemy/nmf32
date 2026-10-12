@@ -159,9 +159,13 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     if (!variant || variant.stock <= 0) return false;
     setAdding(true);
     try {
-      await postJson("/api/cart/items", { variantId: variant.id, qty });
+      const res = await postJson<{ cart: unknown; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty });
       notifyCartUpdated();
-      toast.success("Added to cart", { description: `${data?.product.title}${qty > 1 ? ` × ${qty}` : ""}` });
+      if (res.notice) {
+        toast.warning("Added — stock limited", { description: res.notice });
+      } else {
+        toast.success("Added to cart", { description: `${data?.product.title}${qty > 1 ? ` × ${qty}` : ""}` });
+      }
       return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add to cart");
@@ -199,7 +203,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   const { product, store } = data;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 flex-1">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 flex-1">
       {/* breadcrumb */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground pb-4 flex-wrap">
         <button type="button" className="hover:text-teal-700 transition-colors min-h-[44px] flex items-center" onClick={() => ctx.nav({ name: "market" })}>
@@ -470,7 +474,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
 
 function PdpSkeleton() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 flex-1">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 flex-1">
       <Skeleton className="h-4 w-64 mb-6" />
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-3">

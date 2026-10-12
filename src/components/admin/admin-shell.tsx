@@ -53,6 +53,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { setSessionToken } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-store";
 import { apiSend } from "./use-api";
@@ -451,11 +452,12 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const body = await apiSend<{ userType?: string; admin?: { name?: string } | null }>("/api/auth/login", "POST", {
+      const body = await apiSend<{ userType?: string; token?: string; admin?: { name?: string } | null }>("/api/auth/login", "POST", {
         email: email.trim(),
         password,
         portal: "admin",
       });
+      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
       if (body?.userType !== "admin") {
         setError("This account cannot access the admin command centre.");
         setBusy(false);

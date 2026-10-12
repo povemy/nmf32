@@ -435,7 +435,7 @@ export function ResultsView({
   const hasMore = !loadingFirst && items.length < grandTotal;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 flex-1">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 flex-1">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
         <div>
           <h1 className="text-xl font-bold tracking-tight">{title}</h1>

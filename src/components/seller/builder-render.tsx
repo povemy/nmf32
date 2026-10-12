@@ -192,21 +192,58 @@ export function SectionPreview({ section, theme, storeName }: Props) {
 
     case "testimonials": {
       const items = list<{ quote?: string; author?: string }>(p.items);
+      const style = str(p.style, "cards");
+      const author = (t: { author?: string }) => (
+        <footer className="mt-2 text-xs text-neutral-500">— {str(t.author, "Customer")}</footer>
+      );
       return (
         <section className="space-y-4 bg-white px-4 py-8">
           <h3 className="text-center text-lg font-bold">{str(p.title, "Testimonials")}</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {items.length === 0 ? (
-              <p className="col-span-2 text-center text-xs text-neutral-400">No testimonial items (edit the JSON list)</p>
-            ) : (
-              items.slice(0, 6).map((t, i) => (
-                <blockquote key={i} className="border p-4 text-sm" style={{ borderRadius: r }}>
+          {items.length === 0 ? (
+            <p className="text-center text-xs text-neutral-400">No testimonial items yet — add one in the editor panel</p>
+          ) : style === "minimal" ? (
+            <div className="mx-auto max-w-md space-y-5">
+              {items.slice(0, 4).map((t, i) => (
+                <figure key={i} className="text-center">
                   <p className="leading-relaxed">“{str(t.quote)}”</p>
-                  <footer className="mt-2 text-xs text-neutral-500">— {str(t.author, "Customer")}</footer>
-                </blockquote>
-              ))
-            )}
-          </div>
+                  {author(t)}
+                </figure>
+              ))}
+            </div>
+          ) : style === "bubbles" ? (
+            <div className="mx-auto max-w-md space-y-2.5">
+              {items.slice(0, 6).map((t, i) => (
+                <figure key={i} className={"px-3.5 py-2.5 text-sm " + (i % 2 === 0 ? "mr-8 bg-teal-50" : "ml-8 bg-amber-50")} style={{ borderRadius: r }}>
+                  <p className="leading-relaxed">“{str(t.quote)}”</p>
+                  {author(t)}
+                </figure>
+              ))}
+            </div>
+          ) : style === "featured" ? (
+            <div className="mx-auto max-w-xl space-y-3">
+              <figure className="bg-teal-700 p-4 text-white" style={{ borderRadius: r }}>
+                <p className="leading-relaxed">“{str(items[0].quote)}”</p>
+                <footer className="mt-2 text-xs text-white/80">— {str(items[0].author, "Customer")}</footer>
+              </figure>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {items.slice(1, 5).map((t, i) => (
+                  <figure key={i} className="border p-3 text-sm" style={{ borderRadius: r }}>
+                    <p className="leading-relaxed">“{str(t.quote)}”</p>
+                    {author(t)}
+                  </figure>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {items.slice(0, 6).map((t, i) => (
+                <figure key={i} className="border p-4 text-sm" style={{ borderRadius: r }}>
+                  <p className="leading-relaxed">“{str(t.quote)}”</p>
+                  {author(t)}
+                </figure>
+              ))}
+            </div>
+          )}
         </section>
       );
     }
@@ -218,7 +255,7 @@ export function SectionPreview({ section, theme, storeName }: Props) {
           <h3 className="text-center text-lg font-bold">{str(p.title, "FAQ")}</h3>
           <div className="divide-y rounded-lg border" style={{ borderRadius: r }}>
             {items.length === 0 ? (
-              <p className="p-4 text-center text-xs text-neutral-400">No FAQ items (edit the JSON list)</p>
+              <p className="p-4 text-center text-xs text-neutral-400">No FAQ items yet — add one in the editor panel</p>
             ) : (
               items.slice(0, 8).map((f, i) => (
                 <details key={i} className="group px-4 py-3">

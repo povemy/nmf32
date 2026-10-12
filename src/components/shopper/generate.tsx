@@ -45,6 +45,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/lib/app-store";
+import { setSessionToken } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import { ApiFail, fetchJson, postJson, type ShopperCtx } from "./ui-bits";
 
@@ -132,7 +133,7 @@ type SellerT = {
   storeName: string | null;
 };
 
-type AuthResult = { userType: string; seller?: SellerT };
+type AuthResult = { userType: string; token?: string; seller?: SellerT };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1037,15 +1038,17 @@ function ClaimFlow({
         if (!fullName.trim()) throw new Error("Your name is required.");
         if (!email.includes("@")) throw new Error("A valid email is required.");
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-        await postJson<AuthResult>("/api/auth/register", {
+        const res = await postJson<AuthResult>("/api/auth/register", {
           email: email.trim(),
           password,
           fullName: fullName.trim(),
           displayName: fullName.trim(),
         });
+        setSessionToken(res?.token);
       } else {
         if (!email.includes("@") || !password) throw new Error("Email and password are required.");
-        await postJson<AuthResult>("/api/auth/login", { email: email.trim(), password, portal: "seller" });
+        const res = await postJson<AuthResult>("/api/auth/login", { email: email.trim(), password, portal: "seller" });
+        setSessionToken(res?.token);
       }
       setPanel("bind");
       void bind();

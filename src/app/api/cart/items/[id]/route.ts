@@ -27,6 +27,9 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (qty === 0) {
     await db.cartItem.delete({ where: { id: item.id } });
   } else {
+    if (qty > item.variant.stock) {
+      throw new ApiError(409, "OUT_OF_STOCK", `Only ${item.variant.stock} in stock`);
+    }
     await db.cartItem.update({ where: { id: item.id }, data: { qty } });
   }
 

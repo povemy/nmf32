@@ -137,10 +137,50 @@ model SellerNote {
 
 model Session {
   token     String   @id @default(cuid())
-  userType  String // admin | seller
+  userType  String // admin | seller | shopper
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------- B2: SHOPPERS
+
+model ShopperUser {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  fullName      String
+  phone         String?
+  status        String   @default("active") // active | suspended
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  chatThreads   ChatThread[]
+}
+
+model ChatThread {
+  id            String   @id @default(cuid())
+  shopperId     String
+  shopper       ShopperUser @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id])
+  orderNumber   String?  // order context when opened from an order
+  subject       String?
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+  messages      ChatMessage[]
+
+  @@unique([shopperId, storeId])
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  threadId   String
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderType String // shopper | seller
+  senderName String
+  body       String
+  createdAt  DateTime @default(now())
 }
 
 // ---------------------------------------------------------------- C: STORES
@@ -179,6 +219,7 @@ model Store {
   claims          StoreClaim[]
   connections     MarketplaceConnection[]
   importJobs      ImportJob[]
+  chatThreads     ChatThread[]
 }
 
 model StoreDomain {
@@ -385,6 +426,7 @@ model Order {
   customerName        String
   customerEmail       String
   customerPhone       String?
+  cartToken           String?   // guest cart that produced this order — cleared on payment success
   status              String    @default("payment_pending") // payment_pending | paid | processing | shipped | delivered | completed | cancelled | refunding | partially_refunded | refunded | closed
   disputedFlag        Boolean   @default(false)
   channel             String    @default("storefront") // storefront | market
@@ -629,6 +671,25 @@ model CouponRedemption {
   customerEmail String
   discountMinor Int
   createdAt     DateTime @default(now())
+}
+
+// Guest shopper address book. ownerToken = persistent device cookie "sm_shopper_id"
+// (no shopper accounts exist in this app — ownership is enforced against that token).
+model Address {
+  id         String   @id @default(cuid())
+  ownerToken String
+  label      String   @default("Home")
+  name       String
+  phone      String?
+  line1      String
+  city       String
+  state      String
+  postcode   String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([ownerToken])
 }
 
 model MarketplaceBanner {

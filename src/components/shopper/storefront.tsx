@@ -595,25 +595,98 @@ function ImageWithText({ props, rctx }: { props: Record<string, unknown>; rctx: 
 function Testimonials({ props }: { props: Record<string, unknown> }) {
   const items = list<{ quote?: string; author?: string }>(props, "items").filter((i) => i.quote);
   const title = str(props, "title");
+  const style = str(props, "style", "cards");
   if (items.length === 0 && !title) return null;
+  const heading = title ? (
+    <h2 className="pb-6 text-center text-xl sm:text-2xl font-extrabold tracking-tight" style={{ fontFamily: "var(--sf-font-heading)" }}>
+      {title}
+    </h2>
+  ) : null;
+
+  // cards — bordered quote grid (original)
+  if (style === "cards") {
+    return (
+      <section className="mx-auto max-w-7xl px-4 py-10">
+        {heading}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((t, i) => (
+            <figure key={i} className="rounded-[var(--sf-radius)] border bg-card p-5 shadow-sm">
+              <div className="pb-2 text-2xl leading-none" style={{ color: "var(--sf-accent)" }}>
+                “
+              </div>
+              <blockquote className="text-sm leading-relaxed">{t.quote}</blockquote>
+              <figcaption className="pt-3 text-xs font-semibold text-muted-foreground">— {t.author ?? "Customer"}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  // minimal — clean centred stacked quotes, no borders
+  if (style === "minimal") {
+    return (
+      <section className="mx-auto max-w-3xl px-4 py-10">
+        {heading}
+        <div className="space-y-8">
+          {items.map((t, i) => (
+            <figure key={i} className="text-center">
+              <blockquote className="text-base leading-relaxed sm:text-lg">“{t.quote}”</blockquote>
+              <figcaption className="pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.author ?? "Customer"}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  // bubbles — chat-style rounded highlights with alternating tint
+  if (style === "bubbles") {
+    return (
+      <section className="mx-auto max-w-4xl px-4 py-10">
+        {heading}
+        <div className="space-y-4">
+          {items.map((t, i) => (
+            <figure
+              key={i}
+              className={
+                "max-w-[85%] rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-sm " +
+                (i % 2 === 0 ? "bg-primary/10" : "ml-auto bg-accent/15")
+              }
+            >
+              <blockquote>{t.quote}</blockquote>
+              <figcaption className="pt-1.5 text-xs font-semibold text-muted-foreground">{t.author ?? "Customer"}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  // featured — first quote as a big accent panel, remaining as small cards
+  const [first, ...rest] = items;
   return (
     <section className="mx-auto max-w-7xl px-4 py-10">
-      {title ? (
-        <h2 className="pb-6 text-center text-xl sm:text-2xl font-extrabold tracking-tight" style={{ fontFamily: "var(--sf-font-heading)" }}>
-          {title}
-        </h2>
+      {heading}
+      {first ? (
+        <figure
+          className="mb-4 rounded-[var(--sf-radius)] p-6 text-white shadow-sm sm:p-8"
+          style={{ background: "linear-gradient(135deg, var(--sf-primary), color-mix(in srgb, var(--sf-primary) 70%, black))" }}
+        >
+          <blockquote className="text-base leading-relaxed sm:text-xl">“{first.quote}”</blockquote>
+          <figcaption className="pt-3 text-xs font-semibold uppercase tracking-wide text-white/80">— {first.author ?? "Customer"}</figcaption>
+        </figure>
       ) : null}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((t, i) => (
-          <figure key={i} className="rounded-[var(--sf-radius)] border bg-card p-5 shadow-sm">
-            <div className="pb-2 text-2xl leading-none" style={{ color: "var(--sf-accent)" }}>
-              “
-            </div>
-            <blockquote className="text-sm leading-relaxed">{t.quote}</blockquote>
-            <figcaption className="pt-3 text-xs font-semibold text-muted-foreground">— {t.author ?? "Customer"}</figcaption>
-          </figure>
-        ))}
-      </div>
+      {rest.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {rest.map((t, i) => (
+            <figure key={i} className="rounded-[var(--sf-radius)] border bg-card p-4">
+              <blockquote className="text-sm leading-relaxed">{t.quote}</blockquote>
+              <figcaption className="pt-2.5 text-xs font-semibold text-muted-foreground">— {t.author ?? "Customer"}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

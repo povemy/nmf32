@@ -7,10 +7,53 @@ import { ApiError } from "@/lib/api";
 
 export const FREE_SHIP_THRESHOLD_MINOR = 10000; // RM 100
 
-export const SHIPPING_RATES: Record<string, { label: string; amountMinor: number; freeOverSubtotal: boolean }> = {
-  standard: { label: "Standard (2-4 working days)", amountMinor: 800, freeOverSubtotal: true },
-  express: { label: "Express (1-2 working days)", amountMinor: 1500, freeOverSubtotal: false },
+export const SHIPPING_RATES: Record<string, { label: string; eta: string; amountMinor: number; freeOverSubtotal: boolean }> = {
+  standard: { label: "Standard", eta: "2-4 working days", amountMinor: 800, freeOverSubtotal: true },
+  express: { label: "Express", eta: "1-2 working days", amountMinor: 1500, freeOverSubtotal: false },
 };
+
+// Express courier network does not cover East Malaysia — a real eligibility rule
+// enforced server-side (quote marks availability, create refuses ineligible picks).
+const EXPRESS_EXCLUDED_STATES = new Set(["Sabah", "Sarawak", "Labuan"]);
+
+export type ShippingOptionT = {
+  id: string;
+  label: string;
+  eta: string;
+  amountMinor: number;
+  freeShipping: boolean;
+  available: boolean;
+  reason: string | null;
+};
+
+/** Server-derived delivery options for a destination — the UI renders these, never its own constants. */
+export function shippingOptionsFor(state: string | null | undefined, subtotalMinor: number): ShippingOptionT[] {
+  const dest = (state ?? "").trim();
+  return Object.entries(SHIPPING_RATES).map(([id, rate]) => {
+    const ineligible = id === "express" && EXPRESS_EXCLUDED_STATES.has(dest);
+    const freeShipping = rate.freeOverSubtotal && subtotalMinor >= FREE_SHIP_THRESHOLD_MINOR;
+    return {
+      id,
+      label: rate.label,
+      eta: rate.eta,
+      amountMinor: freeShipping ? 0 : rate.amountMinor,
+      freeShipping,
+      available: !ineligible,
+      reason: ineligible ? `Express delivery is not available to ${dest || "this destination"} — please choose Standard` : null,
+    };
+  });
+}
+
+/** Validate that a chosen rate is genuinely available for the destination. */
+export function assertShippingAvailable(rateId: string, state: string | null | undefined): void {
+  const dest = (state ?? "").trim();
+  if (rateId === "express" && EXPRESS_EXCLUDED_STATES.has(dest)) {
+    throw new ApiError(409, "SHIPPING_UNAVAILABLE", `Express delivery is not available to ${dest}. Please go back and choose Standard delivery.`);
+  }
+  if (!SHIPPING_RATES[rateId]) {
+    throw new ApiError(400, "INVALID_SHIPPING", "Unknown delivery method");
+  }
+}
 
 export type QuoteItemInput = { variantId: string; qty: number };
 
@@ -119,6 +162,7 @@ export type PricingResult = {
   shippingMinor: number;
   totalMinor: number;
   shippingRateId: string;
+  shippingOptions: ShippingOptionT[];
   coupon: CouponVerdict;
 };
 
@@ -128,6 +172,7 @@ export async function computePricing(input: {
   items: QuoteItemInput[];
   couponCode?: string | null;
   shippingRateId?: string | null;
+  state?: string | null;
 }): Promise<PricingResult> {
   const lines = await priceItems(input.storeId, input.items);
   const subtotalMinor = lines.reduce((s, l) => s + l.lineTotalMinor, 0);
@@ -138,5 +183,6 @@ export async function computePricing(input: {
   if (coupon.freeShip) shippingMinor = 0;
   const discountMinor = Math.min(coupon.discountMinor, subtotalMinor);
   const totalMinor = Math.max(0, subtotalMinor - discountMinor + shippingMinor);
-  return { lines, subtotalMinor, discountMinor, shippingMinor, totalMinor, shippingRateId: rateId, coupon };
+  const shippingOptions = shippingOptionsFor(input.state, subtotalMinor);
+  return { lines, subtotalMinor, discountMinor, shippingMinor, totalMinor, shippingRateId: rateId, shippingOptions, coupon };
 }

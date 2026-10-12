@@ -17,6 +17,7 @@ export const POST = handle(async (req: Request) => {
   const variant = await loadAddableVariant(variantId);
   if (!variant) throw new ApiError(400, "VARIANT_UNAVAILABLE", "This item is not available for purchase");
   const storeId = variant.product.store.id;
+  if (variant.stock <= 0) throw new ApiError(409, "OUT_OF_STOCK", "This item is out of stock");
 
   const token = await getCartToken();
   let cart = await findCartByToken(token);
@@ -27,22 +28,28 @@ export const POST = handle(async (req: Request) => {
     cart = null;
   }
   if (!cart) {
-    cart = await createCart(storeId);
-    cart = (await findCartByToken(cart.token))!;
+    const created = await createCart(storeId, token); // adopt client header token when present
+    cart = (await findCartByToken(created.token))!;
   }
   await setCartToken(cart.token);
 
-  // Merge duplicates: same variant → increment qty (capped at 99).
+  // Merge duplicates: same variant → increment qty (capped at 99 AND at available stock).
   const existing = cart.items.find((it) => it.variantId === variant.id);
+  let notice: string | null = null;
   if (existing) {
-    await db.cartItem.update({
-      where: { id: existing.id },
-      data: { qty: Math.min(99, existing.qty + qty) },
-    });
+    const capped = Math.min(99, existing.qty + qty, variant.stock);
+    if (capped === existing.qty) {
+      notice = `Only ${variant.stock} in stock — quantity unchanged`;
+    } else {
+      if (capped < existing.qty + qty) notice = `Only ${variant.stock} in stock — quantity adjusted`;
+      await db.cartItem.update({ where: { id: existing.id }, data: { qty: capped } });
+    }
   } else {
-    await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty } });
+    const capped = Math.min(qty, variant.stock);
+    if (capped < qty) notice = `Only ${variant.stock} in stock — quantity adjusted`;
+    await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty: capped } });
   }
 
   const fresh = await findCartByToken(cart.token);
-  return ok({ cart: shapeCart(fresh) }, { status: 201 });
+  return ok({ cart: shapeCart(fresh), notice }, { status: 201 });
 });

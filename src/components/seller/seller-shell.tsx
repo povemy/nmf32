@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
+import { setSessionToken } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import {
   apiGet,
@@ -20,6 +21,7 @@ import OnboardingWizard from "./onboarding";
 import SellerDashboard from "./dashboard";
 import SellerProducts from "./products";
 import SellerOrders from "./orders";
+import SellerMessages from "./messages";
 import SellerWallet from "./wallet";
 import PageBuilder from "./builder";
 import SellerDomains from "./domains";
@@ -47,6 +49,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  MessagesSquare,
   Package,
   Search,
   Settings,
@@ -63,6 +66,7 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "imports", label: "Imports & Publish", icon: DatabaseZap },
   { key: "products", label: "Products", icon: Package },
   { key: "orders", label: "Orders", icon: ShoppingCart },
+  { key: "messages", label: "Messages", icon: MessagesSquare },
   { key: "seo", label: "SEO", icon: Search },
   { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
@@ -245,7 +249,7 @@ export default function SellerShell() {
 
         <main className="flex-1 min-h-0 overflow-y-auto">
           <motion.div
-            key={nav.view + (nav.pageId ?? "") + (nav.orderId ?? "") + (nav.productId ?? "")}
+            key={nav.view + (nav.pageId ?? "") + (nav.orderId ?? "") + (nav.productId ?? "") + (nav.activityId ?? "")}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.18 }}
@@ -255,7 +259,8 @@ export default function SellerShell() {
             {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
-            {nav.view === "wallet" && <SellerWallet />}
+            {nav.view === "messages" && <SellerMessages />}
+            {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
             {nav.view === "builder" && (
               <PageBuilder
                 pageId={nav.pageId}
@@ -424,10 +429,14 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
       return;
     }
     setBusy(true);
-    const ok = await runMutation(
-      () => apiSend("POST", "/api/auth/login", { email: loginEmail, password: loginPassword, portal: "seller" }),
-      "Welcome back!"
-    );
+    const ok = await runMutation(async () => {
+      const body = await apiSend<{ token?: string }>("POST", "/api/auth/login", {
+        email: loginEmail,
+        password: loginPassword,
+        portal: "seller",
+      });
+      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
+    }, "Welcome back!");
     setBusy(false);
     if (ok) await onAuthed();
   };
@@ -438,10 +447,10 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
       return;
     }
     setBusy(true);
-    const ok = await runMutation(
-      () => apiSend("POST", "/api/auth/register", reg),
-      "Store created — let's set it up!"
-    );
+    const ok = await runMutation(async () => {
+      const body = await apiSend<{ token?: string }>("POST", "/api/auth/register", reg);
+      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
+    }, "Store created — let's set it up!");
     setBusy(false);
     if (ok) await onAuthed();
   };

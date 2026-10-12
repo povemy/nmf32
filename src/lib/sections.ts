@@ -35,13 +35,25 @@ export const DEFAULT_THEME: ThemeTokens = {
   buttonStyle: "solid",
 };
 
+export type ItemField = {
+  key: string;
+  label: string;
+  type: "text" | "textarea";
+  placeholder?: string;
+};
+
 export type SectionField = {
   key: string;
   label: string;
-  type: "text" | "textarea" | "number" | "image" | "color" | "switch" | "select" | "url" | "json";
+  type: "text" | "textarea" | "number" | "image" | "color" | "switch" | "select" | "url" | "json" | "item_list";
   options?: { value: string; label: string }[];
   placeholder?: string;
   help?: string;
+  // item_list only — renders one friendly card per list item instead of raw JSON
+  itemFields?: ItemField[];
+  itemTitleKey?: string; // shown as the collapsed card summary
+  addLabel?: string; // e.g. "Add testimonial"
+  addTemplate?: Record<string, unknown>; // object appended when adding a new item
 };
 
 export type SectionDef = {
@@ -53,15 +65,11 @@ export type SectionDef = {
   category: "structure" | "content" | "commerce" | "social";
 };
 
-const LINKS_SAMPLE = JSON.stringify(
-  [
-    { label: "Home", url: "/" },
-    { label: "About", url: "/p/about" },
-    { label: "Contact", url: "/p/contact" },
-  ],
-  null,
-  2
-);
+const LINKS_SAMPLE = [
+  { label: "Home", url: "/" },
+  { label: "About", url: "/p/about" },
+  { label: "Contact", url: "/p/contact" },
+];
 
 export const SECTION_REGISTRY: SectionDef[] = [
   {
@@ -224,9 +232,10 @@ export const SECTION_REGISTRY: SectionDef[] = [
   {
     type: "testimonials",
     label: "Testimonials",
-    description: "Customer quotes (JSON list).",
+    description: "Customer quotes with 4 layout styles.",
     defaultProps: {
       title: "What customers say",
+      style: "cards",
       items: [
         { quote: "Beautiful packaging and fast delivery. Will order again!", author: "Aina, Shah Alam" },
         { quote: "The ceramic set transformed my coffee corner.", author: "Daniel, Penang" },
@@ -234,14 +243,33 @@ export const SECTION_REGISTRY: SectionDef[] = [
     },
     fields: [
       { key: "title", label: "Title", type: "text" },
-      { key: "items", label: "Items (JSON)", type: "json", help: '[{"quote":"...","author":"..."}]' },
+      {
+        key: "style", label: "Design style", type: "select",
+        options: [
+          { value: "cards", label: "Cards — bordered quote grid" },
+          { value: "minimal", label: "Minimal — clean centred quotes" },
+          { value: "bubbles", label: "Bubbles — chat-style highlights" },
+          { value: "featured", label: "Featured — big quote + grid" },
+        ],
+        help: "Pick how testimonials are displayed on your storefront.",
+      },
+      {
+        key: "items", label: "Testimonials", type: "item_list",
+        itemTitleKey: "quote",
+        addLabel: "Add testimonial",
+        addTemplate: { quote: "", author: "" },
+        itemFields: [
+          { key: "quote", label: "Quote", type: "textarea", placeholder: "What did the customer say?" },
+          { key: "author", label: "Author", type: "text", placeholder: "Name, City" },
+        ],
+      },
     ],
     category: "content",
   },
   {
     type: "faq",
     label: "FAQ",
-    description: "Accordion questions (JSON list).",
+    description: "Accordion questions with per-item editing.",
     defaultProps: {
       title: "Frequently asked questions",
       items: [
@@ -251,7 +279,16 @@ export const SECTION_REGISTRY: SectionDef[] = [
     },
     fields: [
       { key: "title", label: "Title", type: "text" },
-      { key: "items", label: "Items (JSON)", type: "json", help: '[{"q":"...","a":"..."}]' },
+      {
+        key: "items", label: "Questions", type: "item_list",
+        itemTitleKey: "q",
+        addLabel: "Add question",
+        addTemplate: { q: "", a: "" },
+        itemFields: [
+          { key: "q", label: "Question", type: "text", placeholder: "How long is shipping?" },
+          { key: "a", label: "Answer", type: "textarea", placeholder: "Peninsular Malaysia 2-4 working days…" },
+        ],
+      },
     ],
     category: "content",
   },
@@ -308,7 +345,16 @@ export const SECTION_REGISTRY: SectionDef[] = [
     },
     fields: [
       { key: "aboutText", label: "About text", type: "textarea" },
-      { key: "links", label: "Links (JSON)", type: "json", help: '[{"label":"Home","url":"/"}]' },
+      {
+        key: "links", label: "Footer links", type: "item_list",
+        itemTitleKey: "label",
+        addLabel: "Add link",
+        addTemplate: { label: "", url: "/" },
+        itemFields: [
+          { key: "label", label: "Link label", type: "text", placeholder: "Home" },
+          { key: "url", label: "Link URL", type: "text", placeholder: "/" },
+        ],
+      },
       { key: "showSocial", label: "Show social icons", type: "switch" },
       { key: "copyright", label: "Copyright", type: "text" },
     ],

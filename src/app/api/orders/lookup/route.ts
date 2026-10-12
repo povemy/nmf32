@@ -17,7 +17,7 @@ export const GET = handle(async (req: Request) => {
     include: {
       items: { select: { title: true, qty: true } },
       history: { orderBy: { createdAt: "asc" }, select: { toStatus: true, createdAt: true } },
-      store: { select: { name: true } },
+      store: { select: { name: true, slug: true, id: true } },
     },
   });
 
@@ -31,6 +31,8 @@ export const GET = handle(async (req: Request) => {
     status: order.status,
     totalMinor: order.totalMinor,
     storeName: order.store.name,
+    storeId: order.store.id,
+    storeSlug: order.store.slug,
     createdAt: order.createdAt,
     items: order.items.map((i) => ({ title: i.title, qty: i.qty })),
     history: order.history.map((h) => ({ toStatus: h.toStatus, createdAt: h.createdAt })),

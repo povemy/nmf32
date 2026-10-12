@@ -1,6 +1,8 @@
-// Auth & sessions — cookie-backed sessions stored in DB (revocable).
-// Surfaces: admin (admin_users) and seller (sellers). Shoppers are guests.
-import { cookies } from "next/headers";
+// Auth & sessions — DB-backed sessions (revocable) delivered via the
+// "sm_session" cookie OR an "Authorization: Bearer <token>" header. The Bearer
+// path keeps seller/admin portals working in cross-site iframes (preview panel)
+// where SameSite cookies are dropped by the browser.
+import { cookies, headers } from "next/headers";
 import { db } from "./db";
 import { randomToken } from "./password";
 import { ApiError } from "./api";
@@ -17,9 +19,13 @@ export type SellerUserDTO = {
   status: string; storeId: string | null; storeSlug: string | null; storeName: string | null;
 };
 
-export type SessionContext = { userType: "admin" | "seller"; userId: string };
+export type ShopperUserDTO = {
+  id: string; email: string; fullName: string; phone: string | null;
+};
 
-export async function createSession(userType: "admin" | "seller", userId: string): Promise<string> {
+export type SessionContext = { userType: "admin" | "seller" | "shopper"; userId: string };
+
+export async function createSession(userType: "admin" | "seller" | "shopper", userId: string): Promise<string> {
   const token = randomToken(32);
   await db.session.create({
     data: { token, userType, userId, expiresAt: new Date(Date.now() + SESSION_TTL_MS) },
@@ -27,7 +33,10 @@ export async function createSession(userType: "admin" | "seller", userId: string
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    sameSite: "lax",
+    // SameSite=None + Secure: survives cross-site iframe embeds. Chromium and
+    // Firefox allow Secure cookies on http://localhost (trustworthy origin).
+    sameSite: "none",
+    secure: true,
     path: "/",
     maxAge: SESSION_TTL_MS / 1000,
   });
@@ -42,12 +51,28 @@ export async function destroySession(): Promise<void> {
 }
 
 export async function getSession(): Promise<SessionContext | null> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
+  let token: string | null = null;
+  // 1) Bearer token from the Authorization header (client localStorage bridge).
+  try {
+    const h = await headers();
+    const auth = h.get("authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) {
+      const t = auth.slice(7).trim();
+      if (/^[a-f0-9]{16,128}$/i.test(t)) token = t;
+    }
+  } catch {
+    /* headers unavailable in this execution context — fall through to cookie */
+  }
+  // 2) Cookie fallback (top-level browsing).
+  if (!token) {
+    const store = await cookies();
+    token = store.get(SESSION_COOKIE)?.value ?? null;
+  }
   if (!token) return null;
   const s = await db.session.findUnique({ where: { token } });
   if (!s || s.expiresAt < new Date()) return null;
-  return { userType: s.userType as "admin" | "seller", userId: s.userId };
+  const userType = s.userType as "admin" | "seller" | "shopper";
+  return { userType, userId: s.userId };
 }
 
 export async function requireAdmin(): Promise<AdminUserDTO> {
@@ -85,6 +110,15 @@ export async function requireActiveSellerStore() {
   const store = await db.store.findUnique({ where: { id: me.storeId } });
   if (!store) throw new ApiError(400, "NO_STORE", "Store not found");
   return { me, store };
+}
+
+/** Signed-in buyer (shopper) account. */
+export async function requireShopper(): Promise<ShopperUserDTO> {
+  const sess = await getSession();
+  if (!sess || sess.userType !== "shopper") throw new ApiError(401, "UNAUTHORIZED", "Shopper login required");
+  const shopper = await db.shopperUser.findUnique({ where: { id: sess.userId } });
+  if (!shopper || shopper.status !== "active") throw new ApiError(401, "UNAUTHORIZED", "Shopper account unavailable");
+  return { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone };
 }
 
 // RBAC capability matrix (PART 1 §1.2) — role checks for admin endpoints

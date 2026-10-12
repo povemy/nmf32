@@ -5,7 +5,7 @@ import { computeOrderCommissions } from "@/lib/commission";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/checkout/quote {storeSlug, items:[{variantId, qty}], couponCode?, shippingRateId?}
+// POST /api/checkout/quote {storeSlug, items:[{variantId, qty}], couponCode?, shippingRateId?, state?}
 export const POST = handle(async (req: Request) => {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -18,6 +18,7 @@ export const POST = handle(async (req: Request) => {
     items: (body.items ?? []) as { variantId: string; qty: number }[],
     couponCode: body.couponCode != null ? String(body.couponCode) : null,
     shippingRateId: body.shippingRateId != null ? String(body.shippingRateId) : null,
+    state: body.state != null ? String(body.state) : null,
   });
 
   // Optional commission preview (percent parts only, no persistence).
@@ -55,7 +56,9 @@ export const POST = handle(async (req: Request) => {
       qty: l.qty,
       unitPriceMinor: l.unitPriceMinor,
       lineTotalMinor: l.lineTotalMinor,
+      stock: l.stock,
     })),
+    shippingOptions: pricing.shippingOptions,
     commissionPreviewMinor,
   });
 });

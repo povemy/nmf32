@@ -97,7 +97,7 @@ export const POST = handle(async (req: NextRequest) => {
   await ensureWalletAccounts(result.wallet.id);
   await logActivity({ actorType: "seller", actorId: result.seller.id, actorLabel: email, action: "seller.register", entityType: "store", entityId: result.store.id, meta: { slug } });
   await notify({ event: "seller.registered", channel: "email", recipient: "admin@shopmesh.io", subject: "New seller registered" });
-  await createSession("seller", result.seller.id);
+  const token = await createSession("seller", result.seller.id);
 
   return ok(
     {
@@ -106,6 +106,7 @@ export const POST = handle(async (req: NextRequest) => {
         id: result.seller.id, email, fullName, displayName, status: "onboarding",
         storeId: result.store.id, storeSlug: slug, storeName,
       },
+      token,
     },
     { status: 201 }
   );

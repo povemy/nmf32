@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatMinor, toMinor } from "@/lib/money";
+import { authHeaders } from "@/lib/session-client";
 import { Copy, Inbox } from "lucide-react";
 
 // ---------------------------------------------------------------- shared types
@@ -83,16 +84,22 @@ export type SellerViewName =
   | "domains"
   | "coupons"
   | "integrations"
+  | "messages"
   | "settings";
 
-export type SellerNav = { view: SellerViewName; pageId?: string; orderId?: string; productId?: string };
+export type SellerNav = { view: SellerViewName; pageId?: string; orderId?: string; productId?: string; activityId?: string };
 
 // ---------------------------------------------------------------- fetch helpers
 
 type Envelope<T> = { data?: T; error?: { code: string; message: string; details?: unknown } };
 
+/** Session Bearer header — keeps auth working where cookies are unavailable. */
+function withAuth(extra?: Record<string, string>): Record<string, string> {
+  return { ...authHeaders(), ...(extra ?? {}) };
+}
+
 export async function apiGet<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", headers: withAuth() });
   const body = (await res.json().catch(() => ({}))) as Envelope<T>;
   if (!res.ok || body.error) throw new Error(body.error?.message ?? `Request failed (${res.status})`);
   return body.data as T;
@@ -100,7 +107,7 @@ export async function apiGet<T>(url: string): Promise<T> {
 
 /** Like apiGet but also returns the pagination meta when present (okPaged). */
 export async function apiGetPaged<T>(url: string): Promise<{ rows: T; meta: { page: number; size: number; total: number } | null }> {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", headers: withAuth() });
   const body = (await res.json().catch(() => ({}))) as Envelope<T> & { meta?: { page: number; size: number; total: number } };
   if (!res.ok || body.error) throw new Error(body.error?.message ?? `Request failed (${res.status})`);
   return { rows: body.data as T, meta: body.meta ?? null };
@@ -109,7 +116,7 @@ export async function apiGetPaged<T>(url: string): Promise<{ rows: T; meta: { pa
 export async function apiSend<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: withAuth({ "Content-Type": "application/json" }),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const payload = (await res.json().catch(() => ({}))) as Envelope<T>;
