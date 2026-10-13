@@ -21,9 +21,11 @@ export const GET = handle(async () => {
       shopperName: t.shopper.fullName,
       shopperEmail: t.shopper.email,
       orderNumber: t.orderNumber,
+      contextType: t.contextType,
       subject: t.subject,
       createdAt: t.createdAt,
       lastMessageAt: t.lastMessageAt,
+      unreadCount: t.sellerUnread,
       lastMessage: t.messages[0]
         ? { body: t.messages[0].body, senderType: t.messages[0].senderType, createdAt: t.messages[0].createdAt }
         : null,

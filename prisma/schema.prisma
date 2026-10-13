@@ -165,7 +165,13 @@ model ChatThread {
   storeId       String
   store         Store    @relation(fields: [storeId], references: [id])
   orderNumber   String?  // order context when opened from an order
+  orderId       String?  // resolved order id (deep link target for the context bubble)
+  contextType   String?  // what the conversation is about: "order" | "product" | null
+  productId     String?  // product context when opened from a product page
+  product       Product? @relation(fields: [productId], references: [id])
   subject       String?
+  shopperUnread Int      @default(0) // unread seller messages for the shopper
+  sellerUnread  Int      @default(0) // unread shopper messages for the seller
   createdAt     DateTime @default(now())
   lastMessageAt DateTime @default(now())
   messages      ChatMessage[]
@@ -313,6 +319,7 @@ model Product {
   collections               CollectionProduct[]
   featuredSlots             FeaturedSlot[]
   importItems               ImportJobItem[]
+  chatThreads               ChatThread[]
 
   @@unique([storeId, slug])
   @@unique([storeId, sourcePlatform, sourceProductId])

@@ -2,11 +2,12 @@
 // ============================================================================
 // Shopper — PRODUCT DETAIL PAGE (Task 2-e).
 // ============================================================================
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronRight,
   MessageCircle,
+  Loader2,
   Store,
   ShoppingCart,
   Zap,
@@ -30,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatMinor } from "@/lib/money";
+import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
 import { breadcrumbJsonLd, injectJsonLd, productJsonLd, setMeta } from "@/lib/seo";
 import {
@@ -152,6 +154,44 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   const compareAt = variant?.compareAtPriceMinor ?? data?.product.compareAtPriceMinor ?? null;
   const off = discountPercent(price, compareAt);
   const outOfStock = !variant || variant.stock <= 0;
+
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const shopper = me.loaded ? me.shopper : null;
+  const [chatBusy, setChatBusy] = useState(false);
+
+  /** PDP entry point for the chat: stamps the thread with THIS product so the
+   *  conversation shows a clickable product bubble on both sides.
+   *  NOTE: the action itself must NOT check the login state — after sign-in
+   *  the stored callback still runs THIS closure, so re-checking here would
+   *  just re-open the auth dialog (stale closure). The guard lives in
+   *  onMessageSeller instead. */
+  const beginProductChat = useCallback(async () => {
+    if (!data) return;
+    setChatBusy(true);
+    try {
+      const res = await postJson<{ thread: { id: string } }>("/api/chat/threads", {
+        storeId: data.store.id,
+        productId: data.product.id,
+        message: `Hi ${data.store.name}! I'd like to ask about “${data.product.title}”.`,
+      });
+      toast.success("Chat opened", { description: `You're now chatting with ${data.store.name} about this product.` });
+      ctx.nav({ name: "messages", threadId: res.thread.id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open the chat");
+    } finally {
+      setChatBusy(false);
+    }
+  }, [data, ctx]);
+
+  const onMessageSeller = () => {
+    if (!shopper) {
+      // not signed in → ask to sign in / register first, then continue to the chat
+      openShopperAuth(() => void beginProductChat());
+      return;
+    }
+    void beginProductChat();
+  };
 
   const crossStore = Boolean(cart && cart.items.length > 0 && cart.storeSlug && cart.storeSlug !== slug);
 
@@ -340,6 +380,17 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             >
               <Zap className="h-4 w-4" />
               Buy now
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={onMessageSeller}
+              disabled={chatBusy}
+              className="min-h-[48px] gap-2 border-teal-700/40 text-teal-800 hover:bg-teal-50 sm:col-span-2"
+              title="Ask the seller about this product — opens a chat quoting this item"
+            >
+              {chatBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+              Message seller
             </Button>
           </div>
 

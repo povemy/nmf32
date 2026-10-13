@@ -259,7 +259,7 @@ export default function SellerShell() {
             {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
-            {nav.view === "messages" && <SellerMessages />}
+            {nav.view === "messages" && <SellerMessages onNavigate={navigate} />}
             {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
             {nav.view === "builder" && (
               <PageBuilder
@@ -283,6 +283,25 @@ export default function SellerShell() {
 
 // ---------------------------------------------------------------- side nav
 
+/** Total unread shopper messages — powers the "Messages" nav badge. */
+function useSellerChatUnread(active: SellerNav["view"]) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      apiGet<{ total: number }>("/api/store/chat/unread")
+        .then((d) => alive && setUnread(d.total ?? 0))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 15000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [active]);
+  return unread;
+}
+
 function SideNav({
   active,
   onNavigate,
@@ -292,6 +311,7 @@ function SideNav({
   onNavigate: (n: SellerNav) => void;
   className?: string;
 }) {
+  const unreadChats = useSellerChatUnread(active);
   return (
     <nav className={cn("flex flex-col gap-0.5", className)} aria-label="Seller navigation">
       {NAV.map(({ key, label, icon: Icon }) => (
@@ -307,7 +327,12 @@ function SideNav({
           )}
         >
           <Icon className="h-4 w-4 shrink-0" />
-          {label}
+          <span className="min-w-0 flex-1 text-left">{label}</span>
+          {key === "messages" && unreadChats > 0 ? (
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${unreadChats} unread messages`}>
+              {unreadChats > 99 ? "99+" : unreadChats}
+            </span>
+          ) : null}
         </button>
       ))}
     </nav>

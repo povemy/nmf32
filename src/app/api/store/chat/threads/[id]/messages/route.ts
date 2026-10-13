@@ -2,30 +2,47 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { broadcastToThread } from "@/lib/chat";
+import { resolveThreadContext } from "@/lib/chat-context";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/store/chat/threads/[id]/messages — seller reads a conversation.
+// Returns the context card (product/order bubble) and clears the seller-side
+// unread badge (opening a conversation = read).
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { store } = await requireActiveSellerStore();
   const thread = await db.chatThread.findUnique({
     where: { id },
     include: {
+      store: { select: { slug: true } },
       shopper: { select: { fullName: true, email: true } },
       messages: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+
+  await db.chatThread.update({ where: { id: thread.id }, data: { sellerUnread: 0 } });
+
+  const context = await resolveThreadContext({
+    contextType: thread.contextType,
+    orderNumber: thread.orderNumber,
+    productId: thread.productId,
+    storeId: thread.storeId,
+    storeSlug: thread.store.slug,
+  });
+
   return ok({
     thread: {
       id: thread.id,
       shopperName: thread.shopper.fullName,
       shopperEmail: thread.shopper.email,
       orderNumber: thread.orderNumber,
+      contextType: thread.contextType,
       subject: thread.subject,
       lastMessageAt: thread.lastMessageAt,
     },
+    context,
     messages: thread.messages.map((m) => ({
       id: m.id,
       senderType: m.senderType,
@@ -37,6 +54,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
 });
 
 // POST /api/store/chat/threads/[id]/messages { body } — seller replies.
+// Bumps the shopper's unread badge.
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { me, store } = await requireActiveSellerStore();
@@ -50,7 +68,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   const message = await db.chatMessage.create({
     data: { threadId: thread.id, senderType: "seller", senderName: store.name, body: trimmed.slice(0, 2000) },
   });
-  await db.chatThread.update({ where: { id: thread.id }, data: { lastMessageAt: new Date() } });
+  await db.chatThread.update({
+    where: { id: thread.id },
+    data: { lastMessageAt: new Date(), shopperUnread: { increment: 1 }, sellerUnread: 0 },
+  });
 
   const payload = {
     id: message.id,

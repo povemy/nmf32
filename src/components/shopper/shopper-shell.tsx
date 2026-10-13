@@ -75,6 +75,43 @@ function isStoreChrome(view: ShopperView): boolean {
   return view.name === "storefront" || view.name === "store-page";
 }
 
+/** Total unread seller messages — powers the "My messages" header badge.
+ *  Polls lightly + refreshes when the messages view is opened/left. */
+function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!shopperSignedIn) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the badge on sign-out (no fetch involved)
+      setUnread(0);
+      return;
+    }
+    let alive = true;
+    const load = () =>
+      fetchJson<{ total: number }>("/api/chat/unread")
+        .then((d) => alive && setUnread(d.total ?? 0))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 15000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [shopperSignedIn]);
+  // opening (or leaving) the messages view should immediately re-sync the badge
+  useEffect(() => {
+    if (!shopperSignedIn) return;
+    const t = setTimeout(
+      () =>
+        fetchJson<{ total: number }>("/api/chat/unread")
+          .then((d) => setUnread(d.total ?? 0))
+          .catch(() => {}),
+      viewName === "messages" ? 600 : 0
+    );
+    return () => clearTimeout(t);
+  }, [shopperSignedIn, viewName]);
+  return unread;
+}
+
 export default function ShopperShell() {
   const setSurface = useApp((s) => s.setSurface);
   const activeStoreSlug = useApp((s) => s.activeStoreSlug);
@@ -238,6 +275,9 @@ function MarketHeader({
   const { count } = useCart();
   const [categories, setCategories] = useState<CategoryT[] | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const me = useApp((s) => s.me);
+  const shopperSignedIn = Boolean(me.loaded && me.shopper);
+  const unreadChats = useChatUnread(shopperSignedIn, view.name);
 
   useEffect(() => {
     let alive = true;
@@ -416,14 +456,19 @@ function MarketHeader({
           <button
             type="button"
             onClick={() => nav({ name: "messages" })}
-            aria-label="My messages"
+            aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
             className={cn(
-              "inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              "relative inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
               view.name === "messages" && "text-teal-800 bg-teal-50"
             )}
           >
             <MessagesSquare className="h-4 w-4" />
             <span className="hidden md:inline">Messages</span>
+            {unreadChats > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+                {unreadChats > 9 ? "9+" : unreadChats}
+              </span>
+            ) : null}
           </button>
 
           {/* orders */}
@@ -643,13 +688,33 @@ type ThreadRow = {
   storeId: string;
   storeName: string;
   storeSlug: string;
+  storeLogoUrl: string | null;
   orderNumber: string | null;
+  contextType: string | null;
   subject: string | null;
   lastMessageAt: string;
+  unreadCount: number;
   lastMessage: { body: string; senderType: string; createdAt: string } | null;
 };
 
 type ChatMsg = { id: string; senderType: "shopper" | "seller"; senderName: string; body: string; createdAt: string };
+
+/** The clickable "what is this chat about" bubble — product or order. */
+type ThreadContextCard =
+  | { kind: "product"; productId: string; title: string; slug: string; storeSlug: string; image: string | null; priceMinor: number; compareAtPriceMinor: number | null }
+  | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; itemCount: number; firstItemTitle: string | null; firstItemImage: string | null };
+
+function timeAgoShort(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d`;
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
 
 function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThreadId?: string }) {
   const me = useApp((s) => s.me);
@@ -659,7 +724,8 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   const [threads, setThreads] = useState<ThreadRow[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(initialThreadId ?? null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
-  const [activeThread, setActiveThread] = useState<{ storeName: string; orderNumber: string | null; subject: string | null } | null>(null);
+  const [activeThread, setActiveThread] = useState<{ storeName: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
+  const [context, setContext] = useState<ThreadContextCard | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const socketRef = useRef<Socket | null>(null);
@@ -678,13 +744,17 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
-      const d = await fetchJson<{ thread: { storeName: string; orderNumber: string | null; subject: string | null }; messages: ChatMsg[] }>(
-        `/api/chat/threads/${threadId}`
-      );
+      const d = await fetchJson<{
+        thread: { storeName: string; orderNumber: string | null; contextType: string | null; subject: string | null };
+        context: ThreadContextCard | null;
+        messages: ChatMsg[];
+      }>(`/api/chat/threads/${threadId}`);
       setMessages(d.messages);
       setActiveThread(d.thread);
+      setContext(d.context ?? null);
     } catch {
       setMessages([]);
+      setContext(null);
     }
   }, []);
 
@@ -730,6 +800,11 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     socket.on("chat:message", (msg: ChatMsg & { threadId?: string }) => {
       if (msg.threadId && msg.threadId === activeId) {
         setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
+        if (msg.senderType === "seller") {
+          // message arrived while the shopper is looking at this conversation —
+          // clear the badge straight away instead of waiting for the poller
+          void postJson(`/api/chat/threads/${activeId}/read`, {}).catch(() => {});
+        }
       }
       loadThreads();
     });
@@ -767,7 +842,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
         <EmptyState
           icon={MessagesSquare}
           title="Sign in to see your messages"
-          hint="Create a free SHOPMESH account to chat with sellers about orders, deliveries and returns."
+          hint="Create a free SHOPMESH account to chat with sellers about products, orders, deliveries and returns."
           action={
             <Button onClick={() => openShopperAuth(() => ctx.nav({ name: "messages" }))} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
               <LogIn className="h-4 w-4" /> Sign in or create account
@@ -796,7 +871,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
             </div>
           ) : threads.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
-              No conversations yet — use “Contact seller” on any order to start one.
+              No conversations yet — use “Message seller” on any product or “Contact seller” on an order to start one.
             </p>
           ) : (
             <ul className="space-y-1 max-h-96 md:max-h-[520px] overflow-y-auto">
@@ -806,22 +881,35 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                     type="button"
                     onClick={() => {
                       setActiveId(t.id);
-                      setActiveThread({ storeName: t.storeName, orderNumber: t.orderNumber, subject: t.subject });
+                      setActiveThread({ storeName: t.storeName, orderNumber: t.orderNumber, contextType: t.contextType, subject: t.subject });
                     }}
                     className={cn(
                       "w-full rounded-xl p-3 text-left transition-colors min-h-[60px]",
                       activeId === t.id ? "bg-teal-50 ring-1 ring-teal-200" : "hover:bg-muted"
                     )}
+                    aria-label={`Conversation with ${t.storeName}${t.unreadCount > 0 ? `, ${t.unreadCount} unread messages` : ""}`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[11px] font-extrabold text-white">
-                        {t.storeName.slice(0, 1).toUpperCase()}
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-gradient text-[11px] font-extrabold text-white">
+                        {t.storeLogoUrl ? (
+                          <img src={t.storeLogoUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          t.storeName.slice(0, 1).toUpperCase()
+                        )}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t.storeName}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgoShort(t.lastMessageAt)}</span>
+                      {t.unreadCount > 0 ? (
+                        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${t.unreadCount} unread`}>
+                          {t.unreadCount > 99 ? "99+" : t.unreadCount}
+                        </span>
+                      ) : null}
                     </div>
-                    <p className="truncate pt-1 pl-10 text-xs text-muted-foreground">
-                      {t.lastMessage?.body ?? "Say hello…"}
-                    </p>
+                    {t.contextType ? (
+                      <p className="truncate pt-1 pl-10 text-[11px] font-medium text-teal-700">
+                        {t.contextType === "order" ? "🧾 order enquiry" : "🏷️ product enquiry"}
+                      </p>
+                    ) : null}
                   </button>
                 </li>
               ))}
@@ -845,7 +933,11 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{activeThread.storeName}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {activeThread.orderNumber ? `Order ${activeThread.orderNumber}` : activeThread.subject ?? "Direct message"}
+                    {activeThread.contextType === "order" && activeThread.orderNumber
+                      ? `Order ${activeThread.orderNumber}`
+                      : activeThread.contextType === "product"
+                        ? "Product enquiry"
+                        : activeThread.subject ?? "Direct message"}
                   </p>
                 </div>
               </header>
@@ -855,25 +947,31 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                   <div className="flex h-full items-center justify-center">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                ) : messages.length === 0 ? (
-                  <p className="pt-10 text-center text-sm text-muted-foreground">No messages yet — say hello!</p>
                 ) : (
-                  messages.map((m) => (
-                    <div key={m.id} className={cn("flex", m.senderType === "shopper" ? "justify-end" : "justify-start")}>
-                      <div
-                        className={cn(
-                          "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
-                          m.senderType === "shopper" ? "bg-brand-gradient text-white rounded-br-md" : "bg-muted rounded-bl-md"
-                        )}
-                      >
-                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <p className={cn("pt-1 text-[10px]", m.senderType === "shopper" ? "text-white/70" : "text-muted-foreground")}>
-                          {m.senderType === "seller" ? `${m.senderName} · ` : ""}
-                          {fmtDateTime(m.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  ))
+                  <>
+                    {/* what this conversation is about — tap to jump there */}
+                    <ShopperContextBubble ctx={ctx} context={context} />
+                    {messages.length === 0 ? (
+                      <p className="pt-6 text-center text-sm text-muted-foreground">No messages yet — say hello!</p>
+                    ) : (
+                      messages.map((m) => (
+                        <div key={m.id} className={cn("flex", m.senderType === "shopper" ? "justify-end" : "justify-start")}>
+                          <div
+                            className={cn(
+                              "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                              m.senderType === "shopper" ? "bg-brand-gradient text-white rounded-br-md" : "bg-muted rounded-bl-md"
+                            )}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                            <p className={cn("pt-1 text-[10px]", m.senderType === "shopper" ? "text-white/70" : "text-muted-foreground")}>
+                              {m.senderType === "seller" ? `${m.senderName} · ` : ""}
+                              {fmtDateTime(m.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
                 )}
               </div>
 
@@ -908,6 +1006,76 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
         </section>
       </div>
     </div>
+  );
+}
+
+/** The cute clickable bubble that opens every conversation: it quotes the
+ *  product (PDP entry point) or the order (order page entry point) the
+ *  shopper is asking about, and taps through to that exact page. */
+function ShopperContextBubble({ ctx, context }: { ctx: ShopperCtx; context: ThreadContextCard | null }) {
+  if (!context) {
+    return (
+      <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+        💬 Direct message with this store
+      </p>
+    );
+  }
+
+  if (context.kind === "product") {
+    const go = () => ctx.nav({ name: "pdp", slug: context.storeSlug, pSlug: context.slug });
+    return (
+      <button
+        type="button"
+        onClick={go}
+        className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/60 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-500 hover:shadow-md"
+        aria-label={`View product: ${context.title}`}
+      >
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">
+          {context.image ? (
+            <img src={context.image} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <ShoppingBag className="h-5 w-5 text-teal-600" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-bold uppercase tracking-wider text-teal-600">🏷️ Asking about this product</span>
+          <span className="block truncate text-sm font-bold text-foreground">{context.title}</span>
+          <span className="block text-xs font-semibold text-teal-700">
+            {formatMinor(context.priceMinor)}
+            {context.compareAtPriceMinor && context.compareAtPriceMinor > context.priceMinor ? (
+              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground line-through">{formatMinor(context.compareAtPriceMinor)}</span>
+            ) : null}
+          </span>
+        </span>
+        <ArrowRight className="h-4 w-4 shrink-0 text-teal-600 transition-transform group-hover:translate-x-0.5" aria-hidden />
+      </button>
+    );
+  }
+
+  const go = () => ctx.nav({ name: "order-status", orderNumber: context.orderNumber });
+  return (
+    <button
+      type="button"
+      onClick={go}
+      className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/70 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-500 hover:shadow-md"
+      aria-label={`View order ${context.orderNumber}`}
+    >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">
+        {context.firstItemImage ? (
+          <img src={context.firstItemImage} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <Package className="h-5 w-5 text-amber-600" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-600">🧾 Asking about this order</span>
+        <span className="block truncate text-sm font-bold text-foreground">{context.orderNumber}</span>
+        <span className="block truncate text-xs font-semibold text-amber-700">
+          {context.firstItemTitle ?? `${context.itemCount} item${context.itemCount === 1 ? "" : "s"}`} · {formatMinor(context.totalMinor)}
+        </span>
+      </span>
+      <ArrowRight className="h-4 w-4 shrink-0 text-amber-600 transition-transform group-hover:translate-x-0.5" aria-hidden />
+    </button>
   );
 }
 

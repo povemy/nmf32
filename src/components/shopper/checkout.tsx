@@ -1734,6 +1734,16 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
       {result ? (
         <div className="pt-5">
           <OrderCard o={result} compact />
+          <div className="flex justify-center pt-3">
+            <Button
+              variant="outline"
+              onClick={() => ctx.nav({ name: "order-status", orderNumber: result.orderNumber })}
+              className="min-h-[44px]"
+              title="Open the full order view — with the PDF receipt and Contact seller"
+            >
+              View full order details
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>
