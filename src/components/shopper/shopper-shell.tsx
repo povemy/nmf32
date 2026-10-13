@@ -68,6 +68,7 @@ import PdpView from "./pdp";
 import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
 import GenerateStoreView, { ClaimView } from "./generate";
+import MeHubView from "./me-hub";
 
 const VIEW_KEY = "sm_shopper_view";
 
@@ -204,6 +205,8 @@ export default function ShopperShell() {
   const ctx = useMemo<ShopperCtx>(() => ({ nav, openCart: () => setCartOpen(true) }), [nav]);
 
   const showChrome = !isStoreChrome(view);
+  // App-like bottom navigation — mobile only, hidden during checkout focus mode.
+  const showBottomNav = showChrome && view.name !== "checkout" && view.name !== "pay";
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
@@ -222,12 +225,12 @@ export default function ShopperShell() {
 
       <AnimatePresence mode="wait">
         <motion.main
-          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : ""}`}
+          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" ? view.tab ?? "" : ""}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="flex-1 flex flex-col"
+          className={cn("flex-1 flex flex-col", showBottomNav && "pb-[calc(4.25rem+env(safe-area-inset-bottom))] md:pb-0")}
         >
           {claimLink ? null : (
             <>
@@ -246,11 +249,20 @@ export default function ShopperShell() {
               {view.name === "generate" ? <GenerateStoreView ctx={ctx} /> : null}
               {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
               {view.name === "messages" ? <MessagesView ctx={ctx} initialThreadId={view.threadId} /> : null}
+              {view.name === "me" ? <MeHubView ctx={ctx} initialTab={view.tab} /> : null}
             </>
           )}
           {claimLink ? <ClaimView jobId={claimLink.jobId} token={claimLink.token} onExit={() => setClaimLink(null)} /> : null}
         </motion.main>
       </AnimatePresence>
+
+      {showBottomNav ? (
+        <BottomNav
+          view={view}
+          nav={nav}
+          openCart={() => setCartOpen(true)}
+        />
+      ) : null}
 
       {showChrome ? (
         <ShopperFooter
@@ -263,6 +275,70 @@ export default function ShopperShell() {
 
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} ctx={ctx} />
     </div>
+  );
+}
+
+// =============================================================================================
+// Mobile bottom navigation (app-like) — Home / Orders / Cart / Chat / Me
+// =============================================================================================
+
+function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: ShopperView) => void; openCart: () => void }) {
+  const me = useApp((s) => s.me);
+  const signedIn = Boolean(me.loaded && me.shopper);
+  const { count } = useCart();
+  const unreadChats = useChatUnread(signedIn, view.name);
+
+  const items = [
+    { key: "home", label: "Home", icon: ShoppingBag, active: view.name === "market", badge: 0, onClick: () => nav({ name: "market" }) },
+    {
+      key: "orders",
+      label: "Orders",
+      icon: Package,
+      active: view.name === "orders" || (view.name === "me" && view.tab === "purchases"),
+      badge: 0,
+      onClick: () => (signedIn ? nav({ name: "me", tab: "purchases" }) : nav({ name: "orders" })),
+    },
+    { key: "cart", label: "Cart", icon: ShoppingCart, active: false, badge: count, onClick: openCart },
+    { key: "chat", label: "Chat", icon: MessagesSquare, active: view.name === "messages", badge: unreadChats, onClick: () => nav({ name: "messages" }) },
+    { key: "me", label: "Me", icon: User, active: view.name === "me", badge: 0, onClick: () => nav({ name: "me" }) },
+  ];
+
+  return (
+    <nav
+      aria-label="Bottom navigation"
+      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <div className="mx-auto grid max-w-lg grid-cols-5">
+        {items.map((it) => {
+          const Icon = it.icon;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={it.onClick}
+              aria-label={it.label}
+              aria-current={it.active ? "page" : undefined}
+              className={cn(
+                "relative flex h-16 min-h-[56px] flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors",
+                it.active ? "text-teal-800" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span className="relative">
+                <Icon className="h-5 w-5" aria-hidden="true" />
+                {it.badge > 0 ? (
+                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+                    {it.badge > 9 ? "9+" : it.badge}
+                  </span>
+                ) : null}
+              </span>
+              {it.label}
+              {it.active ? <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-brand-gradient" aria-hidden="true" /> : null}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -482,14 +558,14 @@ function MarketHeader({
             ) : null}
           </button>
 
-          {/* orders */}
+          {/* orders — signed-in shoppers get the account-scoped purchases hub */}
           <button
             type="button"
-            onClick={() => nav({ name: "orders" })}
+            onClick={() => (shopperSignedIn ? nav({ name: "me", tab: "purchases" }) : nav({ name: "orders" }))}
             aria-label="My orders"
             className={cn(
               "hidden sm:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
-              view.name === "orders" && "text-teal-800 bg-teal-50"
+              (view.name === "orders" || (view.name === "me" && view.tab === "purchases")) && "text-teal-800 bg-teal-50"
             )}
           >
             <Package className="h-4 w-4" /> Orders
@@ -579,6 +655,12 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
           <p className="truncate text-xs text-muted-foreground">{shopper.email}</p>
         </div>
         <Separator />
+        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me" })}>
+          <User className="h-4 w-4 text-teal-700" /> My dashboard
+        </DropdownMenuItem>
+        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me", tab: "purchases" })}>
+          <Package className="h-4 w-4 text-teal-700" /> My purchases
+        </DropdownMenuItem>
         <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "messages" })}>
           <MessagesSquare className="h-4 w-4 text-teal-700" /> My messages
         </DropdownMenuItem>

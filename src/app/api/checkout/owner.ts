@@ -2,12 +2,15 @@
 // Guest shopper identity — device token via X-Shopper-Token header (localStorage
 // on the client) with the "sm_shopper_id" cookie as fallback. Header-first keeps
 // the address book working in cross-site iframes where cookies are dropped.
-// The app has no shopper accounts; the address book is owned by this token and
-// every address query filters on it (no cross-customer exposure).
+// Dual ownership: guests scope the book to the device token; a signed-in shopper
+// scopes it to their ACCOUNT (shopperId) — the account always wins, so switching
+// accounts on one device can never expose another person's address book.
 // ============================================================================
 import { cookies, headers } from "next/headers";
 import { ApiError } from "@/lib/api";
 import { randomToken } from "@/lib/password";
+import { getSession } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export const OWNER_COOKIE = "sm_shopper_id";
 const OWNER_TTL_S = 60 * 60 * 24 * 365; // 1 year
@@ -31,6 +34,54 @@ export async function ensureOwnerToken(): Promise<string> {
     maxAge: OWNER_TTL_S,
   });
   return token;
+}
+
+/** Read the device owner token from header/cookie WITHOUT minting one
+ *  (used at login/register to claim guest rows created on this device). */
+export async function readOwnerToken(): Promise<string | null> {
+  try {
+    const h = await headers();
+    const fromHeader = h.get("x-shopper-token");
+    if (fromHeader && OWNER_TOKEN_RE.test(fromHeader)) return fromHeader;
+  } catch {
+    /* headers unavailable in this context */
+  }
+  try {
+    const jar = await cookies();
+    return jar.get(OWNER_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export type AddressOwner = { shopperId: string | null; ownerToken: string };
+
+/** Where-clause that scopes address queries to the resolved owner. */
+export function addressScope(owner: AddressOwner) {
+  return owner.shopperId
+    ? { shopperId: owner.shopperId }
+    : { ownerToken: owner.ownerToken, shopperId: null };
+}
+
+/**
+ * Resolve the address-book owner for this request:
+ *  - signed-in shopper → the ACCOUNT owns the book (shopperId);
+ *    any guest rows still tied to this device are lazily claimed into the
+ *    account (covers sessions that predate the claim-on-login deploy);
+ *  - guest → the device token, unclaimed rows only.
+ */
+export async function resolveAddressOwner(): Promise<AddressOwner> {
+  const ownerToken = await ensureOwnerToken();
+  const sess = await getSession();
+  if (sess && sess.userType === "shopper") {
+    // Lazy claim — idempotent: only rows with shopperId=null on THIS device move.
+    await db.address.updateMany({
+      where: { ownerToken, shopperId: null },
+      data: { shopperId: sess.userId },
+    });
+    return { shopperId: sess.userId, ownerToken };
+  }
+  return { shopperId: null, ownerToken };
 }
 
 export type AddressInput = {

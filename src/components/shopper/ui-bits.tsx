@@ -28,7 +28,8 @@ export type ShopperView =
   | { name: "lookup" }
   | { name: "messages"; threadId?: string }
   | { name: "store-page"; slug: string; pageSlug: string }
-  | { name: "generate" };
+  | { name: "generate" }
+  | { name: "me"; tab?: string };
 
 export type ShopperCtx = {
   nav: (v: ShopperView) => void;

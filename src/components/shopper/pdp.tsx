@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronRight,
+  Heart,
   MessageCircle,
   Loader2,
   Store,
@@ -193,6 +194,49 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     void beginProductChat();
   };
 
+  // ---- buyer dashboard activity: VIEWED + LIKE -------------------------------
+  const [liked, setLiked] = useState(false);
+  const productId = data?.product.id ?? null;
+
+  useEffect(() => {
+    if (!shopper || !productId) return;
+    // VIEWED — fire-and-forget; recency powers Recently Viewed + recommendations.
+    postJson("/api/me/activity", { productId, activityType: "VIEWED" }).catch(() => {});
+    fetchJson<{ liked: boolean }>(`/api/me/activity?productId=${encodeURIComponent(productId)}`)
+      .then((d) => setLiked(Boolean(d.liked)))
+      .catch(() => {});
+  }, [shopper, productId]);
+
+  const setLike = useCallback(
+    async (target: boolean) => {
+      if (!productId) return;
+      setLiked(target); // optimistic
+      try {
+        if (target) {
+          await postJson("/api/me/activity", { productId, activityType: "LIKE" });
+          toast.success("Saved to My Likes");
+        } else {
+          await fetchJson("/api/me/activity", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId, activityType: "LIKE" }),
+          });
+        }
+      } catch {
+        setLiked(!target); // revert on failure
+      }
+    },
+    [productId]
+  );
+
+  const onHeartTap = () => {
+    if (!shopper) {
+      openShopperAuth(() => void setLike(true));
+      return;
+    }
+    void setLike(!liked);
+  };
+
   const crossStore = Boolean(cart && cart.items.length > 0 && cart.storeSlug && cart.storeSlug !== slug);
 
   async function addToCart(): Promise<boolean> {
@@ -313,6 +357,15 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
                 <Badge className="bg-rose-600 hover:bg-rose-600">-{off}%</Badge>
               </>
             ) : null}
+            <button
+              type="button"
+              onClick={onHeartTap}
+              aria-pressed={liked}
+              aria-label={liked ? "Remove from My Likes" : "Save to My Likes"}
+              className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors hover:bg-muted"
+            >
+              <Heart className={cn("h-5 w-5", liked ? "fill-rose-600 text-rose-600" : "text-muted-foreground")} aria-hidden="true" />
+            </button>
           </div>
 
           {/* variant selector */}

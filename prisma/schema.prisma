@@ -146,16 +146,26 @@ model Session {
 // ---------------------------------------------------------------- B2: SHOPPERS
 
 model ShopperUser {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  passwordHash  String
-  fullName      String
-  phone         String?
-  status        String   @default("active") // active | suspended
-  lastLoginAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  chatThreads   ChatThread[]
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  fullName        String
+  username        String?   @unique // public handle shown on the Me hub (@handle)
+  avatarUrl       String?
+  membershipLevel String    @default("SILVER") // SILVER | GOLD | PLATINUM (auto-upgraded on spend thresholds)
+  followingCount  Int       @default(0)
+  followerCount   Int       @default(0)
+  phone           String?
+  status          String    @default("active") // active | suspended
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  chatThreads     ChatThread[]
+  wallet          ShopperWallet?
+  vouchers        UserVoucher[]
+  activities      UserActivity[]
+  addresses       Address[]
+  orders          Order[]
 }
 
 model ChatThread {
@@ -320,6 +330,7 @@ model Product {
   featuredSlots             FeaturedSlot[]
   importItems               ImportJobItem[]
   chatThreads               ChatThread[]
+  userActivities            UserActivity[]
 
   @@unique([storeId, slug])
   @@unique([storeId, sourcePlatform, sourceProductId])
@@ -434,6 +445,8 @@ model Order {
   customerEmail       String
   customerPhone       String?
   cartToken           String?   // guest cart that produced this order — cleared on payment success
+  shopperId           String?   // owning shopper account when known (login/checkout session); null for pure guests
+  shopper             ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: SetNull)
   status              String    @default("payment_pending") // payment_pending | paid | processing | shipped | delivered | completed | cancelled | refunding | partially_refunded | refunded | closed
   disputedFlag        Boolean   @default(false)
   channel             String    @default("storefront") // storefront | market
@@ -464,6 +477,8 @@ model Order {
   paymentIntents      PaymentIntent[]
   refunds             Refund[]
   disputes            Dispute[]
+
+  @@index([shopperId])
 }
 
 model OrderItem {
@@ -680,11 +695,15 @@ model CouponRedemption {
   createdAt     DateTime @default(now())
 }
 
-// Guest shopper address book. ownerToken = persistent device cookie "sm_shopper_id"
-// (no shopper accounts exist in this app — ownership is enforced against that token).
+// Shopper address book. Dual ownership: guest checkout saves against the device
+// token (ownerToken); once the shopper signs in on that device the rows are
+// claimed into the account (shopperId) so addresses follow the ACCOUNT, not the
+// browser — signing into a different account never exposes another person's book.
 model Address {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   ownerToken String
+  shopperId  String?
+  shopper    ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
   label      String   @default("Home")
   name       String
   phone      String?
@@ -697,6 +716,69 @@ model Address {
   updatedAt  DateTime @updatedAt
 
   @@index([ownerToken])
+  @@index([shopperId])
+}
+
+// ---------------------------------------------------------------- B3: BUYER DASHBOARD
+
+// Buyer wallet — one per shopper. Money = Int minor units (cents).
+model ShopperWallet {
+  id                  String       @id @default(cuid())
+  userId              String       @unique
+  user                ShopperUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceMinor        Int          @default(0)  // SHOPMESH Pay balance
+  coinBalance         Int          @default(0)  // loyalty coins (1 coin ≈ RM0.01 redeemable)
+  spayLaterLimitMinor Int          @default(0)  // approved credit limit
+  spayLaterUsedMinor  Int          @default(0)  // outstanding SPayLater usage
+  lastCheckInAt       DateTime?    // last daily coin check-in (24h gate)
+  checkInStreak       Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+// Platform-wide voucher pool shoppers can hold via UserVoucher.
+model Voucher {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  kind            String   @default("discount") // discount | freeshipping | coinsback
+  discountMinor   Int      @default(0)  // flat RM off (discount kind)
+  percentOff      Int?     // e.g. 10 = 10% off (discount kind)
+  maxDiscountMinor Int?    // cap for percent-off vouchers
+  minSpendMinor   Int      @default(0)
+  expiryAt        DateTime
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  holders         UserVoucher[]
+}
+
+// A voucher held by a shopper.
+model UserVoucher {
+  id         String      @id @default(cuid())
+  userId     String
+  user       ShopperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voucherId  String
+  voucher    Voucher     @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  status     String      @default("AVAILABLE") // AVAILABLE | USED | EXPIRED
+  claimedAt  DateTime    @default(now())
+  usedAt     DateTime?
+
+  @@unique([userId, voucherId])
+  @@index([userId, status])
+}
+
+// Buyer activity feed — powers My Likes / Recently Viewed and recommendations.
+model UserActivity {
+  id           String       @id @default(cuid())
+  userId       String
+  user         ShopperUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  activityType String       // LIKE | VIEWED
+  createdAt    DateTime     @default(now())
+
+  @@unique([userId, productId, activityType])
+  @@index([userId, activityType])
 }
 
 model MarketplaceBanner {

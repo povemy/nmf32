@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
+import { getSession } from "@/lib/auth";
 import { computePricing, assertShippingAvailable } from "../pricing";
 import { computeOrderCommissions } from "@/lib/commission";
 import { randomToken } from "@/lib/password";
@@ -96,6 +97,11 @@ export const POST = handle(async (req: Request) => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
 
+  // Link the order to the signed-in shopper account (session wins over the
+  // typed contact email) so it appears in their dashboard purchases.
+  const sess = await getSession();
+  const shopperId = sess?.userType === "shopper" ? sess.userId : null;
+
   const { order, intent } = await db.$transaction(async (tx) => {
     // Re-validate stock inside the transaction (guards concurrent checkouts).
     for (const line of pricing.lines) {
@@ -112,6 +118,7 @@ export const POST = handle(async (req: Request) => {
         customerName,
         customerEmail,
         customerPhone,
+        shopperId,
         status: "payment_pending",
         channel: "storefront",
         currency: store.currency,

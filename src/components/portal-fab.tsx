@@ -37,8 +37,10 @@ function clampPos(x: number, y: number): Pos {
 }
 
 function defaultPos(): Pos {
-  // bottom-right corner, tucked out of the way of centred page actions
-  return clampPos(window.innerWidth - FAB - 18, window.innerHeight - FAB - 18);
+  // Bottom-right corner. On small viewports it sits ABOVE the app-like bottom
+  // navigation bar (64px + safe area) so it never covers the Me / Chat items.
+  const bottomOffset = window.innerWidth < 768 ? 76 : 18;
+  return clampPos(window.innerWidth - FAB - 18, window.innerHeight - FAB - bottomOffset);
 }
 
 // --- tiny external store for the FAB position --------------------------------

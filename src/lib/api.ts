@@ -20,8 +20,10 @@ export function ok<T>(data: T, init?: ResponseInit): NextResponse {
   return NextResponse.json({ data }, init);
 }
 
-export function okPaged<T>(rows: T[], meta: { page: number; size: number; total: number }): NextResponse {
-  return NextResponse.json({ data: rows, meta });
+/** Paged envelope: {data, meta}. `data` is usually an array, but composite
+ *  payloads (e.g. {bucketCounts, orders}) are allowed too. */
+export function okPaged<T>(data: T, meta: { page: number; size: number; total: number }): NextResponse {
+  return NextResponse.json({ data, meta });
 }
 
 export function fail(status: number, code: string, message: string, details?: unknown): NextResponse {

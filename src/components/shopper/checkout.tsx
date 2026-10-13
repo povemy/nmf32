@@ -1403,15 +1403,16 @@ function OrderCard({ o, compact = false }: { o: LookupResultT; compact?: boolean
 
 export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
   const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
+  const [receiptEmail, setReceiptEmail] = useState(email);
   const [data, setData] = useState<LookupResultT | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
 
   const downloadReceipt = async () => {
-    if (receiptBusy || !email || !data) return;
+    if (receiptBusy || !receiptEmail || !data) return;
     setReceiptBusy(true);
     try {
-      const res = await fetch(`/api/orders/receipt?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(data.orderNumber)}`);
+      const res = await fetch(`/api/orders/receipt?email=${encodeURIComponent(receiptEmail)}&orderNumber=${encodeURIComponent(data.orderNumber)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error?.message ?? "Could not generate the receipt");
@@ -1433,28 +1434,44 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
   };
 
   useEffect(() => {
-    if (!email) return;
     let alive = true;
-    fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
+    // 1) Guest path — email + order number lookup (unchanged).
+    const guestLookup = email
+      ? fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
+      : Promise.reject(new Error("no-guest-email"));
+    guestLookup
       .then((d) => {
         if (!alive) return;
         setData(d);
         trackOrderRef(d.orderNumber, email);
       })
-      .catch((e: Error) => {
-        if (alive) setFailed(e.message);
+      .catch(() => {
+        // 2) Account path — signed-in buyer deep-linking from the Me hub;
+        //    ownership enforced server-side by the session's shopperId.
+        fetchJson<LookupResultT & { customerEmail?: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}`)
+          .then((d) => {
+            if (!alive) return;
+            setData(d);
+            if (d.customerEmail) {
+              setReceiptEmail(d.customerEmail);
+              trackOrderRef(d.orderNumber, d.customerEmail);
+            }
+          })
+          .catch((e2: Error) => {
+            if (alive) setFailed(e2.message === "no-guest-email" ? "" : e2.message);
+          });
       });
     return () => {
       alive = false;
     };
   }, [email, orderNumber]);
 
-  if (!email) {
+  if (failed) {
     return (
       <div className="flex-1">
         <EmptyState
-          title="No checkout email found"
-          hint="We couldn't find a recent checkout on this device. Use order lookup with your email and order number instead."
+          title={failed ? "Couldn't load this order" : "No checkout email found"}
+          hint={failed || "We couldn't find a recent checkout on this device, and this order isn't on your account. Use order lookup instead."}
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })} className="min-h-[44px]">
@@ -1472,18 +1489,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-      {failed ? (
-        <EmptyState
-          title="Couldn't load this order"
-          hint={failed}
-          action={
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })}>Order lookup</Button>
-              <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">Continue shopping</Button>
-            </div>
-          }
-        />
-      ) : !data ? (
+      {!data ? (
         <div className="space-y-4">
           <Skeleton className="h-28 rounded-2xl" />
           <Skeleton className="h-56 rounded-2xl" />
