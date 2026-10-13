@@ -97,6 +97,17 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
       clearInterval(t);
     };
   }, [shopperSignedIn]);
+  // instant re-sync when a thread is read inside the messages view (the view
+  // dispatches "shopmesh:chat-sync" instead of prop-drilling a callback)
+  useEffect(() => {
+    if (!shopperSignedIn) return;
+    const sync = () =>
+      fetchJson<{ total: number }>("/api/chat/unread")
+        .then((d) => setUnread(d.total ?? 0))
+        .catch(() => {});
+    window.addEventListener("shopmesh:chat-sync", sync);
+    return () => window.removeEventListener("shopmesh:chat-sync", sync);
+  }, [shopperSignedIn]);
   // opening (or leaving) the messages view should immediately re-sync the badge
   useEffect(() => {
     if (!shopperSignedIn) return;
@@ -762,13 +773,12 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   useEffect(() => {
     if (!shopper) return;
     let alive = true;
-    loadThreads().then((rows) => {
+    loadThreads().then(() => {
       if (!alive) return;
-      if (initialThreadId) {
-        setActiveId(initialThreadId);
-      } else if (rows.length > 0) {
-        setActiveId((cur) => cur ?? rows[0].id);
-      }
+      // Only auto-open when resuming an intent (contact-seller deep link).
+      // Plain entry shows the list first so unread badges stay visible —
+      // auto-reading the newest thread would instantly consume the badge.
+      if (initialThreadId) setActiveId(initialThreadId);
     });
     return () => {
       alive = false;
@@ -779,8 +789,13 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   useEffect(() => {
     if (!activeId) return;
     setMessages(null);
-    loadMessages(activeId);
-  }, [activeId, loadMessages]);
+    // the detail GET marks the thread read server-side — refresh the list so
+    // the unread pill on the row (and the header badge) drops immediately
+    loadMessages(activeId).then(() => {
+      loadThreads();
+      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+    });
+  }, [activeId, loadMessages, loadThreads]);
 
   // live updates via the socket.io chat hub
   useEffect(() => {
@@ -829,6 +844,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       setMessages((prev) => (prev ? [...prev, msg] : [msg]));
       setDraft("");
       loadThreads();
+      window.dispatchEvent(new Event("shopmesh:chat-sync"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the message");
     } finally {
@@ -1300,3 +1316,4 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
     </Sheet>
   );
 }
+

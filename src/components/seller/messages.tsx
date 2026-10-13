@@ -89,21 +89,22 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    loadThreads().then((rows) => {
-      if (alive && rows.length > 0) setActiveId((cur) => cur ?? rows[0].id);
-    });
-    return () => {
-      alive = false;
-    };
+    // List-first entry: no auto-open — auto-reading the newest thread would
+    // instantly consume the unread badge the seller hasn't seen yet.
+    void loadThreads();
   }, [loadThreads]);
 
   useEffect(() => {
     if (!activeId) return;
     setMessages(null);
     setContext(null);
-    loadMessages(activeId);
-  }, [activeId, loadMessages]);
+    // the messages GET marks the thread read server-side — refresh the list so
+    // the unread pill on the row (and the nav badge) drops immediately
+    loadMessages(activeId).then(() => {
+      loadThreads();
+      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+    });
+  }, [activeId, loadMessages, loadThreads]);
 
   // live updates from the chat hub
   useEffect(() => {
@@ -148,6 +149,7 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
       setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");
       loadThreads();
+      window.dispatchEvent(new Event("shopmesh:chat-sync"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the reply");
     } finally {

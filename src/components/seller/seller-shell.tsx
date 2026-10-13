@@ -299,6 +299,16 @@ function useSellerChatUnread(active: SellerNav["view"]) {
       clearInterval(t);
     };
   }, [active]);
+  // instant re-sync when a thread is read inside the messages view (the view
+  // dispatches "shopmesh:chat-sync" instead of prop-drilling a callback)
+  useEffect(() => {
+    const sync = () =>
+      apiGet<{ total: number }>("/api/store/chat/unread")
+        .then((d) => setUnread(d.total ?? 0))
+        .catch(() => {});
+    window.addEventListener("shopmesh:chat-sync", sync);
+    return () => window.removeEventListener("shopmesh:chat-sync", sync);
+  }, []);
   return unread;
 }
 
