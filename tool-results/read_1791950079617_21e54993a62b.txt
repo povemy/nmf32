@@ -1,0 +1,552 @@
+   650→            </Button>
+   651→          }
+   652→        />
+   653→      </div>
+   654→    );
+   655→  }
+   656→
+   657→  const subtotal = quote?.subtotalMinor ?? items.reduce((s, i) => s + i.lineTotalMinor, 0);
+   658→  const freeShipProgress = Math.min(100, Math.round((subtotal / 10000) * 100));
+   659→  const field = (label: string, node: React.ReactNode, err?: string | null) => (
+   660→    <div className="space-y-1.5">
+   661→      <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
+   662→      {node}
+   663→      {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+   664→    </div>
+   665→  );
+   666→
+   667→  return (
+   668→    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+   669→      <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
+   670→      <p className="text-sm text-muted-foreground">
+   671→        Items from <span className="font-semibold text-teal-700">{cart?.storeName}</span> · one store per order
+   672→      </p>
+   673→
+   674→      <div className="mt-5 rounded-xl border bg-card p-4 shadow-soft sm:px-6">
+   675→        <Stepper phase={draft.phase} onJump={(n) => setDraft((d) => ({ ...d, phase: n }))} />
+   676→      </div>
+   677→
+   678→      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+   679→        {/* left column — phases */}
+   680→        <div className="space-y-6 lg:col-span-3">
+   681→          {/* ============================ PHASE 1: INFORMATION ============================ */}
+   682→          {draft.phase === 1 ? (
+   683→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   684→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-contact">
+   685→                <h2 id="checkout-contact" className="flex items-center gap-2 text-base font-bold">
+   686→                  <User className="h-4 w-4 text-teal-700" /> Contact
+   687→                </h2>
+   688→                <div className="grid gap-4 sm:grid-cols-2">
+   689→                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, (tried || draft.name.length > 0) && contactErrors.name)}
+   690→                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, (tried || draft.email.length > 0) && contactErrors.email)}
+   691→                  <div className="sm:col-span-2">
+   692→                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried && contactErrors.phone)}
+   693→                  </div>
+   694→                </div>
+   695→              </section>
+   696→
+   697→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-addresses">
+   698→                <div className="flex items-center justify-between gap-2">
+   699→                  <h2 id="checkout-addresses" className="flex items-center gap-2 text-base font-bold">
+   700→                    <MapPin className="h-4 w-4 text-teal-700" /> Delivery address
+   701→                  </h2>
+   702→                  {!formMode ? (
+   703→                    <Button
+   704→                      variant="outline"
+   705→                      size="sm"
+   706→                      className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50"
+   707→                      onClick={() => {
+   708→                        setForm(emptyForm);
+   709→                        setFormErrors({});
+   710→                        setFormMode({ kind: "new" });
+   711→                      }}
+   712→                    >
+   713→                      <Plus className="h-4 w-4" /> Add address
+   714→                    </Button>
+   715→                  ) : null}
+   716→                </div>
+   717→
+   718→                {addressesLoading ? (
+   719→                  <div className="space-y-2">
+   720→                    <Skeleton className="h-20 rounded-lg" />
+   721→                    <Skeleton className="h-20 rounded-lg" />
+   722→                  </div>
+   723→                ) : (addresses?.length ?? 0) === 0 && !formMode ? (
+   724→                  <p className="rounded-lg border border-dashed border-teal-700/25 bg-teal-50/50 px-4 py-6 text-center text-sm text-muted-foreground">
+   725→                    No saved addresses yet — add one to continue.
+   726→                  </p>
+   727→                ) : null}
+   728→
+   729→                {addresses && addresses.length > 0 ? (
+   730→                  <RadioGroup
+   731→                    value={draft.addressId ?? ""}
+   732→                    onValueChange={(v) => setDraft((d) => ({ ...d, addressId: v }))}
+   733→                    className="gap-2"
+   734→                  >
+   735→                    {addresses.map((a) => (
+   736→                      <div
+   737→                        key={a.id}
+   738→                        className={cn(
+   739→                          "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border p-3.5 transition-colors",
+   740→                          draft.addressId === a.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+   741→                        )}
+   742→                      >
+   743→                        <RadioGroupItem value={a.id} id={`addr-${a.id}`} className="mt-1" />
+   744→                        <Label htmlFor={`addr-${a.id}`} className="min-w-0 flex-1 cursor-pointer space-y-0.5">
+   745→                          <span className="flex flex-wrap items-center gap-2">
+   746→                            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-teal-800">{a.label}</span>
+   747→                            {a.isDefault ? (
+   748→                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+   749→                                <Star className="h-3 w-3" /> Default
+   750→                              </span>
+   751→                            ) : null}
+   752→                            <span className="text-sm font-semibold">{a.name}</span>
+   753→                            {a.phone ? <span className="text-xs text-muted-foreground">· {a.phone}</span> : null}
+   754→                          </span>
+   755→                          <span className="block text-sm text-muted-foreground">
+   756→                            {a.line1}, {a.city}, {a.state} {a.postcode}
+   757→                          </span>
+   758→                        </Label>
+   759→                        <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
+   760→                          {!a.isDefault ? (
+   761→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs text-muted-foreground" onClick={() => makeDefault(a.id)} aria-label={`Set ${a.label} as default address`}>
+   762→                              Set default
+   763→                            </Button>
+   764→                          ) : null}
+   765→                          <Button
+   766→                            variant="ghost"
+   767→                            size="icon"
+   768→                            className="h-8 w-8"
+   769→                            aria-label={`Edit ${a.label} address`}
+   770→                            onClick={() => {
+   771→                              setForm({
+   772→                                label: a.label,
+   773→                                name: a.name,
+   774→                                phone: a.phone ?? "",
+   775→                                line1: a.line1,
+   776→                                city: a.city,
+   777→                                state: a.state,
+   778→                                postcode: a.postcode,
+   779→                                isDefault: a.isDefault,
+   780→                              });
+   781→                              setFormErrors({});
+   782→                              setFormMode({ kind: "edit", address: a });
+   783→                            }}
+   784→                          >
+   785→                            <Pencil className="h-3.5 w-3.5" />
+   786→                          </Button>
+   787→                          {deleteArm === a.id ? (
+   788→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs font-bold text-rose-600 hover:bg-rose-50" onClick={() => removeAddress(a.id)}>
+   789→                              Confirm
+   790→                            </Button>
+   791→                          ) : (
+   792→                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${a.label} address`} onClick={() => setDeleteArm(a.id)}>
+   793→                              <Trash2 className="h-3.5 w-3.5" />
+   794→                            </Button>
+   795→                          )}
+   796→                        </div>
+   797→                      </div>
+   798→                    ))}
+   799→                  </RadioGroup>
+   800→                ) : null}
+   801→
+   802→                {formMode ? (
+   803→                  <div className="space-y-3 rounded-lg border border-teal-700/25 bg-teal-50/40 p-4">
+   804→                    <p className="text-sm font-bold">{formMode.kind === "edit" ? "Edit address" : "New address"}</p>
+   805→                    <AddressFormFields form={form} setForm={setForm} errors={formErrors} />
+   806→                    <div className="flex items-center gap-2">
+   807→                      <input
+   808→                        id="addr-default"
+   809→                        type="checkbox"
+   810→                        checked={form.isDefault}
+   811→                        onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+   812→                        className="h-4 w-4 rounded border-input accent-teal-700"
+   813→                      />
+   814→                      <Label htmlFor="addr-default" className="text-sm font-normal">Set as default address</Label>
+   815→                    </div>
+   816→                    <div className="flex gap-2 pt-1">
+   817→                      <Button onClick={saveAddress} disabled={formBusy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+   818→                        {formBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save address
+   819→                      </Button>
+   820→                      <Button variant="outline" onClick={() => { setFormMode(null); setFormErrors({}); }} className="min-h-[44px]">
+   821→                        Cancel
+   822→                      </Button>
+   823→                    </div>
+   824→                  </div>
+   825→                ) : null}
+   826→              </section>
+   827→
+   828→              {tried && !phase1Valid ? (
+   829→                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+   830→                  Please complete your contact details and choose a delivery address to continue.
+   831→                </p>
+   832→              ) : null}
+   833→
+   834→              <Button size="lg" onClick={goToDelivery} className="w-full min-h-[48px] bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto sm:px-10">
+   835→                Continue to delivery
+   836→              </Button>
+   837→            </motion.div>
+   838→          ) : null}
+   839→
+   840→          {/* ============================ PHASE 2: DELIVERY ============================ */}
+   841→          {draft.phase === 2 ? (
+   842→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   843→              {selectedAddr ? (
+   844→                <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-5 shadow-soft">
+   845→                  <div className="min-w-0">
+   846→                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Deliver to</p>
+   847→                    <p className="pt-0.5 text-sm font-semibold">
+   848→                      {selectedAddr.name} · {selectedAddr.phone ?? draft.phone}
+   849→                    </p>
+   850→                    <p className="text-sm text-muted-foreground">
+   851→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+   852→                    </p>
+   853→                  </div>
+   854→                  <Button variant="outline" size="sm" className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))}>
+   855→                    <Pencil className="h-3.5 w-3.5" /> Change
+   856→                  </Button>
+   857→                </div>
+   858→              ) : null}
+   859→
+   860→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-shipping">
+   861→                <h2 id="checkout-shipping" className="flex items-center gap-2 text-base font-bold">
+   862→                  <Truck className="h-4 w-4 text-teal-700" /> Delivery method
+   863→                </h2>
+   864→
+   865→                {!quote?.shippingOptions ? (
+   866→                  <div className="space-y-2">
+   867→                    <Skeleton className="h-16 rounded-lg" />
+   868→                    <Skeleton className="h-16 rounded-lg" />
+   869→                  </div>
+   870→                ) : (
+   871→                  <RadioGroup
+   872→                    value={draft.shippingRateId}
+   873→                    onValueChange={(v) => setDraft((d) => ({ ...d, shippingRateId: v }))}
+   874→                    className="gap-2"
+   875→                  >
+   876→                    {quote.shippingOptions.map((s) => (
+   877→                      <Label
+   878→                        key={s.id}
+   879→                        htmlFor={`ship-${s.id}`}
+   880→                        className={cn(
+   881→                          "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+   882→                          draft.shippingRateId === s.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50",
+   883→                          !s.available && "cursor-not-allowed opacity-60"
+   884→                        )}
+   885→                        aria-disabled={!s.available}
+   886→                      >
+   887→                        <RadioGroupItem value={s.id} id={`ship-${s.id}`} disabled={!s.available} />
+   888→                        <div className="min-w-0 flex-1">
+   889→                          <p className="text-sm font-semibold">{s.label}</p>
+   890→                          <p className="text-xs text-muted-foreground">{s.available ? s.eta : s.reason}</p>
+   891→                        </div>
+   892→                        <span className={cn("text-sm font-bold", s.freeShipping ? "text-emerald-700" : "text-teal-700")}>
+   893→                          {s.freeShipping ? "FREE" : formatMinor(s.amountMinor)}
+   894→                        </span>
+   895→                      </Label>
+   896→                    ))}
+   897→                  </RadioGroup>
+   898→                )}
+   899→
+   900→                {quote && quote.shippingMinor === 0 && quote.shippingOptions?.find((o) => o.id === draft.shippingRateId)?.id === "standard" ? (
+   901→                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+   902→                    <ShieldCheck className="h-4 w-4" /> Free standard shipping applied (order above RM 100)
+   903→                  </div>
+   904→                ) : (
+   905→                  <div className="pt-1">
+   906→                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+   907→                      <div className="h-full rounded-full bg-brand-gradient transition-all" style={{ width: `${freeShipProgress}%` }} />
+   908→                    </div>
+   909→                    <p className="pt-1.5 text-xs text-muted-foreground">
+   910→                      {freeShipProgress >= 100
+   911→                        ? "You've unlocked FREE standard shipping!"
+   912→                        : `${formatMinor(Math.max(0, 10000 - subtotal))} away from FREE standard shipping`}
+   913→                    </p>
+   914→                  </div>
+   915→                )}
+   916→              </section>
+   917→
+   918→              <div className="flex flex-wrap gap-3">
+   919→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="min-h-[48px]">
+   920→                  Back
+   921→                </Button>
+   922→                <Button size="lg" onClick={goToPayment} disabled={quoting} className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110 sm:flex-none sm:px-10">
+   923→                  Continue to payment
+   924→                </Button>
+   925→              </div>
+   926→            </motion.div>
+   927→          ) : null}
+   928→
+   929→          {/* ============================ PHASE 3: PAYMENT & REVIEW ============================ */}
+   930→          {draft.phase === 3 ? (
+   931→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   932→              {/* review blocks */}
+   933→              <div className="grid gap-3 sm:grid-cols-2">
+   934→                {selectedAddr ? (
+   935→                  <div className="rounded-xl border bg-card p-4 shadow-soft">
+   936→                    <div className="flex items-start justify-between gap-2">
+   937→                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+   938→                        <MapPin className="h-3.5 w-3.5" /> Deliver to
+   939→                      </p>
+   940→                      <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+   941→                        Edit
+   942→                      </button>
+   943→                    </div>
+   944→                    <p className="pt-1 text-sm font-semibold">{selectedAddr.name}</p>
+   945→                    <p className="text-sm text-muted-foreground">
+   946→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+   947→                    </p>
+   948→                  </div>
+   949→                ) : null}
+   950→                <div className="rounded-xl border bg-card p-4 shadow-soft">
+   951→                  <div className="flex items-start justify-between gap-2">
+   952→                    <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+   953→                      <Truck className="h-3.5 w-3.5" /> Delivery
+   954→                    </p>
+   955→                    <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+   956→                      Edit
+   957→                    </button>
+   958→                  </div>
+   959→                  {(() => {
+   960→                    const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+   961→                    return (
+   962→                      <>
+   963→                        <p className="pt-1 text-sm font-semibold">{sel?.label ?? "—"}</p>
+   964→                        <p className="text-sm text-muted-foreground">
+   965→                          {sel ? `${sel.eta} · ${sel.freeShipping ? "FREE" : formatMinor(sel.amountMinor)}` : "—"}
+   966→                        </p>
+   967→                      </>
+   968→                    );
+   969→                  })()}
+   970→                </div>
+   971→              </div>
+   972→
+   973→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-payment">
+   974→                <h2 id="checkout-payment" className="flex items-center gap-2 text-base font-bold">
+   975→                  <CreditCard className="h-4 w-4 text-teal-700" /> Payment method
+   976→                </h2>
+   977→                <RadioGroup value={draft.provider} onValueChange={(v) => setDraft((d) => ({ ...d, provider: v }))} className="gap-2">
+   978→                  {PROVIDERS.map((p) => (
+   979→                    <Label
+   980→                      key={p.id}
+   981→                      htmlFor={`pay-${p.id}`}
+   982→                      className={cn(
+   983→                        "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+   984→                        draft.provider === p.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+   985→                      )}
+   986→                    >
+   987→                      <RadioGroupItem value={p.id} id={`pay-${p.id}`} />
+   988→                      <p.icon className="h-5 w-5 text-teal-700" />
+   989→                      <span className="text-sm font-semibold">{p.label}</span>
+   990→                    </Label>
+   991→                  ))}
+   992→                </RadioGroup>
+   993→                <p className="text-xs text-muted-foreground">
+   994→                  You&apos;ll confirm the payment on the secure SHOPMESH sandbox gateway — no real money moves.
+   995→                </p>
+   996→              </section>
+   997→
+   998→              <Textarea value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="Note to seller (optional)" rows={2} className="min-h-[44px] text-sm" />
+   999→
+  1000→              <div className="flex items-start gap-2.5 rounded-xl border bg-card p-4 shadow-soft">
+  1001→                <input
+  1002→                  id="terms"
+  1003→                  type="checkbox"
+  1004→                  checked={draft.agreed}
+  1005→                  onChange={(e) => setDraft((d) => ({ ...d, agreed: e.target.checked }))}
+  1006→                  className="mt-0.5 h-4 w-4 rounded border-input accent-teal-700"
+  1007→                  aria-required
+  1008→                />
+  1009→                <Label htmlFor="terms" className="text-sm font-normal leading-snug">
+  1010→                  I agree to the SHOPMESH Terms of Service and understand that paid orders can only be refunded through the
+  1011→                  platform&apos;s dispute process.
+  1012→                </Label>
+  1013→              </div>
+  1014→
+  1015→              <div className="flex flex-wrap gap-3">
+  1016→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="min-h-[48px]">
+  1017→                  Back
+  1018→                </Button>
+  1019→                <Button
+  1020→                  size="lg"
+  1021→                  onClick={placeOrder}
+  1022→                  disabled={submitting || quoting || !quote || stockIssues.length > 0}
+  1023→                  className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110"
+  1024→                >
+  1025→                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+  1026→                  {submitting ? "Creating order…" : `Pay ${formatMinor(quote?.totalMinor ?? 0)}`}
+  1027→                </Button>
+  1028→              </div>
+  1029→            </motion.div>
+  1030→          ) : null}
+  1031→        </div>
+  1032→
+  1033→        {/* right column — order summary (shared across phases) */}
+  1034→        <aside className="lg:col-span-2">
+  1035→          <div className="space-y-4 rounded-xl border bg-card p-5 shadow-soft lg:sticky lg:top-20">
+  1036→            <h2 className="text-base font-bold">Order summary</h2>
+  1037→
+  1038→            {stockIssues.length > 0 ? (
+  1039→              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+  1040→                {stockIssues.map((i) => (
+  1041→                  <p key={i.title}>
+  1042→                    Only {i.stock} left of “{i.title}” — you have {i.qty} in cart.
+  1043→                  </p>
+  1044→                ))}
+  1045→                <button type="button" onClick={ctx.openCart} className="pt-1 font-bold underline underline-offset-2">
+  1046→                  Update cart
+  1047→                </button>
+  1048→              </div>
+  1049→            ) : null}
+  1050→
+  1051→            <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
+  1052→              {items.map((i) => (
+  1053→                <li key={i.id} className="flex gap-3">
+  1054→                  <img src={i.imageUrl} alt={i.title} loading="lazy" className="h-14 w-14 rounded-lg border object-cover" />
+  1055→                  <div className="min-w-0 flex-1">
+  1056→                    <p className="line-clamp-2 text-sm font-medium leading-tight">{i.title}</p>
+  1057→                    {i.variantLabel ? <p className="text-xs text-muted-foreground">{i.variantLabel}</p> : null}
+  1058→                    <p className="text-xs text-muted-foreground">Qty {i.qty}</p>
+  1059→                  </div>
+  1060→                  <span className="text-sm font-semibold">{formatMinor(i.lineTotalMinor)}</span>
+  1061→                </li>
+  1062→              ))}
+  1063→            </ul>
+  1064→
+  1065→            {/* coupon */}
+  1066→            <div className="space-y-1.5">
+  1067→              {draft.couponCode ? (
+  1068→                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+  1069→                  <span>
+  1070→                    {draft.couponCode} applied
+  1071→                    {quote?.coupon?.valid && quote.coupon.freeShip ? " — free shipping" : quote?.coupon?.valid ? ` — ${formatMinor(quote.coupon.discountMinor ?? 0)} off` : ""}
+  1072→                  </span>
+  1073→                  <button type="button" onClick={removeCoupon} className="font-bold underline underline-offset-2" aria-label="Remove coupon">
+  1074→                    Remove
+  1075→                  </button>
+  1076→                </div>
+  1077→              ) : (
+  1078→                <>
+  1079→                  <div className="flex gap-2">
+  1080→                    <div className="relative flex-1">
+  1081→                      <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  1082→                      <Input
+  1083→                        value={couponInput}
+  1084→                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+  1085→                        placeholder="Coupon code"
+  1086→                        className="min-h-[44px] pl-8"
+  1087→                        aria-label="Coupon code"
+  1088→                        onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+  1089→                      />
+  1090→                    </div>
+  1091→                    <Button variant="outline" onClick={applyCoupon} disabled={quoting || !couponInput.trim()} className="min-h-[44px] border-teal-700/40 text-teal-800 hover:bg-teal-50">
+  1092→                      {quoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />} Apply
+  1093→                    </Button>
+  1094→                  </div>
+  1095→                  {couponErr ? <p className="text-xs font-medium text-rose-600">{couponErr}</p> : null}
+  1096→                </>
+  1097→              )}
+  1098→            </div>
+  1099→
+  1100→            <Separator />
+  1101→
+  1102→            <dl className="space-y-2 text-sm">
+  1103→              <div className="flex justify-between">
+  1104→                <dt className="text-muted-foreground">Subtotal</dt>
+  1105→                <dd className="font-semibold">{formatMinor(quote?.subtotalMinor ?? 0)}</dd>
+  1106→              </div>
+  1107→              {quote && quote.discountMinor > 0 ? (
+  1108→                <div className="flex justify-between text-emerald-700">
+  1109→                  <dt>Discount</dt>
+  1110→                  <dd className="font-semibold">-{formatMinor(quote.discountMinor)}</dd>
+  1111→                </div>
+  1112→              ) : null}
+  1113→              <div className="flex justify-between">
+  1114→                <dt className="text-muted-foreground">Shipping</dt>
+  1115→                <dd className="font-semibold">{quote ? (quote.shippingMinor === 0 ? "FREE" : formatMinor(quote.shippingMinor)) : "—"}</dd>
+  1116→              </div>
+  1117→              <Separator />
+  1118→              <div className="flex justify-between text-base">
+  1119→                <dt className="font-bold">Total</dt>
+  1120→                <dd className="font-extrabold text-teal-700">{formatMinor(quote?.totalMinor ?? 0)}</dd>
+  1121→              </div>
+  1122→            </dl>
+  1123→
+  1124→            {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
+  1125→            <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
+  1126→          </div>
+  1127→        </aside>
+  1128→      </div>
+  1129→    </div>
+  1130→  );
+  1131→}
+  1132→
+  1133→// =============================================================================================
+  1134→// SANDBOX PAYMENT VIEW
+  1135→// =============================================================================================
+  1136→
+  1137→type PaymentT = {
+  1138→  status: string;
+  1139→  orderNumber: string;
+  1140→  amountMinor: number;
+  1141→  storeName: string;
+  1142→  storeSlug: string;
+  1143→  provider: string;
+  1144→};
+  1145→
+  1146→export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: string }) {
+  1147→  const [payment, setPayment] = useState<PaymentT | null>(null);
+  1148→  const [failed, setFailed] = useState(false);
+  1149→  const [phase, setPhase] = useState<"awaiting" | "success" | "failure" | "expired">("awaiting");
+  1150→  const [busy, setBusy] = useState(false);
+  1151→  const [secondsLeft, setSecondsLeft] = useState(10 * 60);
+  1152→
+  1153→  const load = useCallback(async () => {
+  1154→    try {
+  1155→      const p = await fetchJson<PaymentT>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
+  1156→      setPayment(p);
+  1157→      setFailed(false);
+  1158→      if (p.status === "succeeded") {
+  1159→        setPhase((ph) => (ph === "awaiting" ? "success" : ph));
+  1160→      } else if (p.status === "failed") {
+  1161→        setPhase((ph) => (ph === "awaiting" || ph === "expired" ? "failure" : ph));
+  1162→      } else if (p.status === "expired") {
+  1163→        setPhase((ph) => (ph === "awaiting" ? "expired" : ph));
+  1164→      }
+  1165→    } catch {
+  1166→      setFailed(true);
+  1167→    }
+  1168→  }, [paymentRef]);
+  1169→
+  1170→  // initial load + 3s polling — status is always server-authoritative
+  1171→  useEffect(() => {
+  1172→    load();
+  1173→    const t = setInterval(load, 3000);
+  1174→    return () => clearInterval(t);
+  1175→  }, [load]);
+  1176→
+  1177→  // 10:00 countdown
+  1178→  useEffect(() => {
+  1179→    if (phase !== "awaiting") return;
+  1180→    const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+  1181→    return () => clearInterval(t);
+  1182→  }, [phase]);
+  1183→
+  1184→  const navToOrder = useCallback(
+  1185→    (orderNumber: string) => ctx.nav({ name: "order-status", orderNumber }),
+  1186→    [ctx]
+  1187→  );
+  1188→
+  1189→  // auto-redirect after success
+  1190→  const orderNumber = payment?.orderNumber ?? "";
+  1191→  useEffect(() => {
+  1192→    if (phase !== "success") return;
+  1193→    const t = setTimeout(() => navToOrder(orderNumber), 1600);
+  1194→    return () => clearTimeout(t);
+  1195→  }, [phase, orderNumber, navToOrder]);
+  1196→
+  1197→  async function simulate(result: "succeeded" | "failed") {
+  1198→    if (busy) return;
+  1199→    setBusy(true);
+
+[showing lines 650-1199 of 1799; use offset=1200 with limit to continue reading]

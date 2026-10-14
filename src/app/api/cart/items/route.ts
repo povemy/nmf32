@@ -6,7 +6,8 @@ import { createCartForShopper, findCartForShopper, loadAddableVariant, shapeCart
 export const dynamic = "force-dynamic";
 
 // POST /api/cart/items {variantId, qty>0} — SIGN-IN REQUIRED. The cart is the
-// shopper's account cart (one active cart, currently locked to one store).
+// shopper's account cart (one active cart, many sellers allowed — Option A
+// splits per-seller orders at checkout behind ONE platform payment).
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper(); // 401 SHOPPER_LOGIN_REQUIRED for guests — the client opens the auth dialog
 
@@ -20,22 +21,15 @@ export const POST = handle(async (req: Request) => {
 
   const variant = await loadAddableVariant(variantId);
   if (!variant) throw new ApiError(400, "VARIANT_UNAVAILABLE", "This item is not available for purchase");
-  const storeId = variant.product.store.id;
   if (variant.stock <= 0) throw new ApiError(409, "OUT_OF_STOCK", "This item is out of stock");
 
   let cart = await findCartForShopper(me.id);
-
-  // One cart per store: switching stores replaces the cart (with an explicit notice).
-  let notice: string | null = null;
-  if (cart && cart.storeId !== storeId) {
-    await db.cart.delete({ where: { id: cart.id } }).catch(() => null);
-    cart = null;
-    notice = "Cart replaced — it can only hold items from one seller at a time";
-  }
   if (!cart) {
-    await createCartForShopper(me.id, storeId);
+    await createCartForShopper(me.id);
     cart = (await findCartForShopper(me.id))!;
   }
+
+  let notice: string | null = null;
 
   // Merge duplicates: same variant → increment qty (capped at 99 AND at available stock).
   const existing = cart.items.find((it) => it.variantId === variant.id);

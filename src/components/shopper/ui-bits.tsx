@@ -91,8 +91,17 @@ export type CartItemT = {
   stock: number;
   lineTotalMinor: number;
   imageUrl: string;
+  storeId: string;
   storeSlug: string;
   storeName: string;
+};
+
+export type CartStoreT = {
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
+  itemCount: number;
+  subtotalMinor: number;
 };
 
 export type CartT = {
@@ -100,6 +109,7 @@ export type CartT = {
   storeId: string | null;
   storeSlug: string | null;
   storeName: string | null;
+  stores?: CartStoreT[];
   items: CartItemT[];
 };
 

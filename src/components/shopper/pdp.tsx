@@ -21,16 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { formatMinor } from "@/lib/money";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
@@ -39,7 +29,6 @@ import {
   fetchJson,
   postJson,
   notifyCartUpdated,
-  useCart,
   discountPercent,
   dateShort,
   openProduct,
@@ -92,8 +81,6 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   const [qty, setQty] = useState(1);
   const [imgIdx, setImgIdx] = useState(0);
   const [adding, setAdding] = useState(false);
-  const [confirmSwitch, setConfirmSwitch] = useState(false);
-  const { cart } = useCart();
 
   useEffect(() => {
     let alive = true;
@@ -238,8 +225,6 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     void setLike(!liked);
   };
 
-  const crossStore = Boolean(cart && cart.items.length > 0 && cart.storeSlug && cart.storeSlug !== slug);
-
   async function addToCart(): Promise<boolean> {
     if (!variant || variant.stock <= 0) return false;
     // Carts are ACCOUNT-scoped (no guest cart) — guests must sign in first.
@@ -249,7 +234,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     // and would wrongly re-open the dialog instead of adding the item.
     const meNow = useApp.getState().me;
     if (!(meNow.loaded ? meNow.shopper : null)) {
-      openShopperAuth(() => void requestAdd());
+      openShopperAuth(() => void addToCart());
       return false;
     }
     setAdding(true);
@@ -265,7 +250,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     } catch (e) {
       // Belt-and-braces: an expired session gets the same sign-in-first flow.
       if (e instanceof ApiFail && (e.status === 401 || e.code === "SHOPPER_LOGIN_REQUIRED")) {
-        openShopperAuth(() => void requestAdd());
+        openShopperAuth(() => void addToCart());
         return false;
       }
       toast.error(e instanceof Error ? e.message : "Could not add to cart");
@@ -273,14 +258,6 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     } finally {
       setAdding(false);
     }
-  }
-
-  function requestAdd(): Promise<boolean> {
-    if (crossStore) {
-      setConfirmSwitch(true);
-      return Promise.resolve(false);
-    }
-    return addToCart();
   }
 
   if (failed) {
@@ -433,7 +410,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             <Button
               size="lg"
               disabled={outOfStock || adding}
-              onClick={() => requestAdd()}
+              onClick={() => addToCart()}
               className="min-h-[48px] bg-teal-700 hover:bg-teal-800 text-white"
             >
               <ShoppingCart className="h-4 w-4" />
@@ -443,7 +420,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
               size="lg"
               disabled={outOfStock || adding}
               onClick={async () => {
-                if (await requestAdd()) ctx.nav({ name: "checkout" });
+                if (await addToCart()) ctx.nav({ name: "checkout" });
               }}
               className="min-h-[48px] bg-amber-500 hover:bg-amber-600 text-white"
             >
@@ -564,30 +541,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
         </div>
       ) : null}
 
-      {/* cross-store cart replace confirm */}
-      <AlertDialog open={confirmSwitch} onOpenChange={setConfirmSwitch}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start a new cart?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your current cart contains items from <span className="font-semibold">{cart?.storeName}</span>. Carts hold items from one
-              store at a time — adding this item will replace it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep my cart</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-teal-700 hover:bg-teal-800"
-              onClick={async () => {
-                setConfirmSwitch(false);
-                await addToCart();
-              }}
-            >
-              Replace cart
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* OPTION A: multi-seller carts — no cross-store replace confirm needed */}
     </div>
   );
 }

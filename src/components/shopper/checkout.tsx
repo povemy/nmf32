@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   Star,
   LogIn,
+  Store,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
@@ -174,6 +175,18 @@ type ShippingOptionT = {
   reason: string | null;
 };
 
+type QuoteGroupT = {
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
+  subtotalMinor: number;
+  discountMinor: number;
+  shippingMinor: number;
+  totalMinor: number;
+  itemCount: number;
+  couponApplied: boolean;
+};
+
 type QuoteT = {
   subtotalMinor: number;
   discountMinor: number;
@@ -181,7 +194,18 @@ type QuoteT = {
   totalMinor: number;
   shippingRateId: string;
   coupon: { code: string; valid: boolean; discountMinor?: number; freeShip?: boolean; reason?: string };
-  items: { title: string; variantLabel: string | null; qty: number; unitPriceMinor: number; lineTotalMinor: number; stock: number }[];
+  items: {
+    title: string;
+    variantLabel: string | null;
+    qty: number;
+    unitPriceMinor: number;
+    lineTotalMinor: number;
+    stock: number;
+    storeId?: string;
+    storeSlug?: string;
+    storeName?: string;
+  }[];
+  groups?: QuoteGroupT[];
   shippingOptions?: ShippingOptionT[];
 };
 
@@ -388,8 +412,8 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       if (payloadItems.length === 0) return;
       setQuoting(true);
       try {
+        // OPTION A: no storeSlug — the server groups cart items per seller itself.
         const q = await postJson<QuoteT>("/api/checkout/quote", {
-          storeSlug: cart?.storeSlug,
           items: payloadItems,
           couponCode: code || undefined,
           shippingRateId: rateId,
@@ -402,7 +426,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         setQuoting(false);
       }
     },
-    [cart?.storeSlug, payloadItems]
+    [payloadItems]
   );
 
   // auto-quote on cart / shipping / destination / coupon change
@@ -433,7 +457,6 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     setQuoting(true);
     try {
       const q = await postJson<QuoteT>("/api/checkout/quote", {
-        storeSlug: cart?.storeSlug,
         items: payloadItems,
         couponCode: code,
         shippingRateId: draft.shippingRateId,
@@ -558,10 +581,9 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     }
     setSubmitting(true);
     try {
-      const res = await postJson<{ orderNumber: string; orderPaymentRef: string; totalMinor: number }>(
+      const res = await postJson<{ orderNumber: string; orderNumbers?: string[]; orderPaymentRef: string; totalMinor: number }>(
         "/api/checkout/create",
         {
-          storeSlug: cart?.storeSlug,
           items: payloadItems,
           customer: { name: draft.name.trim(), email: draft.email.trim(), phone: draft.phone.trim() || undefined },
           shippingAddress: {
@@ -577,7 +599,8 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         },
         { "Idempotency-Key": draft.idemKey } // stable per checkout session → safe retries
       );
-      trackOrderRef(res.orderNumber, draft.email.trim().toLowerCase());
+      const orderNumbers = res.orderNumbers?.length ? res.orderNumbers : [res.orderNumber];
+      for (const n of orderNumbers) trackOrderRef(n, draft.email.trim().toLowerCase());
       try {
         window.localStorage.setItem(CONTACT_KEY, JSON.stringify({ name: draft.name, email: draft.email, phone: draft.phone }));
         window.localStorage.setItem(EMAIL_KEY, draft.email.trim().toLowerCase());
@@ -585,7 +608,10 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         /* storage full — non-critical */
       }
       clearDraft();
-      toast.success(`Order ${res.orderNumber} created`, { description: "Redirecting to secure payment…" });
+      toast.success(
+        orderNumbers.length > 1 ? `${orderNumbers.length} orders created` : `Order ${res.orderNumber} created`,
+        { description: "One payment for all sellers — redirecting to secure payment…" }
+      );
       ctx.nav({ name: "pay", ref: res.orderPaymentRef });
     } catch (e) {
       if (e instanceof ApiFail && e.code === "SHIPPING_UNAVAILABLE") {
@@ -656,6 +682,28 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 
   const subtotal = quote?.subtotalMinor ?? items.reduce((s, i) => s + i.lineTotalMinor, 0);
   const freeShipProgress = Math.min(100, Math.round((subtotal / 10000) * 100));
+  // OPTION A: summary grouped per seller (server-validated quote items carry the store name).
+  // Plain computation (no hook) — this sits after the early-return guards.
+  const summaryGroups = (() => {
+    const src = (quote?.items ?? items.map((i) => ({ title: i.title, variantLabel: i.variantLabel, qty: i.qty, lineTotalMinor: i.lineTotalMinor, storeName: i.storeName }))).map(
+      (i, idx) => ({ ...i, key: `${i.title}-${idx}`, storeName: i.storeName ?? "Your items" })
+    );
+    const map = new Map<string, { storeName: string; subtotalMinor: number; rows: { key: string; title: string; variantLabel: string | null; qty: number; lineTotalMinor: number }[] }>();
+    for (const it of src) {
+      const g = map.get(it.storeName);
+      if (g) {
+        g.subtotalMinor += it.lineTotalMinor;
+        g.rows.push({ key: it.key, title: it.title, variantLabel: it.variantLabel, qty: it.qty, lineTotalMinor: it.lineTotalMinor });
+      } else {
+        map.set(it.storeName, {
+          storeName: it.storeName,
+          subtotalMinor: it.lineTotalMinor,
+          rows: [{ key: it.key, title: it.title, variantLabel: it.variantLabel, qty: it.qty, lineTotalMinor: it.lineTotalMinor }],
+        });
+      }
+    }
+    return [...map.values()];
+  })();
   const field = (label: string, node: React.ReactNode, err?: string | null) => (
     <div className="space-y-1.5">
       <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
@@ -668,7 +716,15 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
       <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
       <p className="text-sm text-muted-foreground">
-        Items from <span className="font-semibold text-teal-700">{cart?.storeName}</span> · one store per order
+        {quote?.groups && quote.groups.length > 1 ? (
+          <>
+            Items from <span className="font-semibold text-teal-700">{quote.groups.length} sellers</span> · you pay ONCE — we split the order per seller
+          </>
+        ) : (
+          <>
+            Items from <span className="font-semibold text-teal-700">{quote?.groups?.[0]?.storeName ?? cart?.storeName ?? "your sellers"}</span>
+          </>
+        )}
       </p>
 
       <div className="mt-5 rounded-xl border bg-card p-4 shadow-soft sm:px-6">
@@ -1049,15 +1105,27 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
             ) : null}
 
             <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
-              {items.map((i) => (
-                <li key={i.id} className="flex gap-3">
-                  <img src={i.imageUrl} alt={i.title} loading="lazy" className="h-14 w-14 rounded-lg border object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-sm font-medium leading-tight">{i.title}</p>
-                    {i.variantLabel ? <p className="text-xs text-muted-foreground">{i.variantLabel}</p> : null}
-                    <p className="text-xs text-muted-foreground">Qty {i.qty}</p>
+              {summaryGroups.map((g) => (
+                <li key={g.storeName} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-1">
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-teal-800">
+                      <Store className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{g.storeName}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold text-muted-foreground">{formatMinor(g.subtotalMinor)}</span>
                   </div>
-                  <span className="text-sm font-semibold">{formatMinor(i.lineTotalMinor)}</span>
+                  <ul className="space-y-2">
+                    {g.rows.map((r) => (
+                      <li key={r.key} className="flex gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-sm font-medium leading-tight">{r.title}</p>
+                          {r.variantLabel ? <p className="text-xs text-muted-foreground">{r.variantLabel}</p> : null}
+                          <p className="text-xs text-muted-foreground">Qty {r.qty}</p>
+                        </div>
+                        <span className="text-sm font-semibold">{formatMinor(r.lineTotalMinor)}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
@@ -1122,6 +1190,11 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
             </dl>
 
             {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
+            {quote?.groups && quote.groups.length > 1 ? (
+              <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-3 py-2 text-[11px] leading-snug text-teal-900">
+                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. SHOPMESH collects this payment and disburses each seller their share.
+              </div>
+            ) : null}
             <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
           </div>
         </aside>
@@ -1137,9 +1210,13 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 type PaymentT = {
   status: string;
   orderNumber: string;
+  orderNumbers?: string[];
+  isGroup?: boolean;
+  orderCount?: number;
+  storeNames?: string[];
   amountMinor: number;
-  storeName: string;
-  storeSlug: string;
+  storeName: string | null;
+  storeSlug: string | null;
   provider: string;
 };
 
@@ -1186,13 +1263,18 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
     [ctx]
   );
 
-  // auto-redirect after success
+  // auto-redirect after success — single order → its status page; a multi-seller
+  // group → the order list where every order of the group is visible.
   const orderNumber = payment?.orderNumber ?? "";
+  const isGroupOrder = Boolean(payment?.isGroup && (payment?.orderCount ?? 1) > 1);
   useEffect(() => {
     if (phase !== "success") return;
-    const t = setTimeout(() => navToOrder(orderNumber), 1600);
+    const t = setTimeout(() => {
+      if (isGroupOrder) ctx.nav({ name: "orders" });
+      else navToOrder(orderNumber);
+    }, 1600);
     return () => clearTimeout(t);
-  }, [phase, orderNumber, navToOrder]);
+  }, [phase, orderNumber, isGroupOrder, navToOrder, ctx]);
 
   async function simulate(result: "succeeded" | "failed") {
     if (busy) return;
@@ -1273,9 +1355,13 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <CheckCircle2 className="h-9 w-9 text-emerald-600" />
               </motion.div>
               <p className="text-lg font-extrabold">Payment successful!</p>
-              <p className="text-sm text-muted-foreground">Order {payment.orderNumber} is confirmed.</p>
+              <p className="text-sm text-muted-foreground">
+                {isGroupOrder
+                  ? `${payment.orderCount} seller orders are confirmed — one payment, ${payment.orderCount} parcels.`
+                  : `Order ${payment.orderNumber} is confirmed.`}
+              </p>
               <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">Taking you to your order…</p>
+              <p className="text-xs text-muted-foreground">{isGroupOrder ? "Taking you to your orders…" : "Taking you to your order…"}</p>
             </motion.div>
           ) : phase === "expired" ? (
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
@@ -1286,8 +1372,8 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <Button onClick={() => ctx.nav({ name: "checkout" })} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
                   <ShoppingBag className="h-4 w-4" /> New checkout
                 </Button>
-                <Button variant="outline" onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })} className="min-h-[44px]">
-                  Back to store
+                <Button variant="outline" onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })} className="min-h-[44px]">
+                  {payment.storeSlug ? "Back to store" : "Back to marketplace"}
                 </Button>
               </div>
             </motion.div>
@@ -1300,8 +1386,8 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <Button onClick={retryPayment} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
                   <RotateCcw className="h-4 w-4" /> Retry payment
                 </Button>
-                <Button variant="outline" onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })} className="min-h-[44px]">
-                  Back to store
+                <Button variant="outline" onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })} className="min-h-[44px]">
+                  {payment.storeSlug ? "Back to store" : "Back to marketplace"}
                 </Button>
               </div>
             </motion.div>
@@ -1311,7 +1397,8 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <p className="text-xs uppercase tracking-widest text-muted-foreground">Amount to pay</p>
                 <p className="text-4xl font-extrabold tabular-nums text-teal-800">{formatMinor(payment.amountMinor)}</p>
                 <p className="text-sm text-muted-foreground">
-                  to <span className="font-semibold text-foreground">{payment.storeName}</span>
+                  to <span className="font-semibold text-foreground">{payment.storeName ?? "SHOPMESH Marketplace"}</span>
+                  {isGroupOrder ? <span className="block text-xs">collecting on behalf of {payment.orderCount} sellers — each ships separately</span> : null}
                 </p>
               </div>
 
@@ -1320,8 +1407,12 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <span className="font-semibold">{PROVIDER_LABEL[payment.provider] ?? payment.provider}</span>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
-                <span className="text-muted-foreground">Order</span>
-                <span className="font-mono font-semibold">{payment.orderNumber}</span>
+                <span className="text-muted-foreground">{isGroupOrder ? "Orders" : "Order"}</span>
+                <span className="font-mono font-semibold">
+                  {isGroupOrder && (payment.orderNumbers?.length ?? 0) > 1
+                    ? `${payment.orderNumber} + ${(payment.orderCount ?? payment.orderNumbers?.length ?? 1) - 1} more`
+                    : payment.orderNumber}
+                </span>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
                 <span className="text-muted-foreground">Session expires in</span>
@@ -1356,10 +1447,12 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
         {payment && (phase === "awaiting" || phase === "failure") ? (
           <button
             type="button"
-            onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })}
+            onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })}
             className="mx-auto mt-4 block text-xs text-muted-foreground underline-offset-2 hover:underline"
           >
-            Cancel and return to {payment.storeName} — order {payment.orderNumber} stays unpaid
+            {payment.storeSlug
+              ? `Cancel and return to ${payment.storeName} — order ${payment.orderNumber} stays unpaid`
+              : "Cancel and return to the marketplace — your orders stay unpaid"}
           </button>
         ) : null}
       </motion.div>

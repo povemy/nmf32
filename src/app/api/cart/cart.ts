@@ -71,45 +71,96 @@ export async function findCartForShopper(shopperId: string) {
 }
 
 /** Create a cart for a shopper; a fresh internal token is minted for
- *  order.cartToken reconciliation. Never called without a shopper account. */
-export async function createCartForShopper(shopperId: string, storeId: string) {
-  return db.cart.create({ data: { token: randomToken(16), shopperId, storeId } });
+ *  order.cartToken reconciliation. Never called without a shopper account.
+ *  Multi-seller: one cart, many stores — no storeId lock any more. */
+export async function createCartForShopper(shopperId: string) {
+  return db.cart.create({ data: { token: randomToken(16), shopperId, storeId: null } });
 }
 
 type CartWithItems = NonNullable<Awaited<ReturnType<typeof findCartByToken>>>;
 
+export type ShapedCartItem = {
+  id: string;
+  variantId: string;
+  productId: string;
+  title: string;
+  productSlug: string;
+  variantLabel: string;
+  unitPriceMinor: number;
+  compareAtPriceMinor: number | null;
+  qty: number;
+  stock: number;
+  lineTotalMinor: number;
+  imageUrl: string;
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
+};
+
 export function shapeCart(cart: CartWithItems | null) {
   if (!cart) {
-    return { id: null, storeSlug: null, storeName: null, storeId: null, items: [] };
+    return { id: null, storeId: null, storeSlug: null, storeName: null, stores: [] as ShapedCartStore[], items: [] as ShapedCartItem[] };
   }
+  const items: ShapedCartItem[] = cart.items.map((it) => {
+    const v = it.variant;
+    const p = v.product;
+    const variantLabel = [v.optionName, v.optionValue].filter(Boolean).join(": ") || v.name;
+    return {
+      id: it.id,
+      variantId: v.id,
+      productId: p.id,
+      title: p.title,
+      productSlug: p.slug,
+      variantLabel,
+      unitPriceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor,
+      qty: it.qty,
+      stock: v.stock,
+      lineTotalMinor: v.priceMinor * it.qty,
+      imageUrl: p.images[0]?.url ?? FALLBACK_IMG,
+      storeId: p.store.id,
+      storeSlug: p.store.slug,
+      storeName: p.store.name,
+    };
+  });
+
+  // Multi-seller grouping — the drawer and checkout render one section per store.
+  const storeMap = new Map<string, ShapedCartStore>();
+  for (const it of items) {
+    const g = storeMap.get(it.storeId);
+    if (g) {
+      g.itemCount += 1;
+      g.subtotalMinor += it.lineTotalMinor;
+    } else {
+      storeMap.set(it.storeId, {
+        storeId: it.storeId,
+        storeSlug: it.storeSlug,
+        storeName: it.storeName,
+        itemCount: 1,
+        subtotalMinor: it.lineTotalMinor,
+      });
+    }
+  }
+  const stores = [...storeMap.values()];
+  // Legacy single-store fields: only meaningful when everything comes from one store.
+  const single = stores.length === 1 ? stores[0] : null;
   return {
     id: cart.id,
     storeId: cart.storeId,
-    storeSlug: cart.items[0]?.variant.product.store.slug ?? null,
-    storeName: cart.items[0]?.variant.product.store.name ?? null,
-    items: cart.items.map((it) => {
-      const v = it.variant;
-      const p = v.product;
-      const variantLabel = [v.optionName, v.optionValue].filter(Boolean).join(": ") || v.name;
-      return {
-        id: it.id,
-        variantId: v.id,
-        productId: p.id,
-        title: p.title,
-        productSlug: p.slug,
-        variantLabel,
-        unitPriceMinor: v.priceMinor,
-        compareAtPriceMinor: v.compareAtPriceMinor,
-        qty: it.qty,
-        stock: v.stock,
-        lineTotalMinor: v.priceMinor * it.qty,
-        imageUrl: p.images[0]?.url ?? FALLBACK_IMG,
-        storeSlug: p.store.slug,
-        storeName: p.store.name,
-      };
-    }),
+    storeSlug: single?.storeSlug ?? null,
+    storeName: single?.storeName ?? null,
+    stores,
+    items,
   };
 }
+
+export type ShapedCartStore = {
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
+  itemCount: number;
+  subtotalMinor: number;
+};
 
 /** Validate a variant for adding to cart: variant + product active, store live. */
 export async function loadAddableVariant(variantId: string) {

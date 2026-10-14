@@ -1,0 +1,1799 @@
+     1→"use client";
+     2→// ============================================================================
+     3→// Shopper — THREE-PHASE CHECKOUT (Information → Delivery → Payment), sandbox
+     4→// payment, order status, order history + lookup. All totals, delivery options
+     5→// and stock come from the server (/api/checkout/quote) — never from the client.
+     6→// ============================================================================
+     7→import { useCallback, useEffect, useMemo, useState } from "react";
+     8→import { motion } from "framer-motion";
+     9→import {
+    10→  CreditCard,
+    11→  Landmark,
+    12→  Wallet,
+    13→  Smartphone,
+    14→  Tag,
+    15→  TicketPercent,
+    16→  Loader2,
+    17→  CheckCircle2,
+    18→  XCircle,
+    19→  Clock,
+    20→  Copy,
+    21→  MessagesSquare,
+    22→  ReceiptText,
+    23→  PackageSearch,
+    24→  ShoppingBag,
+    25→  RotateCcw,
+    26→  MapPin,
+    27→  Pencil,
+    28→  Trash2,
+    29→  Plus,
+    30→  Check,
+    31→  User,
+    32→  Truck,
+    33→  ShieldCheck,
+    34→  Star,
+    35→  LogIn,
+    36→} from "lucide-react";
+    37→import { toast } from "sonner";
+    38→import { useApp } from "@/lib/app-store";
+    39→import { Button } from "@/components/ui/button";
+    40→import { Input } from "@/components/ui/input";
+    41→import { Label } from "@/components/ui/label";
+    42→import { Textarea } from "@/components/ui/textarea";
+    43→import { Separator } from "@/components/ui/separator";
+    44→import { Skeleton } from "@/components/ui/skeleton";
+    45→import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+    46→import { formatMinor } from "@/lib/money";
+    47→import { cn } from "@/lib/utils";
+    48→import {
+    49→  fetchJson,
+    50→  postJson,
+    51→  patchJson,
+    52→  deleteJson,
+    53→  notifyCartUpdated,
+    54→  trackOrderRef,
+    55→  readOrderRefs,
+    56→  useCart,
+    57→  EmptyState,
+    58→  StatusBadge,
+    59→  StatusTimeline,
+    60→  ApiFail,
+    61→  dateShort,
+    62→  type LookupResultT,
+    63→  type ShopperCtx,
+    64→} from "./ui-bits";
+    65→
+    66→// ---------------------------------------------------------------------------
+    67→// constants
+    68→// ---------------------------------------------------------------------------
+    69→
+    70→const MY_STATES = [
+    71→  "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Melaka", "Negeri Sembilan",
+    72→  "Pahang", "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
+    73→];
+    74→
+    75→const PROVIDERS = [
+    76→  { id: "fpx_toyyibpay", label: "FPX Online Banking", icon: Landmark },
+    77→  { id: "tng", label: "Touch 'n Go eWallet", icon: Smartphone },
+    78→  { id: "grabpay", label: "GrabPay", icon: Wallet },
+    79→  { id: "card_stripe", label: "Card (Stripe MY)", icon: CreditCard },
+    80→];
+    81→
+    82→const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.label]));
+    83→
+    84→const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    85→const PHONE_RE = /^[+()\d\s-]{6,20}$/;
+    86→const POSTCODE_RE = /^\d{5}$/;
+    87→
+    88→// ---------------------------------------------------------------------------
+    89→// checkout draft — one shared state for all three phases, persisted to
+    90→// sessionStorage so navigation away/back (and refreshes) never lose input.
+    91→// ---------------------------------------------------------------------------
+    92→
+    93→type DraftT = {
+    94→  phase: 1 | 2 | 3;
+    95→  name: string;
+    96→  email: string;
+    97→  phone: string;
+    98→  addressId: string | null;
+    99→  shippingRateId: string;
+   100→  provider: string;
+   101→  couponCode: string;
+   102→  note: string;
+   103→  agreed: boolean;
+   104→  idemKey: string;
+   105→};
+   106→
+   107→const DRAFT_KEY = "sm_checkout_draft";
+   108→const CONTACT_KEY = "sm_shopper_contact";
+   109→const EMAIL_KEY = "sm_shopper_email";
+   110→
+   111→function makeIdemKey(): string {
+   112→  try {
+   113→    return crypto.randomUUID();
+   114→  } catch {
+   115→    return `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+   116→  }
+   117→}
+   118→
+   119→function loadDraft(): DraftT {
+   120→  const savedContact: Record<string, string> = (() => {
+   121→    if (typeof window === "undefined") return {};
+   122→    try {
+   123→      return JSON.parse(window.localStorage.getItem(CONTACT_KEY) ?? "{}") as Record<string, string>;
+   124→    } catch {
+   125→      return {};
+   126→    }
+   127→  })();
+   128→  const base: DraftT = {
+   129→    phase: 1,
+   130→    name: savedContact.name ?? "",
+   131→    email: savedContact.email ?? "",
+   132→    phone: savedContact.phone ?? "",
+   133→    addressId: null,
+   134→    shippingRateId: "standard",
+   135→    provider: "fpx_toyyibpay",
+   136→    couponCode: "",
+   137→    note: "",
+   138→    agreed: false,
+   139→    idemKey: makeIdemKey(),
+   140→  };
+   141→  if (typeof window === "undefined") return base;
+   142→  try {
+   143→    const raw = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY) ?? "{}") as Partial<DraftT>;
+   144→    return {
+   145→      ...base,
+   146→      ...raw,
+   147→      phase: raw.phase === 2 || raw.phase === 3 ? raw.phase : 1,
+   148→      idemKey: raw.idemKey || base.idemKey, // stable across retries → idempotent resubmits
+   149→    };
+   150→  } catch {
+   151→    return base;
+   152→  }
+   153→}
+   154→
+   155→function persistDraft(d: DraftT) {
+   156→  if (typeof window !== "undefined") window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+   157→}
+   158→
+   159→function clearDraft() {
+   160→  if (typeof window !== "undefined") window.sessionStorage.removeItem(DRAFT_KEY);
+   161→}
+   162→
+   163→// ---------------------------------------------------------------------------
+   164→// server types
+   165→// ---------------------------------------------------------------------------
+   166→
+   167→type ShippingOptionT = {
+   168→  id: string;
+   169→  label: string;
+   170→  eta: string;
+   171→  amountMinor: number;
+   172→  freeShipping: boolean;
+   173→  available: boolean;
+   174→  reason: string | null;
+   175→};
+   176→
+   177→type QuoteT = {
+   178→  subtotalMinor: number;
+   179→  discountMinor: number;
+   180→  shippingMinor: number;
+   181→  totalMinor: number;
+   182→  shippingRateId: string;
+   183→  coupon: { code: string; valid: boolean; discountMinor?: number; freeShip?: boolean; reason?: string };
+   184→  items: { title: string; variantLabel: string | null; qty: number; unitPriceMinor: number; lineTotalMinor: number; stock: number }[];
+   185→  shippingOptions?: ShippingOptionT[];
+   186→};
+   187→
+   188→type AddressT = {
+   189→  id: string;
+   190→  label: string;
+   191→  name: string;
+   192→  phone: string | null;
+   193→  line1: string;
+   194→  city: string;
+   195→  state: string;
+   196→  postcode: string;
+   197→  isDefault: boolean;
+   198→};
+   199→
+   200→// =============================================================================================
+   201→// PROGRESS STEPPER
+   202→// =============================================================================================
+   203→
+   204→const STEPS = [
+   205→  { n: 1 as const, label: "Information", icon: User },
+   206→  { n: 2 as const, label: "Delivery", icon: Truck },
+   207→  { n: 3 as const, label: "Payment", icon: CreditCard },
+   208→];
+   209→
+   210→function Stepper({ phase, onJump }: { phase: 1 | 2 | 3; onJump: (n: 1 | 2) => void }) {
+   211→  return (
+   212→    <ol className="flex min-w-0 items-center gap-2 overflow-hidden sm:gap-3" aria-label="Checkout progress">
+   213→      {STEPS.map((s, i) => {
+   214→        const done = phase > s.n;
+   215→        const current = phase === s.n;
+   216→        return (
+   217→          <li key={s.n} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none sm:gap-3">
+   218→            <button
+   219→              type="button"
+   220→              disabled={!done}
+   221→              onClick={() => done && onJump(s.n)}
+   222→              className="flex min-w-0 items-center gap-2 disabled:cursor-default"
+   223→              aria-current={current ? "step" : undefined}
+   224→              aria-label={`Step ${s.n}: ${s.label}${done ? " (completed — click to edit)" : ""}`}
+   225→            >
+   226→              <span
+   227→                className={cn(
+   228→                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+   229→                  done && "border-transparent bg-brand-gradient text-white shadow-sm",
+   230→                  current && "border-teal-600 bg-teal-50 text-teal-700",
+   231→                  !done && !current && "border-muted-foreground/25 bg-card text-muted-foreground"
+   232→                )}
+   233→              >
+   234→                {done ? <Check className="h-4 w-4" aria-hidden="true" /> : s.n}
+   235→              </span>
+   236→              <span
+   237→                className={cn(
+   238→                  "truncate text-xs font-bold sm:text-sm",
+   239→                  current ? "text-teal-800" : done ? "text-foreground" : "text-muted-foreground"
+   240→                )}
+   241→              >
+   242→                {s.label}
+   243→              </span>
+   244→            </button>
+   245→            {i < STEPS.length - 1 ? (
+   246→              <span className={cn("h-0.5 min-w-4 flex-1 rounded-full", phase > s.n ? "bg-brand-gradient" : "bg-border")} aria-hidden="true" />
+   247→            ) : null}
+   248→          </li>
+   249→        );
+   250→      })}
+   251→    </ol>
+   252→  );
+   253→}
+   254→
+   255→// =============================================================================================
+   256→// ADDRESS BOOK (guest device-scoped, persisted via /api/checkout/addresses)
+   257→// =============================================================================================
+   258→
+   259→const emptyForm = { label: "Home", name: "", phone: "", line1: "", city: "", state: "Selangor", postcode: "", isDefault: false };
+   260→
+   261→function AddressFormFields({
+   262→  form,
+   263→  setForm,
+   264→  errors,
+   265→}: {
+   266→  form: typeof emptyForm;
+   267→  setForm: (f: typeof emptyForm) => void;
+   268→  errors: Record<string, string | null>;
+   269→}) {
+   270→  const f = (label: string, node: React.ReactNode, err?: string | null, required = true) => (
+   271→    <div className="space-y-1.5">
+   272→      <Label className="text-xs font-semibold text-muted-foreground">{label}{required ? " *" : ""}</Label>
+   273→      {node}
+   274→      {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+   275→    </div>
+   276→  );
+   277→  return (
+   278→    <div className="grid gap-3 sm:grid-cols-2">
+   279→      {f("Label", <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Home / Office" className="min-h-[44px]" required={false} />)}
+   280→      {f("Recipient name", <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Aina Binti Ahmad" className="min-h-[44px]" />, errors.name)}
+   281→      {f("Phone", <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="012-345 6789" className="min-h-[44px]" required={false} />, errors.phone)}
+   282→      {f("Postcode", <Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value.replace(/\D/g, "").slice(0, 5) })} inputMode="numeric" placeholder="43650" className="min-h-[44px]" />, errors.postcode)}
+   283→      <div className="sm:col-span-2">
+   284→        {f("Street address", <Textarea value={form.line1} onChange={(e) => setForm({ ...form, line1: e.target.value })} placeholder="42 Jalan Merdeka, Taman Setia" rows={2} className="min-h-[44px]" />, errors.line1)}
+   285→      </div>
+   286→      {f("City", <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Kuala Lumpur" className="min-h-[44px]" />, errors.city)}
+   287→      {f(
+   288→        "State",
+   289→        <select
+   290→          value={form.state}
+   291→          onChange={(e) => setForm({ ...form, state: e.target.value })}
+   292→          className="flex h-11 min-h-[44px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/40"
+   293→          aria-label="State"
+   294→        >
+   295→          {MY_STATES.map((s) => (
+   296→            <option key={s} value={s}>{s}</option>
+   297→          ))}
+   298→        </select>,
+   299→        errors.state
+   300→      )}
+   301→    </div>
+   302→  );
+   303→}
+   304→
+   305→function validateForm(form: typeof emptyForm): Record<string, string | null> {
+   306→  return {
+   307→    name: form.name.trim().length >= 2 ? null : "Recipient name is required",
+   308→    phone: !form.phone.trim() || PHONE_RE.test(form.phone.trim()) ? null : "Enter a valid phone number",
+   309→    line1: form.line1.trim() ? null : "Street address is required",
+   310→    city: form.city.trim() ? null : "City is required",
+   311→    state: form.state ? null : "State is required",
+   312→    postcode: POSTCODE_RE.test(form.postcode.trim()) ? null : "5-digit postcode required",
+   313→  };
+   314→}
+   315→
+   316→// =============================================================================================
+   317→// CHECKOUT VIEW — three phases
+   318→// =============================================================================================
+   319→
+   320→export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
+   321→  const { cart, loading: cartLoading, refresh: refreshCart } = useCart();
+   322→  const items = cart?.items ?? [];
+   323→
+   324→  const me = useApp((s) => s.me);
+   325→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+   326→  const shopper = me.loaded ? me.shopper : null;
+   327→
+   328→  const [draft, setDraft] = useState<DraftT>(loadDraft);
+   329→  useEffect(() => persistDraft(draft), [draft]);
+   330→
+   331→  // Contact details come from the ACCOUNT (carts/checkout are account-scoped);
+   332→  // only fill blanks so the shopper can still override per-order (gifts etc.).
+   333→  useEffect(() => {
+   334→    if (!shopper) return;
+   335→    setDraft((d) => ({
+   336→      ...d,
+   337→      name: d.name.trim() || shopper.fullName,
+   338→      email: d.email.trim() || shopper.email,
+   339→      phone: d.phone.trim() || shopper.phone || "",
+   340→    }));
+   341→  }, [shopper]);
+   342→
+   343→  const [addresses, setAddresses] = useState<AddressT[] | null>(null);
+   344→  const [addressesLoading, setAddressesLoading] = useState(true);
+   345→  const [formMode, setFormMode] = useState<null | { kind: "new" } | { kind: "edit"; address: AddressT }>(null);
+   346→  const [form, setForm] = useState(emptyForm);
+   347→  const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
+   348→  const [formBusy, setFormBusy] = useState(false);
+   349→  const [deleteArm, setDeleteArm] = useState<string | null>(null);
+   350→
+   351→  const [quote, setQuote] = useState<QuoteT | null>(null);
+   352→  const [quoting, setQuoting] = useState(false);
+   353→  const [couponInput, setCouponInput] = useState("");
+   354→  const [couponErr, setCouponErr] = useState<string | null>(null);
+   355→  const [tried, setTried] = useState(false);
+   356→  const [submitting, setSubmitting] = useState(false);
+   357→
+   358→  const selectedAddr = useMemo(
+   359→    () => addresses?.find((a) => a.id === draft.addressId) ?? null,
+   360→    [addresses, draft.addressId]
+   361→  );
+   362→
+   363→  // load the device address book once
+   364→  useEffect(() => {
+   365→    let alive = true;
+   366→    fetchJson<{ addresses: AddressT[] }>("/api/checkout/addresses")
+   367→      .then((d) => {
+   368→        if (!alive) return;
+   369→        setAddresses(d.addresses);
+   370→        setDraft((dft) => {
+   371→          if (dft.addressId && d.addresses.some((a) => a.id === dft.addressId)) return dft;
+   372→          const def = d.addresses.find((a) => a.isDefault) ?? d.addresses[0];
+   373→          return def ? { ...dft, addressId: def.id } : dft;
+   374→        });
+   375→      })
+   376→      .catch(() => alive && setAddresses([]))
+   377→      .finally(() => alive && setAddressesLoading(false));
+   378→    return () => {
+   379→      alive = false;
+   380→    };
+   381→  }, []);
+   382→
+   383→  const payloadItems = useMemo(() => items.map((i) => ({ variantId: i.variantId, qty: i.qty })), [items]);
+   384→  const destState = selectedAddr?.state ?? null;
+   385→
+   386→  const refreshQuote = useCallback(
+   387→    async (code: string, rateId: string, state: string | null) => {
+   388→      if (payloadItems.length === 0) return;
+   389→      setQuoting(true);
+   390→      try {
+   391→        const q = await postJson<QuoteT>("/api/checkout/quote", {
+   392→          storeSlug: cart?.storeSlug,
+   393→          items: payloadItems,
+   394→          couponCode: code || undefined,
+   395→          shippingRateId: rateId,
+   396→          state: state ?? undefined,
+   397→        });
+   398→        setQuote(q);
+   399→      } catch {
+   400→        setQuote(null);
+   401→      } finally {
+   402→        setQuoting(false);
+   403→      }
+   404→    },
+   405→    [cart?.storeSlug, payloadItems]
+   406→  );
+   407→
+   408→  // auto-quote on cart / shipping / destination / coupon change
+   409→  useEffect(() => {
+   410→    refreshQuote(draft.couponCode, draft.shippingRateId, destState);
+   411→  }, [refreshQuote, draft.couponCode, draft.shippingRateId, destState]);
+   412→
+   413→  // delivery option became invalid for this destination → fall back to Standard (server rule)
+   414→  useEffect(() => {
+   415→    if (!quote?.shippingOptions) return;
+   416→    const sel = quote.shippingOptions.find((o) => o.id === draft.shippingRateId);
+   417→    if (sel && !sel.available) {
+   418→      setDraft((d) => ({ ...d, shippingRateId: "standard" }));
+   419→      toast.error(sel.reason ?? "Selected delivery is unavailable — switched to Standard");
+   420→    }
+   421→  }, [quote, draft.shippingRateId]);
+   422→
+   423→  const stockIssues = useMemo(
+   424→    () => (quote?.items ?? []).filter((i) => i.qty > i.stock),
+   425→    [quote]
+   426→  );
+   427→
+   428→  // ------------------------------------------------------------- coupon
+   429→  async function applyCoupon() {
+   430→    const code = couponInput.trim().toUpperCase();
+   431→    if (!code) return;
+   432→    setCouponErr(null);
+   433→    setQuoting(true);
+   434→    try {
+   435→      const q = await postJson<QuoteT>("/api/checkout/quote", {
+   436→        storeSlug: cart?.storeSlug,
+   437→        items: payloadItems,
+   438→        couponCode: code,
+   439→        shippingRateId: draft.shippingRateId,
+   440→        state: destState ?? undefined,
+   441→      });
+   442→      if (q.coupon?.valid) {
+   443→        setDraft((d) => ({ ...d, couponCode: code }));
+   444→        setQuote(q);
+   445→        toast.success(`Coupon ${code} applied`, {
+   446→          description: q.coupon.freeShip ? "Free shipping unlocked" : `You save ${formatMinor(q.coupon.discountMinor ?? 0)}`,
+   447→        });
+   448→      } else {
+   449→        setCouponErr(q.coupon?.reason ?? "Invalid coupon");
+   450→      }
+   451→    } catch (e) {
+   452→      setCouponErr(e instanceof Error ? e.message : "Could not validate coupon");
+   453→    } finally {
+   454→      setQuoting(false);
+   455→    }
+   456→  }
+   457→
+   458→  function removeCoupon() {
+   459→    setDraft((d) => ({ ...d, couponCode: "" }));
+   460→    setCouponInput("");
+   461→    setCouponErr(null);
+   462→  }
+   463→
+   464→  // ------------------------------------------------------------- address book ops
+   465→  async function saveAddress() {
+   466→    const errs = validateForm(form);
+   467→    setFormErrors(errs);
+   468→    if (Object.values(errs).some(Boolean)) return;
+   469→    setFormBusy(true);
+   470→    try {
+   471→      const payload = { ...form, name: form.name.trim(), line1: form.line1.trim(), city: form.city.trim(), postcode: form.postcode.trim() };
+   472→      const res =
+   473→        formMode?.kind === "edit"
+   474→          ? await patchJson<{ address: AddressT; addresses: AddressT[] }>(`/api/checkout/addresses/${formMode.address.id}`, payload)
+   475→          : await postJson<{ address: AddressT; addresses: AddressT[] }>("/api/checkout/addresses", payload);
+   476→      setAddresses(res.addresses);
+   477→      setDraft((d) => ({ ...d, addressId: res.address.id }));
+   478→      setFormMode(null);
+   479→      setForm(emptyForm);
+   480→      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+   481→      toast.success(formMode?.kind === "edit" ? "Address updated" : "Address saved", {
+   482→        description: `${res.address.line1}, ${res.address.city} ${res.address.postcode}`,
+   483→      });
+   484→    } catch (e) {
+   485→      toast.error(e instanceof Error ? e.message : "Could not save address");
+   486→    } finally {
+   487→      setFormBusy(false);
+   488→    }
+   489→  }
+   490→
+   491→  async function removeAddress(id: string) {
+   492→    try {
+   493→      const res = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
+   494→      setAddresses(res.addresses);
+   495→      setDeleteArm(null);
+   496→      setDraft((d) => (d.addressId === id ? { ...d, addressId: res.addresses.find((a) => a.isDefault)?.id ?? res.addresses[0]?.id ?? null } : d));
+   497→      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+   498→      toast.success("Address removed");
+   499→    } catch (e) {
+   500→      toast.error(e instanceof Error ? e.message : "Could not remove address");
+   501→    }
+   502→  }
+   503→
+   504→  async function makeDefault(id: string) {
+   505→    try {
+   506→      const res = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
+   507→      setAddresses(res.addresses);
+   508→      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+   509→      toast.success("Default address updated");
+   510→    } catch (e) {
+   511→      toast.error(e instanceof Error ? e.message : "Could not update address");
+   512→    }
+   513→  }
+   514→
+   515→  // ------------------------------------------------------------- phase validation
+   516→  const contactErrors = {
+   517→    name: draft.name.trim().length >= 2 ? null : "Full name is required",
+   518→    email: EMAIL_RE.test(draft.email.trim()) ? null : "Enter a valid email address",
+   519→    phone: !draft.phone.trim() || PHONE_RE.test(draft.phone.trim()) ? null : "Enter a valid phone number",
+   520→  };
+   521→  const contactValid = !Object.values(contactErrors).some(Boolean);
+   522→  const addressPicked = !!selectedAddr;
+   523→  const phase1Valid = contactValid && addressPicked;
+   524→
+   525→  function goToDelivery() {
+   526→    setTried(true);
+   527→    if (!phase1Valid) {
+   528→      if (!addressPicked) toast.error("Choose or save a delivery address first");
+   529→      return;
+   530→    }
+   531→    setTried(false);
+   532→    setDraft((d) => ({ ...d, phase: 2 }));
+   533→    window.scrollTo({ top: 0, behavior: "smooth" });
+   534→  }
+   535→
+   536→  function goToPayment() {
+   537→    const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+   538→    if (sel && !sel.available) {
+   539→      toast.error(sel.reason ?? "Please pick an available delivery option");
+   540→      return;
+   541→    }
+   542→    setDraft((d) => ({ ...d, phase: 3 }));
+   543→    window.scrollTo({ top: 0, behavior: "smooth" });
+   544→  }
+   545→
+   546→  // ------------------------------------------------------------- place order
+   547→  async function placeOrder() {
+   548→    if (submitting) return; // double-tap guard
+   549→    setTried(true);
+   550→    if (!quote || !selectedAddr || items.length === 0) return;
+   551→    if (stockIssues.length > 0) {
+   552→      toast.error("Some items exceed available stock — please update your cart");
+   553→      return;
+   554→    }
+   555→    if (!draft.agreed) {
+   556→      toast.error("Please accept the terms to place your order");
+   557→      return;
+   558→    }
+   559→    setSubmitting(true);
+   560→    try {
+   561→      const res = await postJson<{ orderNumber: string; orderPaymentRef: string; totalMinor: number }>(
+   562→        "/api/checkout/create",
+   563→        {
+   564→          storeSlug: cart?.storeSlug,
+   565→          items: payloadItems,
+   566→          customer: { name: draft.name.trim(), email: draft.email.trim(), phone: draft.phone.trim() || undefined },
+   567→          shippingAddress: {
+   568→            line1: selectedAddr.line1,
+   569→            city: selectedAddr.city,
+   570→            state: selectedAddr.state,
+   571→            postcode: selectedAddr.postcode,
+   572→          },
+   573→          couponCode: draft.couponCode || undefined,
+   574→          shippingRateId: draft.shippingRateId,
+   575→          provider: draft.provider,
+   576→          customerNote: draft.note.trim() || undefined,
+   577→        },
+   578→        { "Idempotency-Key": draft.idemKey } // stable per checkout session → safe retries
+   579→      );
+   580→      trackOrderRef(res.orderNumber, draft.email.trim().toLowerCase());
+   581→      try {
+   582→        window.localStorage.setItem(CONTACT_KEY, JSON.stringify({ name: draft.name, email: draft.email, phone: draft.phone }));
+   583→        window.localStorage.setItem(EMAIL_KEY, draft.email.trim().toLowerCase());
+   584→      } catch {
+   585→        /* storage full — non-critical */
+   586→      }
+   587→      clearDraft();
+   588→      toast.success(`Order ${res.orderNumber} created`, { description: "Redirecting to secure payment…" });
+   589→      ctx.nav({ name: "pay", ref: res.orderPaymentRef });
+   590→    } catch (e) {
+   591→      if (e instanceof ApiFail && e.code === "SHIPPING_UNAVAILABLE") {
+   592→        setDraft((d) => ({ ...d, phase: 2 }));
+   593→      }
+   594→      if (e instanceof ApiFail && e.code === "OUT_OF_STOCK") {
+   595→        refreshCart();
+   596→      }
+   597→      toast.error(e instanceof Error ? e.message : "Checkout failed — please try again");
+   598→    } finally {
+   599→      setSubmitting(false);
+   600→    }
+   601→  }
+   602→
+   603→  // ------------------------------------------------------------- guards
+   604→  if (cartLoading) {
+   605→    return (
+   606→      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+   607→        <Skeleton className="mb-6 h-8 w-48" />
+   608→        <div className="grid gap-6 lg:grid-cols-3">
+   609→          <div className="space-y-4 lg:col-span-2">
+   610→            <Skeleton className="h-64 rounded-xl" />
+   611→            <Skeleton className="h-40 rounded-xl" />
+   612→          </div>
+   613→          <Skeleton className="h-80 rounded-xl" />
+   614→        </div>
+   615→      </div>
+   616→    );
+   617→  }
+   618→
+   619→  if (items.length === 0) {
+   620→    return (
+   621→      <div className="flex-1">
+   622→        <EmptyState
+   623→          icon={ShoppingBag}
+   624→          title="Your cart is empty"
+   625→          hint="Add something lovely from the marketplace or a store first."
+   626→          action={
+   627→            <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
+   628→              Start shopping
+   629→            </Button>
+   630→          }
+   631→        />
+   632→      </div>
+   633→    );
+   634→  }
+   635→
+   636→  // Checkout is account-only — carts, addresses and orders all live on the account.
+   637→  if (!shopper) {
+   638→    return (
+   639→      <div className="flex-1">
+   640→        <EmptyState
+   641→          icon={LogIn}
+   642→          title="Sign in to check out"
+   643→          hint="Your cart, saved addresses and orders are tied to your SHOPMESH account so they follow you on every device."
+   644→          action={
+   645→            <Button
+   646→              onClick={() => openShopperAuth()}
+   647→              className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
+   648→            >
+   649→              <LogIn className="h-4 w-4" /> Sign in or create account
+   650→            </Button>
+   651→          }
+   652→        />
+   653→      </div>
+   654→    );
+   655→  }
+   656→
+   657→  const subtotal = quote?.subtotalMinor ?? items.reduce((s, i) => s + i.lineTotalMinor, 0);
+   658→  const freeShipProgress = Math.min(100, Math.round((subtotal / 10000) * 100));
+   659→  const field = (label: string, node: React.ReactNode, err?: string | null) => (
+   660→    <div className="space-y-1.5">
+   661→      <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
+   662→      {node}
+   663→      {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+   664→    </div>
+   665→  );
+   666→
+   667→  return (
+   668→    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+   669→      <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
+   670→      <p className="text-sm text-muted-foreground">
+   671→        Items from <span className="font-semibold text-teal-700">{cart?.storeName}</span> · one store per order
+   672→      </p>
+   673→
+   674→      <div className="mt-5 rounded-xl border bg-card p-4 shadow-soft sm:px-6">
+   675→        <Stepper phase={draft.phase} onJump={(n) => setDraft((d) => ({ ...d, phase: n }))} />
+   676→      </div>
+   677→
+   678→      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+   679→        {/* left column — phases */}
+   680→        <div className="space-y-6 lg:col-span-3">
+   681→          {/* ============================ PHASE 1: INFORMATION ============================ */}
+   682→          {draft.phase === 1 ? (
+   683→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   684→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-contact">
+   685→                <h2 id="checkout-contact" className="flex items-center gap-2 text-base font-bold">
+   686→                  <User className="h-4 w-4 text-teal-700" /> Contact
+   687→                </h2>
+   688→                <div className="grid gap-4 sm:grid-cols-2">
+   689→                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, (tried || draft.name.length > 0) && contactErrors.name)}
+   690→                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, (tried || draft.email.length > 0) && contactErrors.email)}
+   691→                  <div className="sm:col-span-2">
+   692→                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried && contactErrors.phone)}
+   693→                  </div>
+   694→                </div>
+   695→              </section>
+   696→
+   697→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-addresses">
+   698→                <div className="flex items-center justify-between gap-2">
+   699→                  <h2 id="checkout-addresses" className="flex items-center gap-2 text-base font-bold">
+   700→                    <MapPin className="h-4 w-4 text-teal-700" /> Delivery address
+   701→                  </h2>
+   702→                  {!formMode ? (
+   703→                    <Button
+   704→                      variant="outline"
+   705→                      size="sm"
+   706→                      className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50"
+   707→                      onClick={() => {
+   708→                        setForm(emptyForm);
+   709→                        setFormErrors({});
+   710→                        setFormMode({ kind: "new" });
+   711→                      }}
+   712→                    >
+   713→                      <Plus className="h-4 w-4" /> Add address
+   714→                    </Button>
+   715→                  ) : null}
+   716→                </div>
+   717→
+   718→                {addressesLoading ? (
+   719→                  <div className="space-y-2">
+   720→                    <Skeleton className="h-20 rounded-lg" />
+   721→                    <Skeleton className="h-20 rounded-lg" />
+   722→                  </div>
+   723→                ) : (addresses?.length ?? 0) === 0 && !formMode ? (
+   724→                  <p className="rounded-lg border border-dashed border-teal-700/25 bg-teal-50/50 px-4 py-6 text-center text-sm text-muted-foreground">
+   725→                    No saved addresses yet — add one to continue.
+   726→                  </p>
+   727→                ) : null}
+   728→
+   729→                {addresses && addresses.length > 0 ? (
+   730→                  <RadioGroup
+   731→                    value={draft.addressId ?? ""}
+   732→                    onValueChange={(v) => setDraft((d) => ({ ...d, addressId: v }))}
+   733→                    className="gap-2"
+   734→                  >
+   735→                    {addresses.map((a) => (
+   736→                      <div
+   737→                        key={a.id}
+   738→                        className={cn(
+   739→                          "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border p-3.5 transition-colors",
+   740→                          draft.addressId === a.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+   741→                        )}
+   742→                      >
+   743→                        <RadioGroupItem value={a.id} id={`addr-${a.id}`} className="mt-1" />
+   744→                        <Label htmlFor={`addr-${a.id}`} className="min-w-0 flex-1 cursor-pointer space-y-0.5">
+   745→                          <span className="flex flex-wrap items-center gap-2">
+   746→                            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-teal-800">{a.label}</span>
+   747→                            {a.isDefault ? (
+   748→                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+   749→                                <Star className="h-3 w-3" /> Default
+   750→                              </span>
+   751→                            ) : null}
+   752→                            <span className="text-sm font-semibold">{a.name}</span>
+   753→                            {a.phone ? <span className="text-xs text-muted-foreground">· {a.phone}</span> : null}
+   754→                          </span>
+   755→                          <span className="block text-sm text-muted-foreground">
+   756→                            {a.line1}, {a.city}, {a.state} {a.postcode}
+   757→                          </span>
+   758→                        </Label>
+   759→                        <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
+   760→                          {!a.isDefault ? (
+   761→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs text-muted-foreground" onClick={() => makeDefault(a.id)} aria-label={`Set ${a.label} as default address`}>
+   762→                              Set default
+   763→                            </Button>
+   764→                          ) : null}
+   765→                          <Button
+   766→                            variant="ghost"
+   767→                            size="icon"
+   768→                            className="h-8 w-8"
+   769→                            aria-label={`Edit ${a.label} address`}
+   770→                            onClick={() => {
+   771→                              setForm({
+   772→                                label: a.label,
+   773→                                name: a.name,
+   774→                                phone: a.phone ?? "",
+   775→                                line1: a.line1,
+   776→                                city: a.city,
+   777→                                state: a.state,
+   778→                                postcode: a.postcode,
+   779→                                isDefault: a.isDefault,
+   780→                              });
+   781→                              setFormErrors({});
+   782→                              setFormMode({ kind: "edit", address: a });
+   783→                            }}
+   784→                          >
+   785→                            <Pencil className="h-3.5 w-3.5" />
+   786→                          </Button>
+   787→                          {deleteArm === a.id ? (
+   788→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs font-bold text-rose-600 hover:bg-rose-50" onClick={() => removeAddress(a.id)}>
+   789→                              Confirm
+   790→                            </Button>
+   791→                          ) : (
+   792→                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${a.label} address`} onClick={() => setDeleteArm(a.id)}>
+   793→                              <Trash2 className="h-3.5 w-3.5" />
+   794→                            </Button>
+   795→                          )}
+   796→                        </div>
+   797→                      </div>
+   798→                    ))}
+   799→                  </RadioGroup>
+   800→                ) : null}
+   801→
+   802→                {formMode ? (
+   803→                  <div className="space-y-3 rounded-lg border border-teal-700/25 bg-teal-50/40 p-4">
+   804→                    <p className="text-sm font-bold">{formMode.kind === "edit" ? "Edit address" : "New address"}</p>
+   805→                    <AddressFormFields form={form} setForm={setForm} errors={formErrors} />
+   806→                    <div className="flex items-center gap-2">
+   807→                      <input
+   808→                        id="addr-default"
+   809→                        type="checkbox"
+   810→                        checked={form.isDefault}
+   811→                        onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+   812→                        className="h-4 w-4 rounded border-input accent-teal-700"
+   813→                      />
+   814→                      <Label htmlFor="addr-default" className="text-sm font-normal">Set as default address</Label>
+   815→                    </div>
+   816→                    <div className="flex gap-2 pt-1">
+   817→                      <Button onClick={saveAddress} disabled={formBusy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+   818→                        {formBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save address
+   819→                      </Button>
+   820→                      <Button variant="outline" onClick={() => { setFormMode(null); setFormErrors({}); }} className="min-h-[44px]">
+   821→                        Cancel
+   822→                      </Button>
+   823→                    </div>
+   824→                  </div>
+   825→                ) : null}
+   826→              </section>
+   827→
+   828→              {tried && !phase1Valid ? (
+   829→                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+   830→                  Please complete your contact details and choose a delivery address to continue.
+   831→                </p>
+   832→              ) : null}
+   833→
+   834→              <Button size="lg" onClick={goToDelivery} className="w-full min-h-[48px] bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto sm:px-10">
+   835→                Continue to delivery
+   836→              </Button>
+   837→            </motion.div>
+   838→          ) : null}
+   839→
+   840→          {/* ============================ PHASE 2: DELIVERY ============================ */}
+   841→          {draft.phase === 2 ? (
+   842→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   843→              {selectedAddr ? (
+   844→                <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-5 shadow-soft">
+   845→                  <div className="min-w-0">
+   846→                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Deliver to</p>
+   847→                    <p className="pt-0.5 text-sm font-semibold">
+   848→                      {selectedAddr.name} · {selectedAddr.phone ?? draft.phone}
+   849→                    </p>
+   850→                    <p className="text-sm text-muted-foreground">
+   851→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+   852→                    </p>
+   853→                  </div>
+   854→                  <Button variant="outline" size="sm" className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))}>
+   855→                    <Pencil className="h-3.5 w-3.5" /> Change
+   856→                  </Button>
+   857→                </div>
+   858→              ) : null}
+   859→
+   860→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-shipping">
+   861→                <h2 id="checkout-shipping" className="flex items-center gap-2 text-base font-bold">
+   862→                  <Truck className="h-4 w-4 text-teal-700" /> Delivery method
+   863→                </h2>
+   864→
+   865→                {!quote?.shippingOptions ? (
+   866→                  <div className="space-y-2">
+   867→                    <Skeleton className="h-16 rounded-lg" />
+   868→                    <Skeleton className="h-16 rounded-lg" />
+   869→                  </div>
+   870→                ) : (
+   871→                  <RadioGroup
+   872→                    value={draft.shippingRateId}
+   873→                    onValueChange={(v) => setDraft((d) => ({ ...d, shippingRateId: v }))}
+   874→                    className="gap-2"
+   875→                  >
+   876→                    {quote.shippingOptions.map((s) => (
+   877→                      <Label
+   878→                        key={s.id}
+   879→                        htmlFor={`ship-${s.id}`}
+   880→                        className={cn(
+   881→                          "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+   882→                          draft.shippingRateId === s.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50",
+   883→                          !s.available && "cursor-not-allowed opacity-60"
+   884→                        )}
+   885→                        aria-disabled={!s.available}
+   886→                      >
+   887→                        <RadioGroupItem value={s.id} id={`ship-${s.id}`} disabled={!s.available} />
+   888→                        <div className="min-w-0 flex-1">
+   889→                          <p className="text-sm font-semibold">{s.label}</p>
+   890→                          <p className="text-xs text-muted-foreground">{s.available ? s.eta : s.reason}</p>
+   891→                        </div>
+   892→                        <span className={cn("text-sm font-bold", s.freeShipping ? "text-emerald-700" : "text-teal-700")}>
+   893→                          {s.freeShipping ? "FREE" : formatMinor(s.amountMinor)}
+   894→                        </span>
+   895→                      </Label>
+   896→                    ))}
+   897→                  </RadioGroup>
+   898→                )}
+   899→
+   900→                {quote && quote.shippingMinor === 0 && quote.shippingOptions?.find((o) => o.id === draft.shippingRateId)?.id === "standard" ? (
+   901→                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+   902→                    <ShieldCheck className="h-4 w-4" /> Free standard shipping applied (order above RM 100)
+   903→                  </div>
+   904→                ) : (
+   905→                  <div className="pt-1">
+   906→                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+   907→                      <div className="h-full rounded-full bg-brand-gradient transition-all" style={{ width: `${freeShipProgress}%` }} />
+   908→                    </div>
+   909→                    <p className="pt-1.5 text-xs text-muted-foreground">
+   910→                      {freeShipProgress >= 100
+   911→                        ? "You've unlocked FREE standard shipping!"
+   912→                        : `${formatMinor(Math.max(0, 10000 - subtotal))} away from FREE standard shipping`}
+   913→                    </p>
+   914→                  </div>
+   915→                )}
+   916→              </section>
+   917→
+   918→              <div className="flex flex-wrap gap-3">
+   919→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="min-h-[48px]">
+   920→                  Back
+   921→                </Button>
+   922→                <Button size="lg" onClick={goToPayment} disabled={quoting} className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110 sm:flex-none sm:px-10">
+   923→                  Continue to payment
+   924→                </Button>
+   925→              </div>
+   926→            </motion.div>
+   927→          ) : null}
+   928→
+   929→          {/* ============================ PHASE 3: PAYMENT & REVIEW ============================ */}
+   930→          {draft.phase === 3 ? (
+   931→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   932→              {/* review blocks */}
+   933→              <div className="grid gap-3 sm:grid-cols-2">
+   934→                {selectedAddr ? (
+   935→                  <div className="rounded-xl border bg-card p-4 shadow-soft">
+   936→                    <div className="flex items-start justify-between gap-2">
+   937→                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+   938→                        <MapPin className="h-3.5 w-3.5" /> Deliver to
+   939→                      </p>
+   940→                      <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+   941→                        Edit
+   942→                      </button>
+   943→                    </div>
+   944→                    <p className="pt-1 text-sm font-semibold">{selectedAddr.name}</p>
+   945→                    <p className="text-sm text-muted-foreground">
+   946→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+   947→                    </p>
+   948→                  </div>
+   949→                ) : null}
+   950→                <div className="rounded-xl border bg-card p-4 shadow-soft">
+   951→                  <div className="flex items-start justify-between gap-2">
+   952→                    <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+   953→                      <Truck className="h-3.5 w-3.5" /> Delivery
+   954→                    </p>
+   955→                    <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+   956→                      Edit
+   957→                    </button>
+   958→                  </div>
+   959→                  {(() => {
+   960→                    const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+   961→                    return (
+   962→                      <>
+   963→                        <p className="pt-1 text-sm font-semibold">{sel?.label ?? "—"}</p>
+   964→                        <p className="text-sm text-muted-foreground">
+   965→                          {sel ? `${sel.eta} · ${sel.freeShipping ? "FREE" : formatMinor(sel.amountMinor)}` : "—"}
+   966→                        </p>
+   967→                      </>
+   968→                    );
+   969→                  })()}
+   970→                </div>
+   971→              </div>
+   972→
+   973→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-payment">
+   974→                <h2 id="checkout-payment" className="flex items-center gap-2 text-base font-bold">
+   975→                  <CreditCard className="h-4 w-4 text-teal-700" /> Payment method
+   976→                </h2>
+   977→                <RadioGroup value={draft.provider} onValueChange={(v) => setDraft((d) => ({ ...d, provider: v }))} className="gap-2">
+   978→                  {PROVIDERS.map((p) => (
+   979→                    <Label
+   980→                      key={p.id}
+   981→                      htmlFor={`pay-${p.id}`}
+   982→                      className={cn(
+   983→                        "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+   984→                        draft.provider === p.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+   985→                      )}
+   986→                    >
+   987→                      <RadioGroupItem value={p.id} id={`pay-${p.id}`} />
+   988→                      <p.icon className="h-5 w-5 text-teal-700" />
+   989→                      <span className="text-sm font-semibold">{p.label}</span>
+   990→                    </Label>
+   991→                  ))}
+   992→                </RadioGroup>
+   993→                <p className="text-xs text-muted-foreground">
+   994→                  You&apos;ll confirm the payment on the secure SHOPMESH sandbox gateway — no real money moves.
+   995→                </p>
+   996→              </section>
+   997→
+   998→              <Textarea value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="Note to seller (optional)" rows={2} className="min-h-[44px] text-sm" />
+   999→
+  1000→              <div className="flex items-start gap-2.5 rounded-xl border bg-card p-4 shadow-soft">
+  1001→                <input
+  1002→                  id="terms"
+  1003→                  type="checkbox"
+  1004→                  checked={draft.agreed}
+  1005→                  onChange={(e) => setDraft((d) => ({ ...d, agreed: e.target.checked }))}
+  1006→                  className="mt-0.5 h-4 w-4 rounded border-input accent-teal-700"
+  1007→                  aria-required
+  1008→                />
+  1009→                <Label htmlFor="terms" className="text-sm font-normal leading-snug">
+  1010→                  I agree to the SHOPMESH Terms of Service and understand that paid orders can only be refunded through the
+  1011→                  platform&apos;s dispute process.
+  1012→                </Label>
+  1013→              </div>
+  1014→
+  1015→              <div className="flex flex-wrap gap-3">
+  1016→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="min-h-[48px]">
+  1017→                  Back
+  1018→                </Button>
+  1019→                <Button
+  1020→                  size="lg"
+  1021→                  onClick={placeOrder}
+  1022→                  disabled={submitting || quoting || !quote || stockIssues.length > 0}
+  1023→                  className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110"
+  1024→                >
+  1025→                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+  1026→                  {submitting ? "Creating order…" : `Pay ${formatMinor(quote?.totalMinor ?? 0)}`}
+  1027→                </Button>
+  1028→              </div>
+  1029→            </motion.div>
+  1030→          ) : null}
+  1031→        </div>
+  1032→
+  1033→        {/* right column — order summary (shared across phases) */}
+  1034→        <aside className="lg:col-span-2">
+  1035→          <div className="space-y-4 rounded-xl border bg-card p-5 shadow-soft lg:sticky lg:top-20">
+  1036→            <h2 className="text-base font-bold">Order summary</h2>
+  1037→
+  1038→            {stockIssues.length > 0 ? (
+  1039→              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+  1040→                {stockIssues.map((i) => (
+  1041→                  <p key={i.title}>
+  1042→                    Only {i.stock} left of “{i.title}” — you have {i.qty} in cart.
+  1043→                  </p>
+  1044→                ))}
+  1045→                <button type="button" onClick={ctx.openCart} className="pt-1 font-bold underline underline-offset-2">
+  1046→                  Update cart
+  1047→                </button>
+  1048→              </div>
+  1049→            ) : null}
+  1050→
+  1051→            <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
+  1052→              {items.map((i) => (
+  1053→                <li key={i.id} className="flex gap-3">
+  1054→                  <img src={i.imageUrl} alt={i.title} loading="lazy" className="h-14 w-14 rounded-lg border object-cover" />
+  1055→                  <div className="min-w-0 flex-1">
+  1056→                    <p className="line-clamp-2 text-sm font-medium leading-tight">{i.title}</p>
+  1057→                    {i.variantLabel ? <p className="text-xs text-muted-foreground">{i.variantLabel}</p> : null}
+  1058→                    <p className="text-xs text-muted-foreground">Qty {i.qty}</p>
+  1059→                  </div>
+  1060→                  <span className="text-sm font-semibold">{formatMinor(i.lineTotalMinor)}</span>
+  1061→                </li>
+  1062→              ))}
+  1063→            </ul>
+  1064→
+  1065→            {/* coupon */}
+  1066→            <div className="space-y-1.5">
+  1067→              {draft.couponCode ? (
+  1068→                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+  1069→                  <span>
+  1070→                    {draft.couponCode} applied
+  1071→                    {quote?.coupon?.valid && quote.coupon.freeShip ? " — free shipping" : quote?.coupon?.valid ? ` — ${formatMinor(quote.coupon.discountMinor ?? 0)} off` : ""}
+  1072→                  </span>
+  1073→                  <button type="button" onClick={removeCoupon} className="font-bold underline underline-offset-2" aria-label="Remove coupon">
+  1074→                    Remove
+  1075→                  </button>
+  1076→                </div>
+  1077→              ) : (
+  1078→                <>
+  1079→                  <div className="flex gap-2">
+  1080→                    <div className="relative flex-1">
+  1081→                      <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  1082→                      <Input
+  1083→                        value={couponInput}
+  1084→                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+  1085→                        placeholder="Coupon code"
+  1086→                        className="min-h-[44px] pl-8"
+  1087→                        aria-label="Coupon code"
+  1088→                        onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+  1089→                      />
+  1090→                    </div>
+  1091→                    <Button variant="outline" onClick={applyCoupon} disabled={quoting || !couponInput.trim()} className="min-h-[44px] border-teal-700/40 text-teal-800 hover:bg-teal-50">
+  1092→                      {quoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />} Apply
+  1093→                    </Button>
+  1094→                  </div>
+  1095→                  {couponErr ? <p className="text-xs font-medium text-rose-600">{couponErr}</p> : null}
+  1096→                </>
+  1097→              )}
+  1098→            </div>
+  1099→
+  1100→            <Separator />
+  1101→
+  1102→            <dl className="space-y-2 text-sm">
+  1103→              <div className="flex justify-between">
+  1104→                <dt className="text-muted-foreground">Subtotal</dt>
+  1105→                <dd className="font-semibold">{formatMinor(quote?.subtotalMinor ?? 0)}</dd>
+  1106→              </div>
+  1107→              {quote && quote.discountMinor > 0 ? (
+  1108→                <div className="flex justify-between text-emerald-700">
+  1109→                  <dt>Discount</dt>
+  1110→                  <dd className="font-semibold">-{formatMinor(quote.discountMinor)}</dd>
+  1111→                </div>
+  1112→              ) : null}
+  1113→              <div className="flex justify-between">
+  1114→                <dt className="text-muted-foreground">Shipping</dt>
+  1115→                <dd className="font-semibold">{quote ? (quote.shippingMinor === 0 ? "FREE" : formatMinor(quote.shippingMinor)) : "—"}</dd>
+  1116→              </div>
+  1117→              <Separator />
+  1118→              <div className="flex justify-between text-base">
+  1119→                <dt className="font-bold">Total</dt>
+  1120→                <dd className="font-extrabold text-teal-700">{formatMinor(quote?.totalMinor ?? 0)}</dd>
+  1121→              </div>
+  1122→            </dl>
+  1123→
+  1124→            {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
+  1125→            <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
+  1126→          </div>
+  1127→        </aside>
+  1128→      </div>
+  1129→    </div>
+  1130→  );
+  1131→}
+  1132→
+  1133→// =============================================================================================
+  1134→// SANDBOX PAYMENT VIEW
+  1135→// =============================================================================================
+  1136→
+  1137→type PaymentT = {
+  1138→  status: string;
+  1139→  orderNumber: string;
+  1140→  amountMinor: number;
+  1141→  storeName: string;
+  1142→  storeSlug: string;
+  1143→  provider: string;
+  1144→};
+  1145→
+  1146→export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: string }) {
+  1147→  const [payment, setPayment] = useState<PaymentT | null>(null);
+  1148→  const [failed, setFailed] = useState(false);
+  1149→  const [phase, setPhase] = useState<"awaiting" | "success" | "failure" | "expired">("awaiting");
+  1150→  const [busy, setBusy] = useState(false);
+  1151→  const [secondsLeft, setSecondsLeft] = useState(10 * 60);
+  1152→
+  1153→  const load = useCallback(async () => {
+  1154→    try {
+  1155→      const p = await fetchJson<PaymentT>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
+  1156→      setPayment(p);
+  1157→      setFailed(false);
+  1158→      if (p.status === "succeeded") {
+  1159→        setPhase((ph) => (ph === "awaiting" ? "success" : ph));
+  1160→      } else if (p.status === "failed") {
+  1161→        setPhase((ph) => (ph === "awaiting" || ph === "expired" ? "failure" : ph));
+  1162→      } else if (p.status === "expired") {
+  1163→        setPhase((ph) => (ph === "awaiting" ? "expired" : ph));
+  1164→      }
+  1165→    } catch {
+  1166→      setFailed(true);
+  1167→    }
+  1168→  }, [paymentRef]);
+  1169→
+  1170→  // initial load + 3s polling — status is always server-authoritative
+  1171→  useEffect(() => {
+  1172→    load();
+  1173→    const t = setInterval(load, 3000);
+  1174→    return () => clearInterval(t);
+  1175→  }, [load]);
+  1176→
+  1177→  // 10:00 countdown
+  1178→  useEffect(() => {
+  1179→    if (phase !== "awaiting") return;
+  1180→    const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+  1181→    return () => clearInterval(t);
+  1182→  }, [phase]);
+  1183→
+  1184→  const navToOrder = useCallback(
+  1185→    (orderNumber: string) => ctx.nav({ name: "order-status", orderNumber }),
+  1186→    [ctx]
+  1187→  );
+  1188→
+  1189→  // auto-redirect after success
+  1190→  const orderNumber = payment?.orderNumber ?? "";
+  1191→  useEffect(() => {
+  1192→    if (phase !== "success") return;
+  1193→    const t = setTimeout(() => navToOrder(orderNumber), 1600);
+  1194→    return () => clearTimeout(t);
+  1195→  }, [phase, orderNumber, navToOrder]);
+  1196→
+  1197→  async function simulate(result: "succeeded" | "failed") {
+  1198→    if (busy) return;
+  1199→    setBusy(true);
+  1200→    try {
+  1201→      await postJson<{ status: string; orderNumber: string }>(
+  1202→        `/api/checkout/payments/${encodeURIComponent(paymentRef)}/simulate`,
+  1203→        { result }
+  1204→      );
+  1205→      if (result === "succeeded") {
+  1206→        // cart is emptied server-side on verified success — just refresh the badge
+  1207→        const email = typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : "";
+  1208→        if (orderNumber && email) trackOrderRef(orderNumber, email);
+  1209→        notifyCartUpdated();
+  1210→        setPhase("success");
+  1211→      } else {
+  1212→        setPhase("failure");
+  1213→      }
+  1214→    } catch (e) {
+  1215→      toast.error(e instanceof Error ? e.message : "Payment failed — please try again");
+  1216→      load();
+  1217→    } finally {
+  1218→      setBusy(false);
+  1219→    }
+  1220→  }
+  1221→
+  1222→  // Retry = a new gateway attempt: re-open the failed session server-side first,
+  1223→  // so the status poller sees "requires_payment" and stays consistent.
+  1224→  async function retryPayment() {
+  1225→    if (busy) return;
+  1226→    setBusy(true);
+  1227→    try {
+  1228→      await postJson(`/api/checkout/payments/${encodeURIComponent(paymentRef)}/retry`, {});
+  1229→      setPhase("awaiting");
+  1230→      await load();
+  1231→    } catch (e) {
+  1232→      toast.error(e instanceof Error ? e.message : "Could not restart this payment");
+  1233→      await load();
+  1234→    } finally {
+  1235→      setBusy(false);
+  1236→    }
+  1237→  }
+  1238→
+  1239→  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  1240→  const ss = String(secondsLeft % 60).padStart(2, "0");
+  1241→
+  1242→  return (
+  1243→    <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8 sm:py-12" style={{ background: "linear-gradient(180deg, #f0fdfa 0%, #ffffff 40%)" }}>
+  1244→      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="w-full max-w-md">
+  1245→        <div className="overflow-hidden rounded-2xl border shadow-lg bg-card">
+  1246→          {/* gateway chrome */}
+  1247→          <div className="bg-brand-gradient-deep px-5 py-4 text-white">
+  1248→            <div className="flex items-center justify-between">
+  1249→              <p className="flex items-center gap-2 text-sm font-bold tracking-wide">
+  1250→                <ShieldCheck className="h-4 w-4 text-emerald-300" /> SHOPMESH Secure Checkout
+  1251→              </p>
+  1252→              <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-teal-950">Sandbox</span>
+  1253→            </div>
+  1254→            <p className="pt-1 text-xs text-teal-100/80">256-bit encrypted · demo gateway — no real money moves</p>
+  1255→          </div>
+  1256→
+  1257→          {failed ? (
+  1258→            <div className="space-y-3 p-8 text-center">
+  1259→              <XCircle className="mx-auto h-10 w-10 text-rose-500" />
+  1260→              <p className="font-semibold">Payment session not found</p>
+  1261→              <p className="text-sm text-muted-foreground">This payment reference may have expired.</p>
+  1262→              <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })}>Track your order</Button>
+  1263→            </div>
+  1264→          ) : !payment ? (
+  1265→            <div className="space-y-4 p-8">
+  1266→              <Skeleton className="h-6 w-40" />
+  1267→              <Skeleton className="h-16 w-full" />
+  1268→              <Skeleton className="h-12 w-full" />
+  1269→            </div>
+  1270→          ) : phase === "success" ? (
+  1271→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1272→              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }} className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+  1273→                <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+  1274→              </motion.div>
+  1275→              <p className="text-lg font-extrabold">Payment successful!</p>
+  1276→              <p className="text-sm text-muted-foreground">Order {payment.orderNumber} is confirmed.</p>
+  1277→              <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
+  1278→              <p className="text-xs text-muted-foreground">Taking you to your order…</p>
+  1279→            </motion.div>
+  1280→          ) : phase === "expired" ? (
+  1281→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1282→              <Clock className="mx-auto h-12 w-12 text-amber-500" />
+  1283→              <p className="text-lg font-extrabold">Payment session expired</p>
+  1284→              <p className="text-sm text-muted-foreground">No money was taken. Your order is still unpaid — start a new checkout to place it again.</p>
+  1285→              <div className="grid gap-2 pt-2">
+  1286→                <Button onClick={() => ctx.nav({ name: "checkout" })} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+  1287→                  <ShoppingBag className="h-4 w-4" /> New checkout
+  1288→                </Button>
+  1289→                <Button variant="outline" onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })} className="min-h-[44px]">
+  1290→                  Back to store
+  1291→                </Button>
+  1292→              </div>
+  1293→            </motion.div>
+  1294→          ) : phase === "failure" ? (
+  1295→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1296→              <XCircle className="mx-auto h-12 w-12 text-rose-500" />
+  1297→              <p className="text-lg font-extrabold">Payment failed</p>
+  1298→              <p className="text-sm text-muted-foreground">No money was taken. You can retry the payment or head back to the store.</p>
+  1299→              <div className="grid gap-2 pt-2">
+  1300→                <Button onClick={retryPayment} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+  1301→                  <RotateCcw className="h-4 w-4" /> Retry payment
+  1302→                </Button>
+  1303→                <Button variant="outline" onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })} className="min-h-[44px]">
+  1304→                  Back to store
+  1305→                </Button>
+  1306→              </div>
+  1307→            </motion.div>
+  1308→          ) : (
+  1309→            <div className="space-y-5 p-6 sm:p-8">
+  1310→              <div className="space-y-1 text-center">
+  1311→                <p className="text-xs uppercase tracking-widest text-muted-foreground">Amount to pay</p>
+  1312→                <p className="text-4xl font-extrabold tabular-nums text-teal-800">{formatMinor(payment.amountMinor)}</p>
+  1313→                <p className="text-sm text-muted-foreground">
+  1314→                  to <span className="font-semibold text-foreground">{payment.storeName}</span>
+  1315→                </p>
+  1316→              </div>
+  1317→
+  1318→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1319→                <span className="text-muted-foreground">Method</span>
+  1320→                <span className="font-semibold">{PROVIDER_LABEL[payment.provider] ?? payment.provider}</span>
+  1321→              </div>
+  1322→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1323→                <span className="text-muted-foreground">Order</span>
+  1324→                <span className="font-mono font-semibold">{payment.orderNumber}</span>
+  1325→              </div>
+  1326→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1327→                <span className="text-muted-foreground">Session expires in</span>
+  1328→                <span className={cn("font-mono font-bold tabular-nums", secondsLeft < 60 ? "text-rose-600" : "text-foreground")}>
+  1329→                  {mm}:{ss}
+  1330→                </span>
+  1331→              </div>
+  1332→
+  1333→              <Button
+  1334→                size="lg"
+  1335→                disabled={busy || secondsLeft <= 0}
+  1336→                onClick={() => simulate("succeeded")}
+  1337→                className="min-h-[48px] w-full bg-emerald-600 text-white hover:bg-emerald-700"
+  1338→              >
+  1339→                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Landmark className="h-4 w-4" />}
+  1340→                {busy ? "Processing…" : "Pay Now"}
+  1341→              </Button>
+  1342→              <Button
+  1343→                variant="outline"
+  1344→                size="sm"
+  1345→                disabled={busy}
+  1346→                onClick={() => simulate("failed")}
+  1347→                className="min-h-[40px] w-full border-rose-300 text-rose-600 hover:bg-rose-50"
+  1348→              >
+  1349→                Simulate declined payment
+  1350→              </Button>
+  1351→              <p className="text-center text-[11px] text-muted-foreground">Sandbox gateway — result is verified server-side before the order is confirmed.</p>
+  1352→            </div>
+  1353→          )}
+  1354→        </div>
+  1355→
+  1356→        {payment && (phase === "awaiting" || phase === "failure") ? (
+  1357→          <button
+  1358→            type="button"
+  1359→            onClick={() => ctx.nav({ name: "storefront", slug: payment.storeSlug })}
+  1360→            className="mx-auto mt-4 block text-xs text-muted-foreground underline-offset-2 hover:underline"
+  1361→          >
+  1362→            Cancel and return to {payment.storeName} — order {payment.orderNumber} stays unpaid
+  1363→          </button>
+  1364→        ) : null}
+  1365→      </motion.div>
+  1366→    </div>
+  1367→  );
+  1368→}
+  1369→
+  1370→// =============================================================================================
+  1371→// ORDER STATUS + HISTORY + LOOKUP
+  1372→// =============================================================================================
+  1373→
+  1374→function OrderCard({ o, compact = false }: { o: LookupResultT; compact?: boolean }) {
+  1375→  const [copied, setCopied] = useState(false);
+  1376→  const paid = !["payment_pending", "cancelled"].includes(o.status);
+  1377→
+  1378→  function copy() {
+  1379→    navigator.clipboard?.writeText(o.orderNumber).then(
+  1380→      () => {
+  1381→        setCopied(true);
+  1382→        toast.success("Order number copied");
+  1383→        setTimeout(() => setCopied(false), 1500);
+  1384→      },
+  1385→      () => toast.error("Could not copy")
+  1386→    );
+  1387→  }
+  1388→
+  1389→  return (
+  1390→    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className={cn("space-y-5 rounded-2xl border bg-card p-5 sm:p-6", compact && "shadow-sm")}>
+  1391→      <div className="flex items-start gap-4">
+  1392→        <motion.div
+  1393→          initial={{ scale: 0, rotate: -20 }}
+  1394→          animate={{ scale: 1, rotate: 0 }}
+  1395→          transition={{ type: "spring", stiffness: 260, damping: 14 }}
+  1396→          className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-full", paid ? "bg-emerald-100" : "bg-amber-100")}
+  1397→        >
+  1398→          {paid ? <CheckCircle2 className="h-7 w-7 text-emerald-600" /> : <PackageSearch className="h-7 w-7 text-amber-600" />}
+  1399→        </motion.div>
+  1400→        <div className="min-w-0 flex-1">
+  1401→          <p className="text-xs uppercase tracking-widest text-muted-foreground">Order</p>
+  1402→          <div className="flex flex-wrap items-center gap-2">
+  1403→            <p className="font-mono text-xl font-extrabold tracking-tight">{o.orderNumber}</p>
+  1404→            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={copy} aria-label="Copy order number">
+  1405→              {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+  1406→            </Button>
+  1407→          </div>
+  1408→          <p className="text-sm text-muted-foreground">
+  1409→            {o.storeName} · placed {new Date(o.createdAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}
+  1410→          </p>
+  1411→          <div className="pt-2">
+  1412→            <StatusBadge status={o.status} />
+  1413→          </div>
+  1414→        </div>
+  1415→        <div className="text-right">
+  1416→          <p className="text-xs uppercase tracking-widest text-muted-foreground">Total</p>
+  1417→          <p className="text-lg font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</p>
+  1418→        </div>
+  1419→      </div>
+  1420→
+  1421→      <Separator />
+  1422→
+  1423→      <div className="grid gap-6 sm:grid-cols-2">
+  1424→        <div>
+  1425→          <h3 className="pb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Items</h3>
+  1426→          <ul className="space-y-2">
+  1427→            {o.items.map((it, i) => (
+  1428→              <li key={i} className="flex items-center justify-between gap-2 text-sm">
+  1429→                <span className="min-w-0 truncate">
+  1430→                  {it.title} <span className="text-muted-foreground">× {it.qty}</span>
+  1431→                </span>
+  1432→              </li>
+  1433→            ))}
+  1434→          </ul>
+  1435→        </div>
+  1436→        <div>
+  1437→          <h3 className="pb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Progress</h3>
+  1438→          <StatusTimeline history={o.history} current={o.status} />
+  1439→        </div>
+  1440→      </div>
+  1441→    </motion.div>
+  1442→  );
+  1443→}
+  1444→
+  1445→export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
+  1446→  const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
+  1447→  const [receiptEmail, setReceiptEmail] = useState(email);
+  1448→  const [data, setData] = useState<LookupResultT | null>(null);
+  1449→  const [failed, setFailed] = useState<string | null>(null);
+  1450→  const [receiptBusy, setReceiptBusy] = useState(false);
+  1451→
+  1452→  const downloadReceipt = async () => {
+  1453→    if (receiptBusy || !receiptEmail || !data) return;
+  1454→    setReceiptBusy(true);
+  1455→    try {
+  1456→      const res = await fetch(`/api/orders/receipt?email=${encodeURIComponent(receiptEmail)}&orderNumber=${encodeURIComponent(data.orderNumber)}`);
+  1457→      if (!res.ok) {
+  1458→        const body = await res.json().catch(() => null);
+  1459→        throw new Error(body?.error?.message ?? "Could not generate the receipt");
+  1460→      }
+  1461→      const blob = await res.blob();
+  1462→      const a = document.createElement("a");
+  1463→      a.href = URL.createObjectURL(blob);
+  1464→      a.download = `SHOPMESH-Receipt-${data.orderNumber}.pdf`;
+  1465→      document.body.appendChild(a);
+  1466→      a.click();
+  1467→      a.remove();
+  1468→      URL.revokeObjectURL(a.href);
+  1469→      toast.success("Receipt downloaded", { description: `PDF receipt for ${data.orderNumber} saved to your device.` });
+  1470→    } catch (e) {
+  1471→      toast.error(e instanceof Error ? e.message : "Could not download the receipt");
+  1472→    } finally {
+  1473→      setReceiptBusy(false);
+  1474→    }
+  1475→  };
+  1476→
+  1477→  useEffect(() => {
+  1478→    let alive = true;
+  1479→    // 1) Guest path — email + order number lookup (unchanged).
+  1480→    const guestLookup = email
+  1481→      ? fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
+  1482→      : Promise.reject(new Error("no-guest-email"));
+  1483→    guestLookup
+  1484→      .then((d) => {
+  1485→        if (!alive) return;
+  1486→        setData(d);
+  1487→        trackOrderRef(d.orderNumber, email);
+  1488→      })
+  1489→      .catch(() => {
+  1490→        // 2) Account path — signed-in buyer deep-linking from the Me hub;
+  1491→        //    ownership enforced server-side by the session's shopperId.
+  1492→        fetchJson<LookupResultT & { customerEmail?: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}`)
+  1493→          .then((d) => {
+  1494→            if (!alive) return;
+  1495→            setData(d);
+  1496→            if (d.customerEmail) {
+  1497→              setReceiptEmail(d.customerEmail);
+  1498→              trackOrderRef(d.orderNumber, d.customerEmail);
+  1499→            }
+  1500→          })
+  1501→          .catch((e2: Error) => {
+  1502→            if (alive) setFailed(e2.message === "no-guest-email" ? "" : e2.message);
+  1503→          });
+  1504→      });
+  1505→    return () => {
+  1506→      alive = false;
+  1507→    };
+  1508→  }, [email, orderNumber]);
+  1509→
+  1510→  if (failed) {
+  1511→    return (
+  1512→      <div className="flex-1">
+  1513→        <EmptyState
+  1514→          title={failed ? "Couldn't load this order" : "No checkout email found"}
+  1515→          hint={failed || "We couldn't find a recent checkout on this device, and this order isn't on your account. Use order lookup instead."}
+  1516→          action={
+  1517→            <div className="flex gap-2">
+  1518→              <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })} className="min-h-[44px]">
+  1519→                Order lookup
+  1520→              </Button>
+  1521→              <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+  1522→                Continue shopping
+  1523→              </Button>
+  1524→            </div>
+  1525→          }
+  1526→        />
+  1527→      </div>
+  1528→    );
+  1529→  }
+  1530→
+  1531→  return (
+  1532→    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+  1533→      {!data ? (
+  1534→        <div className="space-y-4">
+  1535→          <Skeleton className="h-28 rounded-2xl" />
+  1536→          <Skeleton className="h-56 rounded-2xl" />
+  1537→        </div>
+  1538→      ) : (
+  1539→        <div className="space-y-5">
+  1540→          <OrderCard o={data} />
+  1541→          <div className="flex flex-wrap justify-center gap-3">
+  1542→            <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+  1543→              Continue shopping
+  1544→            </Button>
+  1545→            <Button
+  1546→              variant="outline"
+  1547→              onClick={downloadReceipt}
+  1548→              disabled={receiptBusy || data.status === "payment_pending"}
+  1549→              className="min-h-[44px] gap-2"
+  1550→              title={data.status === "payment_pending" ? "Available once payment is confirmed" : "Download the PDF receipt for this order"}
+  1551→            >
+  1552→              {receiptBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ReceiptText className="h-4 w-4" />}
+  1553→              Download receipt
+  1554→            </Button>
+  1555→            <ContactSellerButton ctx={ctx} orderNumber={data.orderNumber} storeSlug={data.storeSlug ?? null} storeName={data.storeName} />
+  1556→            <Button variant="outline" onClick={() => ctx.nav({ name: "orders" })} className="min-h-[44px]">
+  1557→              All my orders
+  1558→            </Button>
+  1559→          </div>
+  1560→        </div>
+  1561→      )}
+  1562→    </div>
+  1563→  );
+  1564→}
+  1565→
+  1566→// ---------------------------------------------------------------- contact seller (C3)
+  1567→
+  1568→/** Contact-seller action on the payment-complete page: buyer logged in → open
+  1569→ *  the chat space with this store (order context pre-filled); not logged in →
+  1570→ *  ask to sign in / register first, then continue to the chat automatically. */
+  1571→function ContactSellerButton({
+  1572→  ctx,
+  1573→  orderNumber,
+  1574→  storeId,
+  1575→  storeSlug,
+  1576→  storeName,
+  1577→}: {
+  1578→  ctx: ShopperCtx;
+  1579→  orderNumber: string;
+  1580→  storeId?: string | null;
+  1581→  storeSlug?: string | null;
+  1582→  storeName: string;
+  1583→}) {
+  1584→  const me = useApp((s) => s.me);
+  1585→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  1586→  const [busy, setBusy] = useState(false);
+  1587→  const shopper = me.loaded ? me.shopper : null;
+  1588→
+  1589→  const startThread = useCallback(async () => {
+  1590→    setBusy(true);
+  1591→    try {
+  1592→      const res = await postJson<{ thread: { id: string } }>("/api/chat/threads", {
+  1593→        ...(storeId ? { storeId } : { storeSlug }),
+  1594→        orderNumber,
+  1595→        message: `Hi ${storeName}! I'd like to ask about my order ${orderNumber}.`,
+  1596→      });
+  1597→      toast.success("Chat opened", { description: `You're now chatting with ${storeName}.` });
+  1598→      ctx.nav({ name: "messages", threadId: res.thread.id });
+  1599→    } catch (e) {
+  1600→      toast.error(e instanceof Error ? e.message : "Could not start the chat");
+  1601→    } finally {
+  1602→      setBusy(false);
+  1603→    }
+  1604→  }, [ctx, storeId, storeSlug, storeName, orderNumber]);
+  1605→
+  1606→  const onClick = () => {
+  1607→    if (!shopper) {
+  1608→      // not logged in → require sign-in / register first, then continue to chat
+  1609→      openShopperAuth(() => void startThread());
+  1610→      return;
+  1611→    }
+  1612→    void startThread();
+  1613→  };
+  1614→
+  1615→  return (
+  1616→    <Button variant="outline" onClick={onClick} disabled={busy} className="min-h-[44px] gap-2" title={`Chat with ${storeName} about this order`}>
+  1617→      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessagesSquare className="h-4 w-4" />}
+  1618→      Contact seller
+  1619→    </Button>
+  1620→  );
+  1621→}
+  1622→
+  1623→// ---------------------------------------------------------------- order history
+  1624→
+  1625→export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
+  1626→  const [refs] = useState(() => readOrderRefs().slice(0, 10));
+  1627→  const [orders, setOrders] = useState<LookupResultT[]>([]);
+  1628→  const [loading, setLoading] = useState(() => refs.length > 0);
+  1629→
+  1630→  useEffect(() => {
+  1631→    if (refs.length === 0) return;
+  1632→    let alive = true;
+  1633→    Promise.allSettled(
+  1634→      refs.map((r) =>
+  1635→        fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(r.email)}&orderNumber=${encodeURIComponent(r.orderNumber)}`)
+  1636→      )
+  1637→    ).then((results) => {
+  1638→      if (!alive) return;
+  1639→      setOrders(results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : [])));
+  1640→      setLoading(false);
+  1641→    });
+  1642→    return () => {
+  1643→      alive = false;
+  1644→    };
+  1645→  }, [refs]);
+  1646→
+  1647→  return (
+  1648→    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+  1649→      <div className="pb-5">
+  1650→        <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight">
+  1651→          <PackageSearch className="h-6 w-6 text-teal-700" /> My orders
+  1652→        </h1>
+  1653→        <p className="text-sm text-muted-foreground">Orders placed from this device. Track any order by its number too.</p>
+  1654→      </div>
+  1655→
+  1656→      {loading ? (
+  1657→        <div className="space-y-3">
+  1658→          <Skeleton className="h-24 rounded-2xl" />
+  1659→          <Skeleton className="h-24 rounded-2xl" />
+  1660→          <Skeleton className="h-24 rounded-2xl" />
+  1661→        </div>
+  1662→      ) : orders.length === 0 ? (
+  1663→        <EmptyState
+  1664→          icon={ShoppingBag}
+  1665→          title="No orders yet"
+  1666→          hint="Orders you place will show up here — ready to track from payment to delivery."
+  1667→          action={
+  1668→            <div className="flex gap-2">
+  1669→              <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+  1670→                Start shopping
+  1671→              </Button>
+  1672→              <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })} className="min-h-[44px]">
+  1673→                Track by order number
+  1674→              </Button>
+  1675→            </div>
+  1676→          }
+  1677→        />
+  1678→      ) : (
+  1679→        <ul className="space-y-3">
+  1680→          {orders.map((o) => (
+  1681→            <li key={o.orderNumber}>
+  1682→              <button
+  1683→                type="button"
+  1684→                onClick={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
+  1685→                className="flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+  1686→                aria-label={`View order ${o.orderNumber}`}
+  1687→              >
+  1688→                <div className="min-w-0 flex-1">
+  1689→                  <p className="font-mono text-sm font-extrabold">{o.orderNumber}</p>
+  1690→                  <p className="truncate text-xs text-muted-foreground">
+  1691→                    {o.storeName} · {dateShort(o.createdAt)} · {o.items.length} item{o.items.length === 1 ? "" : "s"}
+  1692→                  </p>
+  1693→                  <div className="pt-1.5">
+  1694→                    <StatusBadge status={o.status} />
+  1695→                  </div>
+  1696→                </div>
+  1697→                <span className="text-base font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</span>
+  1698→              </button>
+  1699→            </li>
+  1700→          ))}
+  1701→        </ul>
+  1702→      )}
+  1703→
+  1704→      <div className="flex justify-center gap-3 pt-6">
+  1705→        <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })} className="min-h-[44px]">
+  1706→          <PackageSearch className="h-4 w-4" /> Track by order number
+  1707→        </Button>
+  1708→      </div>
+  1709→    </div>
+  1710→  );
+  1711→}
+  1712→
+  1713→// ---------------------------------------------------------------- lookup
+  1714→
+  1715→export function LookupView({ ctx }: { ctx: ShopperCtx }) {
+  1716→  const [email, setEmail] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
+  1717→  const [orderNumber, setOrderNumber] = useState("");
+  1718→  const [result, setResult] = useState<LookupResultT | null>(null);
+  1719→  const [error, setError] = useState<string | null>(null);
+  1720→  const [busy, setBusy] = useState(false);
+  1721→
+  1722→  async function search() {
+  1723→    if (!email.trim() || !orderNumber.trim()) {
+  1724→      setError("Both email and order number are required.");
+  1725→      return;
+  1726→    }
+  1727→    setBusy(true);
+  1728→    setError(null);
+  1729→    setResult(null);
+  1730→    try {
+  1731→      const data = await fetchJson<LookupResultT>(
+  1732→        `/api/orders/lookup?email=${encodeURIComponent(email.trim())}&orderNumber=${encodeURIComponent(orderNumber.trim())}`
+  1733→      );
+  1734→      setResult(data);
+  1735→      trackOrderRef(data.orderNumber, email.trim());
+  1736→      window.localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+  1737→    } catch (e) {
+  1738→      setError(e instanceof Error ? e.message : "Lookup failed");
+  1739→    } finally {
+  1740→      setBusy(false);
+  1741→    }
+  1742→  }
+  1743→
+  1744→  return (
+  1745→    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+  1746→      <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-soft sm:p-6">
+  1747→        <div>
+  1748→          <h1 className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
+  1749→            <PackageSearch className="h-5 w-5 text-teal-700" /> Track your order
+  1750→          </h1>
+  1751→          <p className="text-sm text-muted-foreground">Enter the email you checked out with and your order number (e.g. SM-100017).</p>
+  1752→        </div>
+  1753→        <form
+  1754→          className="grid gap-3 sm:grid-cols-2"
+  1755→          onSubmit={(e) => {
+  1756→            e.preventDefault();
+  1757→            search();
+  1758→          }}
+  1759→        >
+  1760→          <div className="space-y-1.5">
+  1761→            <Label htmlFor="lk-email" className="text-xs font-semibold text-muted-foreground">Email</Label>
+  1762→            <Input id="lk-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="min-h-[44px]" />
+  1763→          </div>
+  1764→          <div className="space-y-1.5">
+  1765→            <Label htmlFor="lk-num" className="text-xs font-semibold text-muted-foreground">Order number</Label>
+  1766→            <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="SM-100017" className="min-h-[44px] font-mono" />
+  1767→          </div>
+  1768→          <div className="sm:col-span-2">
+  1769→            <Button type="submit" disabled={busy} className="min-h-[44px] w-full bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto">
+  1770→              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageSearch className="h-4 w-4" />} Find my order
+  1771→            </Button>
+  1772→          </div>
+  1773→        </form>
+  1774→        {error ? (
+  1775→          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
+  1776→            {error.includes("No order") ? "We couldn't find an order with those details. Double-check the email and order number." : error}
+  1777→          </p>
+  1778→        ) : null}
+  1779→      </div>
+  1780→
+  1781→      {result ? (
+  1782→        <div className="pt-5">
+  1783→          <OrderCard o={result} compact />
+  1784→          <div className="flex justify-center pt-3">
+  1785→            <Button
+  1786→              variant="outline"
+  1787→              onClick={() => ctx.nav({ name: "order-status", orderNumber: result.orderNumber })}
+  1788→              className="min-h-[44px]"
+  1789→              title="Open the full order view — with the PDF receipt and Contact seller"
+  1790→            >
+  1791→              View full order details
+  1792→            </Button>
+  1793→          </div>
+  1794→        </div>
+  1795→      ) : null}
+  1796→    </div>
+  1797→  );
+  1798→}
+  1799→

@@ -167,6 +167,7 @@ model ShopperUser {
   addresses       Address[]
   orders          Order[]
   carts           Cart[]
+  paymentGroups   PaymentGroup[]
 }
 
 model ChatThread {
@@ -423,7 +424,7 @@ model Cart {
   token     String       @unique // kept for legacy rows + order.cartToken reconciliation
   shopperId String?      @unique // owning shopper account — carts now REQUIRE sign-in (one active cart per buyer)
   shopper   ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
-  storeId   String
+  storeId   String?      // LEGACY single-store lock — nullable now that one cart can hold items from MANY sellers
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   items     CartItem[]
@@ -482,8 +483,11 @@ model Order {
   paymentIntents      PaymentIntent[]
   refunds             Refund[]
   disputes            Dispute[]
+  paymentGroupId      String? // set when this order was paid as part of a multi-seller checkout group
+  paymentGroup        PaymentGroup? @relation(fields: [paymentGroupId], references: [id])
 
   @@index([shopperId])
+  @@index([paymentGroupId])
 }
 
 model OrderItem {
@@ -532,6 +536,33 @@ model PaymentIntent {
   expiresAt    DateTime
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+}
+
+// OPTION A — platform collect-then-disburse: the buyer pays ONCE for a checkout
+// that may span N seller orders. The group holds the single payment session;
+// each member Order is fulfilled/paid-out per seller (commission → ledger →
+// wallet → payout), exactly like a single-order payment.
+model PaymentGroup {
+  id            String       @id @default(cuid())
+  ref           String       @unique // payment reference used by the hosted pay page + webhook
+  shopperId     String
+  shopper       ShopperUser  @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  provider      String // fpx_toyyibpay | fpx_curlec | tng | grabpay | card_stripe
+  status        String       @default("requires_payment") // requires_payment | succeeded | failed | expired
+  currency      String       @default("MYR")
+  subtotalMinor Int          @default(0)
+  discountMinor Int          @default(0)
+  shippingMinor Int          @default(0)
+  totalMinor    Int          @default(0)
+  idemKey       String?      @unique
+  redirectUrl   String?
+  expiresAt     DateTime
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  orders        Order[]
+
+  @@index([shopperId])
 }
 
 model PaymentWebhookLog {

@@ -186,3 +186,203 @@ export async function computePricing(input: {
   const shippingOptions = shippingOptionsFor(input.state, subtotalMinor);
   return { lines, subtotalMinor, discountMinor, shippingMinor, totalMinor, shippingRateId: rateId, shippingOptions, coupon };
 }
+
+// ---------------------------------------------------------------------------
+// OPTION A — MULTI-SELLER GROUP PRICING
+// One cart can hold items from many stores. Each store becomes its own parcel
+// with its own subtotal + shipping; the buyer still pays ONCE (the group total).
+// ---------------------------------------------------------------------------
+
+export type PricedStoreGroup = {
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
+  sellerId: string | null; // generated-but-unclaimed stores have no owner yet
+  currency: string;
+  lines: PricedLine[];
+  subtotalMinor: number;
+  discountMinor: number;
+  shippingMinor: number;
+  totalMinor: number;
+  coupon: CouponVerdict; // verdict that applied to THIS group (invalid sentinel otherwise)
+};
+
+export type GroupPricingResult = {
+  groups: PricedStoreGroup[];
+  items: (PricedLine & { storeId: string; storeSlug: string; storeName: string })[];
+  subtotalMinor: number;
+  discountMinor: number;
+  shippingMinor: number;
+  totalMinor: number;
+  shippingRateId: string;
+  shippingOptions: ShippingOptionT[];
+  coupon: CouponVerdict; // verdict of the requested coupon, for UI messaging
+};
+
+/** Multi-store pricing: validate all lines, group per store, price each group
+ *  (per-store free-shipping threshold + per-store coupon rules), aggregate. */
+export async function computeGroupPricing(input: {
+  items: QuoteItemInput[];
+  couponCode?: string | null;
+  shippingRateId?: string | null;
+  state?: string | null;
+}): Promise<GroupPricingResult> {
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new ApiError(400, "EMPTY_CART", "At least one item is required");
+  }
+  const variantIds = input.items.map((i) => String(i.variantId));
+  const variants = await db.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    include: {
+      product: {
+        select: {
+          id: true, title: true, status: true, storeId: true, categoryId: true,
+          store: { select: { id: true, slug: true, name: true, status: true } },
+        },
+      },
+    },
+  });
+  const byId = new Map(variants.map((v) => [v.id, v]));
+
+  const items: (PricedLine & { storeId: string; storeSlug: string; storeName: string })[] = [];
+  for (const item of input.items) {
+    const qty = Math.floor(Number(item.qty));
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new ApiError(400, "INVALID_QTY", "Quantity must be a positive integer");
+    }
+    const v = byId.get(String(item.variantId));
+    if (!v || !v.isActive || v.product.status !== "active" || v.product.store.status !== "live") {
+      throw new ApiError(400, "VARIANT_INVALID", "One of the items is no longer available — please update your cart");
+    }
+    const variantLabel = [v.optionName, v.optionValue].filter(Boolean).join(": ") || null;
+    items.push({
+      variantId: v.id,
+      productId: v.product.id,
+      categoryId: v.product.categoryId,
+      title: v.product.title,
+      variantLabel,
+      qty,
+      unitPriceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor ?? null,
+      lineTotalMinor: v.priceMinor * qty,
+      stock: v.stock,
+      storeId: v.product.storeId,
+      storeSlug: v.product.store.slug,
+      storeName: v.product.store.name,
+    });
+  }
+
+  // Group lines per store.
+  const byStore = new Map<string, PricedLine[]>();
+  for (const l of items) {
+    const { storeId: _s, storeSlug: _sl, storeName: _sn, ...line } = l;
+    const arr = byStore.get(l.storeId);
+    if (arr) arr.push(line);
+    else byStore.set(l.storeId, [line]);
+  }
+
+  const storeRows = await db.store.findMany({
+    where: { id: { in: [...byStore.keys()] } },
+    select: { id: true, slug: true, name: true, sellerId: true, currency: true, status: true },
+  });
+  const storeMeta = new Map(storeRows.map((s) => [s.id, s]));
+
+  const rawGroups = [...byStore.entries()].map(([storeId, lines]) => {
+    const meta = storeMeta.get(storeId);
+    if (!meta || meta.status !== "live") {
+      throw new ApiError(400, "STORE_UNAVAILABLE", `One of the sellers in your cart is currently unavailable — please remove those items to continue`);
+    }
+    return {
+      storeId,
+      storeSlug: meta.slug,
+      storeName: meta.name,
+      sellerId: meta.sellerId,
+      currency: meta.currency,
+      lines,
+      subtotalMinor: lines.reduce((s, l) => s + l.lineTotalMinor, 0),
+    };
+  });
+
+  const rateId = input.shippingRateId && SHIPPING_RATES[input.shippingRateId] ? input.shippingRateId : "standard";
+  const state = (input.state ?? "").trim();
+
+  // A coupon applies to exactly ONE seller group (highest subtotal among the
+  // eligible ones) so a platform-wide code can never be multiplied per seller.
+  let winning: CouponVerdict | null = null;
+  let uiVerdict: CouponVerdict | null = null;
+  let couponTarget: string | null = null;
+  if ((input.couponCode ?? "").trim()) {
+    const sorted = [...rawGroups].sort((a, b) => b.subtotalMinor - a.subtotalMinor);
+    for (const g of sorted) {
+      const ship = SHIPPING_RATES[rateId].freeOverSubtotal && g.subtotalMinor >= FREE_SHIP_THRESHOLD_MINOR ? 0 : SHIPPING_RATES[rateId].amountMinor;
+      const verdict = await evaluateCoupon(g.storeId, input.couponCode, g.subtotalMinor, ship);
+      uiVerdict = uiVerdict ?? verdict;
+      if (verdict.valid) {
+        winning = verdict;
+        couponTarget = g.storeId;
+        break;
+      }
+    }
+  }
+
+  const groups: PricedStoreGroup[] = rawGroups.map((g) => {
+    let shippingMinor = SHIPPING_RATES[rateId].freeOverSubtotal && g.subtotalMinor >= FREE_SHIP_THRESHOLD_MINOR ? 0 : SHIPPING_RATES[rateId].amountMinor;
+    let discountMinor = 0;
+    let coupon: CouponVerdict = { code: input.couponCode ?? "", valid: false, reason: "Not applied to this seller", discountMinor: 0, freeShip: false, couponId: null };
+    if (winning && couponTarget === g.storeId) {
+      discountMinor = Math.min(winning.discountMinor, g.subtotalMinor);
+      if (winning.freeShip) shippingMinor = 0;
+      coupon = winning;
+    }
+    const totalMinor = Math.max(0, g.subtotalMinor - discountMinor + shippingMinor);
+    return {
+      storeId: g.storeId,
+      storeSlug: g.storeSlug,
+      storeName: g.storeName,
+      sellerId: g.sellerId,
+      currency: g.currency,
+      lines: g.lines,
+      subtotalMinor: g.subtotalMinor,
+      discountMinor,
+      shippingMinor,
+      totalMinor,
+      coupon,
+    };
+  });
+
+  const sum = (fn: (g: PricedStoreGroup) => number) => groups.reduce((s, g) => s + fn(g), 0);
+  const subtotalMinor = sum((g) => g.subtotalMinor);
+  const discountMinor = sum((g) => g.discountMinor);
+  const shippingMinor = sum((g) => g.shippingMinor);
+
+  // Delivery options are shown ONCE with the aggregate parcel cost for this rate.
+  const shippingOptions: ShippingOptionT[] = Object.entries(SHIPPING_RATES).map(([id, rate]) => {
+    const ineligible = id === "express" && EXPRESS_EXCLUDED_STATES.has(state);
+    let amountMinor = 0;
+    for (const g of rawGroups) {
+      if (!(rate.freeOverSubtotal && g.subtotalMinor >= FREE_SHIP_THRESHOLD_MINOR)) amountMinor += rate.amountMinor;
+    }
+    const selected = id === rateId;
+    return {
+      id,
+      label: rate.label,
+      eta: rate.eta,
+      amountMinor: selected ? shippingMinor : amountMinor,
+      freeShipping: selected ? shippingMinor === 0 : amountMinor === 0,
+      available: !ineligible,
+      reason: ineligible ? `Express delivery is not available to ${state || "this destination"} — please choose Standard` : null,
+    };
+  });
+
+  return {
+    groups,
+    items,
+    subtotalMinor,
+    discountMinor,
+    shippingMinor,
+    totalMinor: Math.max(0, subtotalMinor - discountMinor + shippingMinor),
+    shippingRateId: rateId,
+    shippingOptions,
+    coupon: uiVerdict ?? { code: input.couponCode ?? "", valid: false, reason: "No coupon provided", discountMinor: 0, freeShip: false, couponId: null },
+  };
+}
