@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders } from "@/lib/session-client";
+import { useApp } from "@/lib/app-store";
 import { Star, StarHalf, PackageOpen, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -232,8 +233,11 @@ export function readOrderRefs(): OrderRefT[] {
   }
 }
 
-/** Fetch the guest cart and live-refresh on sm-cart-updated events. */
+/** Fetch the account cart and live-refresh on sm-cart-updated events + on any
+ *  sign-in / sign-out change (carts are account-scoped — guests have none). */
 export function useCart() {
+  const me = useApp((s) => s.me);
+  const authed = Boolean(me.loaded && me.shopper);
   const [cart, setCart] = useState<CartT | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -249,11 +253,12 @@ export function useCart() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    setLoading(true);
+    void refresh();
     const onEvt = () => refresh();
     window.addEventListener(CART_EVENT, onEvt);
     return () => window.removeEventListener(CART_EVENT, onEvt);
-  }, [refresh]);
+  }, [refresh, authed]);
 
   const count = cart?.items.reduce((s, i) => s + i.qty, 0) ?? 0;
   const subtotal = cart?.items.reduce((s, i) => s + i.lineTotalMinor, 0) ?? 0;

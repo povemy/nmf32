@@ -284,6 +284,7 @@ export default function ShopperShell() {
 
 function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: ShopperView) => void; openCart: () => void }) {
   const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
   const signedIn = Boolean(me.loaded && me.shopper);
   const { count } = useCart();
   const unreadChats = useChatUnread(signedIn, view.name);
@@ -296,10 +297,10 @@ function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: Shoppe
       icon: Package,
       active: view.name === "orders" || (view.name === "me" && view.tab === "purchases"),
       badge: 0,
-      onClick: () => (signedIn ? nav({ name: "me", tab: "purchases" }) : nav({ name: "orders" })),
+      onClick: () => (signedIn ? nav({ name: "me", tab: "purchases" }) : openShopperAuth()),
     },
     { key: "cart", label: "Cart", icon: ShoppingCart, active: false, badge: count, onClick: openCart },
-    { key: "chat", label: "Chat", icon: MessagesSquare, active: view.name === "messages", badge: unreadChats, onClick: () => nav({ name: "messages" }) },
+    { key: "chat", label: "Chat", icon: MessagesSquare, active: view.name === "messages", badge: unreadChats, onClick: () => (signedIn ? nav({ name: "messages" }) : openShopperAuth()) },
     { key: "me", label: "Me", icon: User, active: view.name === "me", badge: 0, onClick: () => nav({ name: "me" }) },
   ];
 
@@ -404,17 +405,6 @@ function MarketHeader({
               </SheetTitle>
             </SheetHeader>
             <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-80px)]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submitSearch()}
-                  placeholder="Search products…"
-                  className="pl-8 min-h-[44px]"
-                  aria-label="Search products"
-                />
-              </div>
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Categories</p>
               <ul className="space-y-1">
                 {(categories ?? []).flatMap((c) => [{ name: c.name, slug: c.slug, child: false }, ...c.children.map((ch) => ({ name: `↳ ${ch.name}`, slug: ch.slug, child: true }))]).map((c) => (
@@ -450,12 +440,12 @@ function MarketHeader({
           </SheetContent>
         </Sheet>
 
-        {/* logo */}
-        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] items-center gap-2" aria-label="SHOPMESH home">
+        {/* logo — wordmark hidden on the smallest phones so the search bar fits */}
+        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] shrink-0 items-center gap-2" aria-label="SHOPMESH home">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
             <ShoppingBag className="h-5 w-5" />
           </span>
-          <span className="text-lg font-extrabold tracking-tight text-teal-900">
+          <span className="hidden text-lg font-extrabold tracking-tight text-teal-900 sm:inline">
             SHOP<span className="text-brand-gradient">MESH</span>
           </span>
         </button>
@@ -511,8 +501,8 @@ function MarketHeader({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* search (desktop) */}
-        <div className="relative ml-auto hidden flex-1 max-w-md md:block">
+        {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons */}
+        <div className="relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
@@ -524,7 +514,7 @@ function MarketHeader({
           />
         </div>
 
-        <div className="ml-auto md:ml-0 flex items-center gap-1.5">
+        <div className="ml-0 flex shrink-0 items-center gap-1.5">
           {/* sell / generate store (desktop + mobile) */}
           <button
             type="button"
@@ -539,37 +529,41 @@ function MarketHeader({
             <span className="hidden sm:inline">Sell / Generate store</span>
           </button>
 
-          {/* messages (chat with sellers) */}
-          <button
-            type="button"
-            onClick={() => nav({ name: "messages" })}
-            aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
-            className={cn(
-              "relative inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
-              view.name === "messages" && "text-teal-800 bg-teal-50"
-            )}
-          >
-            <MessagesSquare className="h-4 w-4" />
-            <span className="hidden md:inline">Messages</span>
-            {unreadChats > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
-                {unreadChats > 9 ? "9+" : unreadChats}
-              </span>
-            ) : null}
-          </button>
+          {/* messages — account feature, hidden for guests */}
+          {shopperSignedIn ? (
+            <button
+              type="button"
+              onClick={() => nav({ name: "messages" })}
+              aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
+              className={cn(
+                "relative inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+                view.name === "messages" && "text-teal-800 bg-teal-50"
+              )}
+            >
+              <MessagesSquare className="h-4 w-4" />
+              <span className="hidden md:inline">Messages</span>
+              {unreadChats > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+                  {unreadChats > 9 ? "9+" : unreadChats}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
 
-          {/* orders — signed-in shoppers get the account-scoped purchases hub */}
-          <button
-            type="button"
-            onClick={() => (shopperSignedIn ? nav({ name: "me", tab: "purchases" }) : nav({ name: "orders" }))}
-            aria-label="My orders"
-            className={cn(
-              "hidden sm:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
-              (view.name === "orders" || (view.name === "me" && view.tab === "purchases")) && "text-teal-800 bg-teal-50"
-            )}
-          >
-            <Package className="h-4 w-4" /> Orders
-          </button>
+          {/* orders — account feature, hidden for guests (guests keep “Track order” via the footer/menu) */}
+          {shopperSignedIn ? (
+            <button
+              type="button"
+              onClick={() => nav({ name: "me", tab: "purchases" })}
+              aria-label="My orders"
+              className={cn(
+                "hidden sm:inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+                (view.name === "orders" || (view.name === "me" && view.tab === "purchases")) && "text-teal-800 bg-teal-50"
+              )}
+            >
+              <Package className="h-4 w-4" /> Orders
+            </button>
+          ) : null}
 
           {/* track order */}
           <button
@@ -1250,6 +1244,9 @@ function ShopperFooter({
 function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: (o: boolean) => void; ctx: ShopperCtx }) {
   const { cart, count, subtotal, loading } = useCart();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const signedIn = Boolean(me.loaded && me.shopper);
 
   async function setQty(itemId: string, qty: number) {
     setBusyId(itemId);
@@ -1283,6 +1280,22 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !signedIn ? (
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState
+              icon={ShoppingCart}
+              title="Sign in to use your cart"
+              hint="Carts live on your SHOPMESH account — your items stay with you on every device and are waiting when you come back."
+              action={
+                <Button
+                  onClick={() => openShopperAuth()}
+                  className="bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
+                >
+                  <LogIn className="h-4 w-4" /> Sign in or create account
+                </Button>
+              }
+            />
           </div>
         ) : !cart || cart.items.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">

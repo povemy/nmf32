@@ -8,16 +8,11 @@ function sortAddresses<T extends { isDefault: boolean; updatedAt: Date }>(rows: 
   return [...rows].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.updatedAt.getTime() - a.updatedAt.getTime());
 }
 
-// Ownership check — a signed-in shopper may only touch rows claimed by their
-// ACCOUNT; a guest may only touch unclaimed rows minted on their own device.
+// Ownership check — the signed-in shopper may only touch rows owned by their
+// ACCOUNT. Account-only scoping: no device-token branch exists any more.
 async function requireOwned(owner: AddressOwner, id: string) {
   const row = await db.address.findUnique({ where: { id } });
-  const owns =
-    row &&
-    (owner.shopperId
-      ? row.shopperId === owner.shopperId
-      : row.ownerToken === owner.ownerToken && row.shopperId === null);
-  if (!owns) throw new ApiError(404, "NOT_FOUND", "Address not found");
+  if (!row || row.shopperId !== owner.shopperId) throw new ApiError(404, "NOT_FOUND", "Address not found");
   return row;
 }
 

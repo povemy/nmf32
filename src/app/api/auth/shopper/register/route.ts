@@ -3,10 +3,9 @@ import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper } from "@/lib/shopper-merge";
-import { readOwnerToken } from "../../../checkout/owner";
 
 // POST /api/auth/shopper/register { fullName, email, password, phone? } — buyer signup.
-// Guest addresses/orders from this device are claimed into the brand-new account.
+// Legacy guest orders placed with this email (pre-guest-checkout removal) are claimed into the new account.
 export const POST = handle(async (req: Request) => {
   const body = (await req.json().catch(() => ({}))) as {
     email?: string; password?: string; fullName?: string; phone?: string;
@@ -33,7 +32,7 @@ export const POST = handle(async (req: Request) => {
   });
 
   const token = await createSession("shopper", shopper.id);
-  const claimed = await claimGuestStateForShopper(shopper.id, shopper.email, await readOwnerToken());
+  const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
   await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.register" });
   return ok({
     userType: "shopper",

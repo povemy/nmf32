@@ -166,6 +166,7 @@ model ShopperUser {
   activities      UserActivity[]
   addresses       Address[]
   orders          Order[]
+  carts           Cart[]
 }
 
 model ChatThread {
@@ -418,12 +419,16 @@ model CollectionProduct {
 // ---------------------------------------------------------------- E: CART / ORDERS
 
 model Cart {
-  id        String   @id @default(cuid())
-  token     String   @unique
+  id        String       @id @default(cuid())
+  token     String       @unique // kept for legacy rows + order.cartToken reconciliation
+  shopperId String?      @unique // owning shopper account — carts now REQUIRE sign-in (one active cart per buyer)
+  shopper   ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
   storeId   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   items     CartItem[]
+
+  @@index([shopperId])
 }
 
 model CartItem {

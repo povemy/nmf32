@@ -43,6 +43,7 @@ import {
   discountPercent,
   dateShort,
   openProduct,
+  ApiFail,
   EmptyState,
   ProductCard,
   QtyStepper,
@@ -241,17 +242,32 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
 
   async function addToCart(): Promise<boolean> {
     if (!variant || variant.stock <= 0) return false;
+    // Carts are ACCOUNT-scoped (no guest cart) — guests must sign in first.
+    // Auth state is read from the STORE at call time, NOT from this render's
+    // closure: the sign-in dialog resumes this exact function via a stored
+    // callback AFTER `me` has changed, so a captured `shopper` would be stale
+    // and would wrongly re-open the dialog instead of adding the item.
+    const meNow = useApp.getState().me;
+    if (!(meNow.loaded ? meNow.shopper : null)) {
+      openShopperAuth(() => void requestAdd());
+      return false;
+    }
     setAdding(true);
     try {
       const res = await postJson<{ cart: unknown; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty });
       notifyCartUpdated();
       if (res.notice) {
-        toast.warning("Added — stock limited", { description: res.notice });
+        toast.warning("Cart updated", { description: res.notice });
       } else {
         toast.success("Added to cart", { description: `${data?.product.title}${qty > 1 ? ` × ${qty}` : ""}` });
       }
       return true;
     } catch (e) {
+      // Belt-and-braces: an expired session gets the same sign-in-first flow.
+      if (e instanceof ApiFail && (e.status === 401 || e.code === "SHOPPER_LOGIN_REQUIRED")) {
+        openShopperAuth(() => void requestAdd());
+        return false;
+      }
       toast.error(e instanceof Error ? e.message : "Could not add to cart");
       return false;
     } finally {

@@ -1,7 +1,11 @@
-// Cart helpers — token identity via X-Cart-Token header (localStorage-backed on
-// the client) with the "sm_cart" cookie as fallback. The header path keeps the
-// cart working in cross-site iframes, where browsers drop SameSite cookies.
+// Cart helpers — carts are ACCOUNT-scoped (shopperId) and require sign-in.
+// There is no guest cart any more: "add to cart" is the login gate, so items,
+// totals and checkout always belong to a real SHOPMESH account and follow the
+// buyer across devices. The legacy device-token path (X-Cart-Token header /
+// "sm_cart" cookie) is kept only to read old rows for reconciliation
+// (order.cartToken clearing) — it can never create or expose a live cart.
 import { cookies, headers } from "next/headers";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { randomToken } from "@/lib/password";
 
@@ -36,35 +40,40 @@ export async function setCartToken(token: string): Promise<void> {
   });
 }
 
-export async function findCartByToken(token: string | null) {
-  if (!token) return null;
-  return db.cart.findUnique({
-    where: { token },
+const CART_INCLUDE = {
+  items: {
     include: {
-      items: {
+      variant: {
         include: {
-          variant: {
+          product: {
             include: {
-              product: {
-                include: {
-                  store: { select: { id: true, name: true, slug: true, status: true } },
-                  images: { orderBy: { sortOrder: "asc" }, take: 1 },
-                },
-              },
+              store: { select: { id: true, name: true, slug: true, status: true } },
+              images: { orderBy: { sortOrder: "asc" }, take: 1 },
             },
           },
         },
-        orderBy: { createdAt: "asc" },
       },
     },
-  });
+    orderBy: { createdAt: "asc" },
+  },
+} satisfies Prisma.CartInclude;
+
+/** Legacy lookup by device token — kept ONLY for reconciliation of rows that
+ *  predate account-scoped carts (e.g. clearing the cart after payment). */
+export async function findCartByToken(token: string | null) {
+  if (!token) return null;
+  return db.cart.findUnique({ where: { token }, include: CART_INCLUDE });
 }
 
-/** Create a cart; adopts the client-supplied token when valid so the same
- *  device keeps seeing its cart even if cookies are unavailable. */
-export async function createCart(storeId: string, preferredToken?: string | null) {
-  const token = isValidCartToken(preferredToken) ? preferredToken : randomToken(16);
-  return db.cart.create({ data: { token, storeId } });
+/** The signed-in shopper's active cart (at most one). */
+export async function findCartForShopper(shopperId: string) {
+  return db.cart.findUnique({ where: { shopperId }, include: CART_INCLUDE });
+}
+
+/** Create a cart for a shopper; a fresh internal token is minted for
+ *  order.cartToken reconciliation. Never called without a shopper account. */
+export async function createCartForShopper(shopperId: string, storeId: string) {
+  return db.cart.create({ data: { token: randomToken(16), shopperId, storeId } });
 }
 
 type CartWithItems = NonNullable<Awaited<ReturnType<typeof findCartByToken>>>;

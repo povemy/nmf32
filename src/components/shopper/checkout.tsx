@@ -32,6 +32,7 @@ import {
   Truck,
   ShieldCheck,
   Star,
+  LogIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
@@ -320,8 +321,24 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const { cart, loading: cartLoading, refresh: refreshCart } = useCart();
   const items = cart?.items ?? [];
 
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const shopper = me.loaded ? me.shopper : null;
+
   const [draft, setDraft] = useState<DraftT>(loadDraft);
   useEffect(() => persistDraft(draft), [draft]);
+
+  // Contact details come from the ACCOUNT (carts/checkout are account-scoped);
+  // only fill blanks so the shopper can still override per-order (gifts etc.).
+  useEffect(() => {
+    if (!shopper) return;
+    setDraft((d) => ({
+      ...d,
+      name: d.name.trim() || shopper.fullName,
+      email: d.email.trim() || shopper.email,
+      phone: d.phone.trim() || shopper.phone || "",
+    }));
+  }, [shopper]);
 
   const [addresses, setAddresses] = useState<AddressT[] | null>(null);
   const [addressesLoading, setAddressesLoading] = useState(true);
@@ -460,6 +477,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       setDraft((d) => ({ ...d, addressId: res.address.id }));
       setFormMode(null);
       setForm(emptyForm);
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
       toast.success(formMode?.kind === "edit" ? "Address updated" : "Address saved", {
         description: `${res.address.line1}, ${res.address.city} ${res.address.postcode}`,
       });
@@ -476,6 +494,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       setAddresses(res.addresses);
       setDeleteArm(null);
       setDraft((d) => (d.addressId === id ? { ...d, addressId: res.addresses.find((a) => a.isDefault)?.id ?? res.addresses[0]?.id ?? null } : d));
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
       toast.success("Address removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not remove address");
@@ -486,6 +505,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     try {
       const res = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
       setAddresses(res.addresses);
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
       toast.success("Default address updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update address");
@@ -606,6 +626,27 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
           action={
             <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
               Start shopping
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // Checkout is account-only — carts, addresses and orders all live on the account.
+  if (!shopper) {
+    return (
+      <div className="flex-1">
+        <EmptyState
+          icon={LogIn}
+          title="Sign in to check out"
+          hint="Your cart, saved addresses and orders are tied to your SHOPMESH account so they follow you on every device."
+          action={
+            <Button
+              onClick={() => openShopperAuth()}
+              className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
+            >
+              <LogIn className="h-4 w-4" /> Sign in or create account
             </Button>
           }
         />

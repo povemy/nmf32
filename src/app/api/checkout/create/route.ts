@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
-import { getSession } from "@/lib/auth";
+import { requireShopper } from "@/lib/auth";
 import { computePricing, assertShippingAvailable } from "../pricing";
 import { computeOrderCommissions } from "@/lib/commission";
 import { randomToken } from "@/lib/password";
 import { toJson } from "@/lib/json";
-import { getCartToken } from "../../cart/cart";
+import { findCartForShopper } from "../../cart/cart";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +19,16 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required");
   }
 
+  // Checkout is account-only now: the order is tied to the signed-in shopper.
+  const me = await requireShopper();
+
   // Idempotent replay: same key → return the original order.
   const existing = await db.order.findUnique({
     where: { idemKey },
     include: { paymentIntents: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   if (existing) {
+    if (existing.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
     return ok({
       orderNumber: existing.orderNumber,
       orderPaymentRef: existing.paymentIntents[0]?.providerRef ?? null,
@@ -39,10 +43,12 @@ export const POST = handle(async (req: Request) => {
   const store = await db.store.findUnique({ where: { slug: storeSlug } });
   if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
+  // Contact details prefill from the account; a shopper may still override
+  // them per-order (e.g. sending a gift), but blanks fall back to the account.
   const customer = (body.customer ?? {}) as Record<string, unknown>;
-  const customerName = String(customer.name ?? "").trim();
-  const customerEmail = String(customer.email ?? "").trim().toLowerCase();
-  const customerPhone = customer.phone != null ? String(customer.phone).trim() : null;
+  const customerName = String(customer.name ?? "").trim() || me.fullName;
+  const customerEmail = (String(customer.email ?? "").trim() || me.email).toLowerCase();
+  const customerPhone = customer.phone != null ? String(customer.phone).trim() || null : me.phone;
   if (!customerName) throw new ApiError(400, "VALIDATION", "customer.name is required");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new ApiError(400, "VALIDATION", "customer.email is invalid");
   if (customerPhone && !/^[+()\d\s-]{6,20}$/.test(customerPhone)) throw new ApiError(400, "VALIDATION", "customer.phone is invalid");
@@ -97,10 +103,9 @@ export const POST = handle(async (req: Request) => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
 
-  // Link the order to the signed-in shopper account (session wins over the
-  // typed contact email) so it appears in their dashboard purchases.
-  const sess = await getSession();
-  const shopperId = sess?.userType === "shopper" ? sess.userId : null;
+  // The order records the shopper's cart token so the webhook can clear the
+  // purchased items from the account cart once payment is verified.
+  const shopperCart = await findCartForShopper(me.id);
 
   const { order, intent } = await db.$transaction(async (tx) => {
     // Re-validate stock inside the transaction (guards concurrent checkouts).
@@ -118,7 +123,7 @@ export const POST = handle(async (req: Request) => {
         customerName,
         customerEmail,
         customerPhone,
-        shopperId,
+        shopperId: me.id,
         status: "payment_pending",
         channel: "storefront",
         currency: store.currency,
@@ -130,7 +135,7 @@ export const POST = handle(async (req: Request) => {
         shippingAddressJson,
         customerNote: body.customerNote != null ? String(body.customerNote) : null,
         paymentProvider: provider,
-        cartToken: (await getCartToken()) ?? null,
+        cartToken: shopperCart?.token ?? null,
         idemKey,
       },
     });

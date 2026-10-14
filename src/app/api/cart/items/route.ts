@@ -1,11 +1,15 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { createCart, findCartByToken, getCartToken, loadAddableVariant, setCartToken, shapeCart } from "../cart";
+import { requireShopper } from "@/lib/auth";
+import { createCartForShopper, findCartForShopper, loadAddableVariant, shapeCart } from "../cart";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/cart/items {variantId, qty>0} — add item; cart is locked to one store.
+// POST /api/cart/items {variantId, qty>0} — SIGN-IN REQUIRED. The cart is the
+// shopper's account cart (one active cart, currently locked to one store).
 export const POST = handle(async (req: Request) => {
+  const me = await requireShopper(); // 401 SHOPPER_LOGIN_REQUIRED for guests — the client opens the auth dialog
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   const variantId = String(body.variantId ?? "");
@@ -19,23 +23,22 @@ export const POST = handle(async (req: Request) => {
   const storeId = variant.product.store.id;
   if (variant.stock <= 0) throw new ApiError(409, "OUT_OF_STOCK", "This item is out of stock");
 
-  const token = await getCartToken();
-  let cart = await findCartByToken(token);
+  let cart = await findCartForShopper(me.id);
 
-  // One cart per store: switching stores replaces the cart.
+  // One cart per store: switching stores replaces the cart (with an explicit notice).
+  let notice: string | null = null;
   if (cart && cart.storeId !== storeId) {
     await db.cart.delete({ where: { id: cart.id } }).catch(() => null);
     cart = null;
+    notice = "Cart replaced — it can only hold items from one seller at a time";
   }
   if (!cart) {
-    const created = await createCart(storeId, token); // adopt client header token when present
-    cart = (await findCartByToken(created.token))!;
+    await createCartForShopper(me.id, storeId);
+    cart = (await findCartForShopper(me.id))!;
   }
-  await setCartToken(cart.token);
 
   // Merge duplicates: same variant → increment qty (capped at 99 AND at available stock).
   const existing = cart.items.find((it) => it.variantId === variant.id);
-  let notice: string | null = null;
   if (existing) {
     const capped = Math.min(99, existing.qty + qty, variant.stock);
     if (capped === existing.qty) {
@@ -50,6 +53,6 @@ export const POST = handle(async (req: Request) => {
     await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty: capped } });
   }
 
-  const fresh = await findCartByToken(cart.token);
+  const fresh = await findCartForShopper(me.id);
   return ok({ cart: shapeCart(fresh), notice }, { status: 201 });
 });

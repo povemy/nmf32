@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  ArrowLeft,
   BadgeCheck,
   Blocks,
   Clock3,
@@ -453,10 +454,13 @@ function PendingReview({ onLogout }: { onLogout: () => void }) {
 // ---------------------------------------------------------------- auth screen
 
 function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
+  const setSurface = useApp((s) => s.setSurface);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [reg, setReg] = useState({ fullName: "", displayName: "", email: "", password: "", phone: "", storeName: "" });
+
+  const goMarket = () => setSurface("shopper");
 
   const login = async () => {
     if (!loginEmail || !loginPassword) {
@@ -491,7 +495,34 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
   };
 
   return (
-    <div className="flex-1 grid lg:grid-cols-2 min-h-0">
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* top chrome — the portal is reachable from the buyer hub (“Start Selling” /
+          “Open store”), so there is always a visible way back to the marketplace */}
+      <header className="border-b bg-background/95 backdrop-blur px-4 py-2.5">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+          <button
+            type="button"
+            onClick={goMarket}
+            className="flex min-h-[44px] items-center gap-2.5"
+            aria-label="SHOPMESH — back to the marketplace"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <ShoppingBag className="h-4 w-4" />
+            </span>
+            <span className="text-lg font-extrabold tracking-tight">
+              SHOPMESH{" "}
+              <span className="text-sm font-semibold text-muted-foreground">Seller Portal</span>
+            </span>
+          </button>
+          <Button variant="outline" size="sm" onClick={goMarket} className="ml-auto min-h-[40px] gap-1.5">
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Back to marketplace</span>
+            <span className="sm:hidden">Back</span>
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex-1 grid lg:grid-cols-2 min-h-0">
       {/* brand panel */}
       <div className="relative hidden lg:flex flex-col justify-between p-10 bg-primary text-primary-foreground">
         <div className="flex items-center gap-2.5">
@@ -632,6 +663,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
             </AlertDescription>
           </Alert>
         </div>
+      </div>
       </div>
     </div>
   );

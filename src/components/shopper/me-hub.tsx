@@ -210,6 +210,15 @@ function useMeData(enabled: boolean) {
     void refresh();
   }, [refresh]);
 
+  // Address CRUD (in this hub's sub-view or during checkout) must reflect on
+  // the dashboard teaser instantly — "N saved addresses" never goes stale.
+  useEffect(() => {
+    if (!enabled) return;
+    const sync = () => void refresh();
+    window.addEventListener("shopmesh:addresses-changed", sync);
+    return () => window.removeEventListener("shopmesh:addresses-changed", sync);
+  }, [enabled, refresh]);
+
   return { profile, wallet, counts, likeCount, viewedCount, loading, refresh };
 }
 
@@ -1567,6 +1576,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       }
       setForm(null);
       setEditId(null);
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save the address");
     } finally {
@@ -1579,6 +1589,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       const d = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
       setRows(d.addresses);
       setConfirmDelete(null);
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
       toast.success("Address removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not remove the address");
@@ -1589,6 +1600,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
     try {
       const d = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
       setRows(d.addresses);
+      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
       toast.success("Default address updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update the default");

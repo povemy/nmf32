@@ -3,12 +3,11 @@ import { verifyPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper } from "@/lib/shopper-merge";
-import { readOwnerToken } from "../../../checkout/owner";
 
 // POST /api/auth/shopper/login { email, password } — buyer account sign-in.
-// Guest state created on this device (address book rows, orders placed with the
-// account email) is claimed INTO the account, so it follows the account — not
-// the browser — from this point on (fixes the guest→member address crossover).
+// Legacy guest orders placed with the account email (guest checkout existed
+// before it was removed) are claimed INTO the account. Carts and the address
+// book are strictly account-scoped — there is nothing device-owned any more.
 export const POST = handle(async (req: Request) => {
   const body = (await req.json().catch(() => ({}))) as { email?: string; password?: string };
   const email = (body.email ?? "").trim().toLowerCase();
@@ -24,7 +23,7 @@ export const POST = handle(async (req: Request) => {
   }
   await db.shopperUser.update({ where: { id: shopper.id }, data: { lastLoginAt: new Date() } });
   const token = await createSession("shopper", shopper.id);
-  const claimed = await claimGuestStateForShopper(shopper.id, shopper.email, await readOwnerToken());
+  const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
   await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login" });
   return ok({
     userType: "shopper",
