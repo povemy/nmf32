@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
 import {
   fetchJson,
@@ -198,7 +199,18 @@ function useMeData(enabled: boolean) {
       fetchEnvelope<{ activities: unknown[] }>("/api/me/activity?type=VIEWED&size=1"),
     ]);
     if (p.status === "fulfilled") setProfile(p.value);
-    if (w.status === "fulfilled") setWallet(w.value);
+    if (w.status === "fulfilled") {
+      // DORMANT SCAFFOLD — MESH FINANCE: while MESH_FINANCE_ENABLED is false
+      // the wallet API answers a `disabled` envelope (wallet/checkIn null).
+      // Normalize it into the UI shape so the kept scaffold cards render
+      // inert zeroes instead of crashing; the cards stay hidden behind the flag.
+      const raw = w.value as Partial<WalletT> & { disabled?: boolean };
+      setWallet({
+        wallet: raw.wallet ?? { balanceMinor: 0, coinBalance: 0, spayLaterLimitMinor: 0, spayLaterUsedMinor: 0, spayLaterAvailableMinor: 0, checkInStreak: 0 },
+        vouchers: raw.vouchers ?? { available: 0, used: 0 },
+        checkIn: raw.checkIn ?? { canClaim: false, nextClaimAt: null },
+      });
+    }
     if (o.status === "fulfilled") setCounts(o.value.bucketCounts);
     if (lk.status === "fulfilled") setLikeCount(lk.value.meta?.total ?? 0);
     if (vw.status === "fulfilled") setViewedCount(vw.value.meta?.total ?? 0);
@@ -240,7 +252,7 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
         <EmptyState
           icon={User}
           title="Your dashboard awaits"
-          hint="Sign in to see your purchases, wallet, coins, vouchers and personalised picks — all in one place."
+          hint="Sign in to see your purchases, vouchers and personalised picks — all in one place."
           action={
             <Button onClick={() => openShopperAuth()} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
               Sign in / Create account
@@ -257,7 +269,14 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
       case "purchases":
         return <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} />;
       case "wallet":
-        return <WalletView onBack={back} wallet={data.wallet} onRefresh={data.refresh} />;
+        // DORMANT SCAFFOLD — MESH FINANCE: WalletView is kept intact for the
+        // roadmap; until MESH_FINANCE_ENABLED flips, this entry renders a
+        // coming-soon view instead of any stored-value UI.
+        return MESH_FINANCE_ENABLED ? (
+          <WalletView onBack={back} wallet={data.wallet} onRefresh={data.refresh} />
+        ) : (
+          <FinanceComingSoonView onBack={back} />
+        );
       case "vouchers":
         return <VouchersView onBack={back} onOpenMarket={() => ctx.nav({ name: "market" })} />;
       case "likes":
@@ -340,7 +359,7 @@ function Dashboard({
           <nav className="rounded-2xl border bg-card p-2 shadow-soft">
             <SideItem icon={Store} label="Dashboard" active onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
             <SideItem icon={Package} label="My Purchases" onClick={() => onSub("purchases")} />
-            <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} />
+            {MESH_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
             <SideItem icon={Ticket} label="My Vouchers" onClick={() => onSub("vouchers")} />
             <SideItem icon={MapPin} label="Delivery Addresses" onClick={() => onSub("addresses")} />
             <SideItem icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
@@ -483,22 +502,30 @@ function Dashboard({
           <section className="space-y-3" aria-labelledby="me-wallet">
             <h2 id="me-wallet" className="sr-only">Wallet & financial dashboard</h2>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <WalletCard
-                icon={Wallet}
-                label="SHOPMESH Pay"
-                value={data.wallet ? formatMinor(data.wallet.wallet.balanceMinor) : "—"}
-                hint="Wallet balance"
-                onClick={() => onSub("wallet")}
-              />
-              <CoinCard wallet={data.wallet} onRefresh={data.refresh} />
-              <WalletCard
-                icon={CreditCard}
-                label="SPayLater"
-                value={data.wallet ? formatMinor(data.wallet.wallet.spayLaterAvailableMinor) : "—"}
-                hint={data.wallet ? `of ${formatMinor(data.wallet.wallet.spayLaterLimitMinor)} limit` : "Available credit"}
-                meter={data.wallet && data.wallet.wallet.spayLaterLimitMinor > 0 ? data.wallet.wallet.spayLaterUsedMinor / data.wallet.wallet.spayLaterLimitMinor : 0}
-                onClick={() => onSub("wallet")}
-              />
+              {MESH_FINANCE_ENABLED ? (
+                <>
+                  <WalletCard
+                    icon={Wallet}
+                    label="SHOPMESH Pay"
+                    value={data.wallet ? formatMinor(data.wallet.wallet.balanceMinor) : "—"}
+                    hint="Wallet balance"
+                    onClick={() => onSub("wallet")}
+                  />
+                  <CoinCard wallet={data.wallet} onRefresh={data.refresh} />
+                  <WalletCard
+                    icon={CreditCard}
+                    label="SPayLater"
+                    value={data.wallet ? formatMinor(data.wallet.wallet.spayLaterAvailableMinor) : "—"}
+                    hint={data.wallet ? `of ${formatMinor(data.wallet.wallet.spayLaterLimitMinor)} limit` : "Available credit"}
+                    meter={data.wallet && data.wallet.wallet.spayLaterLimitMinor > 0 ? data.wallet.wallet.spayLaterUsedMinor / data.wallet.wallet.spayLaterLimitMinor : 0}
+                    onClick={() => onSub("wallet")}
+                  />
+                </>
+              ) : (
+                // DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts):
+                // wallet / coins / SPayLater cards are hidden; placeholder keeps the bento shape.
+                <FinanceComingSoonCard />
+              )}
               <WalletCard
                 icon={Ticket}
                 label="Vouchers"
@@ -508,10 +535,14 @@ function Dashboard({
               />
             </div>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <ServiceCard icon={ShoppingCart} title="SHOPMESH Pay App" tag="Scan & Pay" onClick={() => toast.info("SHOPMESH Pay App", { description: "Coming soon in this demo." })} />
+              {MESH_FINANCE_ENABLED ? (
+                <>
+                  <ServiceCard icon={ShoppingCart} title="SHOPMESH Pay App" tag="Scan & Pay" onClick={() => toast.info("SHOPMESH Pay App", { description: "Coming soon in this demo." })} />
+                  <ServiceCard icon={Coins} title="Money+" tag="4.1% p.a." onClick={() => toast.info("Money+", { description: "Coming soon in this demo." })} />
+                </>
+              ) : null}
               <ServiceCard icon={Landmark} title="Cash Financing" tag="0.75% monthly" onClick={() => toast.info("Cash Financing", { description: "Coming soon in this demo." })} />
               <ServiceCard icon={ShieldCheck} title="Insurance" tag="From RM1.20" onClick={() => toast.info("Insurance", { description: "Coming soon in this demo." })} />
-              <ServiceCard icon={Coins} title="Money+" tag="4.1% p.a." onClick={() => toast.info("Money+", { description: "Coming soon in this demo." })} />
             </div>
           </section>
 
@@ -801,7 +832,7 @@ function WalletCard({ icon: Icon, label, value, hint, meter, onClick }: { icon: 
 
 function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
-  const canClaim = wallet?.checkIn.canClaim ?? false;
+  const canClaim = wallet?.checkIn?.canClaim ?? false;
 
   const claim = async () => {
     setBusy(true);
@@ -838,6 +869,47 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
         </Button>
         {wallet && wallet.wallet.checkInStreak > 0 ? <span className="text-[10px] font-semibold text-muted-foreground">🔥 {wallet.wallet.checkInStreak}-day</span> : null}
       </div>
+    </div>
+  );
+}
+
+// DORMANT SCAFFOLD — MESH FINANCE placeholders (see src/lib/feature-flags.ts).
+// Rendered while MESH_FINANCE_ENABLED is false so the wallet bento keeps its
+// shape; the real cards (WalletCard / CoinCard / WalletView) remain untouched
+// and reconnect automatically when the flag flips to true.
+function FinanceComingSoonCard() {
+  return (
+    <div
+      className="flex min-h-[92px] flex-col justify-center rounded-2xl border border-dashed border-teal-300 bg-teal-50/40 p-4"
+      role="note"
+      aria-label="MeshPay and Mesh Coins coming soon"
+    >
+      <div className="flex items-center gap-2">
+        <Wallet className="h-4 w-4 text-teal-600" aria-hidden="true" />
+        <span className="text-xs font-bold">MeshPay &amp; Coins</span>
+        <span className="ml-auto rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-extrabold text-teal-800">SOON</span>
+      </div>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        Wallet, coins &amp; pay-later are switched off for now — the scaffold is kept for the roadmap.
+      </p>
+    </div>
+  );
+}
+
+function FinanceComingSoonView({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 px-4 py-6">
+      <SubHeader title="My Wallet" onBack={onBack} />
+      <EmptyState
+        icon={Wallet}
+        title="MeshPay is coming soon"
+        hint="SHOPMESH Pay balance, Mesh Coins check-ins and pay-later are switched off for now. The wallet scaffold is kept and will be reconnected when the finance roadmap lands."
+        action={
+          <Button variant="outline" onClick={onBack} className="min-h-[44px]">
+            Back to dashboard
+          </Button>
+        }
+      />
     </div>
   );
 }
@@ -1167,7 +1239,7 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
 
 function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet: WalletT | null; onRefresh: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
-  const canClaim = wallet?.checkIn.canClaim ?? false;
+  const canClaim = wallet?.checkIn?.canClaim ?? false;
 
   const claim = async () => {
     setBusy(true);
@@ -1203,7 +1275,7 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
               <Button size="sm" disabled={!canClaim || busy} onClick={() => void claim()} className={cn("mt-3 min-h-[36px]", canClaim ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-muted text-muted-foreground hover:bg-muted")}>
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : canClaim ? "Daily check-in" : "Come back tomorrow"}
               </Button>
-              {!canClaim && wallet.checkIn.nextClaimAt ? (
+              {!canClaim && wallet?.checkIn?.nextClaimAt ? (
                 <p className="pt-1.5 text-[10px] text-muted-foreground">Next check-in from {new Date(wallet.checkIn.nextClaimAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "medium", timeStyle: "short" })}</p>
               ) : null}
             </div>
@@ -1402,7 +1474,7 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
       type="button"
       onClick={() => onOpen(p)}
       className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
-      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${p.spayLaterEligible ? ", SPayLater available" : ""}`}
+      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${MESH_FINANCE_ENABLED && p.spayLaterEligible ? ", SPayLater available" : ""}`}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
         <img
@@ -1433,7 +1505,7 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
           {p.isSellingFast ? (
             <span className="rounded border border-rose-300 bg-rose-50 px-1 py-px text-[9px] font-extrabold text-rose-700">Selling Fast</span>
           ) : null}
-          {p.spayLaterEligible ? (
+          {MESH_FINANCE_ENABLED && p.spayLaterEligible ? (
             <span className="rounded border border-teal-300 bg-teal-50 px-1 py-px text-[9px] font-extrabold text-teal-800">SPayLater 0% 3x</span>
           ) : null}
         </div>

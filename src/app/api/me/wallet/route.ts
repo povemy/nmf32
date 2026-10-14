@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +9,30 @@ const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 // GET /api/me/wallet — buyer financial overview: SHOPMESH Pay balance, coin
 // balance, SPayLater credit, voucher counts and the daily check-in state.
+//
+// DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts): while
+// MESH_FINANCE_ENABLED is false this endpoint intentionally does NOT touch
+// ShopperWallet (no lazy creation, no stored-value exposure) and reports a
+// `disabled` envelope. Voucher counts are still served — vouchers are
+// marketing assets, not stored value. The full wallet scaffold below stays
+// exactly as built; flip the flag to re-activate it without further changes.
 export const GET = handle(async () => {
   const me = await requireShopper();
+
+  const [availableVouchers, usedVouchers] = await Promise.all([
+    db.userVoucher.count({ where: { userId: me.id, status: "AVAILABLE" } }),
+    db.userVoucher.count({ where: { userId: me.id, status: "USED" } }),
+  ]);
+
+  if (!MESH_FINANCE_ENABLED) {
+    return ok({
+      disabled: true,
+      message: "MeshPay & Mesh Coins are coming soon.",
+      wallet: null,
+      checkIn: null,
+      vouchers: { available: availableVouchers, used: usedVouchers },
+    });
+  }
 
   // Wallet is created lazily on first read so every account has one.
   const wallet = await db.shopperWallet.upsert({
@@ -19,11 +42,6 @@ export const GET = handle(async () => {
   });
 
   const now = new Date();
-  const [availableVouchers, usedVouchers] = await Promise.all([
-    db.userVoucher.count({ where: { userId: me.id, status: "AVAILABLE" } }),
-    db.userVoucher.count({ where: { userId: me.id, status: "USED" } }),
-  ]);
-
   const lastCheckInAt = wallet.lastCheckInAt;
   const canClaim = !lastCheckInAt || now.getTime() - lastCheckInAt.getTime() >= CLAIM_COOLDOWN_MS;
   const nextClaimAt = lastCheckInAt ? new Date(lastCheckInAt.getTime() + CLAIM_COOLDOWN_MS) : null;

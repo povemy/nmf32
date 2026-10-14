@@ -3,6 +3,13 @@
 // SIGN CONVENTION: seller wallet balance = SUM(credit) - SUM(debit) on
 // SELLER:{walletId}:PAYABLE. Credits with available_at > now = pending.
 // Every transaction MUST balance: sum(debit) == sum(credit).
+//
+// OPTION B NOTE (licensed-PSP split model): the platform does NOT custody
+// buyer funds. SELLER:*:PAYABLE balances MIRROR the PSP's per-seller
+// sub-balances, and the payout pipeline (T2 clear → bank transfer) records
+// the settlement the PSP/finance ops actually executes. Commission lines
+// equal the PSP application fee deducted at payment time (rate model under
+// discussion per user decision — keep the mechanics, numbers are config).
 // ============================================================================
 import { db } from "./db";
 import { parseJson, toJson } from "./json";

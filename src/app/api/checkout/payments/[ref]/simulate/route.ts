@@ -6,10 +6,12 @@ import { processPaymentWebhook, WEBHOOK_SECRET } from "../../../../webhooks/paym
 export const dynamic = "force-dynamic";
 
 // POST /api/checkout/payments/[ref]/simulate {result: "succeeded"|"failed"}
-// SANDBOX MOCK (public): the server signs the webhook payload itself and runs the
-// exact same verification+processing pipeline as /api/webhooks/payments/[provider].
-// The HMAC secret never reaches the client. The ref may be a single PaymentIntent
-// OR an OPTION A multi-seller PaymentGroup.
+// SANDBOX MOCK PSP (public): the server signs the webhook payload itself and
+// runs the exact same verification+processing pipeline as
+// /api/webhooks/payments/[provider]. The HMAC secret never reaches the client.
+// This endpoint PLAYS the licensed PSP in dev (see src/lib/psp.ts — Option B):
+// the ref may be a single PaymentIntent OR a multi-seller PaymentGroup
+// (one PSP checkout session covering N per-seller orders).
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ ref: string }> }) => {
   const { ref } = await ctx.params;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;

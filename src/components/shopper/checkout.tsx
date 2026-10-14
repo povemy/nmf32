@@ -1192,7 +1192,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
             {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
             {quote?.groups && quote.groups.length > 1 ? (
               <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-3 py-2 text-[11px] leading-snug text-teal-900">
-                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. SHOPMESH collects this payment and disburses each seller their share.
+                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. You pay once through our licensed payment partner, which splits each seller their share automatically — SHOPMESH never holds your money.
               </div>
             ) : null}
             <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
@@ -1398,7 +1398,7 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <p className="text-4xl font-extrabold tabular-nums text-teal-800">{formatMinor(payment.amountMinor)}</p>
                 <p className="text-sm text-muted-foreground">
                   to <span className="font-semibold text-foreground">{payment.storeName ?? "SHOPMESH Marketplace"}</span>
-                  {isGroupOrder ? <span className="block text-xs">collecting on behalf of {payment.orderCount} sellers — each ships separately</span> : null}
+                  {isGroupOrder ? <span className="block text-xs">one secure payment via our licensed payment partner — split to {payment.orderCount} sellers, each ships separately</span> : null}
                 </p>
               </div>
 

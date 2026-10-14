@@ -3,10 +3,16 @@
 // Used by POST /api/webhooks/payments/[provider] AND POST /api/checkout/payments/[ref]/simulate
 // (sandbox mock). HMAC secret NEVER leaves the server.
 //
-// OPTION A: a `ref` may resolve to a PaymentGroup (one buyer payment covering N
-// per-seller orders). In that case ALL member orders are marked paid and each
-// runs its own ledger T1 posting (commission → seller wallet with payout hold),
-// so disbursement reuses the exact single-order pipeline.
+// PAYMENT MODEL — OPTION B (approved): one PSP charge per checkout. A licensed
+// payment service provider (sandbox: the "mock" provider via /simulate — see
+// src/lib/psp.ts) collects a SINGLE buyer payment for a PaymentGroup covering
+// N per-seller orders, deducts the platform's application fee (commission)
+// at payment time and settles each seller their share. SHOPMESH NEVER TAKES
+// CUSTODY OF BUYER FUNDS — the ledger T1 postings below are the platform's
+// ACCOUNTING MIRROR of the PSP's per-seller balances (bookkeeping that feeds
+// seller dashboards + the payout pipeline), not escrow.
+// (Historical note: first built as "Option A" collect-then-disburse; the data
+// model is identical under Option B — only custody semantics changed.)
 // ============================================================================
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api";
