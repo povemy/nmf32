@@ -620,3 +620,18 @@ Stage Summary:
 - SHOPMESH now officially runs OPTION B: one PSP charge per checkout, per-seller orders + commission-as-application-fee ledger mirror, zero platform custody — implemented as a provider abstraction (mock PSP in sandbox) so production is a config-level swap to a licensed gateway. All prior multi-seller flows re-verified E2E under the new copy/semantics.
 - Buyer finance suite (MeshPay wallet / Mesh Coins / SPayLater) fully dormant behind MESH_FINANCE_ENABLED=false: APIs gated server-side, UI hidden with "coming soon" teasers, every artifact (model/routes/components/seed) preserved with explicit do-not-remove/do-not-reconnect notes and re-activation instructions.
 - Commission rate model deliberately untouched (mechanics live, numbers config) pending the user's deferred discussion. No new tsc errors; lint clean; dev server healthy.
+
+---
+Task ID: 13-pre
+Agent: orchestrator (Z.ai Code)
+Task: RECOVERY — sandbox rollback wiped Task 10–12 source tree; rebuild from documented spec.
+
+Work Log:
+- Incident: between the Task 12 session (Oct 16 ~01:13) and the next user turn, the sandbox restored the working tree to a Task 9-era checkpoint (worklog shrank to 622 lines ending at Task 9; shipping.ts/campaigns.ts/vouchers.ts absent; no Shipment/Campaign/StoreFollow models; no ViewProofButton; no NOMOFEE rebrand; no NomoPay rename). Git HEAD (1f85b1d) and all dangling objects were Task-9-era; .next cache pruned. Unrecoverable from disk.
+- Survived: SQLite db/custom.db (Task 9-era data) + this conversation's verbatim worklog excerpts + persisted tool outputs.
+- Recovery actions: prisma db pull (69 models introspected, 1:1 with old-code schema — confirmed Task 9 DB); re-added ALL lost models/fields in one pass (Shipment, ShipmentEvent +proofImageUrl, StoreFollow, Notification, Campaign, Voucher scope/storeId/regionLimit/quota/claimedCount/startsAt, UserVoucher.usedOrderId, Order.voucherId, Store.fsPriceAdjustMinor, ShopperUser.follows/notifications); db push OK (additive, no data loss); prisma client regenerated.
+- Wrote docs/recovery/RECOVERY.md — full rebuild spec for Task 10/10-a/10-b/10-e/10-d/11/12 with API contracts, RBAC one-liners, ownership boundaries (verbatim from the pre-rollback worklog entries preserved in session context).
+- Git checkpoint commit created BEFORE any code rebuild to protect against repeat rollback.
+
+Stage Summary:
+- Baseline = Task 9 tree + rebuilt schema layer. Rebuild dispatched as Task 13-a..13-d (backend engines) and 14-a..14-d (UI/rebrand). All agents must read docs/recovery/RECOVERY.md first. Credentials unchanged: admin@shopmesh.io/Admin123!, lumina@shopmesh.io/Seller123!, aisyah@shopmesh.test/Shopmesh123! (rebrand to @nomofee.* happens in 14-d including DB migration).

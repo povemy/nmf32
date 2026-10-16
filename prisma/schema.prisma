@@ -1,10 +1,3 @@
-// ============================================================================
-// SHOPMESH v1 — Prisma schema (SQLite adaptation of PART2 PostgreSQL DDL)
-// Conventions: money = Int minor units (cents); percent = Float;
-// JSONB -> String columns holding JSON (parse via src/lib/json.ts);
-// enums -> String + app-level validation; time = DateTime UTC.
-// ============================================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,8 +6,6 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
-
-// ---------------------------------------------------------------- A: CONFIG
 
 model Plan {
   id                String   @id @default(cuid())
@@ -30,25 +21,21 @@ model Plan {
   updatedAt         DateTime @updatedAt
 }
 
-// OPTION B NOTE: under the licensed-PSP split model (see src/lib/psp.ts) the
-// commission is deducted by the PSP as the platform's application fee at
-// payment time. The rate MODEL discussion is DEFERRED per user decision —
-// keep these mechanics untouched, the numbers are configuration.
 model CommissionSetting {
-  id                        Int    @id @default(1)
-  defaultPercent            Float  @default(8.0)
-  appliesToShipping         Boolean @default(false)
-  basePriceRule             String @default("paid_price") // paid_price | list_price
-  fixedFeeMinor             Int    @default(0)
-  minCommissionMinor        Int    @default(0)
-  payoutHoldDays            Int    @default(7)
-  holdReleaseRule           String @default("days_after_paid") // days_after_paid | days_after_delivered
-  graceDaysAfterDelivered   Int    @default(2)
+  id                      Int     @id @default(autoincrement())
+  defaultPercent          Float   @default(8.0)
+  appliesToShipping       Boolean @default(false)
+  basePriceRule           String  @default("paid_price")
+  fixedFeeMinor           Int     @default(0)
+  minCommissionMinor      Int     @default(0)
+  payoutHoldDays          Int     @default(7)
+  holdReleaseRule         String  @default("days_after_paid")
+  graceDaysAfterDelivered Int     @default(2)
 }
 
 model CommissionOverride {
   id            String    @id @default(cuid())
-  scope         String // category | seller | product
+  scope         String
   categoryId    String?
   sellerId      String?
   productId     String?
@@ -66,8 +53,8 @@ model CommissionOverride {
 model FeeHoliday {
   id        String   @id @default(cuid())
   name      String
-  scope     String   @default("all") // all | sellers | categories
-  scopeIds  String? // JSON array of ids
+  scope     String   @default("all")
+  scopeIds  String?
   percent   Float    @default(0)
   startsAt  DateTime
   endsAt    DateTime
@@ -76,13 +63,11 @@ model FeeHoliday {
   updatedAt DateTime @updatedAt
 }
 
-// ---------------------------------------------------------------- B: IDENTITY
-
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
   name         String
-  role         String    @default("ops") // superadmin | ops | finance | moderator | support | readonly
+  role         String    @default("ops")
   passwordHash String
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
@@ -91,251 +76,249 @@ model AdminUser {
 }
 
 model Seller {
-  id                        String    @id @default(cuid())
-  email                     String    @unique
+  id                        String        @id @default(cuid())
+  email                     String        @unique
   passwordHash              String
   fullName                  String
   displayName               String
-  countryCode               String    @default("MY")
+  countryCode               String        @default("MY")
   phone                     String?
-  status                    String    @default("onboarding") // onboarding | pending_review | active | suspended | terminated | rejected
-  riskTier                  String    @default("low") // low | medium | high
+  status                    String        @default("onboarding")
+  riskTier                  String        @default("low")
   commissionOverridePercent Float?
   holdDaysOverride          Int?
-  kycStatus                 String    @default("pending") // pending | approved | rejected
-  planCode                  String    @default("free")
-  marketplaceOptIn          Boolean   @default(true)
+  kycStatus                 String        @default("pending")
+  planCode                  String        @default("free")
+  marketplaceOptIn          Boolean       @default(true)
   rejectReason              String?
   submittedAt               DateTime?
   approvedAt                DateTime?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
-  store            Store?
-  wallet           Wallet?
-  kycDocuments     KycDocument[]
-  bankAccounts     BankAccount[]
-  sellerNotes      SellerNote[]
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+  bankAccounts              BankAccount[]
+  kycDocuments              KycDocument[]
+  sellerNotes               SellerNote[]
+  store                     Store?
+  wallet                    Wallet?
 }
 
 model KycDocument {
-  id          String    @id @default(cuid())
-  sellerId    String
-  seller      Seller    @relation(fields: [sellerId], references: [id])
-  docType     String // ic_front | ic_selfie | business_reg | bank_statement
-  fileName    String
-  status      String    @default("pending") // pending | approved | rejected
+  id           String    @id @default(cuid())
+  sellerId     String
+  docType      String
+  fileName     String
+  status       String    @default("pending")
   rejectReason String?
-  reviewedBy  String?
-  reviewedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  seller       Seller    @relation(fields: [sellerId], references: [id])
 }
 
 model SellerNote {
   id        String   @id @default(cuid())
   sellerId  String
-  seller    Seller   @relation(fields: [sellerId], references: [id])
   author    String
   body      String
   createdAt DateTime @default(now())
+  seller    Seller   @relation(fields: [sellerId], references: [id])
 }
 
 model Session {
   token     String   @id @default(cuid())
-  userType  String // admin | seller | shopper
+  userType  String
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
 }
 
-// ---------------------------------------------------------------- B2: SHOPPERS
-
 model ShopperUser {
-  id              String    @id @default(cuid())
-  email           String    @unique
+  id              String         @id @default(cuid())
+  email           String         @unique
   passwordHash    String
   fullName        String
-  username        String?   @unique // public handle shown on the Me hub (@handle)
+  username        String?        @unique
   avatarUrl       String?
-  membershipLevel String    @default("SILVER") // SILVER | GOLD | PLATINUM (auto-upgraded on spend thresholds)
-  followingCount  Int       @default(0)
-  followerCount   Int       @default(0)
+  membershipLevel String         @default("SILVER")
+  followingCount  Int            @default(0)
+  followerCount   Int            @default(0)
   phone           String?
-  status          String    @default("active") // active | suspended
+  status          String         @default("active")
   lastLoginAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  chatThreads     ChatThread[]
-  wallet          ShopperWallet?
-  vouchers        UserVoucher[]
-  activities      UserActivity[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
   addresses       Address[]
+  carts           Cart?
+  chatThreads     ChatThread[]
   orders          Order[]
-  carts           Cart[]
   paymentGroups   PaymentGroup[]
+  wallet          ShopperWallet?
+  activities      UserActivity[]
+  vouchers        UserVoucher[]
+  follows         StoreFollow[]
+  notifications   Notification[]
 }
 
 model ChatThread {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   shopperId     String
-  shopper       ShopperUser @relation(fields: [shopperId], references: [id], onDelete: Cascade)
   storeId       String
-  store         Store    @relation(fields: [storeId], references: [id])
-  orderNumber   String?  // order context when opened from an order
-  orderId       String?  // resolved order id (deep link target for the context bubble)
-  contextType   String?  // what the conversation is about: "order" | "product" | null
-  productId     String?  // product context when opened from a product page
-  product       Product? @relation(fields: [productId], references: [id])
+  orderNumber   String?
+  orderId       String?
+  contextType   String?
+  productId     String?
   subject       String?
-  shopperUnread Int      @default(0) // unread seller messages for the shopper
-  sellerUnread  Int      @default(0) // unread shopper messages for the seller
-  createdAt     DateTime @default(now())
-  lastMessageAt DateTime @default(now())
+  shopperUnread Int           @default(0)
+  sellerUnread  Int           @default(0)
+  createdAt     DateTime      @default(now())
+  lastMessageAt DateTime      @default(now())
   messages      ChatMessage[]
+  product       Product?      @relation(fields: [productId], references: [id])
+  store         Store         @relation(fields: [storeId], references: [id])
+  shopper       ShopperUser   @relation(fields: [shopperId], references: [id], onDelete: Cascade)
 
   @@unique([shopperId, storeId])
 }
 
 model ChatMessage {
-  id         String   @id @default(cuid())
+  id         String     @id @default(cuid())
   threadId   String
-  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderType String // shopper | seller
+  senderType String
   senderName String
   body       String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime   @default(now())
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 }
 
-// ---------------------------------------------------------------- C: STORES
-
 model Store {
-  id              String    @id @default(cuid())
-  sellerId        String?   @unique // nullable: generated-but-unclaimed stores have no owner yet
-  seller          Seller?   @relation(fields: [sellerId], references: [id])
-  name            String
-  slug            String    @unique
-  tagline         String?
-  logoUrl         String?
-  bannerUrl       String?
-  description     String?
-  status          String    @default("draft") // draft | live | maintenance | generating | pending_verification | pending_claim | claimed | suspended | archived
-  lifecycleSource String    @default("native") // native | import
-  currency        String    @default("MYR")
-  timezone        String    @default("Asia/Kuala_Lumpur")
-  themeJson       String    @default("{}")
-  supportEmail    String?
-  supportPhone    String?
-  whatsapp        String?
-  socialJson      String    @default("{}")
-  templateKey     String    @default("aurora")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  pages           CmsPage[]
-  products        Product[]
-  orders          Order[]
-  domains         StoreDomain[]
-  collections     Collection[]
-  coupons         Coupon[]
-  integrations    StoreIntegration[]
+  id               String                  @id @default(cuid())
+  sellerId         String?                 @unique
+  name             String
+  slug             String                  @unique
+  tagline          String?
+  logoUrl          String?
+  bannerUrl        String?
+  description      String?
+  status           String                  @default("draft")
+  lifecycleSource  String                  @default("native")
+  currency         String                  @default("MYR")
+  timezone         String                  @default("Asia/Kuala_Lumpur")
+  themeJson        String                  @default("{}")
+  supportEmail     String?
+  supportPhone     String?
+  whatsapp         String?
+  socialJson       String                  @default("{}")
+  templateKey      String                  @default("aurora")
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  apiKeys          ApiKey[]
+  chatThreads      ChatThread[]
+  pages            CmsPage[]
+  collections      Collection[]
+  coupons          Coupon[]
+  importJobs       ImportJob[]
+  connections      MarketplaceConnection[]
+  orders           Order[]
+  products         Product[]
+  followers        StoreFollow[]
+  vouchers         Voucher[]
+  fsPriceAdjustMinor Int                    @default(0) // seller-funded free-shipping cost recovery (v1)
+  seller           Seller?                 @relation(fields: [sellerId], references: [id])
+  claims           StoreClaim[]
+  domains          StoreDomain[]
+  integrations     StoreIntegration[]
   webhookEndpoints WebhookEndpoint[]
-  apiKeys         ApiKey[]
-  claims          StoreClaim[]
-  connections     MarketplaceConnection[]
-  importJobs      ImportJob[]
-  chatThreads     ChatThread[]
 }
 
 model StoreDomain {
   id            String    @id @default(cuid())
   storeId       String
-  store         Store     @relation(fields: [storeId], references: [id])
   domain        String    @unique
-  mode          String    @default("cname") // cname | ns
-  status        String    @default("pending") // pending | verifying | verified | active | failed
-  sslStatus     String    @default("pending") // pending | issued | failed
+  mode          String    @default("cname")
+  status        String    @default("pending")
+  sslStatus     String    @default("pending")
   isPrimary     Boolean   @default(false)
   lastCheckedAt DateTime?
   errorReason   String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  store         Store     @relation(fields: [storeId], references: [id])
 }
 
 model CmsPage {
-  id              String   @id @default(cuid())
-  storeId         String
-  store           Store    @relation(fields: [storeId], references: [id])
-  slug            String
-  title           String
-  pageType        String   @default("custom") // home | about | contact | policy | custom
-  draftJson       String   @default("{\"sections\":[]}")
-  publishedJson   String?
-  draftVersion    Int      @default(1)
-  publishedVersion Int     @default(0)
-  hasUnpublished   Boolean @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(cuid())
+  storeId          String
+  slug             String
+  title            String
+  pageType         String   @default("custom")
+  draftJson        String   @default("{\"sections\":[]}")
+  publishedJson    String?
+  draftVersion     Int      @default(1)
+  publishedVersion Int      @default(0)
+  hasUnpublished   Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  store            Store    @relation(fields: [storeId], references: [id])
 
   @@unique([storeId, slug])
 }
-
-// ---------------------------------------------------------------- D: CATALOG
 
 model Category {
   id                String     @id @default(cuid())
   name              String
   slug              String     @unique
   parentId          String?
-  parent            Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children          Category[] @relation("CategoryTree")
   commissionPercent Float?
   imageUrl          String?
   sortOrder         Int        @default(0)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
+  parent            Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children          Category[] @relation("CategoryTree")
   products          Product[]
 }
 
 model Product {
-  id                        String    @id @default(cuid())
+  id                        String              @id @default(cuid())
   storeId                   String
-  store                     Store     @relation(fields: [storeId], references: [id])
   categoryId                String?
-  category                  Category? @relation(fields: [categoryId], references: [id])
   title                     String
   slug                      String
   description               String?
-  status                    String    @default("draft") // draft | pending_review | active | rejected | banned | archived
+  status                    String              @default("draft")
   rejectReason              String?
-  priceMinor                Int       @default(0)
+  priceMinor                Int                 @default(0)
   commissionPercentOverride Float?
-  flagsJson                 String    @default("[]") // moderation flag reasons
-  reportsCount              Int       @default(0)
-  salesCount                Int       @default(0)
-  ratingAvg                 Float     @default(0)
-  ratingCount               Int       @default(0)
-  isFeatured                Boolean   @default(false)
+  flagsJson                 String              @default("[]")
+  reportsCount              Int                 @default(0)
+  salesCount                Int                 @default(0)
+  ratingAvg                 Float               @default(0)
+  ratingCount               Int                 @default(0)
+  isFeatured                Boolean             @default(false)
   publishedAt               DateTime?
-  // --- marketplace import source fields (Phase 4) ---
-  sourcePlatform            String? // shopee | tiktok | fixture
+  sourcePlatform            String?
   sourceShopId              String?
   sourceProductId           String?
   sourceUrl                 String?
   sourceBrand               String?
-  sourceStatus              String? // availability at source
-  isFixture                 Boolean  @default(false) // imported from the demo fixture connector
+  sourceStatus              String?
+  isFixture                 Boolean             @default(false)
   lastSyncedAt              DateTime?
-  overridesJson             String    @default("{}") // seller-owned fields: {title:true,...} survive re-import
+  overridesJson             String              @default("{}")
   seoTitle                  String?
   seoDescription            String?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
-  images                    ProductImage[]
-  variants                  ProductVariant[]
-  reviews                   Review[]
-  orderItems                OrderItem[]
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  chatThreads               ChatThread[]
   collections               CollectionProduct[]
   featuredSlots             FeaturedSlot[]
   importItems               ImportJobItem[]
-  chatThreads               ChatThread[]
+  orderItems                OrderItem[]
+  category                  Category?           @relation(fields: [categoryId], references: [id])
+  store                     Store               @relation(fields: [storeId], references: [id])
+  images                    ProductImage[]
+  variants                  ProductVariant[]
+  reviews                   Review[]
   userActivities            UserActivity[]
 
   @@unique([storeId, slug])
@@ -347,90 +330,88 @@ model Product {
 model ProductImage {
   id        String  @id @default(cuid())
   productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   url       String
-  alt       String? // accessibility + SEO alt text (import)
   sortOrder Int     @default(0)
+  alt       String?
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model ProductVariant {
-  id                 String   @id @default(cuid())
-  productId          String
-  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  name               String   @default("Default")
-  optionName         String?
-  optionValue        String?
-  sourceModelId      String?  // marketplace variant identifier (import sync)
-  imageUrl           String?  // variant-specific image (import)
-  priceMinor         Int
+  id                  String         @id @default(cuid())
+  productId           String
+  name                String         @default("Default")
+  optionName          String?
+  optionValue         String?
+  priceMinor          Int
   compareAtPriceMinor Int?
-  stock              Int      @default(0)
-  lowStockThreshold  Int      @default(5)
-  sku                String?
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  cartItems          CartItem[]
-  orderItems         OrderItem[]
-  inventoryLogs      InventoryLog[]
+  stock               Int            @default(0)
+  lowStockThreshold   Int            @default(5)
+  sku                 String?
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  imageUrl            String?
+  sourceModelId       String?
+  cartItems           CartItem[]
+  inventoryLogs       InventoryLog[]
+  orderItems          OrderItem[]
+  product             Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model InventoryLog {
-  id        String        @id @default(cuid())
+  id        String         @id @default(cuid())
   variantId String
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   delta     Int
   reason    String
   refId     String?
-  createdAt DateTime      @default(now())
+  createdAt DateTime       @default(now())
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 }
 
 model Review {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  orderId   String?
+  id           String   @id @default(cuid())
+  productId    String
+  orderId      String?
   customerName String
-  rating    Int
-  title     String?
-  body      String?
-  reply     String?
-  status    String   @default("published") // published | hidden
-  createdAt DateTime @default(now())
+  rating       Int
+  title        String?
+  body         String?
+  reply        String?
+  status       String   @default("published")
+  createdAt    DateTime @default(now())
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model Collection {
-  id          String   @id @default(cuid())
+  id          String              @id @default(cuid())
   storeId     String
-  store       Store    @relation(fields: [storeId], references: [id])
   name        String
   slug        String
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  store       Store               @relation(fields: [storeId], references: [id])
   products    CollectionProduct[]
 
   @@unique([storeId, slug])
 }
 
 model CollectionProduct {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   collectionId String
-  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
 }
-
-// ---------------------------------------------------------------- E: CART / ORDERS
 
 model Cart {
   id        String       @id @default(cuid())
-  token     String       @unique // kept for legacy rows + order.cartToken reconciliation
-  shopperId String?      @unique // owning shopper account — carts now REQUIRE sign-in (one active cart per buyer)
-  shopper   ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
-  storeId   String?      // LEGACY single-store lock — nullable now that one cart can hold items from MANY sellers
+  token     String       @unique
+  shopperId String?      @unique
+  storeId   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
+  shopper   ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
   items     CartItem[]
 
   @@index([shopperId])
@@ -439,38 +420,36 @@ model Cart {
 model CartItem {
   id        String         @id @default(cuid())
   cartId    String
-  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
   variantId String
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   qty       Int            @default(1)
   createdAt DateTime       @default(now())
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
 }
 
 model Order {
-  id                  String    @id @default(cuid())
+  id                  String               @id @default(cuid())
   storeId             String
-  store               Store     @relation(fields: [storeId], references: [id])
-  orderNumber         String    @unique
+  orderNumber         String               @unique
   customerName        String
   customerEmail       String
   customerPhone       String?
-  cartToken           String?   // guest cart that produced this order — cleared on payment success
-  shopperId           String?   // owning shopper account when known (login/checkout session); null for pure guests
-  shopper             ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: SetNull)
-  status              String    @default("payment_pending") // payment_pending | paid | processing | shipped | delivered | completed | cancelled | refunding | partially_refunded | refunded | closed
-  disputedFlag        Boolean   @default(false)
-  channel             String    @default("storefront") // storefront | market
-  currency            String    @default("MYR")
-  subtotalMinor       Int       @default(0)
-  discountMinor       Int       @default(0)
-  shippingMinor       Int       @default(0)
-  taxMinor            Int       @default(0)
-  totalMinor          Int       @default(0)
+  cartToken           String?
+  shopperId           String?
+  status              String               @default("payment_pending")
+  disputedFlag        Boolean              @default(false)
+  channel             String               @default("storefront")
+  currency            String               @default("MYR")
+  subtotalMinor       Int                  @default(0)
+  discountMinor       Int                  @default(0)
+  shippingMinor       Int                  @default(0)
+  taxMinor            Int                  @default(0)
+  totalMinor          Int                  @default(0)
   couponCode          String?
-  shippingAddressJson String    @default("{}")
+  shippingAddressJson String               @default("{}")
   customerNote        String?
   paymentProvider     String?
-  idemKey             String?   @unique
+  idemKey             String?              @unique
   paidAt              DateTime?
   fulfilledAt         DateTime?
   shippedAt           DateTime?
@@ -479,96 +458,172 @@ model Order {
   cancelledAt         DateTime?
   trackingNumber      String?
   trackingProvider    String?
-  riskFlagsJson       String    @default("[]")
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  riskFlagsJson       String               @default("[]")
+  voucherId           String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  paymentGroupId      String?
+  voucher             Voucher?             @relation(fields: [voucherId], references: [id])
+  shipment            Shipment?
+  disputes            Dispute[]
+  paymentGroup        PaymentGroup?        @relation(fields: [paymentGroupId], references: [id])
+  shopper             ShopperUser?         @relation(fields: [shopperId], references: [id])
+  store               Store                @relation(fields: [storeId], references: [id])
   items               OrderItem[]
   history             OrderStatusHistory[]
   paymentIntents      PaymentIntent[]
   refunds             Refund[]
-  disputes            Dispute[]
-  paymentGroupId      String? // set when this order was paid as part of a multi-seller checkout group
-  paymentGroup        PaymentGroup? @relation(fields: [paymentGroupId], references: [id])
 
   @@index([shopperId])
   @@index([paymentGroupId])
 }
 
+model Shipment {
+  id            String          @id @default(cuid())
+  orderId       String          @unique
+  storeId       String?
+  providerId    String          @default("mock")
+  providerRef   String?
+  status        String          @default("PENDING_BOOKING") // PENDING_BOOKING|BOOKED|PICKED_UP|IN_TRANSIT|OUT_FOR_DELIVERY|DELIVERED|EXCEPTION|RETURNED
+  awbNumber     String?
+  courierName   String?
+  trackingUrl   String?
+  labelUrl      String?
+  bookedAt      DateTime?
+  pickedUpAt    DateTime?
+  etaFrom       DateTime?
+  etaTo         DateTime?
+  deliveredAt   DateTime?
+  lastSyncedAt  DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events        ShipmentEvent[]
+
+  @@index([storeId])
+  @@index([status])
+}
+
+model ShipmentEvent {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  status        String
+  description   String?
+  location      String?
+  occurredAt    DateTime @default(now())
+  proofImageUrl String? // proof-of-delivery photo (courier upload on DELIVERED)
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, occurredAt])
+}
+
+model StoreFollow {
+  id            String      @id @default(cuid())
+  shopperUserId String
+  storeId       String
+  createdAt     DateTime    @default(now())
+  shopper       ShopperUser @relation(fields: [shopperUserId], references: [id], onDelete: Cascade)
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([shopperUserId, storeId])
+  @@index([storeId])
+}
+
+model Notification {
+  id            String      @id @default(cuid())
+  shopperUserId String
+  type          String // order.*, promo, follow, system
+  title         String
+  body          String?
+  dataJson      String      @default("{}")
+  readAt        DateTime?
+  createdAt     DateTime    @default(now())
+  shopper       ShopperUser @relation(fields: [shopperUserId], references: [id], onDelete: Cascade)
+
+  @@index([shopperUserId, readAt])
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  name        String
+  presetId    String?
+  themeJson   String   @default("{}") // festive decoration theme (colors/copy/ornaments)
+  isPublished Boolean  @default(false)
+  startAt     DateTime
+  endAt       DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, startAt, endAt])
+}
+
 model OrderItem {
-  id                   String  @id @default(cuid())
-  orderId              String
-  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId            String?
-  product              Product? @relation(fields: [productId], references: [id])
-  variantId            String?
-  variant              ProductVariant? @relation(fields: [variantId], references: [id])
-  title                String
-  variantLabel         String?
-  unitPriceMinor       Int
-  qty                  Int
-  lineSubtotalMinor    Int
-  discountMinor        Int     @default(0)
-  shippingMinor        Int     @default(0)
-  commissionPercent    Float   @default(0)
-  commissionMinor      Int     @default(0)
-  fixedFeeMinor        Int     @default(0)
-  sellerNetMinor       Int     @default(0)
-  breakdownJson        String  @default("{}")
-  refundedMinor        Int     @default(0)
+  id                String          @id @default(cuid())
+  orderId           String
+  productId         String?
+  variantId         String?
+  title             String
+  variantLabel      String?
+  unitPriceMinor    Int
+  qty               Int
+  lineSubtotalMinor Int
+  discountMinor     Int             @default(0)
+  shippingMinor     Int             @default(0)
+  commissionPercent Float           @default(0)
+  commissionMinor   Int             @default(0)
+  fixedFeeMinor     Int             @default(0)
+  sellerNetMinor    Int             @default(0)
+  breakdownJson     String          @default("{}")
+  refundedMinor     Int             @default(0)
+  variant           ProductVariant? @relation(fields: [variantId], references: [id])
+  product           Product?        @relation(fields: [productId], references: [id])
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model OrderStatusHistory {
   id         String   @id @default(cuid())
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   fromStatus String?
   toStatus   String
-  actor      String   @default("system") // system | seller | admin | shopper
+  actor      String   @default("system")
   note       String?
   createdAt  DateTime @default(now())
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model PaymentIntent {
-  id           String    @id @default(cuid())
-  orderId      String
-  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  provider     String // fpx_toyyibpay | fpx_curlec | tng | grabpay | card_stripe
-  providerRef  String    @unique
-  amountMinor  Int
-  status       String    @default("requires_payment") // requires_payment | processing | succeeded | failed | refunded
-  redirectUrl  String?
-  expiresAt    DateTime
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String   @id @default(cuid())
+  orderId     String
+  provider    String
+  providerRef String   @unique
+  amountMinor Int
+  status      String   @default("requires_payment")
+  redirectUrl String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-// OPTION B — one PSP checkout session: the buyer pays ONCE for a checkout
-// that may span N seller orders. A licensed PSP collects the single charge,
-// deducts the platform's application fee (commission) and settles each
-// seller their share — SHOPMESH never custodies the funds; the ledger +
-// seller wallet mirror the PSP's per-seller balances (see src/lib/psp.ts).
-// Each member Order is fulfilled/paid-out per seller (commission → ledger →
-// wallet → payout), exactly like a single-order payment.
-// (First built as "Option A" collect-then-disburse; identical data model.)
 model PaymentGroup {
-  id            String       @id @default(cuid())
-  ref           String       @unique // payment reference used by the hosted pay page + webhook
+  id            String      @id @default(cuid())
+  ref           String      @unique
   shopperId     String
-  shopper       ShopperUser  @relation(fields: [shopperId], references: [id], onDelete: Cascade)
-  provider      String // fpx_toyyibpay | fpx_curlec | tng | grabpay | card_stripe
-  status        String       @default("requires_payment") // requires_payment | succeeded | failed | expired
-  currency      String       @default("MYR")
-  subtotalMinor Int          @default(0)
-  discountMinor Int          @default(0)
-  shippingMinor Int          @default(0)
-  totalMinor    Int          @default(0)
-  idemKey       String?      @unique
+  provider      String
+  status        String      @default("requires_payment")
+  currency      String      @default("MYR")
+  subtotalMinor Int         @default(0)
+  discountMinor Int         @default(0)
+  shippingMinor Int         @default(0)
+  totalMinor    Int         @default(0)
+  idemKey       String?     @unique
   redirectUrl   String?
   expiresAt     DateTime
   paidAt        DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
   orders        Order[]
+  shopper       ShopperUser @relation(fields: [shopperId], references: [id], onDelete: Cascade)
 
   @@index([shopperId])
 }
@@ -588,83 +643,81 @@ model PaymentWebhookLog {
 model Refund {
   id                      String    @id @default(cuid())
   orderId                 String
-  order                   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   amountMinor             Int
   reason                  String?
-  status                  String    @default("requested") // requested | approved | processed | rejected
-  requestedBy             String    @default("seller") // seller | admin | shopper
+  status                  String    @default("requested")
+  requestedBy             String    @default("seller")
   restock                 Boolean   @default(true)
   commissionReversalMinor Int       @default(0)
   processedAt             DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
+  order                   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model Dispute {
   id         String    @id @default(cuid())
   orderId    String
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   reason     String
-  status     String    @default("open") // open | under_review | resolved | rejected
+  status     String    @default("open")
   openedBy   String    @default("shopper")
   resolution String?
   resolvedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-// ---------------------------------------------------------------- F: MONEY
-
 model Wallet {
-  id                    String  @id @default(cuid())
-  sellerId              String  @unique
-  seller                Seller  @relation(fields: [sellerId], references: [id])
-  currency              String  @default("MYR")
-  pendingMinor          Int     @default(0)
-  availableMinor        Int     @default(0)
-  reservedMinor         Int     @default(0)
-  lifetimeEarnedMinor   Int     @default(0)
-  lifetimeCommissionMinor Int   @default(0)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  sellerId                String   @unique
+  currency                String   @default("MYR")
+  pendingMinor            Int      @default(0)
+  availableMinor          Int      @default(0)
+  reservedMinor           Int      @default(0)
+  lifetimeEarnedMinor     Int      @default(0)
+  lifetimeCommissionMinor Int      @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  seller                  Seller   @relation(fields: [sellerId], references: [id])
 }
 
 model LedgerAccount {
-  code        String  @id
-  name        String
-  type        String // asset | liability | revenue | expense
-  walletId    String? // for SELLER:*:PAYABLE accounts
-  createdAt   DateTime @default(now())
+  code      String   @id
+  name      String
+  type      String
+  walletId  String?
+  createdAt DateTime @default(now())
 }
 
 model LedgerTransaction {
-  id          String   @id @default(cuid())
-  txnType     String // order_paid | gateway_settlement | payout_initiated | payout_confirmed | payout_failed | refund | admin_adjustment
+  id          String       @id @default(cuid())
+  txnType     String
   refType     String?
   refId       String?
   description String?
-  occurredAt  DateTime @default(now())
+  occurredAt  DateTime     @default(now())
   lines       LedgerLine[]
 }
 
 model LedgerLine {
-  id             String            @id @default(cuid())
-  txnId          String
-  txn            LedgerTransaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
-  accountCode    String
-  direction      String // debit | credit
-  amountMinor    Int
-  currency       String            @default("MYR")
-  walletId       String?
-  availableAt    DateTime?
-  memo           String?
-  createdAt      DateTime          @default(now())
+  id          String            @id @default(cuid())
+  txnId       String
+  accountCode String
+  direction   String
+  amountMinor Int
+  currency    String            @default("MYR")
+  walletId    String?
+  availableAt DateTime?
+  memo        String?
+  createdAt   DateTime          @default(now())
+  txn         LedgerTransaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
 }
 
 model PayoutBatch {
   id          String    @id @default(cuid())
-  runType     String    @default("manual") // manual | scheduled
-  status      String    @default("pending") // pending | running | completed | failed
+  runType     String    @default("manual")
+  status      String    @default("pending")
   currency    String    @default("MYR")
   totalMinor  Int       @default(0)
   payoutCount Int       @default(0)
@@ -674,64 +727,62 @@ model PayoutBatch {
 }
 
 model Payout {
-  id             String      @id @default(cuid())
-  batchId        String?
-  batch          PayoutBatch? @relation(fields: [batchId], references: [id])
-  sellerId       String
-  walletId       String
-  referenceNo    String      @unique
-  amountMinor    Int
-  status         String      @default("processing") // processing | paid | failed
-  method         String      @default("manual_csv") // bank_transfer | manual_csv
-  bankAccountId  String?
-  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
-  providerRef    String?
-  statementJson  String      @default("{}")
-  failReason     String?
-  paidAt         DateTime?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id            String       @id @default(cuid())
+  batchId       String?
+  sellerId      String
+  walletId      String
+  referenceNo   String       @unique
+  amountMinor   Int
+  status        String       @default("processing")
+  method        String       @default("manual_csv")
+  bankAccountId String?
+  providerRef   String?
+  statementJson String       @default("{}")
+  failReason    String?
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+  batch         PayoutBatch? @relation(fields: [batchId], references: [id])
 }
 
 model BankAccount {
-  id                   String    @id @default(cuid())
-  sellerId             String
-  seller               Seller    @relation(fields: [sellerId], references: [id])
-  holderName           String
-  bankName             String
-  accountNumberMasked  String
-  accountNumberEnc     String
-  verified             Boolean   @default(false)
-  verifiedAt           DateTime?
-  payouts              Payout[]
-  createdAt            DateTime  @default(now())
+  id                  String    @id @default(cuid())
+  sellerId            String
+  holderName          String
+  bankName            String
+  accountNumberMasked String
+  accountNumberEnc    String
+  verified            Boolean   @default(false)
+  verifiedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  seller              Seller    @relation(fields: [sellerId], references: [id])
+  payouts             Payout[]
 }
 
-// ---------------------------------------------------------------- G: MARKETING
-
 model Coupon {
-  id              String    @id @default(cuid())
-  scope           String    @default("platform") // platform | store
-  storeId         String?
-  store           Store?    @relation(fields: [storeId], references: [id])
-  code            String    @unique
-  description     String?
-  type            String    @default("percent") // percent | fixed | freeship
-  percent         Float?
-  amountMinor     Int?
-  minSpendMinor   Int       @default(0)
-  maxRedemptions  Int?
-  perCustomerLimit Int      @default(1)
-  startsAt        DateTime?
-  endsAt          DateTime?
-  isActive        Boolean   @default(true)
-  timesUsed       Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  scope            String    @default("platform")
+  storeId          String?
+  code             String    @unique
+  description      String?
+  type             String    @default("percent")
+  percent          Float?
+  amountMinor      Int?
+  minSpendMinor    Int       @default(0)
+  maxRedemptions   Int?
+  perCustomerLimit Int       @default(1)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  isActive         Boolean   @default(true)
+  timesUsed        Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  store            Store?    @relation(fields: [storeId], references: [id])
 }
 
 model CouponRedemption {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   couponId      String
   orderId       String
   customerEmail String
@@ -739,162 +790,152 @@ model CouponRedemption {
   createdAt     DateTime @default(now())
 }
 
-// Shopper address book. Dual ownership: guest checkout saves against the device
-// token (ownerToken); once the shopper signs in on that device the rows are
-// claimed into the account (shopperId) so addresses follow the ACCOUNT, not the
-// browser — signing into a different account never exposes another person's book.
 model Address {
   id         String       @id @default(cuid())
   ownerToken String
   shopperId  String?
-  shopper    ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
-  label      String   @default("Home")
+  label      String       @default("Home")
   name       String
   phone      String?
   line1      String
   city       String
   state      String
   postcode   String
-  isDefault  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isDefault  Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  shopper    ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
 
   @@index([ownerToken])
   @@index([shopperId])
 }
 
-// ---------------------------------------------------------------- B3: BUYER DASHBOARD
-
-// DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts).
-// Decision (user, Option B pivot): buyer stored-value wallet / coins /
-// pay-later are switched OFF. Keep this model, its API routes and the demo
-// seed for the future roadmap — do NOT delete and do NOT reconnect until
-// the finance roadmap discussion + a licensing review are done (a
-// withdrawable wallet balance is e-money territory under FSA 2013/BNM, and
-// pay-later is gated by the Consumer Credit Act 2025). Non-redeemable
-// loyalty points are the safe first step. Money = Int minor units (cents).
 model ShopperWallet {
-  id                  String       @id @default(cuid())
-  userId              String       @unique
-  user                ShopperUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balanceMinor        Int          @default(0)  // SHOPMESH Pay balance
-  coinBalance         Int          @default(0)  // loyalty coins (1 coin ≈ RM0.01 redeemable)
-  spayLaterLimitMinor Int          @default(0)  // approved credit limit
-  spayLaterUsedMinor  Int          @default(0)  // outstanding SPayLater usage
-  lastCheckInAt       DateTime?    // last daily coin check-in (24h gate)
-  checkInStreak       Int          @default(0)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                  String      @id @default(cuid())
+  userId              String      @unique
+  balanceMinor        Int         @default(0)
+  coinBalance         Int         @default(0)
+  spayLaterLimitMinor Int         @default(0)
+  spayLaterUsedMinor  Int         @default(0)
+  lastCheckInAt       DateTime?
+  checkInStreak       Int         @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  user                ShopperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Platform-wide voucher pool shoppers can hold via UserVoucher.
 model Voucher {
-  id              String   @id @default(cuid())
-  code            String   @unique
-  title           String
-  kind            String   @default("discount") // discount | freeshipping | coinsback
-  discountMinor   Int      @default(0)  // flat RM off (discount kind)
-  percentOff      Int?     // e.g. 10 = 10% off (discount kind)
-  maxDiscountMinor Int?    // cap for percent-off vouchers
-  minSpendMinor   Int      @default(0)
-  expiryAt        DateTime
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  holders         UserVoucher[]
+  id               String        @id @default(cuid())
+  code             String        @unique
+  title            String
+  kind             String        @default("discount")
+  discountMinor    Int           @default(0)
+  percentOff       Int?
+  maxDiscountMinor Int?
+  minSpendMinor    Int           @default(0)
+  expiryAt         DateTime
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  holders          UserVoucher[]
+  // Task 10-b — claimable voucher engine upgrade
+  scope            String        @default("PLATFORM") // PLATFORM | STORE
+  storeId          String?
+  store            Store?        @relation(fields: [storeId], references: [id])
+  regionLimit      String? // "peninsular" restricts FS vouchers to West Malaysia
+  quota            Int? // total claimable pool (null = unlimited)
+  claimedCount     Int           @default(0)
+  startsAt         DateTime?
+  usedByOrders     Order[]
 }
 
-// A voucher held by a shopper.
 model UserVoucher {
-  id         String      @id @default(cuid())
-  userId     String
-  user       ShopperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voucherId  String
-  voucher    Voucher     @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  status     String      @default("AVAILABLE") // AVAILABLE | USED | EXPIRED
-  claimedAt  DateTime    @default(now())
-  usedAt     DateTime?
+  id        String      @id @default(cuid())
+  userId    String
+  voucherId String
+  status    String      @default("AVAILABLE")
+  claimedAt DateTime    @default(now())
+  usedAt    DateTime?
+  usedOrderId String? // set when the voucher is redeemed on an order
+  voucher   Voucher     @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  user      ShopperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, voucherId])
   @@index([userId, status])
 }
 
-// Buyer activity feed — powers My Likes / Recently Viewed and recommendations.
 model UserActivity {
-  id           String       @id @default(cuid())
+  id           String      @id @default(cuid())
   userId       String
-  user         ShopperUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  activityType String       // LIKE | VIEWED
-  createdAt    DateTime     @default(now())
+  activityType String
+  createdAt    DateTime    @default(now())
+  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user         ShopperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId, activityType])
   @@index([userId, activityType])
 }
 
 model MarketplaceBanner {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   title     String
   imageUrl  String
   linkUrl   String?
-  sortOrder Int       @default(0)
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-}
-
-model FeaturedSlot {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  slot      String   @default("home_grid")
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 
-// ---------------------------------------------------------------- H: INTEGRATIONS & OPS
+model FeaturedSlot {
+  id        String   @id @default(cuid())
+  productId String
+  slot      String   @default("home_grid")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
 
 model StoreIntegration {
-  id          String   @id @default(cuid())
-  storeId     String
-  store       Store    @relation(fields: [storeId], references: [id])
-  provider    String // meta_pixel | ga4 | tiktok_pixel | gtm
-  configJson  String   @default("{}")
-  isEnabled   Boolean  @default(false)
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  storeId    String
+  provider   String
+  configJson String   @default("{}")
+  isEnabled  Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+  store      Store    @relation(fields: [storeId], references: [id])
 
   @@unique([storeId, provider])
 }
 
 model WebhookEndpoint {
-  id        String   @id @default(cuid())
-  storeId   String
-  store     Store    @relation(fields: [storeId], references: [id])
-  url       String
-  secret    String
-  eventsJson String  @default("[\"order.paid\"]")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id         String            @id @default(cuid())
+  storeId    String
+  url        String
+  secret     String
+  eventsJson String            @default("[\"order.paid\"]")
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
   deliveries WebhookDelivery[]
+  store      Store             @relation(fields: [storeId], references: [id])
 }
 
 model WebhookDelivery {
-  id            String   @id @default(cuid())
+  id            String          @id @default(cuid())
   endpointId    String
-  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
   event         String
   payloadJson   String
-  status        String   @default("pending") // pending | success | failed | dead
-  attempts      Int      @default(0)
+  status        String          @default("pending")
+  attempts      Int             @default(0)
   responseCode  Int?
   lastAttemptAt DateTime?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime        @default(now())
+  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 }
 
 model ApiKey {
   id         String    @id @default(cuid())
   storeId    String
-  store      Store     @relation(fields: [storeId], references: [id])
   name       String
   prefix     String
   hash       String
@@ -902,6 +943,7 @@ model ApiKey {
   lastUsedAt DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+  store      Store     @relation(fields: [storeId], references: [id])
 }
 
 model Setting {
@@ -912,10 +954,10 @@ model Setting {
 }
 
 model FeatureFlag {
-  key             String  @id
-  description     String?
-  isEnabled       Boolean @default(false)
-  rolloutPercent  Int     @default(100)
+  key            String  @id
+  description    String?
+  isEnabled      Boolean @default(false)
+  rolloutPercent Int     @default(100)
 }
 
 model AdminAuditLog {
@@ -932,7 +974,7 @@ model AdminAuditLog {
 
 model ActivityLog {
   id         String   @id @default(cuid())
-  actorType  String // admin | seller | system | shopper
+  actorType  String
   actorId    String?
   actorLabel String?
   action     String
@@ -945,7 +987,7 @@ model ActivityLog {
 model NotificationTemplate {
   id        String   @id @default(cuid())
   event     String
-  channel   String // email | whatsapp | inapp
+  channel   String
   subject   String?
   body      String
   isActive  Boolean  @default(true)
@@ -957,45 +999,45 @@ model NotificationTemplate {
 }
 
 model NotificationLog {
-  id         String   @id @default(cuid())
-  event      String
-  channel    String
-  recipient  String
-  subject    String?
-  status     String   @default("queued") // queued | sent | failed
-  error      String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  event     String
+  channel   String
+  recipient String
+  subject   String?
+  status    String   @default("queued")
+  error     String?
+  createdAt DateTime @default(now())
 }
 
 model SupportTicket {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   storeId     String?
   sellerEmail String?
   subject     String
-  status      String   @default("open") // open | pending | closed
-  priority    String   @default("normal") // low | normal | high | urgent
+  status      String           @default("open")
+  priority    String           @default("normal")
   contextType String?
   contextId   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   messages    SupportMessage[]
 }
 
 model SupportMessage {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   ticketId    String
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  authorType  String // admin | seller
+  authorType  String
   authorLabel String
   body        String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime      @default(now())
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
 
 model Announcement {
   id        String    @id @default(cuid())
   title     String
   body      String?
-  audience  String    @default("all") // all | sellers | admins
+  audience  String    @default("all")
   startsAt  DateTime?
   endsAt    DateTime?
   isActive  Boolean   @default(true)
@@ -1010,7 +1052,7 @@ model Counter {
 model ExportJob {
   id         String    @id @default(cuid())
   type       String
-  status     String    @default("queued") // queued | running | done | failed
+  status     String    @default("queued")
   paramsJson String    @default("{}")
   rowCount   Int       @default(0)
   fileUrl    String?
@@ -1018,63 +1060,55 @@ model ExportJob {
   finishedAt DateTime?
 }
 
-// ------------------------------------------------- MARKETPLACE IMPORT (Phase 4)
-
 model MarketplaceConnection {
-  id              String    @id @default(cuid())
-  storeId         String?   // bound after store claim / for seller-scoped connections
-  store           Store?    @relation(fields: [storeId], references: [id])
-  platform        String    // shopee | tiktok
-  status          String    @default("pending") // pending | authorising | connected | expired | disconnected | needs_credentials
-  envConfigured   Boolean   @default(false) // platform app credentials present server-side
-  shopId          String?   // source shop identifier (shopee shop_id / tiktok shop_id)
+  id              String      @id @default(cuid())
+  storeId         String?
+  platform        String
+  status          String      @default("pending")
+  envConfigured   Boolean     @default(false)
+  shopId          String?
   shopName        String?
-  shopCipher      String?   // tiktok shop_cipher (required by product APIs)
-  region          String?   // e.g. MY
-  accessTokenEnc  String?   // AES-256-GCM encrypted — never returned via API
-  refreshTokenEnc String?   // AES-256-GCM encrypted
-  scopesJson      String    @default("[]")
+  shopCipher      String?
+  region          String?
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  scopesJson      String      @default("[]")
   expiresAt       DateTime?
   lastRefreshAt   DateTime?
   lastError       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
   jobs            ImportJob[]
+  store           Store?      @relation(fields: [storeId], references: [id])
 
   @@unique([platform, shopId])
   @@index([storeId])
 }
 
 model ImportJob {
-  id              String    @id @default(cuid())
-  // public tracking token so a guest can watch progress without an account
-  trackingToken   String    @unique
+  id              String                 @id @default(cuid())
+  trackingToken   String                 @unique
   storeId         String?
-  store           Store?    @relation(fields: [storeId], references: [id])
   connectionId    String?
-  connection      MarketplaceConnection? @relation(fields: [connectionId], references: [id])
-  platform        String    // shopee | tiktok | fixture
+  platform        String
   inputUrl        String
-  urlType         String    @default("unknown") // shop | product | unknown
+  urlType         String                 @default("unknown")
   sourceShopId    String?
-  sourceProductId String?   // set when the pasted URL is a single product
-  // queued | validating | awaiting_authorisation | connecting | fetching_shop |
-  // importing_products | importing_variants | processing_images | generating_seo |
-  // generating_storefront | awaiting_claim | completed | completed_with_warnings | failed
-  status          String    @default("queued")
+  status          String                 @default("queued")
   phaseDetail     String?
-  progressJson    String    @default("{}") // {discovered, processed, succeeded, skipped, failed, imagesCopied}
-  errorJson       String    @default("{}") // {code, message}
-  summaryJson     String    @default("{}") // shop info + limitations found during import
-  isFixture       Boolean   @default(false)
-  storeCreated    Boolean   @default(false)
-  claimedById     String?   // seller id after claim links job → store
+  progressJson    String                 @default("{}")
+  errorJson       String                 @default("{}")
+  summaryJson     String                 @default("{}")
+  isFixture       Boolean                @default(false)
+  storeCreated    Boolean                @default(false)
+  claimedById     String?
   startedAt       DateTime?
   finishedAt      DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  sourceProductId String?
+  connection      MarketplaceConnection? @relation(fields: [connectionId], references: [id])
+  store           Store?                 @relation(fields: [storeId], references: [id])
   items           ImportJobItem[]
 
   @@index([status])
@@ -1084,45 +1118,43 @@ model ImportJob {
 model ImportJobItem {
   id              String    @id @default(cuid())
   jobId           String
-  job             ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   productId       String?
-  product         Product?  @relation(fields: [productId], references: [id])
   sourcePlatform  String
   sourceShopId    String?
   sourceProductId String
   title           String?
-  // pending | ok | skipped | failed
   status          String    @default("pending")
   error           String?
-  warningsJson    String    @default("[]") // e.g. ["description missing at source","variant price unavailable"]
+  warningsJson    String    @default("[]")
   processedAt     DateTime?
   createdAt       DateTime  @default(now())
+  product         Product?  @relation(fields: [productId], references: [id])
+  job             ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, sourcePlatform, sourceProductId])
   @@index([jobId, status])
 }
 
 model StoreClaim {
-  id                   String    @id @default(cuid())
-  storeId              String
-  store                Store     @relation(fields: [storeId], references: [id])
-  jobId                String?   // import job that produced the store
-  tokenHash            String    @unique // sha256(token) — raw token never stored
-  // active | used | expired | revoked
-  status               String    @default("active")
-  verificationMethod   String    @default("pending") // pending | oauth_shopee | oauth_tiktok | claim_code | admin_manual
-  verificationResultJson String  @default("{}")
-  expiresAt            DateTime
-  usedById             String?   // seller id that claimed
-  usedAt               DateTime?
-  createdAt            DateTime  @default(now())
+  id                     String    @id @default(cuid())
+  storeId                String
+  jobId                  String?
+  tokenHash              String    @unique
+  status                 String    @default("active")
+  verificationMethod     String    @default("pending")
+  verificationResultJson String    @default("{}")
+  expiresAt              DateTime
+  usedById               String?
+  usedAt                 DateTime?
+  createdAt              DateTime  @default(now())
+  store                  Store     @relation(fields: [storeId], references: [id])
 
   @@index([storeId, status])
 }
 
 model SeoMeta {
   id                 String   @id @default(cuid())
-  entityType         String   // store | product | category
+  entityType         String
   entityId           String
   seoTitle           String?
   seoDescription     String?
@@ -1130,7 +1162,7 @@ model SeoMeta {
   canonicalUrl       String?
   noindex            Boolean  @default(false)
   structuredDataJson String   @default("{}")
-  lockedFieldsJson   String   @default("[]") // ["seoTitle", ...] — protected from re-import
+  lockedFieldsJson   String   @default("[]")
   warningsJson       String   @default("[]")
   updatedAt          DateTime @updatedAt
   createdAt          DateTime @default(now())
