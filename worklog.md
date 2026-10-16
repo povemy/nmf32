@@ -806,3 +806,18 @@ Work Log (verified post-expiry):
 
 Stage Summary:
 - Platform is fully NOMOFEE-branded (code + DB), finance scaffold fully NomoPay-branded and still dormant. New credentials: aisyah@nomofee.test/Shopmesh123!, lumina@nomofee.io/Seller123!, admin@nomofee.io/Admin123!. New orders NM-. tsc baseline 57 unchanged; lint clean; schema synced.
+
+---
+Task ID: 15
+Agent: orchestrator (Z.ai Code)
+Task: User requests — ① back navigation on every page, ② canvas #fafeff + border #fafeff, ③ move Sell/Generate from header to buyer backend, ④ buyer-turned-seller account model discussion (answered in chat).
+
+Work Log:
+- Back nav (req 1): ShopperShell now keeps a history stack (viewRef mirror + viewStack cap 25, StrictMode-safe); ShopperCtx gains back() (ui-bits.tsx); new BackBar in checkout.tsx wired into OrderStatusView + OrdersView + LookupView (aria-label "Go back to the previous page"). Bottom-nav switches still push history. Browser-verified: order NM-100011 detail → Back → lands back on My Purchases.
+- Colors (req 2): globals.css --background #e8fcff→#fafeff, --border #d8ebf1→#fafeff, --sidebar-border→#fafeff, body gradient 0% stop → #fafeff (softened mid stops), comments de-ShopMesh'd. Verified computed body bg = rgb(250,254,255). NOTE for user: borders are now near-invisible hairlines (same tone as canvas) — cards still separate via shadow-soft; one-line revert if unwanted.
+- Sell/Generate (req 3): header button REMOVED from MarketHeader (guests still reach it via the footer CTA "Generate your store from a marketplace link"); 14-c added the "Sell / Generate" shortcut tile in Me hub More Activities (Sparkles, → generate flow). NotificationBell (14-c) mounted in the global header (desktop) + profile header (Me hub).
+- Full E2E re-verified post-rebuild: login aisyah@nomofee.test OK (readonly-DB incident = stale inode after rebrand replaced custom.db; server restart fixed); Me hub NomoPay strings; bell present; order detail with CUSTOMER & SHIPPING + Buy again + Go back; back returns to My Purchases; campaign theme layer live on market (Raya #10b981 accent + "Ends in 5 days"); canvas #fafeff; dev.log clean; tsc 57/57 baseline; lint clean.
+- Git checkpoints committed at every wave (c4c226e, 8f1d397, e611961, ee9c45a) to protect against further sandbox rollbacks.
+
+Stage Summary:
+- All four user requests delivered (④ as discussion in chat). Recovery complete: Task 10/10-a..e/11/12 surfaces rebuilt and verified. Recommend committing after each session (sandbox rollback risk).
