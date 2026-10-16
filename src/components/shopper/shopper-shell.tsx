@@ -70,6 +70,7 @@ import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
 import GenerateStoreView, { ClaimView } from "./generate";
 import MeHubView from "./me-hub";
+import NotificationBell from "./notification-bell";
 
 const VIEW_KEY = "sm_shopper_view";
 
@@ -134,6 +135,11 @@ export default function ShopperShell() {
   const [ready, setReady] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [headerSearch, setHeaderSearch] = useState("");
+  // Back-navigation history stack (user request: back button on every page).
+  // viewRef mirrors `view` so nav() can push the PREVIOUS view without reading
+  // state inside the setState updater (StrictMode-safe).
+  const viewStack = useRef<ShopperView[]>([]);
+  const viewRef = useRef<ShopperView>({ name: "market" });
   // Deep-link override for claim landing (?claim_job=…&claim_token=…):
   // intentionally NOT part of ShopperView — a synthetic render override.
   const [claimLink, setClaimLink] = useState<{ jobId: string; token: string } | null>(null);
@@ -183,10 +189,29 @@ export default function ShopperShell() {
   }, [activeStoreSlug, setActiveStoreSlug]);
 
   // ---- nav helper: persist + scroll to top ----------------------------------
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
   const nav = useCallback((v: ShopperView) => {
+    if (viewRef.current.name !== v.name || JSON.stringify(viewRef.current) !== JSON.stringify(v)) {
+      viewStack.current.push(viewRef.current);
+      if (viewStack.current.length > 25) viewStack.current.shift();
+    }
     setView(v);
     try {
       window.localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+    } catch {
+      /* ignore */
+    }
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, []);
+
+  const back = useCallback(() => {
+    const prev = viewStack.current.pop() ?? { name: "market" as const };
+    setView(prev);
+    try {
+      window.localStorage.setItem(VIEW_KEY, JSON.stringify(prev));
     } catch {
       /* ignore */
     }
@@ -203,7 +228,7 @@ export default function ShopperShell() {
     }
   }, [activeStoreSlug, ready, setActiveStoreSlug]);
 
-  const ctx = useMemo<ShopperCtx>(() => ({ nav, openCart: () => setCartOpen(true) }), [nav]);
+  const ctx = useMemo<ShopperCtx>(() => ({ nav, back, openCart: () => setCartOpen(true) }), [nav, back]);
 
   const showChrome = !isStoreChrome(view);
   // App-like bottom navigation — mobile only, hidden during checkout focus mode.
@@ -516,19 +541,8 @@ function MarketHeader({
         </div>
 
         <div className="ml-0 flex shrink-0 items-center gap-1.5">
-          {/* sell / generate store (desktop + mobile) */}
-          <button
-            type="button"
-            onClick={() => nav({ name: "generate" })}
-            aria-label="Sell — generate your store from a marketplace link"
-            className={cn(
-              "inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold transition-colors sm:px-3",
-              view.name === "generate" ? "bg-brand-gradient text-white shadow-sm" : "text-teal-800 hover:bg-teal-50"
-            )}
-          >
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Sell / Generate store</span>
-          </button>
+          {/* buyer notification bell (Task 10-d) — self-gates for guests */}
+          <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} className="hidden sm:inline-flex" />
 
           {/* messages — account feature, hidden for guests */}
           {shopperSignedIn ? (
@@ -1196,7 +1210,7 @@ function ShopperFooter({
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50/10">
                 <ShoppingBag className="h-5 w-5 text-amber-300" />
               </span>
-              SHOP<span className="text-teal-200">MESH</span>
+              NOMO<span className="text-teal-200">FEE</span>
             </p>
             <p className="max-w-md text-xs text-teal-200/80">
               The marketplace where independent Malaysian shops launch beautiful storefronts in minutes.

@@ -1,8 +1,13 @@
 "use client";
-// Task 2-d — SD-04/05 Orders: tabbed list, full detail (items, money, address,
-// timeline), fulfill/ship/refund-request actions, printable packing slip.
+// Task 2-d — SD-04/05 Orders + Task 14-a rebuild: tabbed list with tracking
+// badges, full detail (items, money, address, shipment panel, timeline),
+// ShipOrderDialog (platform booking + manual), DeliverDialog (POD proof),
+// refund-request actions, printable packing slip.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import DeliverDialog from "./deliver-dialog";
+import ShipOrderDialog from "./ship-order-dialog";
+import ShipmentPanel from "./shipment-panel";
 import {
   apiGet,
   apiGetPaged,
@@ -81,6 +86,7 @@ type OrderDetail = {
   paidAt: string | null;
   fulfilledAt: string | null;
   shippedAt: string | null;
+  deliveredAt: string | null;
   trackingNumber: string | null;
   trackingProvider: string | null;
   createdAt: string;
@@ -209,7 +215,18 @@ export default function SellerOrders({ focusOrderId, onNavigate }: { focusOrderI
                     <p className="max-w-40 truncate">{o.customerName}</p>
                     <p className="max-w-40 truncate text-xs text-muted-foreground">{o.customerEmail}</p>
                   </TableCell>
-                  <TableCell><StatusChip status={o.status} /></TableCell>
+                  <TableCell>
+                    <StatusChip status={o.status} />
+                    {o.trackingNumber ? (
+                      <span
+                        className="mt-1 inline-flex max-w-36 items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                        title={`Courier tracking: ${o.trackingNumber}`}
+                      >
+                        <Truck className="h-3 w-3 shrink-0" />
+                        <span className="truncate font-mono">{o.trackingNumber}</span>
+                      </span>
+                    ) : null}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{o.itemCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMinor(o.totalMinor)}</TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">{o.paidAt ? fmtDateTime(o.paidAt) : "—"}</TableCell>
@@ -238,7 +255,15 @@ export default function SellerOrders({ focusOrderId, onNavigate }: { focusOrderI
 function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => void }) {
   const { data: order, loading, error, refetch } = useApi<OrderDetail>(`/api/store/orders/${orderId}`);
   const [shipOpen, setShipOpen] = useState(false);
+  const [deliverOpen, setDeliverOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
+  const [shipmentTick, setShipmentTick] = useState(0);
+
+  // Refetch the order AND the shipment brief (quote endpoint) after a mutation.
+  const refreshAll = () => {
+    refetch();
+    setShipmentTick((t) => t + 1);
+  };
 
   if (loading) return <RowsSkeleton rows={6} />;
   if (error || !order) {
@@ -254,11 +279,12 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
   const net = order.totalMinor - commission;
   const canFulfill = order.status === "paid" || order.status === "processing";
   const canShip = order.status === "paid" || order.status === "processing";
+  const canDeliver = order.status === "shipped";
   const canRefund = ["paid", "processing", "shipped", "delivered", "completed"].includes(order.status);
 
   const fulfill = async () => {
     const ok = await runMutation(() => apiSend("POST", `/api/store/orders/${order.id}/fulfill`), `Order ${order.orderNumber} marked fulfilled`);
-    if (ok) refetch();
+    if (ok) refreshAll();
   };
 
   return (
@@ -290,6 +316,14 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
         {canShip ? (
           <Button variant="outline" onClick={() => setShipOpen(true)} className="gap-2 min-h-[44px]">
             <Truck className="h-4 w-4" /> Ship order…
+          </Button>
+        ) : null}
+        {canDeliver ? (
+          <Button
+            onClick={() => setDeliverOpen(true)}
+            className="gap-2 min-h-[44px] bg-brand-gradient-deep text-white hover:opacity-90"
+          >
+            <PackageCheck className="h-4 w-4" /> Mark delivered
           </Button>
         ) : null}
         {canRefund ? (
@@ -384,6 +418,15 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
           </CardContent>
         </Card>
 
+        {/* shipment (platform booking brief or manual tracking) */}
+        <ShipmentPanel
+          orderId={order.id}
+          trackingNumber={order.trackingNumber}
+          trackingProvider={order.trackingProvider}
+          deliveredAt={order.deliveredAt}
+          refreshKey={shipmentTick}
+        />
+
         {/* timeline */}
         <Card className="print:hidden">
           <CardHeader>
@@ -418,8 +461,9 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
         </Card>
       </div>
 
-      <ShipDialog open={shipOpen} onOpenChange={setShipOpen} order={order} onDone={refetch} />
-      <RefundDialog open={refundOpen} onOpenChange={setRefundOpen} order={order} onDone={refetch} />
+      <ShipOrderDialog open={shipOpen} onOpenChange={setShipOpen} order={order} onDone={refreshAll} />
+      <DeliverDialog open={deliverOpen} onOpenChange={setDeliverOpen} order={order} onDone={refreshAll} />
+      <RefundDialog open={refundOpen} onOpenChange={setRefundOpen} order={order} onDone={refreshAll} />
     </div>
   );
 }
@@ -438,63 +482,6 @@ function MoneyRow({ label, value, tone, strong }: { label: string; value: number
         {value < 0 ? `−${formatMinor(-value)}` : formatMinor(value)}
       </span>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------- ship dialog
-
-function ShipDialog({ open, onOpenChange, order, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; order: OrderDetail; onDone: () => void }) {
-  const [provider, setProvider] = useState(order.trackingProvider ?? "");
-  const [tracking, setTracking] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
-      setProvider(order.trackingProvider ?? "");
-      setTracking("");
-    }
-  }, [open, order.trackingProvider]);
-
-  const ship = async () => {
-    if (!provider.trim() || !tracking.trim()) {
-      toast.error("Courier and tracking number are required");
-      return;
-    }
-    setBusy(true);
-    const ok = await runMutation(
-      () => apiSend("POST", `/api/store/orders/${order.id}/ship`, { provider: provider.trim(), trackingNumber: tracking.trim() }),
-      `${order.orderNumber} marked shipped — customer notified`
-    );
-    setBusy(false);
-    if (ok) {
-      onOpenChange(false);
-      onDone();
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Ship {order.orderNumber}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3.5">
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-provider">Courier / provider *</Label>
-            <Input id="ship-provider" value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="CityLink, J&T, PosLaju…" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ship-tracking">Tracking number *</Label>
-            <Input id="ship-tracking" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="CL123456789" />
-          </div>
-          <p className="text-xs text-muted-foreground">We email the customer and fire your <code>order.shipped</code> webhooks.</p>
-          <Button onClick={ship} disabled={busy} className="w-full min-h-[44px] gap-2">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Confirm shipment
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 

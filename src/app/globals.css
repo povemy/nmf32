@@ -43,7 +43,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   /* ------------------------------------------------------------------
-   * ShopMesh Modern Gradient — brand remap of the Tailwind teal scale.
+   * NOMOFEE Modern Gradient — brand remap of the Tailwind teal scale.
    * Every teal-* class in the app now resolves to the brand palette
    * (#004B5C → #00A8C6) so surfaces, accents and hover states all
    * inherit the gradient brand system automatically.
@@ -63,8 +63,8 @@
 
 :root {
   --radius: 0.75rem;
-  /* ShopMesh Modern Gradient (DESIGN.md) */
-  --background: #e8fcff;
+  /* NOMOFEE Modern Gradient (DESIGN.md) */
+  --background: #fafeff;
   --foreground: #181c1e;
   --card: #ffffff;
   --card-foreground: #181c1e;
@@ -79,7 +79,7 @@
   --accent: #d9f3fa;
   --accent-foreground: #004b5c;
   --destructive: #ba1a1a;
-  --border: #d8ebf1;
+  --border: #fafeff;
   --input: #cfe7ee;
   --ring: #00a8c6;
   --chart-1: #00647a;
@@ -93,7 +93,7 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #d9f3fa;
   --sidebar-accent-foreground: #004b5c;
-  --sidebar-border: #d8ebf1;
+  --sidebar-border: #fafeff;
   --sidebar-ring: #00a8c6;
 }
 
@@ -137,8 +137,8 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Light cyan canvas with a soft vertical brand wash */
-    background-image: linear-gradient(180deg, #e8fcff 0%, #effbfd 42%, #f7fafb 100%);
+    /* Near-white canvas with a soft vertical brand wash */
+    background-image: linear-gradient(180deg, #fafeff 0%, #f4fdfe 42%, #f8fbfc 100%);
     background-attachment: fixed;
     font-feature-settings: "cv02", "cv03", "cv04";
   }

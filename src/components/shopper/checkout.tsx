@@ -4,22 +4,27 @@
 // payment, order status, order history + lookup. All totals, delivery options
 // and stock come from the server (/api/checkout/quote) — never from the client.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
+  BadgeCheck,
   CreditCard,
   Landmark,
+  Home,
   Wallet,
   Smartphone,
   Tag,
   TicketPercent,
   Loader2,
+  ArrowLeft,
   CheckCircle2,
   XCircle,
   Clock,
   Copy,
   MessagesSquare,
   ReceiptText,
+  PackageCheck,
   PackageSearch,
   ShoppingBag,
   RotateCcw,
@@ -44,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import {
@@ -58,9 +64,12 @@ import {
   EmptyState,
   StatusBadge,
   StatusTimeline,
+  OrderFlowTimeline,
+  statusLabel,
   ApiFail,
   dateShort,
   type LookupResultT,
+  type OrderDetailT,
   type ShopperCtx,
 } from "./ui-bits";
 
@@ -81,6 +90,67 @@ const PROVIDERS = [
 ];
 
 const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.label]));
+
+// ---------------------------------------------------------------------------
+// EDD (estimated delivery) helpers — Task 14-b. The checkout quote carries a
+// working-days label ("2-4 working days"); the shipment record carries
+// concrete etaFrom/etaTo dates. Both surface as the same small chip:
+//   [ Estimated delivery Oct 18–21 ]
+// ---------------------------------------------------------------------------
+
+function addWorkingDays(from: Date, days: number): Date {
+  const d = new Date(from);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    const wd = d.getDay();
+    if (wd !== 0 && wd !== 6) added += 1; // skip Sat/Sun
+  }
+  return d;
+}
+
+function eddRangeLabel(from: Date, to: Date): string {
+  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth()) {
+    return `${from.toLocaleDateString("en-MY", { month: "short" })} ${from.getDate()}–${to.getDate()}`;
+  }
+  return `${from.toLocaleDateString("en-MY", { day: "numeric", month: "short" })} – ${to.toLocaleDateString("en-MY", { day: "numeric", month: "short" })}`;
+}
+
+/** Working-days eta label from the quote ("2-4 working days") → date window. */
+function eddFromEtaLabel(eta: string | null | undefined): { from: Date; to: Date } | null {
+  if (!eta) return null;
+  const m = /(\d+)\s*(?:-|–)\s*(\d+)\s*working days?/i.exec(eta) ?? /^(\d+)\s*working days?$/i.exec(eta);
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = Number(m[2] ?? m[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b < 1) return null;
+  const now = new Date();
+  return { from: addWorkingDays(now, a), to: addWorkingDays(now, Math.max(a, b)) };
+}
+
+/** Concrete ISO dates from the shipment record → label (null when absent). */
+function eddFromShipment(etaFrom: string | null | undefined, etaTo: string | null | undefined): string | null {
+  if (!etaFrom || !etaTo) return null;
+  const a = new Date(etaFrom);
+  const b = new Date(etaTo);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  return eddRangeLabel(a, b);
+}
+
+function EddChip({ label, dark = false }: { label: string; dark?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
+        dark ? "bg-white/15 text-white" : "border border-teal-200 bg-teal-50 text-teal-800"
+      )}
+    >
+      <Truck className="h-3.5 w-3.5" aria-hidden />
+      <span>Estimated delivery</span>
+      <span className="font-extrabold">{label}</span>
+    </span>
+  );
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+()\d\s-]{6,20}$/;
@@ -175,6 +245,18 @@ type ShippingOptionT = {
   reason: string | null;
 };
 
+type VoucherOutcomeT = {
+  storeId: string;
+  userVoucherId?: string;
+  valid: boolean;
+  reason: string | null;
+  code: string | null;
+  title: string | null;
+  kind: string | null;
+  discountMinor: number;
+  freeShipping: boolean;
+};
+
 type QuoteGroupT = {
   storeId: string;
   storeSlug: string;
@@ -185,7 +267,39 @@ type QuoteGroupT = {
   totalMinor: number;
   itemCount: number;
   couponApplied: boolean;
+  voucher?: VoucherOutcomeT | null;
 };
+
+/** A held voucher from GET /api/me/vouchers `mine` (Task 10-b). */
+type HeldVoucherT = {
+  id: string;
+  status: string;
+  voucher: {
+    id: string;
+    code: string;
+    title: string;
+    kind: string;
+    discountMinor: number;
+    percentOff: number | null;
+    maxDiscountMinor: number | null;
+    minSpendMinor: number;
+    expiryAt: string;
+    scope: string;
+    storeId: string | null;
+    regionLimit: string | null;
+    store?: { name: string; slug: string; logoUrl: string | null } | null;
+  };
+};
+
+function voucherOptionLabel(v: HeldVoucherT): string {
+  const d = v.voucher;
+  if (d.kind === "freeshipping") return `Free shipping · ${d.code}`;
+  if (d.percentOff != null) {
+    const cap = d.maxDiscountMinor != null ? ` (cap ${formatMinor(d.maxDiscountMinor)})` : "";
+    return `${d.percentOff}% off${cap} · ${d.code}`;
+  }
+  return `${formatMinor(d.discountMinor)} off · ${d.code}`;
+}
 
 type QuoteT = {
   subtotalMinor: number;
@@ -242,7 +356,7 @@ function Stepper({ phase, onJump }: { phase: 1 | 2 | 3; onJump: (n: 1 | 2) => vo
             <button
               type="button"
               disabled={!done}
-              onClick={() => done && onJump(s.n)}
+              onClick={() => done && s.n !== 3 && onJump(s.n)}
               className="flex min-w-0 items-center gap-2 disabled:cursor-default"
               aria-current={current ? "step" : undefined}
               aria-label={`Step ${s.n}: ${s.label}${done ? " (completed — click to edit)" : ""}`}
@@ -379,6 +493,10 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const [tried, setTried] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Task 10-b claimable vouchers — one held voucher per seller group.
+  const [heldVouchers, setHeldVouchers] = useState<HeldVoucherT[] | null>(null);
+  const [voucherSel, setVoucherSel] = useState<Record<string, string>>({}); // storeId → userVoucherId
+
   const selectedAddr = useMemo(
     () => addresses?.find((a) => a.id === draft.addressId) ?? null,
     [addresses, draft.addressId]
@@ -407,17 +525,54 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const payloadItems = useMemo(() => items.map((i) => ({ variantId: i.variantId, qty: i.qty })), [items]);
   const destState = selectedAddr?.state ?? null;
 
+  // Seller groups in this checkout — quote groups first (server truth), cart
+  // grouping as the pre-quote fallback.
+  const storeGroups = useMemo(() => {
+    if (quote?.groups?.length) return quote.groups.map((g) => ({ storeId: g.storeId, storeName: g.storeName }));
+    if (cart?.stores?.length) return cart.stores.map((s) => ({ storeId: s.storeId, storeName: s.storeName }));
+    const map = new Map<string, string>();
+    for (const i of items) if (!map.has(i.storeId)) map.set(i.storeId, i.storeName);
+    return [...map.entries()].map(([storeId, storeName]) => ({ storeId, storeName }));
+  }, [quote, cart, items]);
+
+  // Selected vouchers pruned to stores actually in this checkout — the create
+  // endpoint is HARD about vouchers for sellers that are not part of the cart.
+  const voucherEntries = useMemo(
+    () =>
+      storeGroups
+        .map((g) => ({ storeId: g.storeId, userVoucherId: voucherSel[g.storeId] }))
+        .filter((e): e is { storeId: string; userVoucherId: string } => Boolean(e.userVoucherId)),
+    [storeGroups, voucherSel]
+  );
+
+  // Load the shopper's held vouchers (checkout is account-only — always a session here).
+  useEffect(() => {
+    if (!shopper) return;
+    let alive = true;
+    fetchJson<{ mine: HeldVoucherT[] }>("/api/me/vouchers")
+      .then((d) => {
+        if (!alive) return;
+        setHeldVouchers((d.mine ?? []).filter((v) => v.status === "AVAILABLE"));
+      })
+      .catch(() => alive && setHeldVouchers([]));
+    return () => {
+      alive = false;
+    };
+  }, [shopper]);
+
   const refreshQuote = useCallback(
     async (code: string, rateId: string, state: string | null) => {
       if (payloadItems.length === 0) return;
       setQuoting(true);
       try {
         // OPTION A: no storeSlug — the server groups cart items per seller itself.
+        // vouchers: per-group claimable voucher verdicts (Task 10-b).
         const q = await postJson<QuoteT>("/api/checkout/quote", {
           items: payloadItems,
           couponCode: code || undefined,
           shippingRateId: rateId,
           state: state ?? undefined,
+          vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
         });
         setQuote(q);
       } catch {
@@ -426,7 +581,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         setQuoting(false);
       }
     },
-    [payloadItems]
+    [payloadItems, voucherEntries]
   );
 
   // auto-quote on cart / shipping / destination / coupon change
@@ -461,6 +616,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         couponCode: code,
         shippingRateId: draft.shippingRateId,
         state: destState ?? undefined,
+        vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
       });
       if (q.coupon?.valid) {
         setDraft((d) => ({ ...d, couponCode: code }));
@@ -581,7 +737,13 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     }
     setSubmitting(true);
     try {
-      const res = await postJson<{ orderNumber: string; orderNumbers?: string[]; orderPaymentRef: string; totalMinor: number }>(
+      const res = await postJson<{
+        orderNumber: string;
+        orderNumbers?: string[];
+        orderPaymentRef: string;
+        totalMinor: number;
+        vouchersApplied?: { storeId: string; code: string | null; title: string | null; kind: string | null; discountMinor: number; freeShipping: boolean }[];
+      }>(
         "/api/checkout/create",
         {
           items: payloadItems,
@@ -593,6 +755,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
             postcode: selectedAddr.postcode,
           },
           couponCode: draft.couponCode || undefined,
+          vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
           shippingRateId: draft.shippingRateId,
           provider: draft.provider,
           customerNote: draft.note.trim() || undefined,
@@ -608,9 +771,17 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         /* storage full — non-critical */
       }
       clearDraft();
+      const applied = (res.vouchersApplied ?? []).filter((a) => a.code);
+      const appliedTxt = applied
+        .map((a) => `${a.code}${a.freeShipping ? " — free shipping" : a.discountMinor > 0 ? ` — ${formatMinor(a.discountMinor)} off` : ""}`)
+        .join(" · ");
       toast.success(
         orderNumbers.length > 1 ? `${orderNumbers.length} orders created` : `Order ${res.orderNumber} created`,
-        { description: "One payment for all sellers — redirecting to secure payment…" }
+        {
+          description: appliedTxt
+            ? `${appliedTxt} — redirecting to secure payment…`
+            : "One payment for all sellers — redirecting to secure payment…",
+        }
       );
       ctx.nav({ name: "pay", ref: res.orderPaymentRef });
     } catch (e) {
@@ -742,10 +913,10 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   <User className="h-4 w-4 text-teal-700" /> Contact
                 </h2>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, (tried || draft.name.length > 0) && contactErrors.name)}
-                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, (tried || draft.email.length > 0) && contactErrors.email)}
+                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, tried || draft.name.length > 0 ? contactErrors.name : null)}
+                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, tried || draft.email.length > 0 ? contactErrors.email : null)}
                   <div className="sm:col-span-2">
-                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried && contactErrors.phone)}
+                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried ? contactErrors.phone : null)}
                   </div>
                 </div>
               </section>
@@ -1014,12 +1185,18 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   </div>
                   {(() => {
                     const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+                    const edd = eddFromEtaLabel(sel?.eta);
                     return (
                       <>
                         <p className="pt-1 text-sm font-semibold">{sel?.label ?? "—"}</p>
                         <p className="text-sm text-muted-foreground">
                           {sel ? `${sel.eta} · ${sel.freeShipping ? "FREE" : formatMinor(sel.amountMinor)}` : "—"}
                         </p>
+                        {edd ? (
+                          <div className="pt-1.5">
+                            <EddChip label={eddRangeLabel(edd.from, edd.to)} />
+                          </div>
+                        ) : null}
                       </>
                     );
                   })()}
@@ -1164,6 +1341,71 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                 </>
               )}
             </div>
+
+            {/* claimable vouchers — one per seller group (Task 10-b) */}
+            {storeGroups.length > 0 ? (
+              <div className="space-y-2.5">
+                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  <TicketPercent className="h-3.5 w-3.5 text-teal-700" /> Shop vouchers
+                </p>
+                {storeGroups.map((g) => {
+                  // coinsback is platform-dormant (NOMO_FINANCE disabled) — never offer it.
+                  const options = (heldVouchers ?? []).filter(
+                    (v) =>
+                      v.voucher.kind !== "coinsback" &&
+                      (v.voucher.scope === "PLATFORM" || v.voucher.storeId === g.storeId)
+                  );
+                  const verdict = quote?.groups?.find((gg) => gg.storeId === g.storeId)?.voucher ?? null;
+                  return (
+                    <div key={g.storeId} className="space-y-1">
+                      <Label className="block text-[11px] font-semibold text-muted-foreground">
+                        {quote?.groups && quote.groups.length > 1 ? g.storeName : "Use a voucher"}
+                        {heldVouchers !== null && options.length === 0 ? " · none available" : ""}
+                      </Label>
+                      <Select
+                        value={voucherSel[g.storeId] ?? "none"}
+                        onValueChange={(v) =>
+                          setVoucherSel((s) => {
+                            const next = { ...s };
+                            if (v === "none") delete next[g.storeId];
+                            else next[g.storeId] = v;
+                            return next;
+                          })
+                        }
+                      >
+                        <SelectTrigger
+                          className="min-h-[44px] w-full text-xs"
+                          aria-label={`Voucher for ${g.storeName}`}
+                        >
+                          <SelectValue placeholder="Select a voucher" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No voucher</SelectItem>
+                          {options.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {voucherOptionLabel(v)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {verdict ? (
+                        verdict.valid ? (
+                          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800">
+                            {verdict.kind === "freeshipping"
+                              ? `${verdict.code} applied — free shipping on this parcel`
+                              : `${verdict.code} applied — ${formatMinor(verdict.discountMinor)} off`}
+                          </p>
+                        ) : (
+                          <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700">
+                            {verdict.reason}
+                          </p>
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <Separator />
 
@@ -1528,19 +1770,114 @@ function OrderCard({ o, compact = false }: { o: LookupResultT; compact?: boolean
         </div>
         <div>
           <h3 className="pb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Progress</h3>
-          <StatusTimeline history={o.history} current={o.status} />
+          <OrderFlowTimeline history={o.history} current={o.status} />
         </div>
       </div>
     </motion.div>
   );
 }
 
+// ---------------------------------------------------------------- hero copy
+
+/** Shopee-style hero headline per order status (Task 14-b rebuild). */
+function orderHero(d: OrderDetailT): { Icon: typeof Clock; title: string; blurb: string } {
+  switch (d.status) {
+    case "payment_pending":
+      return { Icon: Clock, title: "Awaiting payment", blurb: `Complete the payment to confirm your order with ${d.storeName}.` };
+    case "paid":
+      return { Icon: CheckCircle2, title: "Payment confirmed", blurb: `${d.storeName} is preparing your parcel for dispatch.` };
+    case "processing":
+      return { Icon: PackageSearch, title: "Being prepared", blurb: `${d.storeName} is packing your items right now.` };
+    case "shipped":
+      return {
+        Icon: Truck,
+        title: "Parcel on the way",
+        blurb: d.shippingCourierName
+          ? `Your parcel is with ${d.shippingCourierName} — follow every step below.`
+          : "Your parcel is on its way — follow every step below.",
+      };
+    case "delivered":
+      return {
+        Icon: Home,
+        title: "Parcel delivered",
+        blurb: d.deliveredAt ? `Delivered on ${dateShort(d.deliveredAt)} — confirm receipt below.` : "Delivered — confirm receipt below.",
+      };
+    case "completed":
+      return { Icon: BadgeCheck, title: "Order completed", blurb: `Thanks for shopping with ${d.storeName} — we hope to see you again soon.` };
+    case "cancelled":
+      return { Icon: XCircle, title: "Order cancelled", blurb: "This order was cancelled. Any payment made is returned through the platform's dispute process." };
+    default:
+      return { Icon: PackageSearch, title: statusLabel(d.status), blurb: `Order ${d.orderNumber} · ${d.storeName}.` };
+  }
+}
+
+type ReorderResultT = { added: { title: string; qty: number }[]; skipped: { title: string; reason: string }[] };
+
 export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
   const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
   const [receiptEmail, setReceiptEmail] = useState(email);
-  const [data, setData] = useState<LookupResultT | null>(null);
+  const [data, setData] = useState<OrderDetailT | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiveBusy, setReceiveBusy] = useState(false);
+  const [reorderBusy, setReorderBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const loadedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    // 1) Guest path — email + order number lookup (unchanged).
+    const guestLookup = email
+      ? fetchJson<OrderDetailT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
+      : Promise.reject(new Error("no-guest-email"));
+    try {
+      const d = await guestLookup;
+      setData(d);
+      loadedRef.current = true;
+      trackOrderRef(d.orderNumber, email);
+      return;
+    } catch {
+      /* fall through to the account path */
+    }
+    // 2) Account path — signed-in buyer deep-linking from the Me hub;
+    //    ownership enforced server-side by the session's shopperId.
+    try {
+      const d = await fetchJson<OrderDetailT>(`/api/me/orders/${encodeURIComponent(orderNumber)}`);
+      setData(d);
+      loadedRef.current = true;
+      if (d.customerEmail) {
+        setReceiptEmail(d.customerEmail);
+        trackOrderRef(d.orderNumber, d.customerEmail);
+      }
+    } catch (e) {
+      // polling blips must never blank an already-loaded view
+      if (!loadedRef.current) {
+        setFailed(e instanceof Error && e.message !== "no-guest-email" ? e.message : "");
+      }
+    }
+  }, [email, orderNumber]);
+
+  useEffect(() => {
+    loadedRef.current = false;
+    setFailed(null);
+    void load();
+  }, [load]);
+
+  // Live refresh (Task 11): poll every 12s + refetch when the tab regains
+  // focus/visibility — shipped→delivered transitions appear without a reload.
+  useEffect(() => {
+    const t = setInterval(() => void load(), 12_000);
+    const onFocus = () => void load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load]);
 
   const downloadReceipt = async () => {
     if (receiptBusy || !receiptEmail || !data) return;
@@ -1554,7 +1891,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `SHOPMESH-Receipt-${data.orderNumber}.pdf`;
+      a.download = `NOMOFEE-Receipt-${data.orderNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1567,38 +1904,67 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     }
   };
 
-  useEffect(() => {
-    let alive = true;
-    // 1) Guest path — email + order number lookup (unchanged).
-    const guestLookup = email
-      ? fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
-      : Promise.reject(new Error("no-guest-email"));
-    guestLookup
-      .then((d) => {
-        if (!alive) return;
-        setData(d);
-        trackOrderRef(d.orderNumber, email);
-      })
-      .catch(() => {
-        // 2) Account path — signed-in buyer deep-linking from the Me hub;
-        //    ownership enforced server-side by the session's shopperId.
-        fetchJson<LookupResultT & { customerEmail?: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}`)
-          .then((d) => {
-            if (!alive) return;
-            setData(d);
-            if (d.customerEmail) {
-              setReceiptEmail(d.customerEmail);
-              trackOrderRef(d.orderNumber, d.customerEmail);
-            }
-          })
-          .catch((e2: Error) => {
-            if (alive) setFailed(e2.message === "no-guest-email" ? "" : e2.message);
-          });
+  function copyOrder() {
+    navigator.clipboard?.writeText(orderNumber).then(
+      () => {
+        setCopied(true);
+        toast.success("Order number copied");
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => toast.error("Could not copy")
+    );
+  }
+
+  // POST /api/me/orders/[orderNumber]/receive — buyer confirms receipt
+  // (shipped|delivered → completed; the platform also fast-forwards a
+  // mid-flight shipment to DELIVERED so the timeline never trails the buyer).
+  async function confirmReceipt() {
+    if (receiveBusy) return;
+    setReceiveBusy(true);
+    try {
+      const res = await postJson<{ orderNumber: string; status: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}/receive`, {});
+      toast.success("Order received — thank you!", {
+        description: `Order ${res.orderNumber} is now ${res.status === "completed" ? "completed" : res.status}.`,
       });
-    return () => {
-      alive = false;
-    };
-  }, [email, orderNumber]);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not confirm receipt");
+    } finally {
+      setReceiveBusy(false);
+    }
+  }
+
+  // POST /api/me/orders/[orderNumber]/reorder — one-tap re-order → toast
+  // summary (added/skipped) → open the cart.
+  async function buyAgain() {
+    if (reorderBusy) return;
+    setReorderBusy(true);
+    try {
+      const res = await postJson<ReorderResultT>(`/api/me/orders/${encodeURIComponent(orderNumber)}/reorder`, {});
+      if (res.added.length === 0) {
+        toast.error("Nothing could be added to your cart", {
+          description:
+            res.skipped.length > 0
+              ? res.skipped.map((s) => `${s.title} — ${s.reason}`).join(" · ")
+              : "These items are no longer available.",
+        });
+        return;
+      }
+      const addedQty = res.added.reduce((s, a) => s + a.qty, 0);
+      toast.success(`Added ${addedQty} item${addedQty === 1 ? "" : "s"} to your cart`, {
+        description:
+          res.skipped.length > 0
+            ? `${res.skipped.length} item${res.skipped.length === 1 ? "" : "s"} skipped — ${res.skipped[0].reason}${res.skipped.length > 1 ? " + more" : ""}`
+            : "Open your cart to check out.",
+      });
+      notifyCartUpdated();
+      ctx.openCart();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not re-order these items");
+    } finally {
+      setReorderBusy(false);
+    }
+  }
 
   if (failed) {
     return (
@@ -1623,34 +1989,298 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+      <BackBar onBack={ctx.back} />
       {!data ? (
         <div className="space-y-4">
-          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-32 rounded-2xl" />
           <Skeleton className="h-56 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
         </div>
       ) : (
-        <div className="space-y-5">
-          <OrderCard o={data} />
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
-              Continue shopping
-            </Button>
-            <Button
-              variant="outline"
-              onClick={downloadReceipt}
-              disabled={receiptBusy || data.status === "payment_pending"}
-              className="min-h-[44px] gap-2"
-              title={data.status === "payment_pending" ? "Available once payment is confirmed" : "Download the PDF receipt for this order"}
-            >
-              {receiptBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ReceiptText className="h-4 w-4" />}
-              Download receipt
-            </Button>
-            <ContactSellerButton ctx={ctx} orderNumber={data.orderNumber} storeSlug={data.storeSlug ?? null} storeName={data.storeName} />
-            <Button variant="outline" onClick={() => ctx.nav({ name: "orders" })} className="min-h-[44px]">
-              All my orders
-            </Button>
-          </div>
-        </div>
+        (() => {
+          const d = data;
+          // Account detail (/api/me/orders/[orderNumber]) carries the full
+          // breakdown; the guest lookup payload keeps the compact legacy card.
+          const isDetail = typeof d.subtotalMinor === "number";
+          const Hero = orderHero(d);
+          const canReceive = isDetail && (d.status === "shipped" || d.status === "delivered");
+          const shipmentLive = !!d.shipment && d.shipment.status !== "DELIVERED" && d.shipment.status !== "RETURNED";
+          const eddLabel = shipmentLive ? eddFromShipment(d.shipment?.etaFrom, d.shipment?.etaTo) : null;
+
+          if (!isDetail) {
+            return (
+              <div className="space-y-5">
+                <OrderCard o={d} />
+                <div className="flex flex-wrap justify-center gap-3">
+                  <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+                    Continue shopping
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={downloadReceipt}
+                    disabled={receiptBusy || d.status === "payment_pending"}
+                    className="min-h-[44px] gap-2"
+                    title={d.status === "payment_pending" ? "Available once payment is confirmed" : "Download the PDF receipt for this order"}
+                  >
+                    {receiptBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ReceiptText className="h-4 w-4" />}
+                    Download receipt
+                  </Button>
+                  <ContactSellerButton ctx={ctx} orderNumber={d.orderNumber} storeSlug={d.storeSlug ?? null} storeName={d.storeName} />
+                  <Button variant="outline" onClick={() => ctx.nav({ name: "orders" })} className="min-h-[44px]">
+                    All my orders
+                  </Button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-5">
+              {/* ------------------------------ hero status card ------------------------------ */}
+              <motion.section
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="overflow-hidden rounded-2xl border bg-card shadow-soft"
+                aria-label="Order status"
+              >
+                <div className="bg-brand-gradient-deep px-5 py-6 text-white sm:px-6">
+                  <div className="flex items-start gap-4">
+                    <motion.span
+                      initial={{ scale: 0, rotate: -20 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: "spring", stiffness: 260, damping: 14 }}
+                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/15"
+                    >
+                      <Hero.Icon className="h-8 w-8" aria-hidden />
+                    </motion.span>
+                    <div className="min-w-0 flex-1">
+                      <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">{Hero.title}</h1>
+                      <p className="pt-1 text-sm leading-snug text-teal-50/90">{Hero.blurb}</p>
+                      <div className="flex flex-wrap items-center gap-2 pt-3">
+                        <span className="rounded-full bg-white/15 px-3 py-1 font-mono text-xs font-bold">{d.orderNumber}</span>
+                        <button
+                          type="button"
+                          onClick={copyOrder}
+                          className="inline-flex min-h-[32px] items-center gap-1 rounded-full px-2 text-xs font-semibold text-teal-50/90 underline-offset-2 hover:underline"
+                          aria-label="Copy order number"
+                        >
+                          {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} Copy
+                        </button>
+                        {eddLabel ? <EddChip dark label={eddLabel} /> : null}
+                      </div>
+                    </div>
+                    <div className="hidden shrink-0 text-right sm:block">
+                      <p className="text-[10px] uppercase tracking-widest text-teal-100/80">Total</p>
+                      <p className="text-xl font-extrabold">{formatMinor(d.totalMinor)}</p>
+                    </div>
+                  </div>
+                </div>
+                {d.dispute ? (
+                  <p className="flex items-center gap-2 border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-xs font-medium text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {d.dispute.resolution
+                      ? `After-sales update — ${d.dispute.status}${d.dispute.resolution ? `: ${d.dispute.resolution}` : ""}`
+                      : `Return/refund request submitted — the seller will respond. (${d.dispute.status})`}
+                  </p>
+                ) : null}
+              </motion.section>
+
+              {/* ------------------------------ items + totals ------------------------------ */}
+              <section className="rounded-2xl border bg-card p-5 shadow-soft sm:p-6" aria-labelledby="os-items">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-4">
+                  <h2 id="os-items" className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Items
+                  </h2>
+                  <span className="text-xs text-muted-foreground">
+                    Sold by <span className="font-semibold text-teal-700">{d.storeName}</span>
+                  </span>
+                </div>
+                <ul className="space-y-4">
+                  {d.items.map((it, i) => (
+                    <li key={`${it.title}-${i}`} className="flex items-start gap-3">
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                        {it.imageUrl ? (
+                          // order item thumbnails come from /api/img + local /public — plain <img>, never next/image
+                          <img src={it.imageUrl} alt={it.title} loading="lazy" className="h-full w-full object-cover" />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-sm font-semibold leading-snug">{it.title}</p>
+                        {it.variantLabel ? <p className="text-xs text-muted-foreground">{it.variantLabel}</p> : null}
+                        <p className="text-xs text-muted-foreground">
+                          Qty {it.qty}
+                          {typeof it.unitPriceMinor === "number" ? ` · ${formatMinor(it.unitPriceMinor)} each` : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {typeof it.lineTotalMinor === "number" ? (
+                          <>
+                            <p className="text-sm font-bold">{formatMinor(it.lineTotalMinor)}</p>
+                            {it.qty > 1 && typeof it.unitPriceMinor === "number" ? (
+                              <p className="text-[11px] text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">× {it.qty}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                <Separator className="my-4" />
+
+                <dl className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="font-semibold">{formatMinor(d.subtotalMinor ?? 0)}</dd>
+                  </div>
+                  {(d.discountMinor ?? 0) > 0 ? (
+                    <div className="flex justify-between text-emerald-700">
+                      <dt className="inline-flex items-center gap-1">
+                        <TicketPercent className="h-3.5 w-3.5" aria-hidden /> Discount
+                      </dt>
+                      <dd className="font-semibold">-{formatMinor(d.discountMinor ?? 0)}</dd>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Shipping</dt>
+                    <dd className="font-semibold">{(d.shippingMinor ?? 0) === 0 ? "FREE" : formatMinor(d.shippingMinor ?? 0)}</dd>
+                  </div>
+                  {(d.taxMinor ?? 0) > 0 ? (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Tax</dt>
+                      <dd className="font-semibold">{formatMinor(d.taxMinor ?? 0)}</dd>
+                    </div>
+                  ) : null}
+                  <Separator />
+                  <div className="flex justify-between text-base">
+                    <dt className="font-bold">Total</dt>
+                    <dd className="font-extrabold text-teal-700">{formatMinor(d.totalMinor)}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              {/* ------------------------------ customer & shipping ------------------------------ */}
+              <section className="rounded-2xl border bg-card p-5 shadow-soft sm:p-6" aria-labelledby="os-custship">
+                <h2 id="os-custship" className="pb-4 text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                  Customer &amp; shipping
+                </h2>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
+                      <MapPin className="h-3.5 w-3.5" aria-hidden /> Delivery address
+                    </p>
+                    {d.shippingAddress ? (
+                      <div className="space-y-0.5 pt-1.5 text-sm">
+                        {d.customerName ? <p className="font-semibold">{d.customerName}</p> : null}
+                        {d.customerPhone ? <p className="text-muted-foreground">{d.customerPhone}</p> : null}
+                        <p className="text-muted-foreground">
+                          {[d.shippingAddress.line1, d.shippingAddress.city, d.shippingAddress.state, d.shippingAddress.postcode]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="pt-1.5 text-sm text-muted-foreground">—</p>
+                    )}
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
+                        <CreditCard className="h-3.5 w-3.5" aria-hidden /> Payment method
+                      </p>
+                      <p className="pt-1.5 text-sm font-semibold">{d.paymentProvider ? PROVIDER_LABEL[d.paymentProvider] ?? d.paymentProvider : "—"}</p>
+                      {d.paidAt ? (
+                        <p className="text-xs text-muted-foreground">
+                          Paid {new Date(d.paidAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}
+                        </p>
+                      ) : null}
+                    </div>
+                    {d.customerNote ? (
+                      <div>
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-teal-800">
+                          <MessagesSquare className="h-3.5 w-3.5" aria-hidden /> Customer note
+                        </p>
+                        <p className="pt-1.5 text-sm text-muted-foreground">{d.customerNote}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+
+              {/* ------------------------------ shipment timeline ------------------------------ */}
+              {d.shipment ? (
+                <section className="rounded-2xl border bg-card p-5 shadow-soft sm:p-6" aria-labelledby="os-shipment">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-4">
+                    <h2 id="os-shipment" className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                      <PackageSearch className="h-4 w-4 text-teal-700" aria-hidden /> Shipment
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {d.shippingCourierName || d.trackingNumber ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800">
+                          <Truck className="h-3.5 w-3.5" aria-hidden />
+                          {[d.shippingCourierName, d.trackingNumber].filter(Boolean).join(" · ")}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <StatusTimeline events={d.shipment.events ?? []} />
+                </section>
+              ) : d.history?.length ? (
+                <section className="rounded-2xl border bg-card p-5 shadow-soft sm:p-6" aria-labelledby="os-progress">
+                  <h2 id="os-progress" className="pb-4 text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Progress
+                  </h2>
+                  <OrderFlowTimeline history={d.history} current={d.status} />
+                </section>
+              ) : null}
+
+              {/* ------------------------------ action row ------------------------------ */}
+              <div className="flex flex-wrap justify-center gap-3">
+                <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+                  Continue shopping
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={downloadReceipt}
+                  disabled={receiptBusy || d.status === "payment_pending"}
+                  className="min-h-[44px] gap-2"
+                  title={d.status === "payment_pending" ? "Available once payment is confirmed" : "Download the PDF receipt for this order"}
+                >
+                  {receiptBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ReceiptText className="h-4 w-4" />}
+                  Download receipt
+                </Button>
+                <ContactSellerButton
+                  ctx={ctx}
+                  orderNumber={d.orderNumber}
+                  storeId={d.storeId ?? null}
+                  storeSlug={d.storeSlug ?? null}
+                  storeName={d.storeName}
+                />
+                <Button variant="outline" onClick={() => ctx.nav({ name: "orders" })} className="min-h-[44px]">
+                  All my orders
+                </Button>
+                {canReceive ? (
+                  <Button
+                    onClick={confirmReceipt}
+                    disabled={receiveBusy}
+                    className="min-h-[44px] gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                    title="Confirm you have received this order"
+                  >
+                    {receiveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                    Order received
+                  </Button>
+                ) : null}
+                <Button variant="outline" onClick={buyAgain} disabled={reorderBusy} className="min-h-[44px] gap-2" title="Add these items to your cart again">
+                  {reorderBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
+                  Buy again
+                </Button>
+              </div>
+            </div>
+          );
+        })()
       )}
     </div>
   );
@@ -1715,6 +2345,23 @@ function ContactSellerButton({
 
 // ---------------------------------------------------------------- order history
 
+// ---------------------------------------------------------------- back navigation
+// Standard back affordance for views without one (user request #1: back button
+// on every page). Pops the shopper-shell history stack via ctx.back().
+function BackBar({ onBack, label = "Back" }: { onBack: () => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      aria-label="Go back to the previous page"
+      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
+
 export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
   const [refs] = useState(() => readOrderRefs().slice(0, 10));
   const [orders, setOrders] = useState<LookupResultT[]>([]);
@@ -1739,6 +2386,7 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+      <BackBar onBack={ctx.back} />
       <div className="pb-5">
         <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight">
           <PackageSearch className="h-6 w-6 text-teal-700" /> My orders
@@ -1836,6 +2484,7 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+      <BackBar onBack={ctx.back} />
       <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-soft sm:p-6">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-extrabold tracking-tight">

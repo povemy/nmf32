@@ -26,6 +26,7 @@ import SellerWallet from "./wallet";
 import PageBuilder from "./builder";
 import SellerDomains from "./domains";
 import SellerCoupons from "./marketing";
+import SellerVouchers from "./vouchers";
 import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
 import SellerImports from "./imports";
@@ -40,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   BadgeCheck,
+  BadgePercent,
   Blocks,
   Clock3,
   DatabaseZap,
@@ -73,6 +75,7 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
   { key: "domains", label: "Domains", icon: Globe },
   { key: "coupons", label: "Coupons", icon: TicketPercent },
+  { key: "vouchers", label: "Vouchers", icon: BadgePercent },
   { key: "integrations", label: "Integrations", icon: Blocks },
   { key: "settings", label: "Store Settings", icon: Settings },
 ];
@@ -272,6 +275,7 @@ export default function SellerShell() {
             )}
             {nav.view === "domains" && <SellerDomains storeSlug={storeSlug} />}
             {nav.view === "coupons" && <SellerCoupons />}
+            {nav.view === "vouchers" && <SellerVouchers />}
             {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}
             {nav.view === "integrations" && <SellerIntegrations />}
             {nav.view === "settings" && <SellerSettings onNavigate={navigate} storeMe={storeMe} refreshStoreMe={refreshStoreMe} />}

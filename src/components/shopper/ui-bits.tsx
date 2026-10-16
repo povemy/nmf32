@@ -2,13 +2,31 @@
 // ============================================================================
 // Shopper surface — shared UI bits, types + cart plumbing (Task 2-e).
 // All money values are integer minor units; always format via formatMinor.
+// Task 10/11 rebuild: shipment-event timeline (StatusTimeline) + ViewProofButton
+// (POD photo dialog) shared by the buyer order detail / purchases surfaces.
 // ============================================================================
 import { useCallback, useEffect, useState } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders } from "@/lib/session-client";
 import { useApp } from "@/lib/app-store";
-import { Star, StarHalf, PackageOpen, Minus, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  Bike,
+  Camera,
+  ClipboardCheck,
+  Home,
+  MapPin,
+  PackageCheck,
+  PackageOpen,
+  Minus,
+  Plus,
+  RotateCcw,
+  Star,
+  StarHalf,
+  Truck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +52,8 @@ export type ShopperView =
 
 export type ShopperCtx = {
   nav: (v: ShopperView) => void;
+  /** Pop the internal history stack (back navigation on every page). */
+  back: () => void;
   openCart: () => void;
 };
 
@@ -121,8 +141,60 @@ export type LookupResultT = {
   storeId?: string;
   storeSlug?: string;
   createdAt: string;
-  items: { title: string; qty: number }[];
+  items: { title: string; qty: number; variantLabel?: string | null; unitPriceMinor?: number; lineTotalMinor?: number; imageUrl?: string | null }[];
   history: { toStatus: string; createdAt: string }[];
+};
+
+// ---------------------------------------------------------------------------
+// Buyer order detail (GET /api/me/orders/[orderNumber]) + shipment timeline
+// types (Task 10/11). All optional except the lookup core — the guest lookup
+// payload (/api/orders/lookup) satisfies OrderDetailT too, so one render path
+// can serve both and upgrade itself when the account detail arrives.
+// ---------------------------------------------------------------------------
+
+export type ShipmentEventT = {
+  id?: string;
+  status: string;
+  description: string | null;
+  location: string | null;
+  occurredAt: string;
+  proofImageUrl?: string | null;
+};
+
+export type ShipmentT = {
+  status: string;
+  providerId?: string;
+  courierName: string | null;
+  awbNumber: string | null;
+  labelUrl?: string | null;
+  etaFrom?: string | null;
+  etaTo?: string | null;
+  bookedAt?: string | null;
+  deliveredAt?: string | null;
+  events: ShipmentEventT[];
+};
+
+export type OrderDetailT = LookupResultT & {
+  currency?: string;
+  subtotalMinor?: number;
+  discountMinor?: number;
+  shippingMinor?: number;
+  taxMinor?: number;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  customerNote?: string | null;
+  shippingAddress?: { line1?: string; city?: string; state?: string; postcode?: string } | null;
+  paymentProvider?: string | null;
+  paidAt?: string | null;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  completedAt?: string | null;
+  trackingNumber?: string | null;
+  shipment?: ShipmentT | null;
+  shipmentStatus?: string | null;
+  shippingCourierName?: string | null;
+  dispute?: { id: string; reason: string; status: string; resolution?: string | null; createdAt: string } | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -459,7 +531,138 @@ export function EmptyState({
 }
 
 // ---------------------------------------------------------------------------
-// Order status timeline (shared by order-status + lookup views)
+// ViewProofButton — shared POD affordance: opens a dialog with the courier's
+// proof-of-delivery photo (proofImageUrl from the DELIVERED shipment event).
+// ---------------------------------------------------------------------------
+
+export function ViewProofButton({
+  url,
+  label = "View proof",
+  compact = false,
+}: {
+  url: string;
+  label?: string;
+  /** compact → smaller chip used inside timeline rows */
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        className={cn(
+          "gap-1.5 border-teal-700/40 text-teal-800 hover:bg-teal-50",
+          compact ? "h-7 min-h-[28px] px-2 text-[11px]" : "min-h-[36px] px-3 text-xs"
+        )}
+        aria-haspopup="dialog"
+      >
+        <Camera className="h-3.5 w-3.5" aria-hidden />
+        {label}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Proof of delivery</DialogTitle>
+            <DialogDescription>Captured by the courier when your parcel was delivered.</DialogDescription>
+          </DialogHeader>
+          {/* POD photos are data-URLs / same-origin placeholder images — plain <img>, never next/image */}
+          <img
+            src={url}
+            alt="Proof of delivery photo captured by the courier"
+            className="max-h-[60vh] w-full rounded-lg border bg-muted object-contain"
+          />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shipment tracking timeline (Shopee-style, Task 10/11) — vertical event log
+// from shipment.events: icon + status + description + location + time, newest
+// first; the DELIVERED row carries the View-proof affordance when a POD photo
+// exists. The older order-flow progress stepper lives below as
+// OrderFlowTimeline (both are exported).
+// ---------------------------------------------------------------------------
+
+const SHIPMENT_EVENT_ICON: Record<string, typeof Truck> = {
+  BOOKED: ClipboardCheck,
+  PICKED_UP: PackageCheck,
+  IN_TRANSIT: Truck,
+  OUT_FOR_DELIVERY: Bike,
+  DELIVERED: Home,
+  EXCEPTION: AlertTriangle,
+  RETURNED: RotateCcw,
+};
+
+const SHIPMENT_EVENT_LABEL: Record<string, string> = {
+  BOOKED: "Label created",
+  PICKED_UP: "Picked up by courier",
+  IN_TRANSIT: "In transit",
+  OUT_FOR_DELIVERY: "Out for delivery",
+  DELIVERED: "Delivered",
+  EXCEPTION: "Delivery exception",
+  RETURNED: "Returned to sender",
+};
+
+export function shipmentEventLabel(s: string): string {
+  return SHIPMENT_EVENT_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase();
+}
+
+export function StatusTimeline({ events, className }: { events: ShipmentEventT[]; className?: string }) {
+  if (!events || events.length === 0) return null;
+  const ordered = [...events].reverse(); // newest first, Shopee-style
+  return (
+    <ol className={cn("space-y-0", className)} aria-label="Shipment tracking timeline">
+      {ordered.map((e, i) => {
+        const Icon = SHIPMENT_EVENT_ICON[e.status] ?? PackageCheck;
+        const isLatest = i === 0;
+        const hasProof = e.status === "DELIVERED" && !!e.proofImageUrl;
+        return (
+          <li key={e.id ?? `${e.status}-${e.occurredAt}-${i}`} className="relative flex gap-3 pb-6 last:pb-0">
+            {i < ordered.length - 1 ? (
+              <span className="absolute bottom-0 left-[15px] top-9 w-px bg-border" aria-hidden />
+            ) : null}
+            <span
+              className={cn(
+                "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
+                isLatest ? "border-teal-600 bg-teal-600 text-white shadow-sm" : "border-teal-600/25 bg-teal-50 text-teal-700"
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className={cn("text-sm leading-6", isLatest ? "font-bold text-foreground" : "font-semibold text-muted-foreground")}>
+                  {shipmentEventLabel(e.status)}
+                </p>
+                {hasProof && e.proofImageUrl ? <ViewProofButton url={e.proofImageUrl} compact /> : null}
+              </div>
+              {e.description ? <p className="text-xs leading-snug text-muted-foreground">{e.description}</p> : null}
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                {e.location ? (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3" aria-hidden />
+                    {e.location}
+                  </span>
+                ) : null}
+                <span>{fmtDateTime(e.occurredAt)}</span>
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Order status timeline (order-flow progress stepper, shared by order-status
+// + lookup views) — named OrderFlowTimeline to free `StatusTimeline` for the
+// shipment-event log above.
 // ---------------------------------------------------------------------------
 
 const FLOW = ["payment_pending", "paid", "processing", "shipped", "delivered"];
@@ -496,7 +699,7 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function StatusTimeline({ history, current }: { history: { toStatus: string; createdAt: string }[]; current: string }) {
+export function OrderFlowTimeline({ history, current }: { history: { toStatus: string; createdAt: string }[]; current: string }) {
   const special = ["cancelled", "refunded", "partially_refunded"].includes(current);
   const reachedAt = new Map<string, string>();
   for (const h of history) reachedAt.set(h.toStatus, h.createdAt);

@@ -83,6 +83,7 @@ export type SellerViewName =
   | "builder"
   | "domains"
   | "coupons"
+  | "vouchers"
   | "integrations"
   | "messages"
   | "settings";

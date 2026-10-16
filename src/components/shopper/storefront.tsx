@@ -21,6 +21,8 @@ import {
   Music2,
   MessageCircle,
   AlertTriangle,
+  UserCheck,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ import {
 } from "@/lib/sections";
 import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
+import { useApp } from "@/lib/app-store";
 import {
   fetchJson,
   fetchEnvelope,
@@ -63,6 +66,8 @@ export type SfStore = {
   supportEmail?: string | null;
   supportPhone?: string | null;
   social?: Record<string, string>;
+  /** Task 10-d — follower count carried by /api/sf/[slug]. */
+  followers?: number | null;
 };
 
 type SfHomePayload = { store: SfStore; page: { id: string; title: string; slug: string; sections: Section[]; publishedVersion: number } };
@@ -284,6 +289,115 @@ function AnnouncementBar({ props }: { props: Record<string, unknown> }) {
 
 // --- 2. header ---------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Follow store (Task 10-d) — optimistic toggle against POST
+// /api/stores/[slug]/follow; guests are prompted to sign in first via
+// openShopperAuth and the toggle re-runs after auth succeeds.
+// ---------------------------------------------------------------------------
+
+function formatFollowers(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${n}`;
+}
+
+function FollowStoreButton({ store }: { store: SfStore }) {
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const shopper = me.loaded ? me.shopper : null;
+  // null while unknown — the GET /follow call resolves it (guests keep the
+  // followers count seeded from the /api/sf/[slug] payload).
+  const [following, setFollowing] = useState<boolean | null>(null);
+  const [followers, setFollowers] = useState<number | null>(store.followers ?? null);
+  const [busy, setBusy] = useState(false);
+
+  // Refetch follow state when the signed-in shopper changes (guest → 401 is
+  // expected and keeps the sf payload followers count).
+  useEffect(() => {
+    let alive = true;
+    fetchJson<{ following: boolean; followers: number }>(`/api/stores/${encodeURIComponent(store.slug)}/follow`)
+      .then((d) => {
+        if (!alive) return;
+        setFollowing(d.following);
+        setFollowers(d.followers);
+      })
+      .catch(() => {
+        /* guest → 401 envelope; keep the sf payload followers count */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [store.slug, shopper]);
+
+  async function toggleFollow() {
+    if (busy) return;
+    const next = !(following ?? false);
+    // optimistic update, rolled back on failure
+    setFollowing(next);
+    setFollowers((n) => (n == null ? n : Math.max(0, n + (next ? 1 : -1))));
+    setBusy(true);
+    try {
+      const d = await postJson<{ following: boolean; followers: number }>(
+        `/api/stores/${encodeURIComponent(store.slug)}/follow`,
+        {}
+      );
+      setFollowing(d.following);
+      setFollowers(d.followers);
+      toast.success(d.following ? `Following ${store.name}` : `Unfollowed ${store.name}`, {
+        description: d.following ? "You'll get a nudge when this store posts something new." : undefined,
+      });
+    } catch (e) {
+      setFollowing(!next);
+      setFollowers((n) => (n == null ? n : Math.max(0, n + (next ? -1 : 1))));
+      toast.error(e instanceof Error ? e.message : "Could not update follow");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onFollowClick() {
+    if (!shopper) {
+      // not signed in → prompt sign-in/register first, then continue the toggle
+      openShopperAuth(() => void toggleFollow());
+      return;
+    }
+    void toggleFollow();
+  }
+
+  const known = following !== null;
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onFollowClick}
+        disabled={busy || !known}
+        aria-pressed={!!following}
+        aria-label={
+          following
+            ? `Unfollow ${store.name}`
+            : `Follow ${store.name}${followers != null ? ` (${formatFollowers(followers)} followers)` : ""}`
+        }
+        className={cn(
+          "inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[var(--sf-radius)] border-2 px-2.5 text-xs font-semibold transition-all disabled:opacity-60 sm:px-3",
+          following ? "text-white shadow-sm hover:opacity-90" : "bg-transparent hover:opacity-80"
+        )}
+        style={
+          following
+            ? { backgroundColor: "var(--sf-primary)", borderColor: "var(--sf-primary)" }
+            : { borderColor: "var(--sf-primary)", color: "var(--sf-primary)" }
+        }
+      >
+        {following ? <UserCheck className="h-4 w-4" aria-hidden /> : <UserPlus className="h-4 w-4" aria-hidden />}
+        <span className="hidden sm:inline">{following ? "Following" : "Follow"}</span>
+      </button>
+      {followers != null ? (
+        <span className="hidden text-[11px] leading-tight text-muted-foreground md:inline" title={`${followers} followers`}>
+          {formatFollowers(followers)} followers
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
   const { store, openCart, sfSearch, onSearch } = rctx;
   const nav = rctx.nav.nav; // ShopperCtx → nav function
@@ -336,6 +450,7 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <FollowStoreButton store={store} />
           {showSearch ? (
             <div className="relative hidden sm:block">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -365,7 +480,7 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
             type="button"
             onClick={() => nav({ name: "market" })}
             className="hidden sm:inline-flex min-h-[44px] items-center gap-1.5 rounded-[var(--sf-radius)] px-3 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Back to SHOPMESH marketplace"
+            aria-label="Back to NOMOFEE marketplace"
           >
             <StoreIcon className="h-3.5 w-3.5" /> Marketplace
           </button>

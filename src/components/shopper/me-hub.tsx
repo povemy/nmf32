@@ -33,6 +33,7 @@ import {
   Pencil,
   Plus,
   Radio,
+  RotateCcw,
   Settings,
   ShieldCheck,
   ShoppingCart,
@@ -62,18 +63,30 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
+import NotificationBell from "./notification-bell";
 import {
+  ApiFail,
   fetchJson,
   fetchEnvelope,
   postJson,
   patchJson,
   deleteJson,
+  notifyCartUpdated,
   EmptyState,
   StatusBadge,
   dateShort,
+  statusLabel,
   type ProductCardT,
   type ShopperCtx,
 } from "./ui-bits";
+
+// ---------------------------------------------------------------------------
+// DORMANT SCAFFOLD — NOMO FINANCE (finance-scaffold rebrand, Task 12 strings).
+// The flag constant in @/lib/feature-flags still carries the legacy
+// MESH_FINANCE_ENABLED name until the global rename (Task 14-d) lands there;
+// alias it once here so this file already reads with NOMOFEE naming.
+// ---------------------------------------------------------------------------
+const NOMO_FINANCE_ENABLED = MESH_FINANCE_ENABLED;
 
 // ---------------------------------------------------------------------------
 // types
@@ -118,10 +131,38 @@ type OrderRowT = {
   status: string;
   totalMinor: number;
   createdAt: string;
+  paymentProvider?: string | null;
   trackingNumber: string | null;
+  shipmentStatus?: string | null;
+  shippingCourierName?: string | null;
   store: { id: string; name: string; slug: string };
-  items: { id: string; title: string; variantLabel: string | null; qty: number; unitPriceMinor: number }[];
+  items: {
+    id: string;
+    title: string;
+    variantLabel: string | null;
+    qty: number;
+    unitPriceMinor: number;
+    productId?: string;
+    imageUrl?: string;
+  }[];
 };
+
+/** Shipment state-machine labels (Shipment.status) for courier chips. */
+const SHIPMENT_STATUS_LABEL: Record<string, string> = {
+  PENDING_BOOKING: "Booking pending",
+  BOOKED: "Booked",
+  PICKED_UP: "Picked up",
+  IN_TRANSIT: "In transit",
+  OUT_FOR_DELIVERY: "Out for delivery",
+  DELIVERED: "Delivered",
+  EXCEPTION: "Delivery exception",
+  RETURNED: "Returned",
+};
+
+function shipmentStatusLabel(s: string | null | undefined): string {
+  if (!s) return "";
+  return SHIPMENT_STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase();
+}
 
 type RecProductT = ProductCardT & {
   inStock: boolean;
@@ -130,21 +171,39 @@ type RecProductT = ProductCardT & {
   spayLaterEligible: boolean;
 };
 
-type VoucherRowT = {
+// Task 10-b voucher engine shapes (GET /api/me/vouchers → {vouchers, mine, center}).
+type VoucherStoreBriefT = { name: string; slug: string; logoUrl: string | null } | null;
+
+type VoucherCoreT = {
   id: string;
-  status: string;
+  code: string;
+  title: string;
+  kind: string; // discount | freeshipping | coinsback
+  discountMinor: number;
+  percentOff: number | null;
+  maxDiscountMinor: number | null;
+  minSpendMinor: number;
+  expiryAt: string;
+  scope?: string; // PLATFORM | STORE
+  storeId?: string | null;
+  regionLimit?: string | null;
+  store?: VoucherStoreBriefT;
+};
+
+type MineVoucherT = {
+  id: string;
+  status: string; // AVAILABLE | USED | EXPIRED
+  claimedByMe?: boolean;
   claimedAt: string;
   usedAt: string | null;
-  voucher: {
-    code: string;
-    title: string;
-    kind: string;
-    discountMinor: number;
-    percentOff: number | null;
-    maxDiscountMinor: number | null;
-    minSpendMinor: number;
-    expiryAt: string;
-  };
+  usedOrderId?: string | null;
+  voucher: VoucherCoreT;
+};
+
+type CenterVoucherT = VoucherCoreT & {
+  claimedByMe: boolean;
+  quotaRemaining: number | null;
+  claimable: boolean;
 };
 
 type AddressT = {
@@ -200,7 +259,7 @@ function useMeData(enabled: boolean) {
     ]);
     if (p.status === "fulfilled") setProfile(p.value);
     if (w.status === "fulfilled") {
-      // DORMANT SCAFFOLD — MESH FINANCE: while MESH_FINANCE_ENABLED is false
+      // DORMANT SCAFFOLD — NOMO FINANCE: while NOMO_FINANCE_ENABLED is false
       // the wallet API answers a `disabled` envelope (wallet/checkIn null).
       // Normalize it into the UI shape so the kept scaffold cards render
       // inert zeroes instead of crashing; the cards stay hidden behind the flag.
@@ -269,10 +328,10 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
       case "purchases":
         return <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} />;
       case "wallet":
-        // DORMANT SCAFFOLD — MESH FINANCE: WalletView is kept intact for the
-        // roadmap; until MESH_FINANCE_ENABLED flips, this entry renders a
+        // DORMANT SCAFFOLD — NOMO FINANCE: WalletView is kept intact for the
+        // roadmap; until NOMO_FINANCE_ENABLED flips, this entry renders a
         // coming-soon view instead of any stored-value UI.
-        return MESH_FINANCE_ENABLED ? (
+        return NOMO_FINANCE_ENABLED ? (
           <WalletView onBack={back} wallet={data.wallet} onRefresh={data.refresh} />
         ) : (
           <FinanceComingSoonView onBack={back} />
@@ -359,7 +418,7 @@ function Dashboard({
           <nav className="rounded-2xl border bg-card p-2 shadow-soft">
             <SideItem icon={Store} label="Dashboard" active onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
             <SideItem icon={Package} label="My Purchases" onClick={() => onSub("purchases")} />
-            {MESH_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
+            {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
             <SideItem icon={Ticket} label="My Vouchers" onClick={() => onSub("vouchers")} />
             <SideItem icon={MapPin} label="Delivery Addresses" onClick={() => onSub("addresses")} />
             <SideItem icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
@@ -384,6 +443,7 @@ function Dashboard({
             onCart={ctx.openCart}
             onChat={() => ctx.nav({ name: "messages" })}
             onMarket={() => ctx.nav({ name: "market" })}
+            onOpenOrder={(orderNumber) => ctx.nav({ name: "order-status", orderNumber })}
           />
 
           {/* notification prompt */}
@@ -502,11 +562,11 @@ function Dashboard({
           <section className="space-y-3" aria-labelledby="me-wallet">
             <h2 id="me-wallet" className="sr-only">Wallet & financial dashboard</h2>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              {MESH_FINANCE_ENABLED ? (
+              {NOMO_FINANCE_ENABLED ? (
                 <>
                   <WalletCard
                     icon={Wallet}
-                    label="SHOPMESH Pay"
+                    label="NomoPay"
                     value={data.wallet ? formatMinor(data.wallet.wallet.balanceMinor) : "—"}
                     hint="Wallet balance"
                     onClick={() => onSub("wallet")}
@@ -514,7 +574,7 @@ function Dashboard({
                   <CoinCard wallet={data.wallet} onRefresh={data.refresh} />
                   <WalletCard
                     icon={CreditCard}
-                    label="SPayLater"
+                    label="NomoPay Later"
                     value={data.wallet ? formatMinor(data.wallet.wallet.spayLaterAvailableMinor) : "—"}
                     hint={data.wallet ? `of ${formatMinor(data.wallet.wallet.spayLaterLimitMinor)} limit` : "Available credit"}
                     meter={data.wallet && data.wallet.wallet.spayLaterLimitMinor > 0 ? data.wallet.wallet.spayLaterUsedMinor / data.wallet.wallet.spayLaterLimitMinor : 0}
@@ -522,8 +582,8 @@ function Dashboard({
                   />
                 </>
               ) : (
-                // DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts):
-                // wallet / coins / SPayLater cards are hidden; placeholder keeps the bento shape.
+                // DORMANT SCAFFOLD — NOMO FINANCE (see src/lib/feature-flags.ts):
+                // wallet / coins / pay-later cards are hidden; placeholder keeps the bento shape.
                 <FinanceComingSoonCard />
               )}
               <WalletCard
@@ -535,9 +595,9 @@ function Dashboard({
               />
             </div>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              {MESH_FINANCE_ENABLED ? (
+              {NOMO_FINANCE_ENABLED ? (
                 <>
-                  <ServiceCard icon={ShoppingCart} title="SHOPMESH Pay App" tag="Scan & Pay" onClick={() => toast.info("SHOPMESH Pay App", { description: "Coming soon in this demo." })} />
+                  <ServiceCard icon={ShoppingCart} title="NomoPay App" tag="Scan & Pay" onClick={() => toast.info("NomoPay App", { description: "Coming soon in this demo." })} />
                   <ServiceCard icon={Coins} title="Money+" tag="4.1% p.a." onClick={() => toast.info("Money+", { description: "Coming soon in this demo." })} />
                 </>
               ) : null}
@@ -554,6 +614,8 @@ function Dashboard({
                 <ActivityTile icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
                 <ActivityTile icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
                 <ActivityTile icon={Store} label="Start Selling" onClick={() => setSurface("seller")} />
+                {/* Sell / Generate — shortcut into the market's generate-store flow. */}
+                <ActivityTile icon={Sparkles} label="Sell / Generate" onClick={() => ctx.nav({ name: "generate" })} />
                 <ActivityTile icon={BellRing} label="Deal Alerts" isNew onClick={() => toast.info("Deal Alerts", { description: "Coming soon in this demo." })} />
                 <ActivityTile icon={Radio} label="Live Shopping" isNew onClick={() => toast.info("Live Shopping", { description: "Coming soon in this demo." })} />
                 <ActivityTile icon={Gift} label="Invite & Earn" onClick={() => toast.info("Invite & Earn", { description: "Coming soon in this demo." })} />
@@ -638,6 +700,7 @@ function ProfileHeader({
   onCart,
   onChat,
   onMarket,
+  onOpenOrder,
 }: {
   profile: ProfileT | null;
   loading: boolean;
@@ -645,6 +708,7 @@ function ProfileHeader({
   onCart: () => void;
   onChat: () => void;
   onMarket: () => void;
+  onOpenOrder: (orderNumber: string) => void;
 }) {
   const { count } = useCartCount();
   const [tierOpen, setTierOpen] = useState(false);
@@ -674,6 +738,10 @@ function ProfileHeader({
         </div>
         <div className="flex items-center gap-1">
           <IconAction label="Settings" onClick={onSettings}><Settings className="h-4.5 w-4.5" /></IconAction>
+          <NotificationBell
+            className="text-white/90 hover:bg-white/20 hover:text-white"
+            onOpenOrder={onOpenOrder}
+          />
           <IconAction label={`Cart, ${count} item${count === 1 ? "" : "s"}`} onClick={onCart}>
             <ShoppingCart className="h-4.5 w-4.5" />
             {count > 0 ? (
@@ -851,7 +919,7 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
     <div className="rounded-2xl border bg-card p-4 shadow-soft">
       <div className="flex items-center gap-2 pb-1.5">
         <Coins className="h-4 w-4 text-amber-500" aria-hidden="true" />
-        <span className="text-xs font-bold">My Coins</span>
+        <span className="text-xs font-bold">Nomo Coins</span>
       </div>
       <p className="truncate text-lg font-extrabold tabular-nums text-teal-800">{wallet ? wallet.wallet.coinBalance.toLocaleString() : "—"}</p>
       <div className="flex items-center gap-2 pt-1">
@@ -873,8 +941,8 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
   );
 }
 
-// DORMANT SCAFFOLD — MESH FINANCE placeholders (see src/lib/feature-flags.ts).
-// Rendered while MESH_FINANCE_ENABLED is false so the wallet bento keeps its
+// DORMANT SCAFFOLD — NOMO FINANCE placeholders (see src/lib/feature-flags.ts).
+// Rendered while NOMO_FINANCE_ENABLED is false so the wallet bento keeps its
 // shape; the real cards (WalletCard / CoinCard / WalletView) remain untouched
 // and reconnect automatically when the flag flips to true.
 function FinanceComingSoonCard() {
@@ -882,11 +950,11 @@ function FinanceComingSoonCard() {
     <div
       className="flex min-h-[92px] flex-col justify-center rounded-2xl border border-dashed border-teal-300 bg-teal-50/40 p-4"
       role="note"
-      aria-label="MeshPay and Mesh Coins coming soon"
+      aria-label="NomoPay and Nomo Coins coming soon"
     >
       <div className="flex items-center gap-2">
         <Wallet className="h-4 w-4 text-teal-600" aria-hidden="true" />
-        <span className="text-xs font-bold">MeshPay &amp; Coins</span>
+        <span className="text-xs font-bold">NomoPay &amp; Coins</span>
         <span className="ml-auto rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-extrabold text-teal-800">SOON</span>
       </div>
       <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
@@ -902,8 +970,8 @@ function FinanceComingSoonView({ onBack }: { onBack: () => void }) {
       <SubHeader title="My Wallet" onBack={onBack} />
       <EmptyState
         icon={Wallet}
-        title="MeshPay is coming soon"
-        hint="SHOPMESH Pay balance, Mesh Coins check-ins and pay-later are switched off for now. The wallet scaffold is kept and will be reconnected when the finance roadmap lands."
+        title="NomoPay is coming soon"
+        hint="NomoPay balance, Nomo Coins check-ins and pay-later are switched off for now. The wallet scaffold is kept and will be reconnected when the finance roadmap lands."
         action={
           <Button variant="outline" onClick={onBack} className="min-h-[44px]">
             Back to dashboard
@@ -1120,6 +1188,7 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
+  const [busyOrder, setBusyOrder] = useState<string | null>(null);
 
   const load = useCallback(async (t: string, p: number, replace: boolean) => {
     if (replace) setLoading(true);
@@ -1141,6 +1210,69 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
     setPage(1);
     void load(tab, 1, true);
   }, [tab, load]);
+
+  // Task 11 live-refresh: parcel states advance server-side (mock courier ticks
+  // + seller deliveries + the 14-day auto-complete sweep), so refetch whenever
+  // the browser tab regains focus or becomes visible.
+  useEffect(() => {
+    const refetch = () => void load(tab, 1, true);
+    const onVis = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [tab, load]);
+
+  // "Order received" — buyer confirms receipt (shipped | delivered → completed).
+  const receive = async (orderNumber: string) => {
+    setBusyOrder(orderNumber);
+    try {
+      await postJson<{ status: string }>(`/api/me/orders/${orderNumber}/receive`, {});
+      toast.success("Order received", { description: `${orderNumber} is marked completed — thank you for shopping!` });
+      await load(tab, 1, true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not confirm receipt");
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  // "Buy again" — one-tap reorder, then open the cart on success.
+  const buyAgain = async (orderNumber: string) => {
+    setBusyOrder(orderNumber);
+    try {
+      const res = await postJson<{ added: { title: string; qty: number }[]; skipped: { title: string; reason: string }[] }>(
+        `/api/me/orders/${orderNumber}/reorder`,
+        {}
+      );
+      const addedUnits = res.added.reduce((s, a) => s + a.qty, 0);
+      const detail = [
+        res.added.map((a) => `${a.title} ×${a.qty}`).join(", "),
+        res.skipped.map((s) => `${s.title} — ${s.reason}`).join(", "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (addedUnits > 0) {
+        toast.success(`${res.added.length} item${res.added.length === 1 ? "" : "s"} added to cart`, {
+          description: detail || undefined,
+        });
+        notifyCartUpdated();
+        ctx.openCart();
+      } else {
+        toast.info("Nothing added to your cart", {
+          description: detail || "These items are no longer available.",
+        });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not re-order");
+    } finally {
+      setBusyOrder(null);
+    }
+  };
 
   const shown = orders ?? [];
 
@@ -1167,9 +1299,9 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
 
       {loading ? (
         <div className="space-y-3">
-          <Skeleton className="h-28 rounded-2xl" />
-          <Skeleton className="h-28 rounded-2xl" />
-          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-44 rounded-2xl" />
+          <Skeleton className="h-44 rounded-2xl" />
+          <Skeleton className="h-44 rounded-2xl" />
         </div>
       ) : shown.length === 0 ? (
         <EmptyState
@@ -1185,39 +1317,14 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
       ) : (
         <ul className="space-y-3">
           {shown.map((o) => (
-            <li key={o.id}>
-              <button
-                type="button"
-                onClick={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
-                className="w-full rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                aria-label={`View order ${o.orderNumber} from ${o.store.name}`}
-              >
-                <div className="flex items-center gap-3 pb-2">
-                  <Store className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-bold">{o.store.name}</span>
-                  <StatusBadge status={o.status} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground" aria-hidden="true">
-                    <Package className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium">
-                      {o.items[0]?.title ?? "Order"}
-                      {o.items.length > 1 ? <span className="text-muted-foreground"> +{o.items.length - 1} more</span> : null}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground tabular-nums">
-                      {o.orderNumber} · {dateShort(o.createdAt)}
-                      {o.trackingNumber ? ` · ${o.trackingNumber}` : ""}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</p>
-                    <p className="text-[10px] text-muted-foreground">{o.items.reduce((s, i) => s + i.qty, 0)} item(s)</p>
-                  </div>
-                </div>
-              </button>
-            </li>
+            <PurchasesOrderCard
+              key={o.id}
+              o={o}
+              busy={busyOrder === o.orderNumber}
+              onOpen={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
+              onReceive={() => void receive(o.orderNumber)}
+              onReorder={() => void buyAgain(o.orderNumber)}
+            />
           ))}
         </ul>
       )}
@@ -1230,6 +1337,124 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
         </div>
       ) : null}
     </div>
+  );
+}
+
+// =============================================================================================
+// Purchases order card — Shopee-style: store header + status chip, shipment/
+// courier chip, item rows with thumbnails, totals, receive / buy-again actions.
+// =============================================================================================
+
+function PurchasesOrderCard({
+  o,
+  busy,
+  onOpen,
+  onReceive,
+  onReorder,
+}: {
+  o: OrderRowT;
+  busy: boolean;
+  onOpen: () => void;
+  onReceive: () => void;
+  onReorder: () => void;
+}) {
+  const canReceive = o.status === "shipped" || o.status === "delivered";
+  const shipLabel = shipmentStatusLabel(o.shipmentStatus);
+  const shipTone =
+    o.shipmentStatus === "DELIVERED"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : o.shipmentStatus === "EXCEPTION" || o.shipmentStatus === "RETURNED"
+        ? "border-rose-200 bg-rose-50 text-rose-700"
+        : "border-teal-200 bg-teal-50 text-teal-800";
+
+  return (
+    <li className="overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md">
+      {/* clickable summary (store header, chips, item rows, totals) */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="block w-full p-4 text-left transition-colors hover:bg-muted/30"
+        aria-label={`View order ${o.orderNumber} from ${o.store.name}, ${statusLabel(o.status)}`}
+      >
+        <div className="flex items-center gap-2">
+          <Store className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-sm font-bold">{o.store.name}</span>
+          <StatusBadge status={o.status} />
+        </div>
+
+        {o.trackingNumber ? (
+          <div className="pt-2">
+            <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold", shipTone)}>
+              <Truck className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                {o.shippingCourierName ? `${o.shippingCourierName} · ` : ""}
+                {shipLabel || o.trackingNumber}
+                {shipLabel ? <span className="hidden font-mono text-[10px] opacity-80 sm:inline"> · {o.trackingNumber}</span> : null}
+              </span>
+            </span>
+          </div>
+        ) : null}
+
+        <ul className="pt-1.5" aria-label={`Items in order ${o.orderNumber}`}>
+          {o.items.map((i) => (
+            <li key={i.id} className="flex items-center gap-3 py-2">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted" aria-hidden="true">
+                {i.imageUrl ? (
+                  <img src={i.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                ) : (
+                  <Package className="h-5 w-5 text-muted-foreground" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="line-clamp-1 block text-xs font-medium sm:text-[13px]">{i.title}</span>
+                {i.variantLabel ? <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{i.variantLabel}</span> : null}
+              </span>
+              <span className="shrink-0 text-right" aria-label={`${formatMinor(i.unitPriceMinor)} each, quantity ${i.qty}`}>
+                <span className="block text-sm font-bold tabular-nums">x{i.qty}</span>
+                <span className="block text-[11px] text-muted-foreground tabular-nums">{formatMinor(i.unitPriceMinor)} each</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex items-end justify-between gap-2 pt-2">
+          <span className="min-w-0 text-[11px] text-muted-foreground tabular-nums">
+            <span className="block truncate">{o.orderNumber}</span>
+            <span className="block">{dateShort(o.createdAt)}</span>
+          </span>
+          <span className="text-right" aria-label={`Order total ${formatMinor(o.totalMinor)}`}>
+            <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Order Total</span>
+            <span className="block text-base font-extrabold text-teal-700 tabular-nums">{formatMinor(o.totalMinor)}</span>
+          </span>
+        </div>
+      </button>
+
+      {/* actions row — outside the clickable summary so buttons never nest */}
+      <div className="flex items-center justify-end gap-2 border-t bg-muted/30 px-4 py-3">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={onReorder}
+          className="min-h-[36px] gap-1.5"
+          aria-label={`Buy again from order ${o.orderNumber}`}
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Buy again
+        </Button>
+        {canReceive ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={onReceive}
+            className="min-h-[36px] gap-1.5 bg-brand-gradient-deep text-white hover:brightness-110"
+            aria-label={`Confirm receipt of order ${o.orderNumber}`}
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />}
+            Order received
+          </Button>
+        ) : null}
+      </div>
+    </li>
   );
 }
 
@@ -1260,7 +1485,7 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
       {wallet ? (
         <div className="space-y-4">
           <div className="overflow-hidden rounded-2xl bg-brand-gradient-deep p-5 text-white shadow-soft">
-            <p className="text-xs font-semibold uppercase tracking-widest text-white/80">SHOPMESH Pay balance</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-white/80">NomoPay balance</p>
             <p className="pt-1 text-3xl font-extrabold tabular-nums">{formatMinor(wallet.wallet.balanceMinor)}</p>
             <p className="pt-1 text-xs text-white/80">Spend it at checkout — top-ups land instantly.</p>
           </div>
@@ -1268,7 +1493,7 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
             <div className="rounded-2xl border bg-card p-4 shadow-soft">
               <div className="flex items-center gap-2 pb-1">
                 <Coins className="h-4 w-4 text-amber-500" aria-hidden="true" />
-                <p className="text-xs font-bold uppercase tracking-wide">My Coins</p>
+                <p className="text-xs font-bold uppercase tracking-wide">Nomo Coins</p>
               </div>
               <p className="text-2xl font-extrabold tabular-nums text-teal-800">{wallet.wallet.coinBalance.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground">1 coin ≈ RM0.01 at checkout · streak {wallet.wallet.checkInStreak} day{wallet.wallet.checkInStreak === 1 ? "" : "s"}</p>
@@ -1282,7 +1507,7 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
             <div className="rounded-2xl border bg-card p-4 shadow-soft">
               <div className="flex items-center gap-2 pb-1">
                 <CreditCardIcon className="h-4 w-4 text-teal-700" aria-hidden="true" />
-                <p className="text-xs font-bold uppercase tracking-wide">SPayLater</p>
+                <p className="text-xs font-bold uppercase tracking-wide">NomoPay Later</p>
               </div>
               <p className="text-2xl font-extrabold tabular-nums text-teal-800">{formatMinor(wallet.wallet.spayLaterAvailableMinor)}</p>
               <p className="text-xs text-muted-foreground">available of {formatMinor(wallet.wallet.spayLaterLimitMinor)} limit</p>
@@ -1307,19 +1532,62 @@ function CreditCardIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 // =============================================================================================
-// Vouchers view
+// Vouchers view — Task 10-c: "My Vouchers" wallet + "Voucher Center" claim pool.
 // =============================================================================================
+
+const VOUCHER_TABS: { key: "mine" | "center"; label: string }[] = [
+  { key: "mine", label: "Mine" },
+  { key: "center", label: "Voucher Center" },
+];
+
+const VOUCHER_KIND_META: Record<string, { label: string; badgeClass: string; stripe: string }> = {
+  discount: { label: "Discount", badgeClass: "border-rose-200 bg-rose-50 text-rose-700", stripe: "bg-rose-500" },
+  freeshipping: { label: "Free Shipping", badgeClass: "border-teal-200 bg-teal-50 text-teal-800", stripe: "bg-teal-600" },
+  coinsback: { label: "Coins Back", badgeClass: "border-amber-200 bg-amber-50 text-amber-700", stripe: "bg-amber-500" },
+};
+
+function voucherKindMeta(kind: string) {
+  return VOUCHER_KIND_META[kind] ?? { label: kind.replace(/_/g, " "), badgeClass: "border-muted bg-muted text-muted-foreground", stripe: "bg-muted-foreground" };
+}
+
+/** Human value line: "RM 10 off" / "20% off · up to RM 15" / "Free shipping". */
+function voucherValueLabel(v: VoucherCoreT): string {
+  if (v.kind === "freeshipping") return "Free shipping";
+  if (v.percentOff) {
+    const cap = v.maxDiscountMinor ? ` · up to ${formatMinor(v.maxDiscountMinor)}` : "";
+    return `${v.percentOff}% off${cap}`;
+  }
+  if (v.discountMinor > 0) return `${formatMinor(v.discountMinor)} off`;
+  return "Voucher";
+}
+
+function KindBadge({ kind }: { kind: string }) {
+  const meta = voucherKindMeta(kind);
+  return (
+    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-extrabold", meta.badgeClass)}>
+      {meta.label}
+    </span>
+  );
+}
+
 function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMarket: () => void }) {
-  const [rows, setRows] = useState<VoucherRowT[] | null>(null);
+  const [tab, setTab] = useState<"mine" | "center">("mine");
+  const [mine, setMine] = useState<MineVoucherT[] | null>(null);
+  const [center, setCenter] = useState<CenterVoucherT[] | null>(null);
   const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const d = await fetchJson<{ vouchers: VoucherRowT[] }>("/api/me/vouchers");
-      setRows(d.vouchers);
+      const d = await fetchJson<{ vouchers?: MineVoucherT[]; mine?: MineVoucherT[]; center?: CenterVoucherT[] }>("/api/me/vouchers");
+      // `vouchers` is the legacy mine-array contract — keep honouring it in case
+      // this view is ever rendered against an older API build.
+      setMine(d.mine ?? d.vouchers ?? []);
+      setCenter(d.center ?? []);
     } catch {
-      setRows([]);
+      setMine([]);
+      setCenter([]);
     }
   }, []);
 
@@ -1327,74 +1595,248 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
     void load();
   }, [load]);
 
-  const claim = async () => {
+  // Claim a pool voucher by code (legacy POST /api/me/vouchers contract).
+  const claimByCode = async () => {
     if (!code.trim()) return;
-    setBusy(true);
+    setCodeBusy(true);
     try {
       const res = await postJson<{ voucher: { title: string } }>("/api/me/vouchers", { code: code.trim() });
-      toast.success("Voucher claimed", { description: res.voucher.title });
+      toast.success("Voucher claimed", { description: `${res.voucher.title} — saved to your wallet.` });
       setCode("");
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not claim that voucher");
     } finally {
-      setBusy(false);
+      setCodeBusy(false);
     }
   };
+
+  // Claim a Voucher Center pool card by voucherId (engine route: /claim).
+  const claimPool = async (v: CenterVoucherT) => {
+    setClaimingId(v.id);
+    try {
+      const res = await postJson<{ voucher: { title: string } }>("/api/me/vouchers/claim", { voucherId: v.id });
+      toast.success("Voucher claimed", { description: `${res.voucher.title} — saved to your wallet.` });
+      // optimistic claimed-state swap, then resync from the server
+      setCenter((prev) =>
+        prev
+          ? prev.map((c) =>
+              c.id === v.id
+                ? { ...c, claimedByMe: true, claimable: false, quotaRemaining: c.quotaRemaining == null ? null : Math.max(0, c.quotaRemaining - 1) }
+                : c
+            )
+          : prev
+      );
+      await load();
+    } catch (e) {
+      if (e instanceof ApiFail) {
+        if (e.code === "ALREADY_HELD") toast.error("Already claimed", { description: `${v.title} is already in your wallet.` });
+        else if (e.code === "QUOTA_EXHAUSTED") toast.error("Quota used up", { description: `${v.title} has been fully claimed — try another one.` });
+        else toast.error(e.message);
+      } else {
+        toast.error("Could not claim that voucher");
+      }
+      await load();
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const mineCount = mine?.length ?? 0;
+  const availableCount = mine?.filter((m) => m.status === "AVAILABLE").length ?? 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
       <SubHeader title="My Vouchers" onBack={onBack} />
-      <div className="flex gap-2 pb-5">
-        <Input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === "Enter" && void claim()}
-          placeholder="Enter a voucher code (try MESH10)"
-          className="min-h-[44px] font-mono"
-          aria-label="Voucher code"
-        />
-        <Button onClick={() => void claim()} disabled={busy || !code.trim()} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Claim
-        </Button>
+
+      {/* segmented tabs — Mine | Voucher Center */}
+      <div className="flex rounded-full border bg-muted p-1 pb-1.5" role="tablist" aria-label="Voucher views">
+        {VOUCHER_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "min-h-[36px] flex-1 rounded-full px-4 text-xs font-bold transition-colors sm:text-sm",
+              tab === t.key ? "bg-teal-700 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t.label}
+            {t.key === "mine" && mineCount > 0 ? <span className="ml-1 tabular-nums opacity-90">({mineCount})</span> : null}
+          </button>
+        ))}
       </div>
 
-      {rows === null ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Skeleton className="h-28 rounded-2xl" />
-          <Skeleton className="h-28 rounded-2xl" />
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={Ticket}
-          title="No vouchers yet"
-          hint="Claim a code above or grab them from campaign events."
-          action={<Button onClick={onOpenMarket} variant="outline" className="min-h-[44px]">Browse the market</Button>}
-        />
-      ) : (
-        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 sm:grid sm:grid-cols-2 sm:space-y-0 sm:gap-3" aria-label="Voucher list">
-          {rows.map((r) => {
-            const expired = r.status === "EXPIRED";
-            const used = r.status === "USED";
-            const tone = r.voucher.kind === "freeshipping" ? "bg-teal-600" : r.voucher.kind === "coinsback" ? "bg-amber-500" : "bg-rose-600";
-            return (
-              <div key={r.id} className={cn("flex overflow-hidden rounded-2xl border bg-card shadow-sm", (expired || used) && "opacity-60")} aria-label={`${r.voucher.title} — ${r.status}`}>
-                <span className={cn("w-1.5 shrink-0", tone)} aria-hidden="true" />
-                <div className="min-w-0 flex-1 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-bold leading-snug">{r.voucher.title}</p>
-                    <Badge variant="outline" className={cn("shrink-0 text-[10px]", expired ? "border-rose-200 text-rose-700" : used ? "border-muted text-muted-foreground" : "border-emerald-200 text-emerald-700")}>
-                      {r.status}
-                    </Badge>
+      {tab === "mine" ? (
+        <div className="space-y-4 pt-5">
+          {/* claim-by-code */}
+          <div className="flex gap-2">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === "Enter" && void claimByCode()}
+              placeholder="Enter a voucher code (try MESH10)"
+              className="min-h-[44px] font-mono"
+              aria-label="Voucher code"
+            />
+            <Button onClick={() => void claimByCode()} disabled={codeBusy || !code.trim()} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+              {codeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Claim
+            </Button>
+          </div>
+
+          {mine === null ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Skeleton className="h-28 rounded-2xl" />
+              <Skeleton className="h-28 rounded-2xl" />
+            </div>
+          ) : mine.length === 0 ? (
+            <EmptyState
+              icon={Ticket}
+              title="No vouchers yet"
+              hint="Claim a code above or grab them from the Voucher Center."
+              action={
+                <Button onClick={() => setTab("center")} variant="outline" className="min-h-[44px]">
+                  Open Voucher Center
+                </Button>
+              }
+            />
+          ) : (
+            <div
+              className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 pb-1 sm:grid sm:grid-cols-2 sm:space-y-0 sm:gap-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+              aria-label="My vouchers"
+            >
+              {mine.map((r) => {
+                const expired = r.status === "EXPIRED";
+                const used = r.status === "USED";
+                const meta = voucherKindMeta(r.voucher.kind);
+                return (
+                  <div key={r.id} className={cn("flex overflow-hidden rounded-2xl border bg-card shadow-sm", (expired || used) && "opacity-60")} aria-label={`${r.voucher.title} — ${r.status.toLowerCase()}`}>
+                    <span className={cn("w-1.5 shrink-0", meta.stripe)} aria-hidden="true" />
+                    <div className="min-w-0 flex-1 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 text-sm font-bold leading-snug">{r.voucher.title}</p>
+                        <Badge variant="outline" className={cn("shrink-0 text-[10px]", expired ? "border-rose-200 text-rose-700" : used ? "border-muted text-muted-foreground" : "border-emerald-200 text-emerald-700")}>
+                          {r.status}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <p className="text-sm font-extrabold text-teal-700">{voucherValueLabel(r.voucher)}</p>
+                        <KindBadge kind={r.voucher.kind} />
+                      </div>
+                      <p className="pt-1 font-mono text-xs font-extrabold tracking-wide text-foreground/80">{r.voucher.code}</p>
+                      <p className="pt-1 text-[11px] text-muted-foreground">
+                        {r.voucher.scope === "STORE" && r.voucher.store ? `${r.voucher.store.name} · ` : ""}
+                        {r.voucher.minSpendMinor > 0 ? `Min. spend ${formatMinor(r.voucher.minSpendMinor)} · ` : "No min. spend · "}
+                        Expires {dateShort(r.voucher.expiryAt)}
+                      </p>
+                      {r.voucher.regionLimit === "peninsular" ? (
+                        <p className="pt-1 text-[10px] font-semibold text-amber-700">West Malaysia delivery only</p>
+                      ) : null}
+                      {used && r.usedAt ? (
+                        <p className="pt-1 text-[10px] text-muted-foreground">Used on {dateShort(r.usedAt)}</p>
+                      ) : null}
+                    </div>
                   </div>
-                  <p className="pt-1 font-mono text-xs font-extrabold text-teal-700">{r.voucher.code}</p>
-                  <p className="pt-1 text-[11px] text-muted-foreground">
-                    {r.voucher.minSpendMinor > 0 ? `Min. spend ${formatMinor(r.voucher.minSpendMinor)} · ` : ""}Expires {dateShort(r.voucher.expiryAt)}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
+          {mine !== null && availableCount > 0 ? (
+            <p className="text-center text-[11px] text-muted-foreground">
+              {availableCount} voucher{availableCount === 1 ? "" : "s"} ready to apply at checkout.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="pt-5">
+          {center === null ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Skeleton className="h-44 rounded-2xl" />
+              <Skeleton className="h-44 rounded-2xl" />
+            </div>
+          ) : center.length === 0 ? (
+            <EmptyState
+              icon={Ticket}
+              title="No vouchers to claim right now"
+              hint="New vouchers from NOMOFEE and your favourite stores will appear here — check back soon."
+              action={
+                <Button onClick={onOpenMarket} variant="outline" className="min-h-[44px]">
+                  Browse the market
+                </Button>
+              }
+            />
+          ) : (
+            <div
+              className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 pb-1 sm:grid sm:grid-cols-2 sm:space-y-0 sm:gap-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+              aria-label="Voucher Center pool"
+            >
+              {center.map((v) => {
+                const claiming = claimingId === v.id;
+                const fullyClaimed = v.quotaRemaining === 0;
+                const label = v.claimedByMe ? "Claimed" : fullyClaimed ? "Fully claimed" : "Claim";
+                return (
+                  <div key={v.id} className="flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm" aria-label={`${v.title} from ${v.store?.name ?? "platform"}`}>
+                    {/* store header */}
+                    <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
+                      {v.store?.logoUrl ? (
+                        <img src={v.store.logoUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-border" />
+                      ) : (
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-gradient-soft text-teal-800" aria-hidden="true">
+                          <Store className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-xs font-bold">{v.store?.name ?? "NOMOFEE"}</span>
+                      {v.scope !== "STORE" ? (
+                        <span className="shrink-0 rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-teal-800">Platform</span>
+                      ) : null}
+                    </div>
+                    {/* body */}
+                    <div className="min-w-0 flex-1 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 text-sm font-bold leading-snug">{v.title}</p>
+                        <KindBadge kind={v.kind} />
+                      </div>
+                      <p className="pt-1 text-lg font-extrabold tabular-nums text-teal-700">{voucherValueLabel(v)}</p>
+                      <p className="pt-1 text-[11px] text-muted-foreground">
+                        {v.minSpendMinor > 0 ? `Min. spend ${formatMinor(v.minSpendMinor)}` : "No min. spend"}
+                        {" · "}
+                        {v.quotaRemaining == null ? "Unlimited quota" : `${v.quotaRemaining} left`}
+                      </p>
+                      <p className="pt-0.5 text-[11px] text-muted-foreground">Expires {dateShort(v.expiryAt)}</p>
+                      {v.regionLimit === "peninsular" ? (
+                        <p className="pt-1 text-[10px] font-semibold text-amber-700">West Malaysia delivery only</p>
+                      ) : null}
+                    </div>
+                    {/* claim action — 44px target */}
+                    <div className="border-t px-4 py-3">
+                      <Button
+                        onClick={() => void claimPool(v)}
+                        disabled={claiming || v.claimedByMe || fullyClaimed}
+                        className={cn(
+                          "min-h-[44px] w-full gap-1.5",
+                          v.claimedByMe || fullyClaimed
+                            ? "bg-muted text-muted-foreground hover:bg-muted"
+                            : "bg-brand-gradient-deep text-white hover:brightness-110"
+                        )}
+                        aria-label={`${label} — ${v.title}`}
+                      >
+                        {claiming ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : v.claimedByMe ? (
+                          <Check className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {label}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1474,7 +1916,7 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
       type="button"
       onClick={() => onOpen(p)}
       className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
-      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${MESH_FINANCE_ENABLED && p.spayLaterEligible ? ", SPayLater available" : ""}`}
+      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${NOMO_FINANCE_ENABLED && p.spayLaterEligible ? ", NomoPay Later available" : ""}`}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
         <img
@@ -1505,8 +1947,8 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
           {p.isSellingFast ? (
             <span className="rounded border border-rose-300 bg-rose-50 px-1 py-px text-[9px] font-extrabold text-rose-700">Selling Fast</span>
           ) : null}
-          {MESH_FINANCE_ENABLED && p.spayLaterEligible ? (
-            <span className="rounded border border-teal-300 bg-teal-50 px-1 py-px text-[9px] font-extrabold text-teal-800">SPayLater 0% 3x</span>
+          {NOMO_FINANCE_ENABLED && p.spayLaterEligible ? (
+            <span className="rounded border border-teal-300 bg-teal-50 px-1 py-px text-[9px] font-extrabold text-teal-800">NomoPay Later 0% 3x</span>
           ) : null}
         </div>
         <div className="flex items-center justify-between gap-1 pt-0.5">
