@@ -71,11 +71,17 @@ import {
   type LookupResultT,
   type OrderDetailT,
   type ShopperCtx,
+  type CartItemT,
 } from "./ui-bits";
 
 // ---------------------------------------------------------------------------
 // constants
 // ---------------------------------------------------------------------------
+
+/** Stable empty-cart sentinel — keeps `items`/`payloadItems`/`refreshQuote`
+ *  identities stable while the cart context is still loading. A fresh `[]`
+ *  literal per render here used to re-trigger the auto-quote effect. */
+const EMPTY_CART_ITEMS: CartItemT[] = [];
 
 const MY_STATES = [
   "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Melaka", "Negeri Sembilan",
@@ -457,7 +463,7 @@ function validateForm(form: typeof emptyForm): Record<string, string | null> {
 
 export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const { cart, loading: cartLoading, refresh: refreshCart } = useCart();
-  const items = cart?.items ?? [];
+  const items = cart?.items ?? EMPTY_CART_ITEMS;
 
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
@@ -560,31 +566,52 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     };
   }, [shopper]);
 
+  // Quote-request sequencing — only the NEWEST request may write quote state,
+  // so a slow response can never clobber (or outlive) a fresher one.
+  const quoteSeq = useRef(0);
+  // Latest held-voucher selection, read at call time via ref. `voucherEntries`
+  // is intentionally NOT in refreshQuote's deps: it is recomputed (new array
+  // identity, even when empty) every time `storeGroups` changes — and
+  // `storeGroups` depends on `quote` itself. That cycle
+  // (quote → storeGroups → voucherEntries → refreshQuote → effect → refetch →
+  // setQuote → …) used to re-quote on every render, leaving the checkout stuck
+  // on "Updating prices from server…" with Continue-to-payment greyed out.
+  const voucherEntriesRef = useRef(voucherEntries);
+  useEffect(() => {
+    voucherEntriesRef.current = voucherEntries;
+  }, [voucherEntries]);
+  // Stable dependency signal — changes only when the selection CONTENT changes.
+  const voucherKey = voucherEntries.map((v) => `${v.storeId}:${v.userVoucherId}`).join("|");
+
   const refreshQuote = useCallback(
     async (code: string, rateId: string, state: string | null) => {
       if (payloadItems.length === 0) return;
+      const seq = ++quoteSeq.current;
       setQuoting(true);
       try {
         // OPTION A: no storeSlug — the server groups cart items per seller itself.
         // vouchers: per-group claimable voucher verdicts (Task 10-b).
+        const ve = voucherEntriesRef.current;
         const q = await postJson<QuoteT>("/api/checkout/quote", {
           items: payloadItems,
           couponCode: code || undefined,
           shippingRateId: rateId,
           state: state ?? undefined,
-          vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
+          vouchers: ve.length > 0 ? ve : undefined,
         });
+        if (seq !== quoteSeq.current) return; // superseded by a newer request
         setQuote(q);
       } catch {
+        if (seq !== quoteSeq.current) return;
         setQuote(null);
       } finally {
-        setQuoting(false);
+        if (seq === quoteSeq.current) setQuoting(false);
       }
     },
-    [payloadItems, voucherEntries]
+    [payloadItems, voucherKey]
   );
 
-  // auto-quote on cart / shipping / destination / coupon change
+  // auto-quote on cart / shipping / destination / voucher / coupon change
   useEffect(() => {
     refreshQuote(draft.couponCode, draft.shippingRateId, destState);
   }, [refreshQuote, draft.couponCode, draft.shippingRateId, destState]);
@@ -609,6 +636,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     const code = couponInput.trim().toUpperCase();
     if (!code) return;
     setCouponErr(null);
+    const seq = ++quoteSeq.current; // join the same sequencing as refreshQuote
     setQuoting(true);
     try {
       const q = await postJson<QuoteT>("/api/checkout/quote", {
@@ -618,6 +646,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         state: destState ?? undefined,
         vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
       });
+      if (seq !== quoteSeq.current) return; // superseded by a newer request
       if (q.coupon?.valid) {
         setDraft((d) => ({ ...d, couponCode: code }));
         setQuote(q);
@@ -628,9 +657,9 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         setCouponErr(q.coupon?.reason ?? "Invalid coupon");
       }
     } catch (e) {
-      setCouponErr(e instanceof Error ? e.message : "Could not validate coupon");
+      if (seq === quoteSeq.current) setCouponErr(e instanceof Error ? e.message : "Could not validate coupon");
     } finally {
-      setQuoting(false);
+      if (seq === quoteSeq.current) setQuoting(false);
     }
   }
 

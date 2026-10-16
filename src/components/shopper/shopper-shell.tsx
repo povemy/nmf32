@@ -1210,7 +1210,11 @@ function ShopperFooter({
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50/10">
                 <ShoppingBag className="h-5 w-5 text-amber-300" />
               </span>
-              NOMO<span className="text-teal-200">FEE</span>
+              {/* single flex item — bare "NOMO" text + "FEE" span used to be two
+                  flex children, so the container's `gap-2` rendered "NOMO FEE" */}
+              <span>
+                NOMO<span className="text-teal-200">FEE</span>
+              </span>
             </p>
             <p className="max-w-md text-xs text-teal-200/80">
               The marketplace where independent Malaysian shops launch beautiful storefronts in minutes.
