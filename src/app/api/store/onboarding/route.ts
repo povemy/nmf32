@@ -25,7 +25,7 @@ export const POST = handle(async (req: Request) => {
   await notify({
     event: "kyc.submitted",
     channel: "email",
-    recipient: "admin@shopmesh.io",
+    recipient: "admin@nomofee.io",
     subject: `KYC review requested: ${seller.displayName}`,
   });
   await logActivity({

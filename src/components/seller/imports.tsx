@@ -187,7 +187,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
         <header className="flex items-center gap-2 pb-3">
           <Cable className="h-4.5 w-4.5 text-teal-700" />
           <h2 className="text-sm font-bold">Marketplace connections</h2>
-          <span className="text-xs text-muted-foreground">— official APIs require the shop owner to authorise SHOPMESH once</span>
+          <span className="text-xs text-muted-foreground">— official APIs require the shop owner to authorise NOMOFEE once</span>
         </header>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {(["shopee", "tiktok"] as const).map((p) => {

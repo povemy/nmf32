@@ -25,7 +25,7 @@ export const POST = handle(async (req: Request) => {
   // A shopper email must not collide with seller/admin accounts (separate portals).
   const sellerClash = await db.seller.findUnique({ where: { email } });
   const adminClash = sellerClash ? null : await db.adminUser.findUnique({ where: { email } });
-  if (sellerClash || adminClash) return fail(409, "EMAIL_TAKEN", "This email is already registered on SHOPMESH");
+  if (sellerClash || adminClash) return fail(409, "EMAIL_TAKEN", "This email is already registered on NOMOFEE");
 
   const shopper = await db.shopperUser.create({
     data: { email, passwordHash: hashPassword(password), fullName, phone, lastLoginAt: new Date() },

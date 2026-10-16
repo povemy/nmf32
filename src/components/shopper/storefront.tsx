@@ -1048,7 +1048,7 @@ function SfFooter({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
           <span>
             Powered by{" "}
             <button type="button" className="font-bold text-teal-700 hover:underline" onClick={() => nav({ name: "market" })}>
-              SHOPMESH
+              NOMO<span className="text-brand-gradient">FEE</span>
             </button>
           </span>
         </div>
@@ -1083,7 +1083,7 @@ function MarketplaceStrip({ props, rctx }: { props: Record<string, unknown>; rct
           <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight" style={{ fontFamily: "var(--sf-font-heading)" }}>
             {title}
           </h2>
-          <p className="text-xs text-muted-foreground">Hand-picked finds from other SHOPMESH stores</p>
+          <p className="text-xs text-muted-foreground">Hand-picked finds from other NOMOFEE stores</p>
         </div>
         <button
           type="button"
@@ -1183,7 +1183,7 @@ export default function StorefrontView({ ctx, slug }: { ctx: ShopperCtx; slug: s
       `/?sf=${store.slug}`
     );
     return () => {
-      setMeta("SHOPMESH — Multi-vendor Marketplace");
+      setMeta("NOMOFEE — Multi-vendor Marketplace");
     };
   }, [data]);
 
@@ -1270,7 +1270,7 @@ function StorefrontChrome({
       <div className="bg-teal-950 text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-1.5 text-[11px]">
           <span className="inline-flex items-center gap-1.5 font-semibold tracking-wide">
-            SHOPMESH MARKETPLACE
+            NOMOFEE MARKETPLACE
             <ChevronRight className="h-3 w-3 opacity-60" />
             <span className="opacity-80">{title}</span>
           </span>

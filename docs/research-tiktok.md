@@ -18,7 +18,7 @@ Source: https://partner.tiktokshop.com/docv2/page/create-your-app
 
 - Flow: Partner Center → **App & Service → Create app & service** → choose **Public** vs **Custom** app type, service category, name, **Market**, **Seller type** (Local / Cross-border), enable **Enable API**, set **Redirect URL** and **Webhook URL** → Create.
 - Market and seller type are creation-time choices ("may not be editable after app creation"). Cross-border seller type "may require additional identifiers such as `shop_cipher`".
-- Public apps are store-listed and require review. **Custom apps launch privately via authorization link with no review, UNLESS**: the app category is **Connector**, or it reaches **≥25 seller authorizations** (both apply to a SHOPMESH-style import connector → plan for app review).
+- Public apps are store-listed and require review. **Custom apps launch privately via authorization link with no review, UNLESS**: the app category is **Connector**, or it reaches **≥25 seller authorizations** (both apply to a NOMOFEE-style import connector → plan for app review).
 - Credentials available afterwards at `App & Service → [app] → App credentials / Basic information`:
 
 | Credential | Use |
@@ -106,7 +106,7 @@ Source: https://partner.tiktokshop.com/docv2/page/get-product-202309 (schema ^ =
   - **Variants**: `sales_attributes[] {id, name (e.g. "Color"), value_id, value_name (e.g. "Red"), sku_img {…image object…}, supplementary_sku_images[] (US only)}` — i.e. option name/value pairs per SKU, and **variant-specific image (`sku_img`) keyed to the primary sales attribute (usually colour)**.
   - Per-SKU logistics: `sku_dimensions {length,width,height,unit}`, `sku_weight {value,unit}`; limits `purchase_order_quantity_limit {maximum_order_quantity, cumulative_order_quantity}`; presale `pre_sale {type, fulfillment_type}`.
 - **Audit block** (TikTok listing review): `audit {status: NONE/AUDITING/FAILED/PRE_APPROVED/APPROVED, pre_approved_reasons[], not_submitted_reasons[]}`, `audit_failed_reasons[] {listing_platform, position, reasons[], suggestions[]}`.
-- Mapping to SHOPMESH `Product`/`ProductVariant`/`ProductImage`: title→`title`; description HTML→`description` (needs sanitising); price.sale_price + currency→minor units; sales_attributes[]→option/value JSON; skus[].inventory[] (sum or first warehouse)→stock; main_images[]→ProductImage (urls[0], sortOrder=index); sales_attributes[].sku_img→variant image; category_chains→Category mapping (leaf local_name).
+- Mapping to NOMOFEE `Product`/`ProductVariant`/`ProductImage`: title→`title`; description HTML→`description` (needs sanitising); price.sale_price + currency→minor units; sales_attributes[]→option/value JSON; skus[].inventory[] (sum or first warehouse)→stock; main_images[]→ProductImage (urls[0], sortOrder=index); sales_attributes[].sku_img→variant image; category_chains→Category mapping (leaf local_name).
 
 ## 7. Pagination, rate limits, markets (MY), webhooks
 
@@ -122,7 +122,7 @@ Source: https://partner.tiktokshop.com/docv2/page/get-product-202309 (schema ^ =
 1. Every product-reading endpoint (Search Products, Get Product) documents required header `x-tts-access-token` — *"The seller access_token value from Get Access Token, when user_type = 0"* — plus required scope **`seller.product.basic`**, required query `shop_cipher`, and HMAC signature (sources: /docv2/page/search-products-202309, /docv2/page/get-product-202309). There is **no unauthenticated/public catalogue endpoint** anywhere in the API reference nav (Public/OAuth-only endpoints are limited to token + authorization surfaces).
 2. The Access scope page states even "Public"-type scopes still require seller authorization for shop data: *"your app needs to be authorized by the seller before you can access specific shop-related data"* (source: /docv2/page/access-scope).
 3. Shop identity itself is authorization-gated: `shop_cipher` (needed by every product call) comes from Get Authorized Shops, which requires the seller token (source: /docv2/page/get-authorized-shops-202309).
-4. Docs never describe fetching a product by consumer URL; consumer storefront URLs (`tiktok.com`/`shop.tiktok.com`) are outside the OpenAPI and scraping them would sit outside documented support (and ToS). **Conclusion for SHOPMESH: TikTok connector = OAuth (Custom app → authorization link) → Search + Get Product sync; the "paste a product URL" path is not viable and should be surfaced as OAuth-connect only.**
+4. Docs never describe fetching a product by consumer URL; consumer storefront URLs (`tiktok.com`/`shop.tiktok.com`) are outside the OpenAPI and scraping them would sit outside documented support (and ToS). **Conclusion for NOMOFEE: TikTok connector = OAuth (Custom app → authorization link) → Search + Get Product sync; the "paste a product URL" path is not viable and should be surfaced as OAuth-connect only.**
 
 ## 9. Facts verified vs assumptions / unresolved
 

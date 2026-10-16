@@ -186,5 +186,5 @@ export async function nextOrderNumber(): Promise<string> {
     create: { key: "order_number", value: 100001 },
     update: { value: { increment: 1 } },
   });
-  return `SM-${c.value}`;
+  return `NM-${c.value}`;
 }

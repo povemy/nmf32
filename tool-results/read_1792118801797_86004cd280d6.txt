@@ -1,0 +1,758 @@
+     1→"use client";
+     2→// MKT-01 Banners · MKT-02 Featured slots · MKT-03 Platform coupons.
+     3→import { useMemo, useState } from "react";
+     4→import Image from "next/image";
+     5→import { toast } from "sonner";
+     6→import { ImagePlus, Megaphone, Plus, Search, Star, Ticket } from "lucide-react";
+     7→import { Badge } from "@/components/ui/badge";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogDescription,
+    14→  DialogFooter,
+    15→  DialogHeader,
+    16→  DialogTitle,
+    17→} from "@/components/ui/dialog";
+    18→import { Input } from "@/components/ui/input";
+    19→import { Label } from "@/components/ui/label";
+    20→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    21→import { Switch } from "@/components/ui/switch";
+    22→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    23→import { formatMinor, toMinor } from "@/lib/money";
+    24→import { apiSend, useApi, useDebounced } from "./use-api";
+    25→import { qs } from "./nav";
+    26→import {
+    27→  ConfirmDialog,
+    28→  EmptyState,
+    29→  ErrorState,
+    30→  Money,
+    31→  PageHeader,
+    32→  StatusChip,
+    33→  TableSkeleton,
+    34→  fmtDT,
+    35→} from "./ui-bits";
+    36→
+    37→/* ------------------------------------------------------------- BannersView */
+    38→
+    39→type BannerRow = {
+    40→  id: string;
+    41→  title: string;
+    42→  imageUrl: string;
+    43→  linkUrl?: string | null;
+    44→  sortOrder: number;
+    45→  isActive: boolean;
+    46→  createdAt?: string;
+    47→};
+    48→
+    49→function randomBannerSeed(): string {
+    50→  return `banner-${Math.random().toString(36).slice(2, 8)}`;
+    51→}
+    52→
+    53→export function BannersView() {
+    54→  const { data, error, loading, refetch } = useApi<BannerRow[]>("/api/admin/banners");
+    55→  const rows = data ?? [];
+    56→
+    57→  const [createOpen, setCreateOpen] = useState(false);
+    58→  const [title, setTitle] = useState("");
+    59→  const [imageUrl, setImageUrl] = useState(`/api/img/${randomBannerSeed()}?w=1400&h=400`);
+    60→  const [linkUrl, setLinkUrl] = useState("/market");
+    61→  const [sortOrder, setSortOrder] = useState("0");
+    62→  const [creating, setCreating] = useState(false);
+    63→
+    64→  const [deleteTarget, setDeleteTarget] = useState<BannerRow | null>(null);
+    65→  const [busyId, setBusyId] = useState<string | null>(null);
+    66→
+    67→  const regenerate = () => setImageUrl(`/api/img/${randomBannerSeed()}?w=1400&h=400`);
+    68→
+    69→  const create = async () => {
+    70→    setCreating(true);
+    71→    try {
+    72→      await apiSend("/api/admin/banners", "POST", {
+    73→        title: title.trim(),
+    74→        imageUrl: imageUrl.trim() || undefined,
+    75→        linkUrl: linkUrl.trim() || undefined,
+    76→        sortOrder: Number(sortOrder) || 0,
+    77→        isActive: true,
+    78→      });
+    79→      toast.success("Banner created", { description: title.trim() });
+    80→      setCreateOpen(false);
+    81→      setTitle("");
+    82→      setLinkUrl("/market");
+    83→      setSortOrder("0");
+    84→      regenerate();
+    85→      void refetch();
+    86→    } catch (e) {
+    87→      toast.error("Create failed", { description: e instanceof Error ? e.message : String(e) });
+    88→    } finally {
+    89→      setCreating(false);
+    90→    }
+    91→  };
+    92→
+    93→  const toggle = async (b: BannerRow) => {
+    94→    setBusyId(b.id);
+    95→    try {
+    96→      await apiSend(`/api/admin/banners/${b.id}`, "PATCH", { isActive: !b.isActive });
+    97→      toast.success(`Banner ${b.isActive ? "hidden" : "activated"}`, { description: b.title });
+    98→      void refetch();
+    99→    } catch (e) {
+   100→      toast.error("Update failed", { description: e instanceof Error ? e.message : String(e) });
+   101→    } finally {
+   102→      setBusyId(null);
+   103→    }
+   104→  };
+   105→
+   106→  const doDelete = async () => {
+   107→    if (!deleteTarget) return;
+   108→    setBusyId(deleteTarget.id);
+   109→    try {
+   110→      await apiSend(`/api/admin/banners/${deleteTarget.id}`, "DELETE");
+   111→      toast.success("Banner deleted", { description: deleteTarget.title });
+   112→      setDeleteTarget(null);
+   113→      void refetch();
+   114→    } catch (e) {
+   115→      toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) });
+   116→    } finally {
+   117→      setBusyId(null);
+   118→    }
+   119→  };
+   120→
+   121→  return (
+   122→    <div className="space-y-4">
+   123→      <PageHeader
+   124→        title="Banners"
+   125→        description="Marketplace hero banners shown on the market home."
+   126→        actions={
+   127→          <Button size="sm" className="min-h-[44px]" onClick={() => setCreateOpen(true)}>
+   128→            <Plus className="h-4 w-4" /> New banner
+   129→          </Button>
+   130→        }
+   131→      />
+   132→
+   133→      <Card className="py-0">
+   134→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   135→          <CardTitle className="flex items-center gap-2 text-base">
+   136→            <Megaphone className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Banners ({rows.length})
+   137→          </CardTitle>
+   138→        </CardHeader>
+   139→        <CardContent className="p-0">
+   140→          {error ? (
+   141→            <ErrorState message={error} onRetry={() => void refetch()} />
+   142→          ) : loading ? (
+   143→            <TableSkeleton rows={3} cols={5} />
+   144→          ) : rows.length === 0 ? (
+   145→            <EmptyState title="No banners yet" hint="Create the first marketplace banner." />
+   146→          ) : (
+   147→            <Table>
+   148→              <TableHeader>
+   149→                <TableRow>
+   150→                  <TableHead className="w-28">Preview</TableHead>
+   151→                  <TableHead>Banner</TableHead>
+   152→                  <TableHead className="hidden md:table-cell">Link</TableHead>
+   153→                  <TableHead className="hidden text-center sm:table-cell">Order</TableHead>
+   154→                  <TableHead className="hidden lg:table-cell">Created</TableHead>
+   155→                  <TableHead className="text-center">Active</TableHead>
+   156→                  <TableHead className="text-right">Actions</TableHead>
+   157→                </TableRow>
+   158→              </TableHeader>
+   159→              <TableBody>
+   160→                {rows.map((b) => (
+   161→                  <TableRow key={b.id}>
+   162→                    <TableCell>
+   163→                      <div className="relative h-10 w-24 overflow-hidden rounded-md border bg-muted">
+   164→                        <Image src={b.imageUrl} alt={b.title} fill unoptimized sizes="96px" className="object-cover" />
+   165→                      </div>
+   166→                    </TableCell>
+   167→                    <TableCell>
+   168→                      <p className="max-w-[280px] truncate font-medium">{b.title}</p>
+   169→                      <p className="max-w-[280px] truncate font-mono text-[11px] text-muted-foreground">{b.imageUrl}</p>
+   170→                    </TableCell>
+   171→                    <TableCell className="hidden max-w-[160px] truncate text-sm text-muted-foreground md:table-cell">
+   172→                      {b.linkUrl ?? "—"}
+   173→                    </TableCell>
+   174→                    <TableCell className="hidden text-center tabular-nums sm:table-cell">{b.sortOrder}</TableCell>
+   175→                    <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">{fmtDT(b.createdAt)}</TableCell>
+   176→                    <TableCell className="text-center">
+   177→                      <Switch
+   178→                        checked={b.isActive}
+   179→                        disabled={busyId === b.id}
+   180→                        onCheckedChange={() => void toggle(b)}
+   181→                        aria-label={`Toggle banner ${b.title}`}
+   182→                      />
+   183→                    </TableCell>
+   184→                    <TableCell className="text-right">
+   185→                      <Button
+   186→                        size="sm"
+   187→                        variant="ghost"
+   188→                        className="min-h-[44px] text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0 dark:hover:bg-red-950/40"
+   189→                        onClick={() => setDeleteTarget(b)}
+   190→                      >
+   191→                        Delete
+   192→                      </Button>
+   193→                    </TableCell>
+   194→                  </TableRow>
+   195→                ))}
+   196→              </TableBody>
+   197→            </Table>
+   198→          )}
+   199→        </CardContent>
+   200→      </Card>
+   201→
+   202→      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+   203→        <DialogContent className="sm:max-w-lg">
+   204→          <DialogHeader>
+   205→            <DialogTitle>New banner</DialogTitle>
+   206→            <DialogDescription>Served from the built-in placeholder image service — no uploads needed for the demo.</DialogDescription>
+   207→          </DialogHeader>
+   208→          <div className="space-y-3">
+   209→            <div className="space-y-1.5">
+   210→              <Label htmlFor="banner-title">Title</Label>
+   211→              <Input id="banner-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Raya Mega Sale" className="min-h-[44px]" />
+   212→            </div>
+   213→            <div className="space-y-1.5">
+   214→              <Label htmlFor="banner-img" className="flex items-center gap-1.5">
+   215→                <ImagePlus className="h-3.5 w-3.5" /> Image URL
+   216→              </Label>
+   217→              <div className="flex gap-2">
+   218→                <Input id="banner-img" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} className="min-h-[44px] flex-1 font-mono text-xs" />
+   219→                <Button type="button" variant="outline" className="min-h-[44px]" onClick={regenerate}>
+   220→                  Shuffle
+   221→                </Button>
+   222→              </div>
+   223→              <div className="relative mt-1 h-24 w-full overflow-hidden rounded-lg border bg-muted">
+   224→                <Image src={imageUrl} alt="Banner preview" fill unoptimized sizes="480px" className="object-cover" />
+   225→              </div>
+   226→            </div>
+   227→            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   228→              <div className="space-y-1.5 sm:col-span-2">
+   229→                <Label htmlFor="banner-link">Link URL</Label>
+   230→                <Input id="banner-link" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="/market" className="min-h-[44px]" />
+   231→              </div>
+   232→              <div className="space-y-1.5">
+   233→                <Label htmlFor="banner-order">Sort order</Label>
+   234→                <Input id="banner-order" inputMode="numeric" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="min-h-[44px]" />
+   235→              </div>
+   236→            </div>
+   237→          </div>
+   238→          <DialogFooter>
+   239→            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating} className="min-h-[44px] sm:min-h-0">Cancel</Button>
+   240→            <Button onClick={() => void create()} disabled={creating || !title.trim()} className="min-h-[44px] sm:min-h-0">
+   241→              {creating ? "Creating…" : "Create banner"}
+   242→            </Button>
+   243→          </DialogFooter>
+   244→        </DialogContent>
+   245→      </Dialog>
+   246→
+   247→      <ConfirmDialog
+   248→        open={deleteTarget !== null}
+   249→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   250→        title="Delete banner?"
+   251→        description={deleteTarget ? `“${deleteTarget.title}” will be removed from the marketplace.` : ""}
+   252→        confirmLabel="Delete"
+   253→        destructive
+   254→        loading={busyId !== null}
+   255→        onConfirm={() => void doDelete()}
+   256→      />
+   257→    </div>
+   258→  );
+   259→}
+   260→
+   261→/* ------------------------------------------------------------ FeaturedView */
+   262→
+   263→type FeaturedRow = {
+   264→  id: string;
+   265→  slot: string;
+   266→  sortOrder: number;
+   267→  isActive: boolean;
+   268→  createdAt?: string;
+   269→  product: {
+   270→    id: string;
+   271→    title: string;
+   272→    slug: string;
+   273→    priceMinor: number;
+   274→    status: string;
+   275→    imageUrl: string | null;
+   276→    storeName: string;
+   277→    storeSlug: string;
+   278→  } | null;
+   279→};
+   280→
+   281→type ProductOption = {
+   282→  id: string;
+   283→  title: string;
+   284→  slug: string;
+   285→  priceMinor: number;
+   286→  status: string;
+   287→  store?: { name: string } | null;
+   288→  storeName?: string | null;
+   289→  images?: { url: string }[];
+   290→  imageUrl?: string | null;
+   291→};
+   292→
+   293→export function FeaturedView() {
+   294→  const { data, error, loading, refetch } = useApi<FeaturedRow[]>("/api/admin/featured");
+   295→  const rows = data ?? [];
+   296→  const featuredIds = useMemo(() => new Set(rows.map((r) => r.product?.id).filter(Boolean) as string[]), [rows]);
+   297→
+   298→  const [searchInput, setSearchInput] = useState("");
+   299→  const search = useDebounced(searchInput.trim(), 350);
+   300→  const productsUrl = search ? `/api/admin/products${qs({ status: "active", search, size: 10 })}` : null;
+   301→  const products = useApi<ProductOption[]>(productsUrl);
+   302→
+   303→  const [addingId, setAddingId] = useState<string | null>(null);
+   304→  const [busyId, setBusyId] = useState<string | null>(null);
+   305→  const [deleteTarget, setDeleteTarget] = useState<FeaturedRow | null>(null);
+   306→
+   307→  const add = async (p: ProductOption) => {
+   308→    setAddingId(p.id);
+   309→    try {
+   310→      await apiSend("/api/admin/featured", "POST", { productId: p.id, slot: "home_grid" });
+   311→      toast.success("Added to featured", { description: p.title });
+   312→      void refetch();
+   313→    } catch (e) {
+   314→      toast.error("Could not feature product", { description: e instanceof Error ? e.message : String(e) });
+   315→    } finally {
+   316→      setAddingId(null);
+   317→    }
+   318→  };
+   319→
+   320→  const remove = async () => {
+   321→    if (!deleteTarget) return;
+   322→    setBusyId(deleteTarget.id);
+   323→    try {
+   324→      await apiSend(`/api/admin/featured/${deleteTarget.id}`, "DELETE");
+   325→      toast.success("Removed from featured", { description: deleteTarget.product?.title ?? "" });
+   326→      setDeleteTarget(null);
+   327→      void refetch();
+   328→    } catch (e) {
+   329→      toast.error("Remove failed", { description: e instanceof Error ? e.message : String(e) });
+   330→    } finally {
+   331→      setBusyId(null);
+   332→    }
+   333→  };
+   334→
+   335→  return (
+   336→    <div className="space-y-4">
+   337→      <PageHeader
+   338→        title="Featured"
+   339→        description="Curated products shown in the marketplace home grid."
+   340→      />
+   341→
+   342→      <Card className="py-0">
+   343→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   344→          <CardTitle className="flex items-center gap-2 text-base">
+   345→            <Star className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Featured products ({rows.length})
+   346→          </CardTitle>
+   347→          <CardDescription>Ordered by slot position — removal unsets isFeatured on the product.</CardDescription>
+   348→        </CardHeader>
+   349→        <CardContent className="p-0">
+   350→          {error ? (
+   351→            <ErrorState message={error} onRetry={() => void refetch()} />
+   352→          ) : loading ? (
+   353→            <TableSkeleton rows={4} cols={5} />
+   354→          ) : rows.length === 0 ? (
+   355→            <EmptyState title="Nothing featured" hint="Search and add products below." />
+   356→          ) : (
+   357→            <Table>
+   358→              <TableHeader>
+   359→                <TableRow>
+   360→                  <TableHead className="w-14">Thumb</TableHead>
+   361→                  <TableHead>Product</TableHead>
+   362→                  <TableHead className="hidden md:table-cell">Store</TableHead>
+   363→                  <TableHead className="text-right">Price</TableHead>
+   364→                  <TableHead className="hidden sm:table-cell">Slot</TableHead>
+   365→                  <TableHead className="hidden lg:table-cell">Status</TableHead>
+   366→                  <TableHead className="text-right">Action</TableHead>
+   367→                </TableRow>
+   368→              </TableHeader>
+   369→              <TableBody>
+   370→                {rows.map((f) => (
+   371→                  <TableRow key={f.id}>
+   372→                    <TableCell>
+   373→                      <div className="relative h-10 w-10 overflow-hidden rounded-md border bg-muted">
+   374→                        {f.product?.imageUrl ? (
+   375→                          <Image src={f.product.imageUrl} alt={f.product.title} fill unoptimized sizes="40px" className="object-cover" />
+   376→                        ) : null}
+   377→                      </div>
+   378→                    </TableCell>
+   379→                    <TableCell className="max-w-[240px] truncate font-medium">{f.product?.title ?? "(deleted product)"}</TableCell>
+   380→                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{f.product?.storeName ?? "—"}</TableCell>
+   381→                    <TableCell className="text-right"><Money minor={f.product?.priceMinor ?? 0} /></TableCell>
+   382→                    <TableCell className="hidden text-sm sm:table-cell">
+   383→                      <Badge variant="outline">{f.slot}</Badge> <span className="text-xs text-muted-foreground">#{f.sortOrder}</span>
+   384→                    </TableCell>
+   385→                    <TableCell className="hidden lg:table-cell"><StatusChip status={f.product?.status ?? "unknown"} /></TableCell>
+   386→                    <TableCell className="text-right">
+   387→                      <Button
+   388→                        size="sm"
+   389→                        variant="ghost"
+   390→                        className="min-h-[44px] text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0 dark:hover:bg-red-950/40"
+   391→                        onClick={() => setDeleteTarget(f)}
+   392→                      >
+   393→                        Remove
+   394→                      </Button>
+   395→                    </TableCell>
+   396→                  </TableRow>
+   397→                ))}
+   398→              </TableBody>
+   399→            </Table>
+   400→          )}
+   401→        </CardContent>
+   402→      </Card>
+   403→
+   404→      <Card className="py-0">
+   405→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   406→          <CardTitle className="text-base">Add a product</CardTitle>
+   407→          <CardDescription>Search active products across the marketplace, then feature them.</CardDescription>
+   408→        </CardHeader>
+   409→        <CardContent className="p-4 pt-0">
+   410→          <div className="relative">
+   411→            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   412→            <Input
+   413→              value={searchInput}
+   414→              onChange={(e) => setSearchInput(e.target.value)}
+   415→              placeholder="Search products by title or slug…"
+   416→              className="min-h-[44px] pl-9"
+   417→              aria-label="Search products to feature"
+   418→            />
+   419→          </div>
+   420→          <div className="mt-3 max-h-[300px] space-y-2 overflow-y-auto [scrollbar-width:thin]">
+   421→            {!search ? (
+   422→              <p className="py-4 text-center text-xs text-muted-foreground">Type at least a few characters to search.</p>
+   423→            ) : products.loading ? (
+   424→              Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)
+   425→            ) : (products.data ?? []).length === 0 ? (
+   426→              <p className="py-4 text-center text-xs text-muted-foreground">No active products match “{search}”.</p>
+   427→            ) : (
+   428→              (products.data ?? []).map((p) => {
+   429→                const featured = featuredIds.has(p.id);
+   430→                return (
+   431→                  <div key={p.id} className="flex items-center gap-3 rounded-lg border p-2.5">
+   432→                    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md border bg-muted">
+   433→                      {p.images?.[0]?.url || p.imageUrl ? (
+   434→                        <Image src={(p.images?.[0]?.url ?? p.imageUrl) as string} alt={p.title} fill unoptimized sizes="44px" className="object-cover" />
+   435→                      ) : null}
+   436→                    </div>
+   437→                    <div className="min-w-0 flex-1">
+   438→                      <p className="truncate text-sm font-medium">{p.title}</p>
+   439→                      <p className="truncate text-xs text-muted-foreground">{p.store?.name ?? p.storeName ?? "—"} · <Money minor={p.priceMinor} muted /></p>
+   440→                    </div>
+   441→                    <Button
+   442→                      size="sm"
+   443→                      variant={featured ? "outline" : "default"}
+   444→                      className="min-h-[36px] w-20 sm:min-h-0"
+   445→                      disabled={featured || addingId !== null}
+   446→                      onClick={() => void add(p)}
+   447→                    >
+   448→                      {featured ? "Featured" : addingId === p.id ? "Adding…" : "Add"}
+   449→                    </Button>
+   450→                  </div>
+   451→                );
+   452→              })
+   453→            )}
+   454→          </div>
+   455→        </CardContent>
+   456→      </Card>
+   457→
+   458→      <ConfirmDialog
+   459→        open={deleteTarget !== null}
+   460→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   461→        title="Remove from featured?"
+   462→        description={deleteTarget?.product ? `“${deleteTarget.product.title}” will leave the marketplace home grid.` : ""}
+   463→        confirmLabel="Remove"
+   464→        destructive
+   465→        loading={busyId !== null}
+   466→        onConfirm={() => void remove()}
+   467→      />
+   468→    </div>
+   469→  );
+   470→}
+   471→
+   472→/* ------------------------------------------------------------- CouponsView */
+   473→
+   474→type CouponRow = {
+   475→  id: string;
+   476→  scope: string;
+   477→  code: string;
+   478→  description?: string | null;
+   479→  type: "percent" | "fixed" | "freeship" | string;
+   480→  percent?: number | null;
+   481→  amountMinor?: number | null;
+   482→  minSpendMinor?: number;
+   483→  maxRedemptions?: number | null;
+   484→  perCustomerLimit?: number;
+   485→  startsAt?: string | null;
+   486→  endsAt?: string | null;
+   487→  isActive: boolean;
+   488→  timesUsed?: number;
+   489→  createdAt?: string;
+   490→  store?: { id: string; name: string } | null;
+   491→};
+   492→
+   493→function couponValue(c: CouponRow): string {
+   494→  if (c.type === "percent") return `${c.percent ?? 0}% off`;
+   495→  if (c.type === "fixed") return formatMinor(c.amountMinor ?? 0) + " off";
+   496→  return "Free shipping";
+   497→}
+   498→
+   499→export function CouponsView() {
+   500→  const { data, error, loading, refetch } = useApi<CouponRow[]>("/api/admin/coupons?size=50");
+   501→  const rows = data ?? [];
+   502→
+   503→  const [createOpen, setCreateOpen] = useState(false);
+   504→  const [code, setCode] = useState("");
+   505→  const [description, setDescription] = useState("");
+   506→  const [type, setType] = useState<"percent" | "fixed" | "freeship">("percent");
+   507→  const [percent, setPercent] = useState("10");
+   508→  const [amount, setAmount] = useState("10.00");
+   509→  const [minSpend, setMinSpend] = useState("0");
+   510→  const [perCustomerLimit, setPerCustomerLimit] = useState("1");
+   511→  const [startsAt, setStartsAt] = useState("");
+   512→  const [endsAt, setEndsAt] = useState("");
+   513→  const [creating, setCreating] = useState(false);
+   514→  const [busyId, setBusyId] = useState<string | null>(null);
+   515→  const [deleteTarget, setDeleteTarget] = useState<CouponRow | null>(null);
+   516→
+   517→  const resetForm = () => {
+   518→    setCode("");
+   519→    setDescription("");
+   520→    setType("percent");
+   521→    setPercent("10");
+   522→    setAmount("10.00");
+   523→    setMinSpend("0");
+   524→    setPerCustomerLimit("1");
+   525→    setStartsAt("");
+   526→    setEndsAt("");
+   527→  };
+   528→
+   529→  const create = async () => {
+   530→    setCreating(true);
+   531→    try {
+   532→      const body: Record<string, unknown> = {
+   533→        code: code.trim().toUpperCase(),
+   534→        description: description.trim() || undefined,
+   535→        type,
+   536→        minSpendMinor: toMinor(minSpend || "0"),
+   537→        perCustomerLimit: Math.max(1, Number(perCustomerLimit) || 1),
+   538→      };
+   539→      if (type === "percent") body.percent = Number(percent);
+   540→      if (type === "fixed") body.amountMinor = toMinor(amount || "0");
+   541→      if (startsAt) body.startsAt = new Date(startsAt).toISOString();
+   542→      if (endsAt) body.endsAt = new Date(`${endsAt}T23:59:59`).toISOString();
+   543→      await apiSend("/api/admin/coupons", "POST", body);
+   544→      toast.success("Coupon created", { description: body.code as string });
+   545→      setCreateOpen(false);
+   546→      resetForm();
+   547→      void refetch();
+   548→    } catch (e) {
+   549→      toast.error("Create failed", { description: e instanceof Error ? e.message : String(e) });
+   550→    } finally {
+   551→      setCreating(false);
+   552→    }
+   553→  };
+   554→
+   555→  const toggle = async (c: CouponRow) => {
+   556→    setBusyId(c.id);
+   557→    try {
+   558→      await apiSend(`/api/admin/coupons/${c.id}`, "PATCH", { isActive: !c.isActive });
+   559→      toast.success(`Coupon ${c.isActive ? "disabled" : "enabled"}`, { description: c.code });
+   560→      void refetch();
+   561→    } catch (e) {
+   562→      toast.error("Update failed", { description: e instanceof Error ? e.message : String(e) });
+   563→    } finally {
+   564→      setBusyId(null);
+   565→    }
+   566→  };
+   567→
+   568→  const doDelete = async () => {
+   569→    if (!deleteTarget) return;
+   570→    setBusyId(deleteTarget.id);
+   571→    try {
+   572→      await apiSend(`/api/admin/coupons/${deleteTarget.id}`, "DELETE");
+   573→      toast.success("Coupon deleted", { description: deleteTarget.code });
+   574→      setDeleteTarget(null);
+   575→      void refetch();
+   576→    } catch (e) {
+   577→      toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) });
+   578→    } finally {
+   579→      setBusyId(null);
+   580→    }
+   581→  };
+   582→
+   583→  return (
+   584→    <div className="space-y-4">
+   585→      <PageHeader
+   586→        title="Coupons"
+   587→        description="Platform-wide promo codes — store-scoped coupons are managed in the seller portal."
+   588→        actions={
+   589→          <Button size="sm" className="min-h-[44px]" onClick={() => setCreateOpen(true)}>
+   590→            <Ticket className="h-4 w-4" /> New coupon
+   591→          </Button>
+   592→        }
+   593→      />
+   594→
+   595→      <Card className="py-0">
+   596→        <CardContent className="p-4">
+   597→          <div className="overflow-x-auto">
+   598→            {error ? (
+   599→              <ErrorState message={error} onRetry={() => void refetch()} />
+   600→            ) : loading ? (
+   601→              <TableSkeleton rows={4} cols={7} />
+   602→            ) : rows.length === 0 ? (
+   603→              <EmptyState title="No coupons" hint="Create a platform coupon to attract first orders." />
+   604→            ) : (
+   605→              <Table>
+   606→                <TableHeader>
+   607→                  <TableRow>
+   608→                    <TableHead>Code</TableHead>
+   609→                    <TableHead>Value</TableHead>
+   610→                    <TableHead className="hidden md:table-cell">Scope</TableHead>
+   611→                    <TableHead className="hidden text-right sm:table-cell">Min spend</TableHead>
+   612→                    <TableHead className="hidden text-center lg:table-cell">Used</TableHead>
+   613→                    <TableHead className="hidden xl:table-cell">Window</TableHead>
+   614→                    <TableHead className="text-center">Active</TableHead>
+   615→                    <TableHead className="text-right">Actions</TableHead>
+   616→                  </TableRow>
+   617→                </TableHeader>
+   618→                <TableBody>
+   619→                  {rows.map((c) => (
+   620→                    <TableRow key={c.id}>
+   621→                      <TableCell>
+   622→                        <p className="font-mono text-sm font-semibold">{c.code}</p>
+   623→                        <p className="max-w-[200px] truncate text-xs text-muted-foreground">{c.description ?? "—"}</p>
+   624→                      </TableCell>
+   625→                      <TableCell>
+   626→                        <Badge variant="outline" className="capitalize">{c.type}</Badge>
+   627→                        <p className="mt-1 text-sm">{couponValue(c)}</p>
+   628→                      </TableCell>
+   629→                      <TableCell className="hidden text-sm md:table-cell">
+   630→                        {c.scope === "store" ? c.store?.name ?? "store" : <Badge variant="outline">platform</Badge>}
+   631→                      </TableCell>
+   632→                      <TableCell className="hidden text-right sm:table-cell"><Money minor={c.minSpendMinor ?? 0} muted /></TableCell>
+   633→                      <TableCell className="hidden text-center tabular-nums lg:table-cell">{c.timesUsed ?? 0}</TableCell>
+   634→                      <TableCell className="hidden text-xs text-muted-foreground xl:table-cell">
+   635→                        {c.startsAt || c.endsAt ? `${c.startsAt ? fmtDT(c.startsAt) : "∞"} → ${c.endsAt ? fmtDT(c.endsAt) : "∞"}` : "always"}
+   636→                      </TableCell>
+   637→                      <TableCell className="text-center">
+   638→                        <Switch checked={c.isActive} disabled={busyId === c.id} onCheckedChange={() => void toggle(c)} aria-label={`Toggle coupon ${c.code}`} />
+   639→                      </TableCell>
+   640→                      <TableCell className="text-right">
+   641→                        <Button
+   642→                          size="sm"
+   643→                          variant="ghost"
+   644→                          className="min-h-[44px] text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0 dark:hover:bg-red-950/40"
+   645→                          onClick={() => setDeleteTarget(c)}
+   646→                        >
+   647→                          Delete
+   648→                        </Button>
+   649→                      </TableCell>
+   650→                    </TableRow>
+   651→                  ))}
+   652→                </TableBody>
+   653→              </Table>
+   654→            )}
+   655→          </div>
+   656→        </CardContent>
+   657→      </Card>
+   658→
+   659→      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+   660→        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg [scrollbar-width:thin]">
+   661→          <DialogHeader>
+   662→            <DialogTitle>New platform coupon</DialogTitle>
+   663→            <DialogDescription>Applies at checkout across all storefronts (unless a store scope is chosen server-side).</DialogDescription>
+   664→          </DialogHeader>
+   665→          <div className="space-y-3">
+   666→            <div className="grid grid-cols-2 gap-3">
+   667→              <div className="space-y-1.5">
+   668→                <Label htmlFor="coupon-code">Code</Label>
+   669→                <Input
+   670→                  id="coupon-code"
+   671→                  value={code}
+   672→                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+   673→                  placeholder="RAYA25"
+   674→                  className="min-h-[44px] font-mono uppercase"
+   675→                  autoComplete="off"
+   676→                />
+   677→              </div>
+   678→              <div className="space-y-1.5">
+   679→                <Label>Type</Label>
+   680→                <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
+   681→                  <SelectTrigger className="min-h-[44px]" aria-label="Coupon type"><SelectValue /></SelectTrigger>
+   682→                  <SelectContent>
+   683→                    <SelectItem value="percent">Percent off</SelectItem>
+   684→                    <SelectItem value="fixed">Fixed amount off</SelectItem>
+   685→                    <SelectItem value="freeship">Free shipping</SelectItem>
+   686→                  </SelectContent>
+   687→                </Select>
+   688→              </div>
+   689→            </div>
+   690→            <div className="space-y-1.5">
+   691→              <Label htmlFor="coupon-desc">Description</Label>
+   692→              <Input id="coupon-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Shown at checkout" className="min-h-[44px]" />
+   693→            </div>
+   694→            <div className="grid grid-cols-2 gap-3">
+   695→              {type === "percent" ? (
+   696→                <div className="space-y-1.5">
+   697→                  <Label htmlFor="coupon-percent">Percent (%)</Label>
+   698→                  <Input id="coupon-percent" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} className="min-h-[44px]" />
+   699→                </div>
+   700→              ) : null}
+   701→              {type === "fixed" ? (
+   702→                <div className="space-y-1.5">
+   703→                  <Label htmlFor="coupon-amount">Amount (RM)</Label>
+   704→                  <Input id="coupon-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-h-[44px]" />
+   705→                </div>
+   706→              ) : null}
+   707→              <div className="space-y-1.5">
+   708→                <Label htmlFor="coupon-min">Min spend (RM)</Label>
+   709→                <Input id="coupon-min" inputMode="decimal" value={minSpend} onChange={(e) => setMinSpend(e.target.value)} className="min-h-[44px]" />
+   710→              </div>
+   711→              <div className="space-y-1.5">
+   712→                <Label htmlFor="coupon-limit">Per-customer limit</Label>
+   713→                <Input id="coupon-limit" inputMode="numeric" value={perCustomerLimit} onChange={(e) => setPerCustomerLimit(e.target.value)} className="min-h-[44px]" />
+   714→              </div>
+   715→            </div>
+   716→            <div className="grid grid-cols-2 gap-3">
+   717→              <div className="space-y-1.5">
+   718→                <Label htmlFor="coupon-start">Starts at (optional)</Label>
+   719→                <Input id="coupon-start" type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="min-h-[44px]" />
+   720→              </div>
+   721→              <div className="space-y-1.5">
+   722→                <Label htmlFor="coupon-end">Ends at (optional)</Label>
+   723→                <Input id="coupon-end" type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="min-h-[44px]" />
+   724→              </div>
+   725→            </div>
+   726→          </div>
+   727→          <DialogFooter>
+   728→            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating} className="min-h-[44px] sm:min-h-0">Cancel</Button>
+   729→            <Button
+   730→              onClick={() => void create()}
+   731→              disabled={
+   732→                creating ||
+   733→                !code.trim() ||
+   734→                (type === "percent" && !(Number(percent) >= 0)) ||
+   735→                (type === "fixed" && !(Number(amount) >= 0))
+   736→              }
+   737→              className="min-h-[44px] sm:min-h-0"
+   738→            >
+   739→              {creating ? "Creating…" : "Create coupon"}
+   740→            </Button>
+   741→          </DialogFooter>
+   742→        </DialogContent>
+   743→      </Dialog>
+   744→
+   745→      <ConfirmDialog
+   746→        open={deleteTarget !== null}
+   747→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   748→        title="Delete coupon?"
+   749→        description={deleteTarget ? `Code ${deleteTarget.code} will stop working immediately.` : ""}
+   750→        confirmLabel="Delete"
+   751→        destructive
+   752→        loading={busyId !== null}
+   753→        onConfirm={() => void doDelete()}
+   754→      />
+   755→    </div>
+   756→  );
+   757→}
+   758→

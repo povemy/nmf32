@@ -270,7 +270,7 @@ function CreateWebhookDialog({ open, onOpenChange, onDone }: { open: boolean; on
         <div className="space-y-3.5">
           <div className="space-y-1.5">
             <Label htmlFor="wh-url">Payload URL *</Label>
-            <Input id="wh-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.yourapp.com/shopmesh" />
+            <Input id="wh-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.yourapp.com/nomofee" />
           </div>
           <div className="space-y-1.5">
             <Label>Events ({events.length} selected)</Label>

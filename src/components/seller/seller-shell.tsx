@@ -142,7 +142,7 @@ export default function SellerShell() {
           <ShieldAlert className="mx-auto h-10 w-10 text-rose-500" />
           <h2 className="text-lg font-semibold capitalize">Store {status}</h2>
           <p className="text-sm text-muted-foreground">
-            This store is not currently trading. Contact SHOPMESH support if you believe this is a mistake.
+            This store is not currently trading. Contact NOMOFEE support if you believe this is a mistake.
           </p>
           <Button variant="outline" onClick={logout} className="gap-2">
             <LogOut className="h-4 w-4" /> Sign out
@@ -305,14 +305,14 @@ function useSellerChatUnread(active: SellerNav["view"]) {
     };
   }, [active]);
   // instant re-sync when a thread is read inside the messages view (the view
-  // dispatches "shopmesh:chat-sync" instead of prop-drilling a callback)
+  // dispatches "nomofee:chat-sync" instead of prop-drilling a callback)
   useEffect(() => {
     const sync = () =>
       apiGet<{ total: number }>("/api/store/chat/unread")
         .then((d) => setUnread(d.total ?? 0))
         .catch(() => {});
-    window.addEventListener("shopmesh:chat-sync", sync);
-    return () => window.removeEventListener("shopmesh:chat-sync", sync);
+    window.addEventListener("nomofee:chat-sync", sync);
+    return () => window.removeEventListener("nomofee:chat-sync", sync);
   }, []);
   return unread;
 }
@@ -508,13 +508,13 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
             type="button"
             onClick={goMarket}
             className="flex min-h-[44px] items-center gap-2.5"
-            aria-label="SHOPMESH — back to the marketplace"
+            aria-label="NOMOFEE — back to the marketplace"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               <ShoppingBag className="h-4 w-4" />
             </span>
             <span className="text-lg font-extrabold tracking-tight">
-              SHOPMESH{" "}
+              NOMO<span className="text-brand-gradient">FEE</span>{" "}
               <span className="text-sm font-semibold text-muted-foreground">Seller Portal</span>
             </span>
           </button>
@@ -533,7 +533,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/15">
             <ShoppingBag className="h-5 w-5" />
           </span>
-          <span className="text-lg font-bold tracking-tight">SHOPMESH</span>
+          <span className="text-lg font-bold tracking-tight">NOMO<span className="text-primary-foreground/70">FEE</span></span>
         </div>
         <div className="max-w-md space-y-5">
           <h1 className="text-3xl font-bold leading-tight">
@@ -565,7 +565,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <ShoppingBag className="h-4 w-4" />
             </span>
-            <span className="font-bold">SHOPMESH</span>
+            <span className="font-bold">NOMO<span className="text-primary/70">FEE</span></span>
           </div>
 
           <Tabs defaultValue="login">
@@ -604,16 +604,16 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
                 <p className="flex items-center gap-1.5 font-medium">
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Demo accounts (password Seller123!)
                 </p>
-                <p className="text-muted-foreground">lumina@shopmesh.io — active store, full dashboard</p>
-                <p className="text-muted-foreground">trail@shopmesh.io — onboarding wizard demo</p>
-                <p className="text-muted-foreground">warung@shopmesh.io — pending review screen</p>
+                <p className="text-muted-foreground">lumina@nomofee.io — active store, full dashboard</p>
+                <p className="text-muted-foreground">trail@nomofee.io — onboarding wizard demo</p>
+                <p className="text-muted-foreground">warung@nomofee.io — pending review screen</p>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="mt-1 h-8"
                   onClick={() => {
-                    setLoginEmail("lumina@shopmesh.io");
+                    setLoginEmail("lumina@nomofee.io");
                     setLoginPassword("Seller123!");
                   }}
                 >
@@ -662,7 +662,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
 
           <Alert>
             <AlertDescription className="text-xs">
-              By continuing you agree to the SHOPMESH seller terms: 8% platform commission on paid orders,
+              By continuing you agree to the NOMOFEE seller terms: 8% platform commission on paid orders,
               payouts to a Malaysian bank account after a 7-day hold.
             </AlertDescription>
           </Alert>

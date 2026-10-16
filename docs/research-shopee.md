@@ -201,7 +201,7 @@ Image import caveat: Shopee CDN URLs are hotlinkable but rotate-by-id; our house
 2. **No URL/sluge-based lookup exists.** `public.*` contains only: `get_shops_by_partner`, `get_merchants_by_partner`, `get_access_token`, `refresh_access_token`, `get_token_by_resend_code`, `get_shopee_ip_ranges` — none takes a shop URL or returns catalogue data.
 3. **The only door in is the authorisation-code flow** (§3): the seller must log in at `open.shopee.com/auth?partner_id=…&auth_type=seller&…`, confirm, and the app receives `code` → tokens. Seller-picked validity ≤365 days; revocable any time (Seller Center / changing the auth URL).
 4. Even scraping-side workarounds are contract-risky: Platform Partner Rules (quoted in dev-registration criteria) explicitly forbid ISVs whose services include "extracting listing information to enable transactions outside of Shopee" — so a compliant product must drive sellers through authorisation.
-   → **Product implication (SHOPMESH):** the Shopee connector must be an *authorised-connection* importer (seller clicks auth link → we store tokens per shop → pull `get_item_list` → `get_item_base_info`/`get_model_list`), not a paste-a-URL importer. A URL field can at most pre-fill the shop's region/slug for display after authorisation.
+   → **Product implication (NOMOFEE):** the Shopee connector must be an *authorised-connection* importer (seller clicks auth link → we store tokens per shop → pull `get_item_list` → `get_item_base_info`/`get_model_list`), not a paste-a-URL importer. A URL field can at most pre-fill the shop's region/slug for display after authorisation.
 
 ### The spec's starting endpoint `v2.ams.get_open_campaign_added_product` is NOT a catalogue importer — **[VERIFIED]**
 

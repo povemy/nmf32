@@ -1,13 +1,13 @@
 # Phase 1 — Codebase Inventory & Integration-Impact Map
 
-Generated: Phase 1 of Nexova-style upgrade. Scope: existing SHOPMESH application at repo root.
+Generated: Phase 1 of Nexova-style upgrade. Scope: existing NOMOFEE application at repo root.
 
 ## 1. Stack & architecture (discovered from source)
 
 | Layer | Finding |
 |---|---|
 | Framework | Next.js 16 App Router, TypeScript 5, single user-visible route `/` |
-| UI | Tailwind CSS 4 + shadcn/ui (New York) + framer-motion + lucide; theme = ShopMesh Modern Gradient (teal→cyan) in `src/app/globals.css` |
+| UI | Tailwind CSS 4 + shadcn/ui (New York) + framer-motion + lucide; theme = NomoFee Modern Gradient (teal→cyan) in `src/app/globals.css` |
 | DB | SQLite via Prisma (`prisma/schema.prisma`, ~55 models, db at `db/custom.db`). Money = Int minor units. JSON stored in String columns via `src/lib/json.ts` |
 | State | zustand (`src/lib/app-store.ts`) switches surfaces: shopper / seller / admin — all client-side views in `src/components/{shopper,seller,admin}` |
 | Auth | Cookie session (`sm_session`, `Session` model) via `src/lib/auth.ts` — `createSession/destroySession/getSession/requireSeller/requireAdmin` |

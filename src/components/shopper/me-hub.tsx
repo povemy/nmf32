@@ -61,7 +61,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
+import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
 import NotificationBell from "./notification-bell";
 import {
@@ -81,12 +81,10 @@ import {
 } from "./ui-bits";
 
 // ---------------------------------------------------------------------------
-// DORMANT SCAFFOLD — NOMO FINANCE (finance-scaffold rebrand, Task 12 strings).
-// The flag constant in @/lib/feature-flags still carries the legacy
-// MESH_FINANCE_ENABLED name until the global rename (Task 14-d) lands there;
-// alias it once here so this file already reads with NOMOFEE naming.
+// DORMANT SCAFFOLD — NOMO FINANCE (finance-scaffold rebrand, Task 12/14-d).
+// NOMO_FINANCE_ENABLED lives in @/lib/feature-flags (renamed from
+// MESH_FINANCE_ENABLED in the 14-d global rename) and stays `false`.
 // ---------------------------------------------------------------------------
-const NOMO_FINANCE_ENABLED = MESH_FINANCE_ENABLED;
 
 // ---------------------------------------------------------------------------
 // types
@@ -114,9 +112,9 @@ type WalletT = {
   wallet: {
     balanceMinor: number;
     coinBalance: number;
-    spayLaterLimitMinor: number;
-    spayLaterUsedMinor: number;
-    spayLaterAvailableMinor: number;
+    payLaterLimitMinor: number;
+    payLaterUsedMinor: number;
+    payLaterAvailableMinor: number;
     checkInStreak: number;
   };
   vouchers: { available: number; used: number };
@@ -168,7 +166,7 @@ type RecProductT = ProductCardT & {
   inStock: boolean;
   isFeatured: boolean;
   isSellingFast: boolean;
-  spayLaterEligible: boolean;
+  payLaterEligible: boolean;
 };
 
 // Task 10-b voucher engine shapes (GET /api/me/vouchers → {vouchers, mine, center}).
@@ -265,7 +263,7 @@ function useMeData(enabled: boolean) {
       // inert zeroes instead of crashing; the cards stay hidden behind the flag.
       const raw = w.value as Partial<WalletT> & { disabled?: boolean };
       setWallet({
-        wallet: raw.wallet ?? { balanceMinor: 0, coinBalance: 0, spayLaterLimitMinor: 0, spayLaterUsedMinor: 0, spayLaterAvailableMinor: 0, checkInStreak: 0 },
+        wallet: raw.wallet ?? { balanceMinor: 0, coinBalance: 0, payLaterLimitMinor: 0, payLaterUsedMinor: 0, payLaterAvailableMinor: 0, checkInStreak: 0 },
         vouchers: raw.vouchers ?? { available: 0, used: 0 },
         checkIn: raw.checkIn ?? { canClaim: false, nextClaimAt: null },
       });
@@ -286,8 +284,8 @@ function useMeData(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const sync = () => void refresh();
-    window.addEventListener("shopmesh:addresses-changed", sync);
-    return () => window.removeEventListener("shopmesh:addresses-changed", sync);
+    window.addEventListener("nomofee:addresses-changed", sync);
+    return () => window.removeEventListener("nomofee:addresses-changed", sync);
   }, [enabled, refresh]);
 
   return { profile, wallet, counts, likeCount, viewedCount, loading, refresh };
@@ -532,14 +530,14 @@ function Dashboard({
             </button>
             <button
               type="button"
-              onClick={() => toast.info("SHOPMESH Food", { description: "Coming soon in this demo." })}
+              onClick={() => toast.info("NOMOFEE Food", { description: "Coming soon in this demo." })}
               className="flex items-center gap-3 rounded-2xl border bg-card p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-md"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-gradient-soft text-teal-800">
                 <Sparkles className="h-5 w-5" aria-hidden="true" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-xs font-bold sm:text-sm">SHOPMESH Food</span>
+                <span className="block truncate text-xs font-bold sm:text-sm">NOMOFEE Food</span>
                 <span className="mt-0.5 inline-block rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-extrabold text-teal-800">Free Delivery</span>
               </span>
             </button>
@@ -575,9 +573,9 @@ function Dashboard({
                   <WalletCard
                     icon={CreditCard}
                     label="NomoPay Later"
-                    value={data.wallet ? formatMinor(data.wallet.wallet.spayLaterAvailableMinor) : "—"}
-                    hint={data.wallet ? `of ${formatMinor(data.wallet.wallet.spayLaterLimitMinor)} limit` : "Available credit"}
-                    meter={data.wallet && data.wallet.wallet.spayLaterLimitMinor > 0 ? data.wallet.wallet.spayLaterUsedMinor / data.wallet.wallet.spayLaterLimitMinor : 0}
+                    value={data.wallet ? formatMinor(data.wallet.wallet.payLaterAvailableMinor) : "—"}
+                    hint={data.wallet ? `of ${formatMinor(data.wallet.wallet.payLaterLimitMinor)} limit` : "Available credit"}
+                    meter={data.wallet && data.wallet.wallet.payLaterLimitMinor > 0 ? data.wallet.wallet.payLaterUsedMinor / data.wallet.wallet.payLaterLimitMinor : 0}
                     onClick={() => onSub("wallet")}
                   />
                 </>
@@ -1037,10 +1035,10 @@ function SafetyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden="true" /> Jom Beli Selamat!
           </DialogTitle>
-          <DialogDescription>SHOPMESH safe-shopping guidelines.</DialogDescription>
+          <DialogDescription>NOMOFEE safe-shopping guidelines.</DialogDescription>
         </DialogHeader>
         <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-          <li>Keep payments on-platform — checkout and pay inside SHOPMESH only.</li>
+          <li>Keep payments on-platform — checkout and pay inside NOMOFEE only.</li>
           <li>Never share OTPs, passwords or full card numbers in chat.</li>
           <li>Check seller ratings, reviews and "official" markers before big purchases.</li>
           <li>Use Track Order to verify delivery — confirm only after the parcel arrives.</li>
@@ -1509,10 +1507,10 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
                 <CreditCardIcon className="h-4 w-4 text-teal-700" aria-hidden="true" />
                 <p className="text-xs font-bold uppercase tracking-wide">NomoPay Later</p>
               </div>
-              <p className="text-2xl font-extrabold tabular-nums text-teal-800">{formatMinor(wallet.wallet.spayLaterAvailableMinor)}</p>
-              <p className="text-xs text-muted-foreground">available of {formatMinor(wallet.wallet.spayLaterLimitMinor)} limit</p>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round((wallet.wallet.spayLaterUsedMinor / Math.max(1, wallet.wallet.spayLaterLimitMinor)) * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(1, (wallet.wallet.spayLaterUsedMinor / Math.max(1, wallet.wallet.spayLaterLimitMinor)) * 100))}%` }} />
+              <p className="text-2xl font-extrabold tabular-nums text-teal-800">{formatMinor(wallet.wallet.payLaterAvailableMinor)}</p>
+              <p className="text-xs text-muted-foreground">available of {formatMinor(wallet.wallet.payLaterLimitMinor)} limit</p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round((wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100)} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(1, (wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100))}%` }} />
               </div>
             </div>
           </div>
@@ -1879,7 +1877,7 @@ function ActivityGridView({ type, title, onBack, ctx }: { type: "LIKE" | "VIEWED
           {items.map((it) => (
             <MeProductCard
               key={it.activityId}
-              p={{ ...it.product, inStock: true, isFeatured: false, isSellingFast: false, spayLaterEligible: it.product.priceMinor >= 10000 }}
+              p={{ ...it.product, inStock: true, isFeatured: false, isSellingFast: false, payLaterEligible: it.product.priceMinor >= 10000 }}
               onOpen={(prod) => ctx.nav({ name: "pdp", slug: prod.storeSlug, pSlug: prod.slug })}
             />
           ))}
@@ -1916,7 +1914,7 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
       type="button"
       onClick={() => onOpen(p)}
       className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
-      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${NOMO_FINANCE_ENABLED && p.spayLaterEligible ? ", NomoPay Later available" : ""}`}
+      aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${NOMO_FINANCE_ENABLED && p.payLaterEligible ? ", NomoPay Later available" : ""}`}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
         <img
@@ -1947,7 +1945,7 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
           {p.isSellingFast ? (
             <span className="rounded border border-rose-300 bg-rose-50 px-1 py-px text-[9px] font-extrabold text-rose-700">Selling Fast</span>
           ) : null}
-          {NOMO_FINANCE_ENABLED && p.spayLaterEligible ? (
+          {NOMO_FINANCE_ENABLED && p.payLaterEligible ? (
             <span className="rounded border border-teal-300 bg-teal-50 px-1 py-px text-[9px] font-extrabold text-teal-800">NomoPay Later 0% 3x</span>
           ) : null}
         </div>
@@ -2090,7 +2088,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       }
       setForm(null);
       setEditId(null);
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save the address");
     } finally {
@@ -2103,7 +2101,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       const d = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
       setRows(d.addresses);
       setConfirmDelete(null);
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Address removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not remove the address");
@@ -2114,7 +2112,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
     try {
       const d = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
       setRows(d.addresses);
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Default address updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update the default");

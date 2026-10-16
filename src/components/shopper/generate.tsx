@@ -406,7 +406,7 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
           Turn your marketplace shop into <span className="text-brand-gradient">your own store</span>
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-          Paste a Shopee or TikTok Shop link and SHOPMESH auto-builds a draft storefront with your catalogue. You then verify
+          Paste a Shopee or TikTok Shop link and NOMOFEE auto-builds a draft storefront with your catalogue. You then verify
           ownership, claim it and publish — your shop, your rules.
         </p>
       </div>
@@ -517,7 +517,7 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
           <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
             <li>
               The official Shopee / TikTok Shop APIs only release a seller&apos;s catalogue after the shop owner connects their
-              account — SHOPMESH never scrapes marketplace pages.
+              account — NOMOFEE never scrapes marketplace pages.
             </li>
             {job && job.summary.missingEnv.length > 0 ? (
               <li>
@@ -1127,7 +1127,7 @@ function ClaimFlow({
           ) : (
             <div className="mt-4 space-y-3">
               <p className="text-sm">
-                Connect your <span className="font-semibold">{job.platformLabel}</span> account that owns this shop. SHOPMESH
+                Connect your <span className="font-semibold">{job.platformLabel}</span> account that owns this shop. NOMOFEE
                 verifies server-side that the authorised shop matches the imported one.
               </p>
               {job.summary.beginUrl ? (

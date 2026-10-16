@@ -36,7 +36,7 @@ export const GET = handle(async (req: Request) => {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="SHOPMESH-Receipt-${order.orderNumber}.pdf"`,
+      "Content-Disposition": `attachment; filename="NOMOFEE-Receipt-${order.orderNumber}.pdf"`,
       "Cache-Control": "no-store",
     },
   });
@@ -67,7 +67,7 @@ type OrderLike = {
 };
 
 const c = (hex: number) => hex / 255;
-const BRAND = rgb(c(0x00), c(0x64), c(0x7a)); // SHOPMESH teal
+const BRAND = rgb(c(0x00), c(0x64), c(0x7a)); // NOMOFEE teal
 const BRAND_LIGHT = rgb(c(0x00), c(0xa8), c(0xc6));
 const INK = rgb(c(0x1a), c(0x2b), c(0x32));
 const MUTED = rgb(c(0x5b), c(0x6f), c(0x77));
@@ -88,8 +88,8 @@ function fmtDate(d: Date) {
 
 async function buildReceiptPdf(order: OrderLike) {
   const doc = await PDFDocument.create();
-  doc.setTitle(`SHOPMESH Receipt ${order.orderNumber}`);
-  doc.setAuthor("SHOPMESH");
+  doc.setTitle(`NOMOFEE Receipt ${order.orderNumber}`);
+  doc.setAuthor("NOMOFEE");
   doc.setSubject(`Payment receipt for order ${order.orderNumber}`);
 
   const page = doc.addPage([595.28, 841.89]); // A4
@@ -100,9 +100,9 @@ async function buildReceiptPdf(order: OrderLike) {
 
   // brand band
   page.drawRectangle({ x: 0, y: 770, width: 595.28, height: 72, color: BRAND });
-  page.drawText("SHOPMESH", { x: M, y: 812, size: 22, font: bold, color: WHITE });
+  page.drawText("NOMOFEE", { x: M, y: 812, size: 22, font: bold, color: WHITE });
   page.drawText("PAYMENT RECEIPT", { x: M, y: 792, size: 10, font: bold, color: PALE });
-  page.drawText("shopmesh.io", { x: 460, y: 812, size: 10, font, color: PALE });
+  page.drawText("nomofee.io", { x: 460, y: 812, size: 10, font, color: PALE });
   y = 738;
 
   const text = (s: string, x: number, yy: number, size = 10, f = font, color = INK) => page.drawText(s, { x, y: yy, size, font: f, color });
@@ -122,7 +122,7 @@ async function buildReceiptPdf(order: OrderLike) {
   text(order.store.name, M, y, 11, bold);
   text(order.customerName, 320, y, 11, bold);
   y -= 13;
-  text(`Store: ${order.store.slug}.shopmesh.io`, M, y, 9, font, MUTED);
+  text(`Store: ${order.store.slug}.nomofee.io`, M, y, 9, font, MUTED);
   text(order.customerEmail, 320, y, 9, font, MUTED);
   y -= 12;
   if (order.store.supportEmail) {
@@ -191,8 +191,8 @@ async function buildReceiptPdf(order: OrderLike) {
 
   // footer
   page.drawLine({ start: { x: M, y: 90 }, end: { x: 595.28 - M, y: 90 }, thickness: 1, color: LINE });
-  text("Keep this receipt for your records. It is proof of your payment on the SHOPMESH marketplace.", M, 72, 8, font, MUTED);
-  text(`Generated ${fmtDate(new Date())} · SHOPMESH sandbox demo — no real money moved.`, M, 60, 8, font, MUTED);
+  text("Keep this receipt for your records. It is proof of your payment on the NOMOFEE marketplace.", M, 72, 8, font, MUTED);
+  text(`Generated ${fmtDate(new Date())} · NOMOFEE sandbox demo — no real money moved.`, M, 60, 8, font, MUTED);
   page.drawRectangle({ x: M, y: 40, width: 90, height: 3, color: BRAND_LIGHT });
 
   return doc;

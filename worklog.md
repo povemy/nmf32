@@ -789,3 +789,20 @@ Stage Summary:
 - Buyer checkout + tracking UI is whole again and Task-11-shaped: hero status card, item thumbnails with per-item pricing, full totals, CUSTOMER & SHIPPING block, Shopee-style shipment timeline with POD "View proof", live 12s/focus refresh, and the full action row incl. Order received + Buy again; claimable vouchers are pickable per seller group at checkout with live server verdicts end-to-end (quote → create → vouchersApplied toast); EDD chips surface delivery windows on both payment review and order tracking; store headers now have an optimistic Follow button with follower counts and guest sign-in prompting.
 - Shared exports for Wave-2 agents (ui-bits.tsx): `ViewProofButton({url,label?,compact?})`, `StatusTimeline({events})` (shipment events; View-proof built in), `OrderFlowTimeline({history,current})` (old stepper), `shipmentEventLabel()`, types `ShipmentEventT`/`ShipmentT`/`OrderDetailT`. ShopperCtx untouched. Work record: agent-ctx/14-b-checkout-tracking-ui.md.
 - Gates: `bunx tsc --noEmit | grep shopper/(checkout|ui-bits|storefront|pod|tracking)` → ZERO errors (incl. clearing the 4 legacy baseline errors in checkout.tsx); `bunx eslint` on all three files → clean; `bun run lint` → clean. NO pod.tsx/tracking.tsx split files created (both shared components live in ui-bits per the brief's "export both" requirement; splitting would have duplicated them). Receipt route's server-side filename header still says SHOPMESH — that file is NOT in 14-b ownership (client-side name fixed here; server header flagged for 14-d).
+
+---
+Task ID: 14-d
+Agent: full-stack-developer (expired pre-report; section written by orchestrator from verified state)
+Task: Rebrand SHOPMESH→NOMOFEE sweep + DB migration + NomoPay/flag rename + admin campaigns UI + shopper theme layer.
+
+Work Log (verified post-expiry):
+- Rebrand sweep: 53 files touched — README/handover/docs, seeds (emails→@nomofee.io/@nomofee.test), auth/register tagline+notify recipient, chat assistant name, import seo descriptions, admin/seller shell logos, storefront/market/generate copy. NOT changed (per spec): fixture hostnames, USER_AGENT strings, secretbox dev-key, sm_session cookie, passwords.
+- scripts/rebrand-db.ts (NEW) — RAN once: ShopperUser/Seller emails now @nomofee.* (verified in DB: aisyah@nomofee.test, lumina@nomofee.io + 4 more sellers; buyer@test.dev/tradecasm@gmail.com preserved).
+- src/lib/api.ts nextOrderNumber SM- → NM- (legacy SM- orders unaffected).
+- Receipt Content-Disposition + client filename → NOMOFEE-Receipt-*.
+- NOMO FINANCE rename: feature-flags NOMO_FINANCE_ENABLED; wallet/coins routes + message "NomoPay & Nomo Coins are coming soon."; wallet response + me-hub WalletT spayLater*→payLater*; schema ShopperWallet columns → payLaterLimitMinor/payLaterUsedMinor (+db push + generate); seed-me wallet fields; psp mock label "NomoPay Checkout (sandbox)"; recommendations PAYLATER_MIN_MINOR/payLaterEligible; vouchers comments.
+- Admin campaigns UI in admin/marketing.tsx (list/create-from-preset w/ auto-dates+theme fields+preview/publish/delete, 403 handling) — RBAC campaigns.manage (superadmin/ops).
+- Shopper theme layer in market.tsx: GET /api/campaigns/active → accent vars + greeting + ornaments + "Ends in N days" chip; graceful null.
+
+Stage Summary:
+- Platform is fully NOMOFEE-branded (code + DB), finance scaffold fully NomoPay-branded and still dormant. New credentials: aisyah@nomofee.test/Shopmesh123!, lumina@nomofee.io/Seller123!, admin@nomofee.io/Admin123!. New orders NM-. tsc baseline 57 unchanged; lint clean; schema synced.

@@ -329,7 +329,7 @@ export const POST = handle(async (req: Request) => {
     await notify({
       event: "order.created",
       channel: "email",
-      recipient: "admin@shopmesh.io",
+      recipient: "admin@nomofee.io",
       subject: `New order ${o.orderNumber} — ${o.store.name}`,
     });
     await logActivity({

@@ -1,17 +1,17 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
-import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
+import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 
 const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
-// GET /api/me/wallet — buyer financial overview: SHOPMESH Pay balance, coin
-// balance, SPayLater credit, voucher counts and the daily check-in state.
+// GET /api/me/wallet — buyer financial overview: NomoPay balance, coin
+// balance, NomoPay Later credit, voucher counts and the daily check-in state.
 //
-// DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts): while
-// MESH_FINANCE_ENABLED is false this endpoint intentionally does NOT touch
+// DORMANT SCAFFOLD — NOMO FINANCE (see src/lib/feature-flags.ts): while
+// NOMO_FINANCE_ENABLED is false this endpoint intentionally does NOT touch
 // ShopperWallet (no lazy creation, no stored-value exposure) and reports a
 // `disabled` envelope. Voucher counts are still served — vouchers are
 // marketing assets, not stored value. The full wallet scaffold below stays
@@ -24,10 +24,10 @@ export const GET = handle(async () => {
     db.userVoucher.count({ where: { userId: me.id, status: "USED" } }),
   ]);
 
-  if (!MESH_FINANCE_ENABLED) {
+  if (!NOMO_FINANCE_ENABLED) {
     return ok({
       disabled: true,
-      message: "MeshPay & Mesh Coins are coming soon.",
+      message: "NomoPay & Nomo Coins are coming soon.",
       wallet: null,
       checkIn: null,
       vouchers: { available: availableVouchers, used: usedVouchers },
@@ -50,9 +50,9 @@ export const GET = handle(async () => {
     wallet: {
       balanceMinor: wallet.balanceMinor,
       coinBalance: wallet.coinBalance,
-      spayLaterLimitMinor: wallet.spayLaterLimitMinor,
-      spayLaterUsedMinor: wallet.spayLaterUsedMinor,
-      spayLaterAvailableMinor: Math.max(0, wallet.spayLaterLimitMinor - wallet.spayLaterUsedMinor),
+      payLaterLimitMinor: wallet.payLaterLimitMinor,
+      payLaterUsedMinor: wallet.payLaterUsedMinor,
+      payLaterAvailableMinor: Math.max(0, wallet.payLaterLimitMinor - wallet.payLaterUsedMinor),
       checkInStreak: wallet.checkInStreak,
     },
     vouchers: { available: availableVouchers, used: usedVouchers },

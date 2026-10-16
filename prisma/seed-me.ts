@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
 
-const DEMO_SHOPPER_EMAIL = "aisyah@shopmesh.test";
+const DEMO_SHOPPER_EMAIL = "aisyah@nomofee.test";
 const DAY = 24 * 60 * 60 * 1000;
 
 const VOUCHER_POOL = [
@@ -58,21 +58,21 @@ async function main() {
     data: { username: shopper.username ?? "aisyah", followingCount: Math.max(shopper.followingCount, 12), followerCount: Math.max(shopper.followerCount, 34) },
   });
 
-  // Wallet — SPayLater limit RM6,652.12 like the reference dashboard, coins to show.
+  // Wallet — NomoPay Later limit RM6,652.12 like the reference dashboard, coins to show.
   await db.shopperWallet.upsert({
     where: { userId: shopper.id },
     create: {
       userId: shopper.id,
       balanceMinor: 12_840,        // RM128.40
       coinBalance: 1_250,
-      spayLaterLimitMinor: 665_212, // RM6,652.12
-      spayLaterUsedMinor: 0,
+      payLaterLimitMinor: 665_212, // RM6,652.12
+      payLaterUsedMinor: 0,
       checkInStreak: 3,             // streak warms up, cooldown clear so check-in works
       lastCheckInAt: null,
     },
     update: {
       balanceMinor: 12_840,
-      spayLaterLimitMinor: 665_212,
+      payLaterLimitMinor: 665_212,
       // NOTE: lastCheckInAt intentionally NOT reset here — the daily check-in
       // cooldown must survive re-seeding.
     },

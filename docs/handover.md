@@ -59,7 +59,7 @@ Without these, the UI honestly shows "Server credentials missing" and import job
 ## 6. Import behaviour
 
 - Supported inputs: Shopee shop/product URLs (`/shop/{id}`, `/product/{shop}/{item}`, `-i.{shop}.{item}`), TikTok Shop URLs, and `demo.shopmesh.fixture` demo links.
-- Live marketplaces require the seller to authorise SHOPMESH once (per official APIs). Jobs then run the full pipeline with persisted statuses; per-product failures are recorded per-item and never abort the shop import; pagination follows each API's contract (offset/≤100 and page_token/≤100).
+- Live marketplaces require the seller to authorise NOMOFEE once (per official APIs). Jobs then run the full pipeline with persisted statuses; per-product failures are recorded per-item and never abort the shop import; pagination follows each API's contract (offset/≤100 and page_token/≤100).
 - Re-imports are idempotent (unique source identifiers + per-item upsert); seller-locked fields (title/description/images/variants via `overridesJson`) survive syncs; products missing at source are archived, never deleted.
 - External images are SSRF-validated and copied to `public/uploads/{storeId}/` (≤5MB, content-type sniffed); on failure the source URL is kept with a visible warning.
 

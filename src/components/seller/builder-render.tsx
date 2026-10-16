@@ -371,7 +371,7 @@ export function SectionPreview({ section, theme, storeName }: Props) {
               </div>
             ))}
           </div>
-          <p className="text-center text-xs text-neutral-400">Cross-sell from other SHOPMESH stores — great for discovery</p>
+          <p className="text-center text-xs text-neutral-400">Cross-sell from other NOMOFEE stores — great for discovery</p>
         </section>
       );
     }

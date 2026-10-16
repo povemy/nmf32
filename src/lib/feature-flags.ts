@@ -2,12 +2,12 @@
 // FEATURE FLAGS — dormant scaffolds
 // ============================================================================
 //
-// ── MESH FINANCE (SHOPMESH Pay wallet · Mesh Coins · SPayLater) ─────────────
+// ── NOMO FINANCE (NomoPay wallet · Nomo Coins · NomoPay Later) ─────────────
 //
 // DECISION (user, alongside the Option B payment pivot): the BUYER finance
 // features are switched OFF for launch. The entire scaffold — Prisma model
 // `ShopperWallet`, API routes `/api/me/wallet` + `/api/me/coins/claim`, the
-// me-hub Wallet/Coin/SPayLater cards + WalletView, and the demo seed — is
+// me-hub Wallet/Coin/NomoPay Later cards + WalletView, and the demo seed — is
 // deliberately KEPT in the codebase.
 //
 //   • DO NOT DELETE any of it.
@@ -27,4 +27,4 @@
 // flag — it is the accounting mirror of PSP settlements under Option B and
 // stays active.
 // ============================================================================
-export const MESH_FINANCE_ENABLED = false;
+export const NOMO_FINANCE_ENABLED = false;

@@ -14,23 +14,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SHOPMESH — Multi-vendor Marketplace",
+  title: "NOMOFEE — Multi-vendor Marketplace",
   description:
-    "SHOPMESH is a multi-vendor marketplace: discover independent storefronts, shop curated goods, and manage your own store. Built with Next.js, TypeScript, Tailwind CSS and shadcn/ui.",
-  keywords: ["SHOPMESH", "marketplace", "multi-vendor", "ecommerce", "Next.js", "storefront"],
-  authors: [{ name: "SHOPMESH" }],
+    "NOMOFEE is a multi-vendor marketplace: discover independent storefronts, shop curated goods, and manage your own store. Built with Next.js, TypeScript, Tailwind CSS and shadcn/ui.",
+  keywords: ["NOMOFEE", "marketplace", "multi-vendor", "ecommerce", "Next.js", "storefront"],
+  authors: [{ name: "NOMOFEE" }],
   icons: {
     icon: "/logo.svg",
   },
   openGraph: {
-    title: "SHOPMESH — Multi-vendor Marketplace",
+    title: "NOMOFEE — Multi-vendor Marketplace",
     description: "Discover independent storefronts and shop curated goods.",
-    siteName: "SHOPMESH",
+    siteName: "NOMOFEE",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "SHOPMESH — Multi-vendor Marketplace",
+    title: "NOMOFEE — Multi-vendor Marketplace",
     description: "Discover independent storefronts and shop curated goods.",
   },
 };

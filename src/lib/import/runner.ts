@@ -437,7 +437,7 @@ export async function runJob(jobId: string): Promise<{ status: string }> {
       create: {
         entityType: "store", entityId: store.id,
         seoTitle: `${storeRow?.name ?? shop.name} — Official Store`.slice(0, 60),
-        seoDescription: `Shop ${storeRow?.name ?? shop.name} on SHOPMESH. Imported from ${platformLabel(job.platform)}.`.slice(0, 155),
+        seoDescription: `Shop ${storeRow?.name ?? shop.name} on NOMOFEE. Imported from ${platformLabel(job.platform)}.`.slice(0, 155),
         ogImage: null,
         structuredDataJson: JSON.stringify({ "@type": "Store", name: storeRow?.name ?? shop.name }),
         warningsJson: "[]",

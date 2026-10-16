@@ -1,8 +1,8 @@
 "use client";
-// SHOPMESH single-route app shell — portal switcher across the three surfaces:
+// NOMOFEE single-route app shell — portal switcher across the three surfaces:
 // Shopper (marketplace + storefronts), Seller (dashboard), Admin (command centre).
-// In production these live on separate hosts (market/shopmesh.io, seller.shopmesh.io,
-// admin.shopmesh.io); in this sandbox they are surfaces on one route.
+// In production these live on separate hosts (market/nomofee.io, seller.nomofee.io,
+// admin.nomofee.io); in this sandbox they are surfaces on one route.
 import { useEffect } from "react";
 import { useApp } from "@/lib/app-store";
 import ShopperShell from "@/components/shopper/shopper-shell";
@@ -31,7 +31,7 @@ export default function AppRoot() {
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <Loader2 className="h-8 w-8 animate-spin" />
-            <p className="text-sm">Loading SHOPMESH…</p>
+            <p className="text-sm">Loading NOMOFEE…</p>
           </div>
         </div>
       ) : surface === "shopper" ? (

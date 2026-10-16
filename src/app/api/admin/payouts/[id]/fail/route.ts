@@ -37,7 +37,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   await notify({
     event: "payout.failed",
     channel: "email",
-    recipient: "ops@shopmesh.io",
+    recipient: "ops@nomofee.io",
     subject: `Payout ${payout.referenceNo} failed`,
   });
   await notify({

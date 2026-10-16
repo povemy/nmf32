@@ -1,9 +1,10 @@
 "use client";
-// MKT-01 Banners · MKT-02 Featured slots · MKT-03 Platform coupons.
+// MKT-01 Banners · MKT-02 Featured slots · MKT-03 Platform coupons · MKT-04
+// Campaigns (Task 10-e: festive campaign presets + publish + theme editor).
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
-import { ImagePlus, Megaphone, Plus, Search, Star, Ticket } from "lucide-react";
+import { CalendarClock, ImagePlus, Megaphone, PartyPopper, Plus, Search, Star, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { formatMinor, toMinor } from "@/lib/money";
+import {
+  CAMPAIGN_PRESETS,
+  findCampaignPreset,
+  presetDateRange,
+  type CampaignThemeT,
+} from "@/lib/campaigns";
 import { apiSend, useApi, useDebounced } from "./use-api";
 import { qs } from "./nav";
 import {
@@ -29,6 +37,7 @@ import {
   ErrorState,
   Money,
   PageHeader,
+  Pager,
   StatusChip,
   TableSkeleton,
   fmtDT,
@@ -747,6 +756,530 @@ export function CouponsView() {
         onOpenChange={(o) => !o && setDeleteTarget(null)}
         title="Delete coupon?"
         description={deleteTarget ? `Code ${deleteTarget.code} will stop working immediately.` : ""}
+        confirmLabel="Delete"
+        destructive
+        loading={busyId !== null}
+        onConfirm={() => void doDelete()}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ CampaignsView */
+
+type CampaignRow = {
+  id: string;
+  name: string;
+  presetId: string | null;
+  isPublished: boolean;
+  startAt: string;
+  endAt: string;
+  theme: CampaignThemeT;
+  status: "draft" | "scheduled" | "live" | "ended";
+  daysUntilStart: number;
+  daysLeft: number;
+};
+
+const CAMPAIGN_STATUS_CLASS: Record<CampaignRow["status"], string> = {
+  draft: "border-muted-foreground/30 bg-muted text-muted-foreground",
+  scheduled:
+    "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  live: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
+  ended: "border-neutral-300 bg-neutral-100 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400",
+};
+
+/** Mutations/list failures that are really RBAC rejections (403 envelope). */
+function isCapabilityError(e: unknown): boolean {
+  return e instanceof Error && /campaigns\.manage|Capability|forbidden/i.test(e.message);
+}
+
+function campaignStatusChip(status: CampaignRow["status"]) {
+  return (
+    <Badge variant="outline" className={cn("capitalize", CAMPAIGN_STATUS_CLASS[status])}>
+      {status}
+    </Badge>
+  );
+}
+
+/** Date → value for <input type="datetime-local"> (browser-local time). */
+function toLocalInput(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** datetime-local value → ISO string (undefined when blank/invalid). */
+function fromLocalInput(v: string): string | undefined {
+  if (!v) return undefined;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+const BLANK_THEME: CampaignThemeT = {
+  accent: "#0D9488",
+  accentSoft: "#CCFBF1",
+  gradientFrom: "#0D9488",
+  gradientTo: "#115E59",
+  greeting: "",
+  greetingBm: "",
+  tagline: "",
+  taglineBm: "",
+  ornament: "✨",
+};
+
+export function CampaignsView() {
+  const [status, setStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const [qInput, setQInput] = useState("");
+  const q = useDebounced(qInput.trim(), 350);
+  const SIZE = 10;
+
+  const listUrl = `/api/admin/campaigns${qs({ page, size: SIZE, status: status === "all" ? "" : status, q })}`;
+  const { data, meta, error, loading, refetch } = useApi<CampaignRow[]>(listUrl);
+  const rows = data ?? [];
+  const forbidden = error !== null && isCapabilityError(new Error(error));
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [presetId, setPresetId] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
+  const [theme, setTheme] = useState<CampaignThemeT>({ ...BLANK_THEME });
+  const [publishNow, setPublishNow] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CampaignRow | null>(null);
+
+  const resetForm = () => {
+    setName("");
+    setPresetId("");
+    setStartAt("");
+    setEndAt("");
+    setTheme({ ...BLANK_THEME });
+    setPublishNow(false);
+  };
+
+  // Pure + client-safe (RECOVERY.md Task 10-e): presetDateRange never touches
+  // the db import, so auto-filling dates here needs no server round-trip.
+  const applyPreset = (id: string) => {
+    setPresetId(id);
+    const preset = findCampaignPreset(id);
+    if (!preset) return;
+    const range = presetDateRange(preset);
+    if (range) {
+      setStartAt(toLocalInput(range.start));
+      setEndAt(toLocalInput(range.end));
+    }
+    setTheme({ ...preset.theme });
+  };
+
+  const create = async () => {
+    setCreating(true);
+    try {
+      await apiSend("/api/admin/campaigns", "POST", {
+        name: name.trim(),
+        presetId: presetId || undefined,
+        startAt: fromLocalInput(startAt),
+        endAt: fromLocalInput(endAt),
+        theme,
+        isPublished: publishNow,
+      });
+      toast.success("Campaign created", { description: publishNow ? `${name.trim()} is live` : `${name.trim()} saved as draft` });
+      setCreateOpen(false);
+      resetForm();
+      void refetch();
+    } catch (e) {
+      if (isCapabilityError(e)) {
+        toast.info("Ops/superadmin only", { description: "Creating campaigns needs the campaigns.manage permission." });
+      } else {
+        toast.error("Create failed", { description: e instanceof Error ? e.message : String(e) });
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const togglePublish = async (c: CampaignRow) => {
+    setBusyId(c.id);
+    try {
+      await apiSend(`/api/admin/campaigns/${c.id}`, "PATCH", { isPublished: !c.isPublished });
+      toast.success(`Campaign ${c.isPublished ? "unpublished" : "published"}`, { description: c.name });
+      void refetch();
+    } catch (e) {
+      if (isCapabilityError(e)) {
+        toast.info("Ops/superadmin only", { description: "Publishing campaigns needs the campaigns.manage permission." });
+      } else {
+        toast.error("Update failed", { description: e instanceof Error ? e.message : String(e) });
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const doDelete = async () => {
+    if (!deleteTarget) return;
+    setBusyId(deleteTarget.id);
+    try {
+      await apiSend(`/api/admin/campaigns/${deleteTarget.id}`, "DELETE");
+      toast.success("Campaign deleted", { description: deleteTarget.name });
+      setDeleteTarget(null);
+      void refetch();
+    } catch (e) {
+      if (isCapabilityError(e)) {
+        toast.info("Ops/superadmin only", { description: "Deleting campaigns needs the campaigns.manage permission." });
+      } else {
+        toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) });
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const countdown = (c: CampaignRow) => {
+    if (c.status === "scheduled") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+          <CalendarClock className="h-3 w-3" /> starts in {c.daysUntilStart}d
+        </span>
+      );
+    }
+    if (c.status === "live") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+          <CalendarClock className="h-3 w-3" /> ends in {c.daysLeft}d
+        </span>
+      );
+    }
+    return <span className="text-xs text-muted-foreground">—</span>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Campaigns"
+        description="Festive marketplace campaigns — the published live one themes the shopper market home."
+        actions={
+          <Button size="sm" className="min-h-[44px]" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> New campaign
+          </Button>
+        }
+      />
+
+      <Card className="py-0">
+        <CardHeader className="gap-3 px-4 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <PartyPopper className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Campaigns ({meta?.total ?? rows.length})
+          </CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={qInput}
+                onChange={(e) => {
+                  setQInput(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by name…"
+                className="min-h-[44px] pl-9"
+                aria-label="Search campaigns"
+              />
+            </div>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="min-h-[44px] sm:w-44" aria-label="Filter campaigns by status">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="scheduled">Scheduled</SelectItem>
+                <SelectItem value="live">Live</SelectItem>
+                <SelectItem value="ended">Ended</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {error ? (
+            forbidden ? (
+              <EmptyState
+                title="Ops/superadmin only"
+                hint="Campaigns need the campaigns.manage permission (superadmin or ops role)."
+              />
+            ) : (
+              <ErrorState message={error} onRetry={() => void refetch()} />
+            )
+          ) : loading ? (
+            <TableSkeleton rows={3} cols={6} />
+          ) : rows.length === 0 ? (
+            <EmptyState title="No campaigns" hint="Create one from a festive preset — Raya, CNY, 11.11 and more." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead className="hidden md:table-cell">Window</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="hidden text-center sm:table-cell">Countdown</TableHead>
+                  <TableHead className="text-center">Published</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm"
+                          style={{ background: c.theme.accentSoft, color: c.theme.accent }}
+                          aria-hidden="true"
+                        >
+                          {c.theme.ornament || "✨"}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="max-w-[240px] truncate font-medium">{c.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {findCampaignPreset(c.presetId)?.name ?? "Custom theme"} · {c.theme.greeting || "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                      {fmtDT(c.startAt)} → {fmtDT(c.endAt)}
+                    </TableCell>
+                    <TableCell className="text-center">{campaignStatusChip(c.status)}</TableCell>
+                    <TableCell className="hidden text-center sm:table-cell">{countdown(c)}</TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={c.isPublished}
+                        disabled={busyId === c.id}
+                        onCheckedChange={() => void togglePublish(c)}
+                        aria-label={`Toggle campaign ${c.name}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="min-h-[44px] text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0 dark:hover:bg-red-950/40"
+                        onClick={() => setDeleteTarget(c)}
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {(meta?.total ?? 0) > SIZE && !error ? (
+        <Pager
+          page={page}
+          size={SIZE}
+          total={meta?.total ?? 0}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => p + 1)}
+        />
+      ) : null}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl [scrollbar-width:thin]">
+          <DialogHeader>
+            <DialogTitle>New campaign</DialogTitle>
+            <DialogDescription>
+              Pick a preset to auto-fill the window and theme — everything stays editable.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="campaign-name">Name</Label>
+              <Input
+                id="campaign-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Raya Mega Sale 2027"
+                className="min-h-[44px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campaign-preset">Preset</Label>
+              <Select value={presetId} onValueChange={(v) => applyPreset(v)}>
+                <SelectTrigger id="campaign-preset" className="min-h-[44px]" aria-label="Campaign preset">
+                  <SelectValue placeholder="Choose a festive preset…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CAMPAIGN_PRESETS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="campaign-start">Starts at</Label>
+                <Input
+                  id="campaign-start"
+                  type="datetime-local"
+                  value={startAt}
+                  onChange={(e) => setStartAt(e.target.value)}
+                  className="min-h-[44px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="campaign-end">Ends at</Label>
+                <Input
+                  id="campaign-end"
+                  type="datetime-local"
+                  value={endAt}
+                  onChange={(e) => setEndAt(e.target.value)}
+                  className="min-h-[44px]"
+                />
+              </div>
+            </div>
+
+            {/* live preview strip */}
+            <div
+              className="relative overflow-hidden rounded-xl border p-4 text-white"
+              style={{ background: `linear-gradient(135deg, ${theme.gradientFrom}, ${theme.gradientTo})` }}
+              aria-label="Campaign theme preview"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-white/75">NOMOFEE campaign</p>
+                  <p className="truncate text-lg font-extrabold leading-snug">{theme.greeting || "Greeting copy…"}</p>
+                  <p className="truncate text-xs text-white/85">{theme.tagline || "Subheading copy…"}</p>
+                </div>
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold"
+                  style={{ background: theme.accentSoft, color: theme.accent }}
+                >
+                  {theme.ornament || "✨"} Shop now
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {(
+                [
+                  ["accent", "Accent"],
+                  ["accentSoft", "Soft chip"],
+                  ["gradientFrom", "Hero from"],
+                  ["gradientTo", "Hero to"],
+                ] as [keyof CampaignThemeT, string][]
+              ).map(([field, label]) => (
+                <div key={field} className="space-y-1.5">
+                  <Label htmlFor={`campaign-${field}`}>{label}</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id={`campaign-${field}`}
+                      type="color"
+                      value={theme[field] as string}
+                      onChange={(e) => setTheme((t) => ({ ...t, [field]: e.target.value }))}
+                      className="h-9 w-9 shrink-0 cursor-pointer rounded border bg-background p-0.5"
+                      aria-label={`${label} colour`}
+                    />
+                    <span className="truncate font-mono text-[11px] text-muted-foreground">{theme[field] as string}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="campaign-greeting">Heading (EN)</Label>
+                <Input
+                  id="campaign-greeting"
+                  value={theme.greeting}
+                  onChange={(e) => setTheme((t) => ({ ...t, greeting: e.target.value }))}
+                  placeholder="Selamat Hari Raya"
+                  className="min-h-[44px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="campaign-tagline">Subheading (EN)</Label>
+                <Input
+                  id="campaign-tagline"
+                  value={theme.tagline}
+                  onChange={(e) => setTheme((t) => ({ ...t, tagline: e.target.value }))}
+                  placeholder="Festive deals up to 70% off"
+                  className="min-h-[44px]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="campaign-ornament">Ornament (emoji)</Label>
+                <Input
+                  id="campaign-ornament"
+                  value={theme.ornament}
+                  onChange={(e) => setTheme((t) => ({ ...t, ornament: e.target.value }))}
+                  placeholder="🌙"
+                  className="min-h-[44px]"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="campaign-greeting-bm">Heading (BM)</Label>
+                <Input
+                  id="campaign-greeting-bm"
+                  value={theme.greetingBm}
+                  onChange={(e) => setTheme((t) => ({ ...t, greetingBm: e.target.value }))}
+                  placeholder="Salam Aidilfitri"
+                  className="min-h-[44px]"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campaign-tagline-bm">Subheading (BM)</Label>
+              <Input
+                id="campaign-tagline-bm"
+                value={theme.taglineBm}
+                onChange={(e) => setTheme((t) => ({ ...t, taglineBm: e.target.value }))}
+                placeholder="Tawaran istimewa"
+                className="min-h-[44px]"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Publish immediately</p>
+                <p className="text-xs text-muted-foreground">Live the moment the window starts (scheduled until then).</p>
+              </div>
+              <Switch checked={publishNow} onCheckedChange={setPublishNow} aria-label="Publish campaign immediately" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating} className="min-h-[44px] sm:min-h-0">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void create()}
+              disabled={creating || !name.trim() || !startAt || !endAt}
+              className="min-h-[44px] sm:min-h-0"
+            >
+              {creating ? "Creating…" : "Create campaign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete campaign?"
+        description={
+          deleteTarget
+            ? `“${deleteTarget.name}” will be removed and ${deleteTarget.status === "live" ? "the shopper theme reverts to the default look" : "won't go live"}.`
+            : ""
+        }
         confirmLabel="Delete"
         destructive
         loading={busyId !== null}

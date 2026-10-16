@@ -89,7 +89,7 @@ export const POST = handle(async (req: NextRequest) => {
         placeholder._count.orders === 0;
       if (!untouched) {
         throw new ApiError(409, "STORE_LIMIT",
-          "Your seller account already owns a store with content, and SHOPMESH links one store per account. Claim this generated store from a fresh seller account, or import the catalogue into your existing store from the seller portal Imports page.");
+          "Your seller account already owns a store with content, and NOMOFEE links one store per account. Claim this generated store from a fresh seller account, or import the catalogue into your existing store from the seller portal Imports page.");
       }
       await tx.store.update({ where: { id: placeholder.id }, data: { sellerId: null } });
     }

@@ -544,7 +544,7 @@ function RefundDialog({ open, onOpenChange, order, onDone }: { open: boolean; on
             </div>
             <Switch checked={restock} onCheckedChange={setRestock} aria-label="Restock items" />
           </div>
-          <p className="text-xs text-muted-foreground">Requests are reviewed by SHOPMESH admins; the ledger reversal happens on approval.</p>
+          <p className="text-xs text-muted-foreground">Requests are reviewed by NOMOFEE admins; the ledger reversal happens on approval.</p>
           <Button onClick={submit} disabled={busy} className="w-full min-h-[44px] gap-2">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />} Submit request
           </Button>
@@ -564,7 +564,7 @@ function PackingSlip({ order }: { order: OrderDetail }) {
           <p className="text-xl font-bold">PACKING SLIP</p>
           <p className="text-sm">{order.orderNumber} · {fmtDateTime(order.createdAt)}</p>
         </div>
-        <p className="text-sm font-semibold">SHOPMESH fulfillment</p>
+        <p className="text-sm font-semibold">NOMOFEE fulfillment</p>
       </div>
       <div className="mt-3 text-sm">
         <p className="font-semibold">Ship to</p>

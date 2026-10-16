@@ -58,13 +58,13 @@ export const POST = handle(async (req: NextRequest) => {
         sellerId: seller.id,
         name: storeName,
         slug,
-        tagline: "New on SHOPMESH",
+        tagline: "New on NOMOFEE",
         status: "draft",
       },
     });
     const wallet = await tx.wallet.create({ data: { sellerId: seller.id } });
     // default pages — a publishable store in <60s (PART 1 §1.5)
-    const homeSections = defaultHomeSections(storeName, "New on SHOPMESH");
+    const homeSections = defaultHomeSections(storeName, "New on NOMOFEE");
     await tx.cmsPage.create({
       data: {
         storeId: store.id,
@@ -96,7 +96,7 @@ export const POST = handle(async (req: NextRequest) => {
 
   await ensureWalletAccounts(result.wallet.id);
   await logActivity({ actorType: "seller", actorId: result.seller.id, actorLabel: email, action: "seller.register", entityType: "store", entityId: result.store.id, meta: { slug } });
-  await notify({ event: "seller.registered", channel: "email", recipient: "admin@shopmesh.io", subject: "New seller registered" });
+  await notify({ event: "seller.registered", channel: "email", recipient: "admin@nomofee.io", subject: "New seller registered" });
   const token = await createSession("seller", result.seller.id);
 
   return ok(

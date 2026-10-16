@@ -45,7 +45,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   await notify({
     event: "refund.requested",
     channel: "email",
-    recipient: "admin@shopmesh.io",
+    recipient: "admin@nomofee.io",
     subject: `Refund requested for ${order.orderNumber}`,
   });
   await logActivity({

@@ -1,4 +1,4 @@
-# Marketplace Platform
+# NOMOFEE — Marketplace Platform
 
 A multi-vendor marketplace platform built with Next.js 16 (App Router), TypeScript, Prisma (SQLite), and shadcn/ui.
 
@@ -68,7 +68,7 @@ upload/                       # original product specification documents
 
 ## Store Generator (Nexova-style)
 
-Paste a Shopee / TikTok Shop URL (or a demo fixture link) on the **"Sell / Generate store"** page → SHOPMESH validates the link, imports the authorised catalogue (products, variants, images), auto-generates SEO, and creates a **claimable draft storefront**. The verified owner claims it (token + account + marketplace authorisation), configures it in the seller portal (**Imports & Publish**, **SEO**), publishes, and trades — checkout, orders, payments and ledger all reuse the platform's existing commerce engine.
+Paste a Shopee / TikTok Shop URL (or a demo fixture link) on the **"Sell / Generate store"** page → NOMOFEE validates the link, imports the authorised catalogue (products, variants, images), auto-generates SEO, and creates a **claimable draft storefront**. The verified owner claims it (token + account + marketplace authorisation), configures it in the seller portal (**Imports & Publish**, **SEO**), publishes, and trades — checkout, orders, payments and ledger all reuse the platform's existing commerce engine.
 
 - Docs: `docs/handover.md` (full technical handover), `docs/marketplace-integration-research.md` (official API verification), `docs/codebase-inventory.md`, `docs/implementation-plan.md`
 - Import APIs: `POST /api/import/resolve`, `POST /api/import/jobs`, `GET /api/import/jobs/{id}?token=…`, `POST /api/import/jobs/{id}/resume?token=…`, `POST /api/claim/bind`, `POST /api/store/publish`

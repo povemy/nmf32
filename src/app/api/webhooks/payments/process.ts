@@ -7,7 +7,7 @@
 // payment service provider (sandbox: the "mock" provider via /simulate — see
 // src/lib/psp.ts) collects a SINGLE buyer payment for a PaymentGroup covering
 // N per-seller orders, deducts the platform's application fee (commission)
-// at payment time and settles each seller their share. SHOPMESH NEVER TAKES
+// at payment time and settles each seller their share. NOMOFEE NEVER TAKES
 // CUSTODY OF BUYER FUNDS — the ledger T1 postings below are the platform's
 // ACCOUNTING MIRROR of the PSP's per-seller balances (bookkeeping that feeds
 // seller dashboards + the payout pipeline), not escrow.

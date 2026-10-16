@@ -61,7 +61,7 @@ export default function SellerDomains({ storeSlug }: { storeSlug: string }) {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription className="text-xs">
-          Your default subdomain <span className="font-mono font-semibold">{storeSlug || "your-store"}.shopmesh.site</span> is
+          Your default subdomain <span className="font-mono font-semibold">{storeSlug || "your-store"}.nomofee.site</span> is
           always reachable — custom domains are optional extras for branding.
         </AlertDescription>
       </Alert>
@@ -78,7 +78,7 @@ export default function SellerDomains({ storeSlug }: { storeSlug: string }) {
         <EmptyState
           icon={<Globe className="h-8 w-8" />}
           title="No custom domains yet"
-          hint="Connect a domain you own (e.g. shop.yourbrand.com) and point DNS at SHOPMESH. Free SSL is issued on verification."
+          hint="Connect a domain you own (e.g. shop.yourbrand.com) and point DNS at NOMOFEE. Free SSL is issued on verification."
         />
       ) : (
         <div className="space-y-3">
@@ -195,7 +195,7 @@ function DnsInstructions({ domain }: { domain: Domain }) {
       <p className="text-xs font-semibold">DNS setup {domain.status === "active" ? "(done — for reference)" : ""}</p>
       {domain.mode === "ns" ? (
         <div className="mt-2 space-y-1.5 font-mono text-xs">
-          {["ns1.shopmesh.net", "ns2.shopmesh.net"].map((ns) => (
+          {["ns1.nomofee.net", "ns2.nomofee.net"].map((ns) => (
             <div key={ns} className="flex items-center justify-between gap-2 rounded-lg bg-background px-2.5 py-1.5">
               <span>NS record → {ns}</span>
               <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => copy(ns, ns)}>
@@ -203,13 +203,13 @@ function DnsInstructions({ domain }: { domain: Domain }) {
               </Button>
             </div>
           ))}
-          <p className="font-sans text-[11px] text-muted-foreground">Point your domain&apos;s nameservers at SHOPMESH (registrar &gt; nameserver settings).</p>
+          <p className="font-sans text-[11px] text-muted-foreground">Point your domain&apos;s nameservers at NOMOFEE (registrar &gt; nameserver settings).</p>
         </div>
       ) : (
         <div className="mt-2 space-y-1.5 font-mono text-xs">
           <div className="flex items-center justify-between gap-2 rounded-lg bg-background px-2.5 py-1.5">
-            <span>CNAME www → shops.shopmesh.site</span>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => copy("shops.shopmesh.site", "cname")}>
+            <span>CNAME www → shops.nomofee.site</span>
+            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => copy("shops.nomofee.site", "cname")}>
               <Copy className="h-3 w-3" /> {copied === "cname" ? "Copied" : "Copy target"}
             </Button>
           </div>
@@ -259,14 +259,14 @@ function AddDomainDialog({ open, onOpenChange, onDone }: { open: boolean; onOpen
               <RadioGroupItem value="cname" id="mode-cname" />
               <span>
                 <span className="block text-sm font-medium">CNAME (recommended)</span>
-                <span className="block text-xs text-muted-foreground">Add a CNAME record pointing at SHOPMESH. Fastest setup.</span>
+                <span className="block text-xs text-muted-foreground">Add a CNAME record pointing at NOMOFEE. Fastest setup.</span>
               </span>
             </label>
             <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3" htmlFor="mode-ns">
               <RadioGroupItem value="ns" id="mode-ns" />
               <span>
                 <span className="block text-sm font-medium">Nameservers (NS)</span>
-                <span className="block text-xs text-muted-foreground">Hand over DNS management to SHOPMESH. Full control incl. email routing.</span>
+                <span className="block text-xs text-muted-foreground">Hand over DNS management to NOMOFEE. Full control incl. email routing.</span>
               </span>
             </label>
           </RadioGroup>

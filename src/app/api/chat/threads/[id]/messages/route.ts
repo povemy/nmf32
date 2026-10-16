@@ -51,14 +51,14 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   });
   if (auto) {
     const botMsg = await db.chatMessage.create({
-      data: { threadId: thread.id, senderType: "seller", senderName: "SHOPMESH Assistant", body: auto.body },
+      data: { threadId: thread.id, senderType: "seller", senderName: "NOMOFEE Assistant", body: auto.body },
     });
     await db.chatThread.update({ where: { id: thread.id }, data: { lastMessageAt: new Date(), shopperUnread: { increment: 1 } } });
     await broadcastToThread(thread.id, "chat:message", {
       id: botMsg.id,
       threadId: thread.id,
       senderType: "seller",
-      senderName: "SHOPMESH Assistant",
+      senderName: "NOMOFEE Assistant",
       body: botMsg.body,
       createdAt: botMsg.createdAt,
       isAutoReply: true,

@@ -6,7 +6,7 @@ import { productCardInclude, toProductCard } from "../../_shared/product-card";
 export const dynamic = "force-dynamic";
 
 const SELLING_FAST_SALES = 40;
-const SPAYLATER_MIN_MINOR = 10_000; // RM100+
+const PAYLATER_MIN_MINOR = 10_000; // RM100+
 
 // GET /api/me/recommendations — "You May Also Like" feed for the buyer dashboard.
 // Personalised when possible: categories the shopper recently viewed/liked are
@@ -76,7 +76,7 @@ export const GET = handle(async (req: Request) => {
           inStock: stock > 0,
           isFeatured: p.isFeatured,
           isSellingFast: p.salesCount >= SELLING_FAST_SALES,
-          spayLaterEligible: card.priceMinor >= SPAYLATER_MIN_MINOR,
+          payLaterEligible: card.priceMinor >= PAYLATER_MIN_MINOR,
         };
       }),
     },

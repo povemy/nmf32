@@ -114,7 +114,7 @@ export default function SellerSettings({
     setOptIn(next);
     const ok = await runMutation(
       () => apiSend("PATCH", "/api/store/settings", { marketplaceOptIn: next }),
-      next ? "Store listed on the SHOPMESH marketplace" : "Store removed from marketplace listings"
+      next ? "Store listed on the NOMOFEE marketplace" : "Store removed from marketplace listings"
     );
     if (!ok) setOptIn(!next);
   };
@@ -227,7 +227,7 @@ export default function SellerSettings({
         <CardContent className="space-y-3">
           <div className="flex items-start justify-between gap-4 rounded-xl border p-4">
             <div>
-              <p className="text-sm font-medium">List products on the SHOPMESH marketplace</p>
+              <p className="text-sm font-medium">List products on the NOMOFEE marketplace</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 When on, your active products can appear in marketplace search and collections — free discovery,
                 same 8% commission. Your storefront stays live either way. Approval of your store is still

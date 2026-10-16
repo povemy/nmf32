@@ -1,7 +1,7 @@
 // ============================================================================
 // PSP PROVIDER LAYER — OPTION B (approved by user)
 // ============================================================================
-// PAYMENT MODEL DECISION: SHOPMESH operates as a marketplace facilitator under
+// PAYMENT MODEL DECISION: NOMOFEE operates as a marketplace facilitator under
 // a "licensed PSP split" model — NOT self-managed escrow:
 //
 //   Buyer pays ONCE per checkout → a licensed Payment Service Provider
@@ -10,7 +10,7 @@
 //   platform's application fee (commission) at payment time, and settles each
 //   seller their share.
 //
-//   SHOPMESH NEVER TAKES CUSTODY OF BUYER FUNDS. This keeps the platform
+//   NOMOFEE NEVER TAKES CUSTODY OF BUYER FUNDS. This keeps the platform
 //   outside BNM's Merchant Acquiring Services registration scope (FSA 2013
 //   s.17), e-money issuance, and money-broking licensing.
 //
@@ -49,7 +49,7 @@ export interface PspProvider {
 
 export const PSP_PROVIDERS: Record<PspProviderId, PspProvider> = {
   // SANDBOX mock PSP — simulates the licensed-gateway rails end-to-end.
-  mock: { id: "mock", sandboxOnly: true, label: "MeshPay Checkout (sandbox)" },
+  mock: { id: "mock", sandboxOnly: true, label: "NomoPay Checkout (sandbox)" },
 
   // PRODUCTION candidates (Option B) — adapters to be implemented once the
   // business is registered with SSM and a PSP contract is signed.

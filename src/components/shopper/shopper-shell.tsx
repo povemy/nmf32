@@ -101,15 +101,15 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
     };
   }, [shopperSignedIn]);
   // instant re-sync when a thread is read inside the messages view (the view
-  // dispatches "shopmesh:chat-sync" instead of prop-drilling a callback)
+  // dispatches "nomofee:chat-sync" instead of prop-drilling a callback)
   useEffect(() => {
     if (!shopperSignedIn) return;
     const sync = () =>
       fetchJson<{ total: number }>("/api/chat/unread")
         .then((d) => setUnread(d.total ?? 0))
         .catch(() => {});
-    window.addEventListener("shopmesh:chat-sync", sync);
-    return () => window.removeEventListener("shopmesh:chat-sync", sync);
+    window.addEventListener("nomofee:chat-sync", sync);
+    return () => window.removeEventListener("nomofee:chat-sync", sync);
   }, [shopperSignedIn]);
   // opening (or leaving) the messages view should immediately re-sync the badge
   useEffect(() => {
@@ -427,7 +427,7 @@ function MarketHeader({
           <SheetContent side="left" className="w-80 p-0">
             <SheetHeader className="border-b p-4">
               <SheetTitle className="flex items-center gap-2 text-left">
-                <ShoppingBag className="h-5 w-5 text-teal-700" /> SHOPMESH
+                <ShoppingBag className="h-5 w-5 text-teal-700" /> NOMOFEE
               </SheetTitle>
             </SheetHeader>
             <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-80px)]">
@@ -467,12 +467,12 @@ function MarketHeader({
         </Sheet>
 
         {/* logo — wordmark hidden on the smallest phones so the search bar fits */}
-        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] shrink-0 items-center gap-2" aria-label="SHOPMESH home">
+        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] shrink-0 items-center gap-2" aria-label="NOMOFEE home">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
             <ShoppingBag className="h-5 w-5" />
           </span>
           <span className="hidden text-lg font-extrabold tracking-tight text-teal-900 sm:inline">
-            SHOP<span className="text-brand-gradient">MESH</span>
+            NOMO<span className="text-brand-gradient">FEE</span>
           </span>
         </button>
 
@@ -637,7 +637,7 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
         type="button"
         onClick={() => openShopperAuth()}
         className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
-        aria-label="Sign in to SHOPMESH"
+        aria-label="Sign in to NOMOFEE"
       >
         <LogIn className="h-4 w-4" />
         <span className="hidden sm:inline">Sign in</span>
@@ -749,7 +749,7 @@ function ShopperAuthDialog() {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5 text-teal-700" /> SHOPMESH shopper account
+            <User className="h-5 w-5 text-teal-700" /> NOMOFEE shopper account
           </DialogTitle>
           <DialogDescription>Sign in to chat with sellers, or create a free account in seconds.</DialogDescription>
         </DialogHeader>
@@ -884,7 +884,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     // the unread pill on the row (and the header badge) drops immediately
     loadMessages(activeId).then(() => {
       loadThreads();
-      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
     });
   }, [activeId, loadMessages, loadThreads]);
 
@@ -935,7 +935,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       setMessages((prev) => (prev ? [...prev, msg] : [msg]));
       setDraft("");
       loadThreads();
-      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the message");
     } finally {
@@ -949,7 +949,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
         <EmptyState
           icon={MessagesSquare}
           title="Sign in to see your messages"
-          hint="Create a free SHOPMESH account to chat with sellers about products, orders, deliveries and returns."
+          hint="Create a free NOMOFEE account to chat with sellers about products, orders, deliveries and returns."
           action={
             <Button onClick={() => openShopperAuth(() => ctx.nav({ name: "messages" }))} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
               <LogIn className="h-4 w-4" /> Sign in or create account
@@ -1242,11 +1242,11 @@ function ShopperFooter({
               onClick={onSeller}
               className="min-h-[44px] shrink whitespace-normal rounded-full bg-amber-400 px-4 text-left text-teal-950 hover:bg-amber-300 font-bold"
             >
-              Powered by SHOPMESH — launch your free store <ArrowRight className="h-4 w-4" />
+              Powered by NOMOFEE — launch your free store <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <p className="pt-8 text-center text-[11px] text-teal-200/60">© {new Date().getFullYear()} SHOPMESH v1 · Sandbox demo</p>
+        <p className="pt-8 text-center text-[11px] text-teal-200/60">© {new Date().getFullYear()} NOMOFEE v1 · Sandbox demo</p>
       </div>
     </footer>
   );
@@ -1321,7 +1321,7 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
             <EmptyState
               icon={ShoppingCart}
               title="Sign in to use your cart"
-              hint="Carts live on your SHOPMESH account — your items stay with you on every device and are waiting when you come back."
+              hint="Carts live on your NOMOFEE account — your items stay with you on every device and are waiting when you come back."
               action={
                 <Button
                   onClick={() => openShopperAuth()}
@@ -1450,7 +1450,7 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
                 <span className="text-lg font-extrabold text-teal-700">{formatMinor(subtotal)}</span>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Each seller ships separately. You pay once — SHOPMESH collects the payment and disburses it to sellers minus commission.
+                Each seller ships separately. You pay once — NOMOFEE collects the payment and disburses it to sellers minus commission.
               </p>
               <Button
                 size="lg"

@@ -102,7 +102,7 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
     // the unread pill on the row (and the nav badge) drops immediately
     loadMessages(activeId).then(() => {
       loadThreads();
-      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
     });
   }, [activeId, loadMessages, loadThreads]);
 
@@ -149,7 +149,7 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
       setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");
       loadThreads();
-      window.dispatchEvent(new Event("shopmesh:chat-sync"));
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the reply");
     } finally {

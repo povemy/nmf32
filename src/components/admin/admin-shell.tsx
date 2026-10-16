@@ -20,6 +20,7 @@ import {
   Megaphone,
   Menu,
   PackageSearch,
+  PartyPopper,
   Percent,
   RotateCcw,
   Scale,
@@ -74,7 +75,7 @@ import { OverridesView, FeeHolidaysView } from "./finance";
 import { WalletsView, LedgerView } from "./wallets-ledger";
 import { PayoutsView, PayoutDetailView } from "./payouts";
 import { BanksView } from "./banks";
-import { BannersView, FeaturedView, CouponsView } from "./marketing";
+import { BannersView, CampaignsView, FeaturedView, CouponsView } from "./marketing";
 import { SupportView } from "./support";
 import { ReportsView } from "./reports";
 import { SettingsView, FlagsView, AuditView, ActivityView, NotificationsView, HealthView } from "./system";
@@ -126,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Marketing",
     items: [
       { view: "banners", label: "Banners", icon: Megaphone },
+      { view: "campaigns", label: "Campaigns", icon: PartyPopper },
       { view: "featured", label: "Featured", icon: Star },
       { view: "coupons", label: "Coupons", icon: Ticket },
     ],
@@ -171,6 +173,7 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   payouts: PayoutsView,
   banks: BanksView,
   banners: BannersView,
+  campaigns: CampaignsView,
   featured: FeaturedView,
   coupons: CouponsView,
   tickets: SupportView,
@@ -289,7 +292,7 @@ function SidebarContent({ nav, onNavigate }: { nav: AdminNav; onNavigate?: () =>
           <ShieldCheck className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold tracking-tight">SHOPMESH</p>
+          <p className="truncate text-sm font-bold tracking-tight">NOMO<span className="text-brand-gradient">FEE</span></p>
           <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Command Centre</p>
         </div>
         <Badge
@@ -335,7 +338,7 @@ function SidebarContent({ nav, onNavigate }: { nav: AdminNav; onNavigate?: () =>
 
       <div className="border-t px-4 py-3">
         <p className="text-[10px] leading-tight text-muted-foreground">
-          PART 4 wireframes · SHOPMESH v1
+          PART 4 wireframes · NOMOFEE v1
           <br />
           All actions are audited.
         </p>
@@ -429,10 +432,10 @@ function AdminMenu({ admin }: { admin: { id: string; email: string; name: string
 /* --------------------------------------------------------------- login */
 
 const DEMO_ACCOUNTS: { role: string; email: string; password: string }[] = [
-  { role: "Superadmin", email: "admin@shopmesh.io", password: "Admin123!" },
-  { role: "Ops", email: "ops@shopmesh.io", password: "Ops12345!" },
-  { role: "Finance", email: "finance@shopmesh.io", password: "Finance123!" },
-  { role: "Moderator", email: "moderator@shopmesh.io", password: "Mod12345!" },
+  { role: "Superadmin", email: "admin@nomofee.io", password: "Admin123!" },
+  { role: "Ops", email: "ops@nomofee.io", password: "Ops12345!" },
+  { role: "Finance", email: "finance@nomofee.io", password: "Finance123!" },
+  { role: "Moderator", email: "moderator@nomofee.io", password: "Mod12345!" },
 ];
 
 function LoginCard({ onLogin }: { onLogin: () => void }) {
@@ -479,7 +482,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
             <ShieldCheck className="h-6 w-6" />
           </span>
           <div>
-            <p className="text-xl font-bold tracking-tight">SHOPMESH</p>
+            <p className="text-xl font-bold tracking-tight">NOMO<span className="text-brand-gradient">FEE</span></p>
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Command Centre</p>
           </div>
         </div>
@@ -495,7 +498,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
                   autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@shopmesh.io"
+                  placeholder="admin@nomofee.io"
                   className="min-h-[44px]"
                   required
                 />

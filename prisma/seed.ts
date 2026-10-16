@@ -1,5 +1,5 @@
 // ============================================================================
-// SHOPMESH seed — rich demo dataset consistent with the ledger (M09/M10 math).
+// NOMOFEE seed — rich demo dataset consistent with the ledger (M09/M10 math).
 // Run: bun prisma/seed.ts
 // ============================================================================
 import { PrismaClient } from "@prisma/client";
@@ -27,22 +27,29 @@ const daysAhead = (n: number) => {
 };
 
 let orderSeq = 100000;
-const nextOrderNumber = () => `SM-${++orderSeq}`;
+const nextOrderNumber = () => `NM-${++orderSeq}`;
 
 const img = (seed: string, w = 800, h = 800, label?: string) =>
   `/api/img/${seed}?w=${w}&h=${h}${label ? `&label=${encodeURIComponent(label)}` : ""}`;
 
 async function wipe() {
+  // Children before parents. Task 10-e/11 schema additions (shipments, chat,
+  // vouchers, follows, campaigns, shopper wallet/activity, import jobs) are
+  // included so the wipe stays FK-safe against the rebuilt schema.
   const tables = [
     db.ledgerLine, db.ledgerTransaction, db.ledgerAccount,
     db.payout, db.payoutBatch, db.bankAccount, db.wallet,
+    db.shipmentEvent, db.shipment,
     db.dispute, db.refund, db.orderStatusHistory, db.orderItem, db.order,
     db.paymentWebhookLog, db.paymentIntent,
     db.couponRedemption, db.cartItem, db.cart,
     db.review, db.collectionProduct, db.collection,
     db.inventoryLog, db.productVariant, db.productImage, db.product, db.category,
-    db.featuredSlot, db.marketplaceBanner, db.coupon,
+    db.userActivity, db.userVoucher, db.shopperWallet, db.notification,
+    db.chatMessage, db.chatThread, db.storeFollow,
+    db.featuredSlot, db.marketplaceBanner, db.coupon, db.voucher, db.campaign, db.seoMeta,
     db.cmsPage, db.storeDomain, db.storeIntegration, db.webhookDelivery, db.webhookEndpoint, db.apiKey,
+    db.marketplaceConnection, db.importJobItem, db.importJob, db.storeClaim,
     db.store, db.sellerNote, db.kycDocument, db.seller,
     db.session, db.adminUser, db.adminAuditLog, db.activityLog,
     db.notificationLog, db.notificationTemplate, db.supportMessage, db.supportTicket,
@@ -203,7 +210,7 @@ async function seedSeller(opts: {
       await db.kycDocument.create({
         data: {
           sellerId: seller.id, docType, fileName: `${docType}_${opts.slug}.jpg`,
-          status: "approved", reviewedBy: "admin@shopmesh.io", reviewedAt: new Date(opts.createdAt.getTime() + 86400000),
+          status: "approved", reviewedBy: "admin@nomofee.io", reviewedAt: new Date(opts.createdAt.getTime() + 86400000),
         },
       });
     }
@@ -368,7 +375,7 @@ async function seedOrder(opts: {
 }
 
 async function main() {
-  console.log("Seeding SHOPMESH…");
+  console.log("Seeding NOMOFEE…");
   await wipe();
 
   // ------------------------------------------------ plans & platform config
@@ -405,52 +412,52 @@ async function main() {
 
   // ------------------------------------------------ admin users
   const admin = await db.adminUser.create({
-    data: { email: "admin@shopmesh.io", name: "Aisyah Rahman", role: "superadmin", passwordHash: hashPassword("Admin123!"), lastLoginAt: daysAgo(0, 8) },
+    data: { email: "admin@nomofee.io", name: "Aisyah Rahman", role: "superadmin", passwordHash: hashPassword("Admin123!"), lastLoginAt: daysAgo(0, 8) },
   });
-  await db.adminUser.create({ data: { email: "ops@shopmesh.io", name: "Wani Operations", role: "ops", passwordHash: hashPassword("Ops12345!") } });
-  await db.adminUser.create({ data: { email: "finance@shopmesh.io", name: "Kumar Finance", role: "finance", passwordHash: hashPassword("Finance123!") } });
-  await db.adminUser.create({ data: { email: "moderator@shopmesh.io", name: "Rina Moderator", role: "moderator", passwordHash: hashPassword("Mod12345!") } });
+  await db.adminUser.create({ data: { email: "ops@nomofee.io", name: "Wani Operations", role: "ops", passwordHash: hashPassword("Ops12345!") } });
+  await db.adminUser.create({ data: { email: "finance@nomofee.io", name: "Kumar Finance", role: "finance", passwordHash: hashPassword("Finance123!") } });
+  await db.adminUser.create({ data: { email: "moderator@nomofee.io", name: "Rina Moderator", role: "moderator", passwordHash: hashPassword("Mod12345!") } });
 
   await seedCategories();
 
   // ------------------------------------------------ sellers & stores
   const lumina = await seedSeller({
-    email: "lumina@shopmesh.io", password: "Seller123!", fullName: "Sofia Lim", displayName: "Sofia",
+    email: "lumina@nomofee.io", password: "Seller123!", fullName: "Sofia Lim", displayName: "Sofia",
     storeName: "Lumina Living", slug: "lumina-living", tagline: "Calm, functional objects for better days.",
     status: "active", kyc: "approved",
     bank: { holder: "Lumina Living Sdn Bhd", bank: "Maybank", last4: "4821", verified: true },
     createdAt: daysAgo(45), approvedAt: daysAgo(43),
   });
   const byte = await seedSeller({
-    email: "byte@shopmesh.io", password: "Seller123!", fullName: "Wei Jian Tan", displayName: "WeiJian",
+    email: "byte@nomofee.io", password: "Seller123!", fullName: "Wei Jian Tan", displayName: "WeiJian",
     storeName: "ByteBazaar", slug: "bytebazaar", tagline: "Gadgets & audio for people who tinker.",
     status: "active", kyc: "approved", theme: { primaryColor: "#7c2d12" },
     bank: { holder: "Tan Wei Jian", bank: "CIMB", last4: "9032", verified: true },
     createdAt: daysAgo(38), approvedAt: daysAgo(36),
   });
   const glow = await seedSeller({
-    email: "glow@shopmesh.io", password: "Seller123!", fullName: "Mei Ling Ng", displayName: "MeiLing",
+    email: "glow@nomofee.io", password: "Seller123!", fullName: "Mei Ling Ng", displayName: "MeiLing",
     storeName: "Glow Theory", slug: "glow-theory", tagline: "Science-backed skincare, gentle by design.",
     status: "active", kyc: "approved", theme: { primaryColor: "#831843" },
     bank: { holder: "Ng Mei Ling", bank: "Public Bank", last4: "1170", verified: true },
     createdAt: daysAgo(30), approvedAt: daysAgo(28),
   });
   const warung = await seedSeller({
-    email: "warung@shopmesh.io", password: "Seller123!", fullName: "Ahmad Faizal", displayName: "Faizal",
+    email: "warung@nomofee.io", password: "Seller123!", fullName: "Ahmad Faizal", displayName: "Faizal",
     storeName: "Warung Satu", slug: "warung-satu", tagline: "Traditional kuih & snacks, modern packing.",
     status: "pending_review", kyc: "pending",
     bank: { holder: "Ahmad Faizal", bank: "Bank Rakyat", last4: "7712", verified: false },
     createdAt: daysAgo(2), submittedAt: daysAgo(1),
   });
   await seedSeller({
-    email: "trail@shopmesh.io", password: "Seller123!", fullName: "Nurul Huda", displayName: "Nurul",
+    email: "trail@nomofee.io", password: "Seller123!", fullName: "Nurul Huda", displayName: "Nurul",
     storeName: "TrailKit Outdoors", slug: "trailkit-outdoors", tagline: "Gear for Malaysian trails.",
     status: "onboarding", kyc: "pending", createdAt: daysAgo(0, 7),
   });
 
   // commission override for Glow Theory (10%) + hold override for ByteBazaar (10 days)
   await db.commissionOverride.create({
-    data: { scope: "seller", sellerId: glow.seller.id, percent: 10, isActive: true, createdBy: "finance@shopmesh.io", createdAt: daysAgo(20) },
+    data: { scope: "seller", sellerId: glow.seller.id, percent: 10, isActive: true, createdBy: "finance@nomofee.io", createdAt: daysAgo(20) },
   });
   await db.seller.update({ where: { id: byte.seller.id }, data: { holdDaysOverride: 10 } });
   await db.category.update({ where: { id: catMap["electronics-audio"] }, data: {} });
@@ -743,7 +750,7 @@ async function main() {
   await db.storeIntegration.create({ data: { storeId: byte.store.id, provider: "tiktok_pixel", configJson: toJson({ pixelId: "TIKTOK123" }), isEnabled: false } });
 
   const hook = await db.webhookEndpoint.create({
-    data: { storeId: lumina.store.id, url: "https://hooks.lumina.example/shopmesh", secret: "whsec_demo_9f8e7d6c5b4a", eventsJson: toJson(["order.paid", "order.shipped"]) },
+    data: { storeId: lumina.store.id, url: "https://hooks.lumina.example/nomofee", secret: "whsec_demo_9f8e7d6c5b4a", eventsJson: toJson(["order.paid", "order.shipped"]) },
   });
   for (const ev of ["order.paid", "order.paid", "order.shipped"]) {
     await db.webhookDelivery.create({
@@ -756,7 +763,7 @@ async function main() {
 
   const t1 = await db.supportTicket.create({
     data: {
-      storeId: lumina.store.id, sellerEmail: "lumina@shopmesh.io",
+      storeId: lumina.store.id, sellerEmail: "lumina@nomofee.io",
       subject: "Payout timing for Raya season", status: "open", priority: "normal", contextType: "payout",
     },
   });
@@ -764,7 +771,7 @@ async function main() {
   await db.supportMessage.create({ data: { ticketId: t1.id, authorType: "admin", authorLabel: "Wani (Ops)", body: "Hi Sofia! Next run is Monday; Raya week we're pulling it forward to Friday." } });
   const t2 = await db.supportTicket.create({
     data: {
-      storeId: byte.store.id, sellerEmail: "byte@shopmesh.io",
+      storeId: byte.store.id, sellerEmail: "byte@nomofee.io",
       subject: "How do variants affect marketplace listing?", status: "closed", priority: "low",
     },
   });
@@ -772,20 +779,20 @@ async function main() {
   await db.supportMessage.create({ data: { ticketId: t2.id, authorType: "admin", authorLabel: "Rina (Support)", body: "Yes — the cheapest variant price is shown, buyers pick variants on the product page." } });
 
   await db.announcement.create({
-    data: { title: "Welcome to SHOPMESH v1", body: "Marketplace + instant storefronts + transparent commissions. Feedback welcome!", audience: "all", isActive: true },
+    data: { title: "Welcome to NOMOFEE v1", body: "Marketplace + instant storefronts + transparent commissions. Feedback welcome!", audience: "all", isActive: true },
   });
 
   // ------------------------------------------------ audit / activity logs
   await db.adminAuditLog.create({
     data: {
-      adminId: admin.id, adminEmail: "admin@shopmesh.io", action: "seller.approve",
+      adminId: admin.id, adminEmail: "admin@nomofee.io", action: "seller.approve",
       entityType: "seller", entityId: lumina.seller.id,
       afterJson: toJson({ status: "active" }), createdAt: daysAgo(43),
     },
   });
   await db.adminAuditLog.create({
     data: {
-      adminId: admin.id, adminEmail: "admin@shopmesh.io", action: "commission.override.create",
+      adminId: admin.id, adminEmail: "admin@nomofee.io", action: "commission.override.create",
       entityType: "commission_override",
       afterJson: toJson({ scope: "seller", percent: 10, seller: "Glow Theory" }), createdAt: daysAgo(20),
     },
@@ -794,7 +801,7 @@ async function main() {
     data: { actorType: "system", action: "payout.batch.completed", entityType: "payout_batch", metaJson: toJson({ totalMinor: 200000 }), createdAt: daysAgo(6, 7) },
   });
   await db.activityLog.create({
-    data: { actorType: "seller", actorId: lumina.seller.id, actorLabel: "lumina@shopmesh.io", action: "store.theme.updated", entityType: "store", entityId: lumina.store.id, createdAt: daysAgo(10) },
+    data: { actorType: "seller", actorId: lumina.seller.id, actorLabel: "lumina@nomofee.io", action: "store.theme.updated", entityType: "store", entityId: lumina.store.id, createdAt: daysAgo(10) },
   });
 
   // ------------------------------------------------ finalize

@@ -656,7 +656,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       setDraft((d) => ({ ...d, addressId: res.address.id }));
       setFormMode(null);
       setForm(emptyForm);
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success(formMode?.kind === "edit" ? "Address updated" : "Address saved", {
         description: `${res.address.line1}, ${res.address.city} ${res.address.postcode}`,
       });
@@ -673,7 +673,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       setAddresses(res.addresses);
       setDeleteArm(null);
       setDraft((d) => (d.addressId === id ? { ...d, addressId: res.addresses.find((a) => a.isDefault)?.id ?? res.addresses[0]?.id ?? null } : d));
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Address removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not remove address");
@@ -684,7 +684,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     try {
       const res = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
       setAddresses(res.addresses);
-      window.dispatchEvent(new Event("shopmesh:addresses-changed"));
+      window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Default address updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update address");
@@ -837,7 +837,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         <EmptyState
           icon={LogIn}
           title="Sign in to check out"
-          hint="Your cart, saved addresses and orders are tied to your SHOPMESH account so they follow you on every device."
+          hint="Your cart, saved addresses and orders are tied to your NOMOFEE account so they follow you on every device."
           action={
             <Button
               onClick={() => openShopperAuth()}
@@ -1224,7 +1224,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   ))}
                 </RadioGroup>
                 <p className="text-xs text-muted-foreground">
-                  You&apos;ll confirm the payment on the secure SHOPMESH sandbox gateway — no real money moves.
+                  You&apos;ll confirm the payment on the secure NOMOFEE sandbox gateway — no real money moves.
                 </p>
               </section>
 
@@ -1240,7 +1240,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   aria-required
                 />
                 <Label htmlFor="terms" className="text-sm font-normal leading-snug">
-                  I agree to the SHOPMESH Terms of Service and understand that paid orders can only be refunded through the
+                  I agree to the NOMOFEE Terms of Service and understand that paid orders can only be refunded through the
                   platform&apos;s dispute process.
                 </Label>
               </div>
@@ -1434,7 +1434,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
             {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
             {quote?.groups && quote.groups.length > 1 ? (
               <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-3 py-2 text-[11px] leading-snug text-teal-900">
-                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. You pay once through our licensed payment partner, which splits each seller their share automatically — SHOPMESH never holds your money.
+                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. You pay once through our licensed payment partner, which splits each seller their share automatically — NOMOFEE never holds your money.
               </div>
             ) : null}
             <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
@@ -1571,7 +1571,7 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
           <div className="bg-brand-gradient-deep px-5 py-4 text-white">
             <div className="flex items-center justify-between">
               <p className="flex items-center gap-2 text-sm font-bold tracking-wide">
-                <ShieldCheck className="h-4 w-4 text-emerald-300" /> SHOPMESH Secure Checkout
+                <ShieldCheck className="h-4 w-4 text-emerald-300" /> NOMOFEE Secure Checkout
               </p>
               <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-teal-950">Sandbox</span>
             </div>
@@ -1639,7 +1639,7 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
                 <p className="text-xs uppercase tracking-widest text-muted-foreground">Amount to pay</p>
                 <p className="text-4xl font-extrabold tabular-nums text-teal-800">{formatMinor(payment.amountMinor)}</p>
                 <p className="text-sm text-muted-foreground">
-                  to <span className="font-semibold text-foreground">{payment.storeName ?? "SHOPMESH Marketplace"}</span>
+                  to <span className="font-semibold text-foreground">{payment.storeName ?? "NOMOFEE Marketplace"}</span>
                   {isGroupOrder ? <span className="block text-xs">one secure payment via our licensed payment partner — split to {payment.orderCount} sellers, each ships separately</span> : null}
                 </p>
               </div>

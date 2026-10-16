@@ -505,14 +505,14 @@ function LedgerActivityDetail({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Gateway settlement</p>
-                  <p className="text-xs text-muted-foreground">Bank reference {related.reference} — money moved from the gateway to SHOPMESH's bank account.</p>
+                  <p className="text-xs text-muted-foreground">Bank reference {related.reference} — money moved from the gateway to NOMOFEE's bank account.</p>
                 </div>
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Manual wallet adjustment</p>
-                  <p className="text-xs text-muted-foreground">Posted by a SHOPMESH admin against your wallet. See the journal below for the reason.</p>
+                  <p className="text-xs text-muted-foreground">Posted by a NOMOFEE admin against your wallet. See the journal below for the reason.</p>
                 </div>
               </div>
             )}

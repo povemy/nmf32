@@ -1,6 +1,6 @@
 // Cart helpers — carts are ACCOUNT-scoped (shopperId) and require sign-in.
 // There is no guest cart any more: "add to cart" is the login gate, so items,
-// totals and checkout always belong to a real SHOPMESH account and follow the
+// totals and checkout always belong to a real NOMOFEE account and follow the
 // buyer across devices. The legacy device-token path (X-Cart-Token header /
 // "sm_cart" cookie) is kept only to read old rows for reconciliation
 // (order.cartToken clearing) — it can never create or expose a live cart.

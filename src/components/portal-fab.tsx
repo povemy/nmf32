@@ -1,5 +1,5 @@
 "use client";
-// SHOPMESH portal switcher — a single draggable floating action button (FAB).
+// NOMOFEE portal switcher — a single draggable floating action button (FAB).
 // • Tap the FAB to expand the Market / Seller / Admin switcher.
 // • Drag it anywhere on screen (touch + mouse) so it never blocks bottom UI.
 // • Position persists across reloads (localStorage, with sandbox-safe try/catch).

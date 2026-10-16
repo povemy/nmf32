@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
-import { MESH_FINANCE_ENABLED } from "@/lib/feature-flags";
+import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +16,14 @@ function coinsForStreak(streak: number): number {
 // validation (24h cooldown enforced on the stored lastCheckInAt, never on the
 // client). Credits the wallet and advances the streak.
 //
-// DORMANT SCAFFOLD — MESH FINANCE (see src/lib/feature-flags.ts): the whole
+// DORMANT SCAFFOLD — NOMO FINANCE (see src/lib/feature-flags.ts): the whole
 // check-in flow stays fully implemented but is gated off — nothing is
-// awarded and no streak state changes while MESH_FINANCE_ENABLED is false.
+// awarded and no streak state changes while NOMO_FINANCE_ENABLED is false.
 export const POST = handle(async () => {
   const me = await requireShopper();
 
-  if (!MESH_FINANCE_ENABLED) {
-    throw new ApiError(403, "FEATURE_DORMANT", "Mesh Coins will be available soon — daily check-in is paused for now.");
+  if (!NOMO_FINANCE_ENABLED) {
+    throw new ApiError(403, "FEATURE_DORMANT", "Nomo Coins will be available soon — daily check-in is paused for now.");
   }
 
   const wallet = await db.shopperWallet.upsert({

@@ -815,8 +815,8 @@ model ShopperWallet {
   userId              String      @unique
   balanceMinor        Int         @default(0)
   coinBalance         Int         @default(0)
-  spayLaterLimitMinor Int         @default(0)
-  spayLaterUsedMinor  Int         @default(0)
+  payLaterLimitMinor  Int         @default(0) // NomoPay Later credit limit (dormant scaffold)
+  payLaterUsedMinor   Int         @default(0) // NomoPay Later drawn amount (dormant scaffold)
   lastCheckInAt       DateTime?
   checkInStreak       Int         @default(0)
   createdAt           DateTime    @default(now())

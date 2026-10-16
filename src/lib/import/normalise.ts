@@ -90,6 +90,6 @@ export function htmlToText(html: string | null | undefined): string {
 export function deriveProductSeo(title: string, descriptionHtml: string | null | undefined, storeName: string) {
   const seoTitle = `${title} | ${storeName}`.slice(0, 60);
   const text = htmlToText(descriptionHtml);
-  const seoDescription = (text ? text : `Buy ${title} from ${storeName} on SHOPMESH.`).slice(0, 155);
+  const seoDescription = (text ? text : `Buy ${title} from ${storeName} on NOMOFEE.`).slice(0, 155);
   return { seoTitle, seoDescription };
 }

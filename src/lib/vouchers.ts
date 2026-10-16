@@ -6,8 +6,7 @@
 // shipping for the seller group it applies to; seller-funded FS cost-recovery
 // is recorded on Store.fsPriceAdjustMinor). "coinsback" is INVALID platform-
 // wide — the buyer finance suite is dormant (src/lib/feature-flags.ts
-// MESH_FINANCE_ENABLED=false, renamed NOMO_FINANCE_ENABLED in the rebrand) and
-// must never validate or surface.
+// NOMO_FINANCE_ENABLED=false) and must never validate or surface.
 //
 // Money = integer minor units (cents). All math is integer-safe: percent
 // discounts are floored, caps applied, final discount never exceeds the group
