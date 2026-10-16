@@ -20,6 +20,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   }
 
   const doc = parsePageDoc(home.publishedJson);
+  const followers = await db.storeFollow.count({ where: { storeId: store.id } }); // Task 10-d
 
   return ok({
     store: {
@@ -35,6 +36,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       supportEmail: store.supportEmail,
       supportPhone: store.supportPhone,
       social: parseSocial(store.socialJson),
+      followers,
     },
     page: {
       id: home.id,

@@ -21,6 +21,7 @@ import { transitionOrder, dispatchStoreWebhooks, notify, logActivity } from "@/l
 import { getCommissionSettings } from "@/lib/commission";
 import { postOrderPaid } from "@/lib/ledger";
 import { toJson } from "@/lib/json";
+import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
 
 export const WEBHOOK_SECRET = "sm_webhook_secret_demo";
 
@@ -176,6 +177,8 @@ export async function processPaymentWebhook(input: {
         await notify({ event: "order.paid", channel: "inapp", recipient: seller.email, subject: "You have a new paid order" });
       }
       await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed` });
+      // Shopper in-app nudge (Task 10-d) — payment confirmed → "Order confirmed".
+      await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
       await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: group.provider, totalMinor: order.totalMinor, paymentGroup: true } });
     }
 
@@ -293,6 +296,8 @@ export async function processPaymentWebhook(input: {
     await notify({ event: "order.paid", channel: "inapp", recipient: seller.email, subject: "You have a new paid order" });
   }
   await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed` });
+  // Shopper in-app nudge (Task 10-d) — payment confirmed → "Order confirmed".
+  await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
   await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: intent.provider, totalMinor: intent.amountMinor } });
 
   await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });

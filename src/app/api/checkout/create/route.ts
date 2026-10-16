@@ -6,18 +6,29 @@ import { computeOrderCommissions } from "@/lib/commission";
 import { randomToken } from "@/lib/password";
 import { toJson } from "@/lib/json";
 import { findCartForShopper } from "../../cart/cart";
+import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
 
 export const dynamic = "force-dynamic";
 
 const KNOWN_PROVIDERS = ["fpx_toyyibpay", "fpx_curlec", "tng", "grabpay", "card_stripe"];
 
 // POST /api/checkout/create — header Idempotency-Key REQUIRED.
-// OPTION A (platform collect-then-disburse): the buyer pays ONCE even when the
-// cart spans N sellers. Server recomputes ALL money math, groups cart lines per
-// seller, and creates ONE PaymentGroup + N per-seller Orders in a single
-// transaction. Stock + salesCount move here (NOT in the webhook). Each order
-// carries its own commission lines → ledger → seller wallet payout hold, so the
-// disbursement half of Option A reuses the existing payout pipeline.
+// OPTION B (one licensed-PSP charge per checkout; no platform custody): the
+// buyer pays ONCE even when the cart spans N sellers. Server recomputes ALL
+// money math, groups cart lines per seller, and creates ONE PaymentGroup + N
+// per-seller Orders in a single transaction. Stock + salesCount move here (NOT
+// in the webhook). Each order carries its own commission lines → ledger →
+// seller wallet payout hold.
+// Task 10-b claimable vouchers: body.vouchers = [{storeId, userVoucherId}] per
+// payment group. Verdicts run per seller group (lib/vouchers); a valid discount
+// voucher adds to the group discount (capped at the subtotal), freeshipping
+// zeroes that group's parcel cost. Redemption — UserVoucher→USED (usedAt,
+// usedOrderId) + Voucher.claimedCount+1 + Order.voucherId + discount applied —
+// happens INSIDE the same transaction as the orders (atomic). Idempotent per
+// order: the Idempotency-Key replay path above returns before any redemption,
+// and the status-guarded updateMany prevents concurrent double-redemption.
+// Redemption follows the existing coupon semantics: recorded at order CREATE,
+// not at payment.
 export const POST = handle(async (req: Request) => {
   const idemKey = req.headers.get("Idempotency-Key")?.trim();
   if (!idemKey) {
@@ -105,11 +116,38 @@ export const POST = handle(async (req: Request) => {
   // Destination-aware delivery rule, enforced server-side (applies to every parcel).
   assertShippingAvailable(pricing.shippingRateId, addr.state);
 
+  // Claimable vouchers per seller group — hard mode: any unusable selection
+  // fails the checkout with 409 so the buyer can re-quote (never silently
+  // drop a voucher). One voucher per seller group (first entry wins).
+  const voucherEntriesRaw = Array.isArray(body.vouchers)
+    ? (body.vouchers as VoucherEntryInput[]).filter((e) => e && typeof e === "object")
+    : [];
+  const seenStores = new Set<string>();
+  const voucherEntries = voucherEntriesRaw.filter((e) => {
+    const k = String(e?.storeId ?? "");
+    if (!k || seenStores.has(k)) return false;
+    seenStores.add(k);
+    return true;
+  });
+  const voucherOutcomes =
+    voucherEntries.length > 0
+      ? await buildVoucherOutcomes({
+          entries: voucherEntries,
+          shopperId: me.id,
+          groups: pricing.groups.map((g) => ({ storeId: g.storeId, subtotalMinor: g.subtotalMinor })),
+          addressState: addr.state,
+          hard: true,
+        })
+      : [];
+  const outcomeByStore = new Map(voucherOutcomes.map((o) => [o.storeId, o]));
+  const { groups: adjustedGroups, totals: adjustedTotals } = applyVoucherOutcomesToGroups(pricing.groups, voucherOutcomes);
+
   // Commission preview per seller group (percent + fixed fee parts per line).
+  // Computed on the VOUCHER-ADJUSTED totals so the discount reaches the ledger.
   // A live store always has an owner — the ?? "" is a defensive fallback that
   // resolves to default commission settings instead of throwing.
   const groupCommissions = await Promise.all(
-    pricing.groups.map((g) =>
+    adjustedGroups.map((g) =>
       computeOrderCommissions({
         sellerId: g.sellerId ?? "",
         items: g.lines.map((l) => ({
@@ -146,6 +184,17 @@ export const POST = handle(async (req: Request) => {
       }
     }
 
+    // Voucher rows for the redeemed selection (userVoucherId → voucherId/quota).
+    const redeemedIds = voucherOutcomes.map((o) => o.userVoucherId);
+    const uvRows =
+      redeemedIds.length > 0
+        ? await tx.userVoucher.findMany({
+            where: { id: { in: redeemedIds }, userId: me.id },
+            select: { id: true, voucherId: true, voucher: { select: { id: true, quota: true } } },
+          })
+        : [];
+    const uvById = new Map(uvRows.map((r) => [r.id, r]));
+
     const paymentGroup = await tx.paymentGroup.create({
       data: {
         ref: providerRef,
@@ -153,20 +202,22 @@ export const POST = handle(async (req: Request) => {
         provider,
         status: "requires_payment",
         currency: "MYR",
-        subtotalMinor: pricing.subtotalMinor,
-        discountMinor: pricing.discountMinor,
-        shippingMinor: pricing.shippingMinor,
-        totalMinor: pricing.totalMinor,
+        subtotalMinor: adjustedTotals.subtotalMinor,
+        discountMinor: adjustedTotals.discountMinor,
+        shippingMinor: adjustedTotals.shippingMinor,
+        totalMinor: adjustedTotals.totalMinor,
         idemKey,
         redirectUrl: `/pay/${providerRef}`,
         expiresAt,
       },
     });
 
-    for (let gi = 0; gi < pricing.groups.length; gi++) {
-      const g = pricing.groups[gi];
+    for (let gi = 0; gi < adjustedGroups.length; gi++) {
+      const g = adjustedGroups[gi];
       const comm = groupCommissions[gi];
       const orderNumber = orderNumbers[gi];
+      const voucherOutcome = outcomeByStore.get(g.storeId);
+      const uvRow = voucherOutcome ? uvById.get(voucherOutcome.userVoucherId) : undefined;
 
       const order = await tx.order.create({
         data: {
@@ -184,6 +235,7 @@ export const POST = handle(async (req: Request) => {
           shippingMinor: g.shippingMinor,
           totalMinor: g.totalMinor,
           couponCode: g.coupon.valid ? g.coupon.code : null,
+          voucherId: uvRow?.voucher.id ?? null,
           shippingAddressJson,
           customerNote: body.customerNote != null ? String(body.customerNote) : null,
           paymentProvider: provider,
@@ -192,6 +244,29 @@ export const POST = handle(async (req: Request) => {
           paymentGroupId: paymentGroup.id,
         },
       });
+
+      // Atomic voucher redemption — status-guarded so a concurrent checkout
+      // with the same voucher can never double-redeem; quota-guarded so the
+      // redeemable pool cannot be exceeded.
+      if (voucherOutcome && uvRow) {
+        const redeemed = await tx.userVoucher.updateMany({
+          where: { id: voucherOutcome.userVoucherId, userId: me.id, status: "AVAILABLE" },
+          data: { status: "USED", usedAt: now, usedOrderId: order.id },
+        });
+        if (redeemed.count === 0) {
+          throw new ApiError(409, "VOUCHER_ALREADY_USED", "One of your selected vouchers has just been used — please review your voucher selection");
+        }
+        const quotaGuard = await tx.voucher.updateMany({
+          where: {
+            id: uvRow.voucher.id,
+            OR: [{ quota: null }, { claimedCount: { lt: uvRow.voucher.quota ?? Number.MAX_SAFE_INTEGER } }],
+          },
+          data: { claimedCount: { increment: 1 } },
+        });
+        if (quotaGuard.count === 0) {
+          throw new ApiError(409, "QUOTA_EXHAUSTED", "One of your selected vouchers has just run out — please review your voucher selection");
+        }
+      }
 
       await tx.orderItem.createMany({
         data: g.lines.map((l, i) => {
@@ -250,6 +325,7 @@ export const POST = handle(async (req: Request) => {
   // Notifications + audit (one per seller order, plus admin roll-up).
   const orders = await db.order.findMany({ where: { paymentGroupId: group.id }, include: { store: true } });
   for (const o of orders) {
+    const vo = outcomeByStore.get(o.storeId);
     await notify({
       event: "order.created",
       channel: "email",
@@ -261,7 +337,15 @@ export const POST = handle(async (req: Request) => {
       action: "order.created",
       entityType: "order",
       entityId: o.id,
-      meta: { orderNumber: o.orderNumber, storeSlug: o.store.slug, totalMinor: o.totalMinor, paymentGroupRef: group.ref },
+      meta: {
+        orderNumber: o.orderNumber,
+        storeSlug: o.store.slug,
+        totalMinor: o.totalMinor,
+        paymentGroupRef: group.ref,
+        voucher: vo
+          ? { code: vo.code, kind: vo.kind, discountMinor: vo.discountMinor, freeShipping: vo.freeShipping, fsPriceAdjustMinor: vo.fsPriceAdjustMinor }
+          : undefined,
+      },
     });
   }
 
@@ -274,6 +358,15 @@ export const POST = handle(async (req: Request) => {
       totalMinor: group.totalMinor,
       redirectUrl: group.redirectUrl,
       status: orders[0]?.status ?? "payment_pending",
+      vouchersApplied: voucherOutcomes.map((o) => ({
+        storeId: o.storeId,
+        code: o.code,
+        title: o.title,
+        kind: o.kind,
+        discountMinor: o.discountMinor,
+        freeShipping: o.freeShipping,
+        fsPriceAdjustMinor: o.fsPriceAdjustMinor,
+      })),
     },
     { status: 201 }
   );

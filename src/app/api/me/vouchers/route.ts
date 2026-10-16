@@ -1,7 +1,7 @@
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import { claimVoucherForShopper, SUPPORTED_VOUCHER_KINDS } from "@/lib/vouchers";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +9,24 @@ function isExpired(v: { expiryAt: Date }): boolean {
   return v.expiryAt.getTime() < Date.now();
 }
 
-// GET /api/me/vouchers — the signed-in buyer's voucher wallet.
+type StoreBrief = { name: string; slug: string; logoUrl: string | null };
+
+function storeBrief(store: { name: string; slug: string; logoUrl: string | null } | null | undefined): StoreBrief | null {
+  return store ? { name: store.name, slug: store.slug, logoUrl: store.logoUrl ?? null } : null;
+}
+
+// GET /api/me/vouchers — the signed-in buyer's voucher wallet PLUS the claim
+// centre pool. Response (all under data):
+//  • vouchers — legacy mine array (kept for existing UI)
+//  • mine     — held vouchers with full voucher + store brief + claimedByMe
+//  • center   — claimable pool (platform + live-store scoped, coinsback
+//               excluded) with store brief, claimedByMe and quotaRemaining
 export const GET = handle(async () => {
   const me = await requireShopper();
   const rows = await db.userVoucher.findMany({
     where: { userId: me.id },
     orderBy: { claimedAt: "desc" },
-    include: { voucher: true },
+    include: { voucher: { include: { store: { select: { name: true, slug: true, logoUrl: true } } } } },
   });
 
   // Lazy expiry — rows past their expiry date flip to EXPIRED on read.
@@ -26,14 +37,19 @@ export const GET = handle(async () => {
       data: { status: "EXPIRED" },
     });
   }
+  const expiredIds = new Set(stale.map((r) => r.id));
 
-  return ok({
-    vouchers: rows.map((r) => ({
+  const mine = rows.map((r) => {
+    const status = r.status === "AVAILABLE" && expiredIds.has(r.id) ? "EXPIRED" : r.status;
+    return {
       id: r.id,
-      status: r.status === "AVAILABLE" && isExpired(r.voucher) ? "EXPIRED" : r.status,
+      status,
+      claimedByMe: true,
       claimedAt: r.claimedAt,
       usedAt: r.usedAt,
+      usedOrderId: r.usedOrderId,
       voucher: {
+        id: r.voucher.id,
         code: r.voucher.code,
         title: r.voucher.title,
         kind: r.voucher.kind,
@@ -42,32 +58,92 @@ export const GET = handle(async () => {
         maxDiscountMinor: r.voucher.maxDiscountMinor,
         minSpendMinor: r.voucher.minSpendMinor,
         expiryAt: r.voucher.expiryAt,
+        scope: r.voucher.scope,
+        storeId: r.voucher.storeId,
+        regionLimit: r.voucher.regionLimit,
+        store: storeBrief(r.voucher.store),
       },
-    })),
+    };
   });
+
+  // Legacy contract: flat rows keyed `vouchers` (me-hub voucher sub-view).
+  const legacy = mine.map((m) => ({
+    id: m.id,
+    status: m.status,
+    claimedAt: m.claimedAt,
+    usedAt: m.usedAt,
+    voucher: {
+      code: m.voucher.code,
+      title: m.voucher.title,
+      kind: m.voucher.kind,
+      discountMinor: m.voucher.discountMinor,
+      percentOff: m.voucher.percentOff,
+      maxDiscountMinor: m.voucher.maxDiscountMinor,
+      minSpendMinor: m.voucher.minSpendMinor,
+      expiryAt: m.voucher.expiryAt,
+    },
+  }));
+
+  // Claim centre pool: active, started, unexpired, claimable kinds only.
+  // Platform vouchers + store-scope vouchers of LIVE stores surface; coinsback
+  // is excluded platform-wide (finance suite dormant).
+  const now = new Date();
+  const pool = await db.voucher.findMany({
+    where: {
+      isActive: true,
+      kind: { in: [...SUPPORTED_VOUCHER_KINDS] },
+      expiryAt: { gt: now },
+      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+    },
+    orderBy: { createdAt: "desc" },
+    include: { store: { select: { name: true, slug: true, logoUrl: true, status: true } } },
+  });
+  const heldVoucherIds = new Set(rows.map((r) => r.voucherId));
+  const center = pool
+    .filter((v) => v.scope === "PLATFORM" || (v.scope === "STORE" && v.store?.status === "live"))
+    .map((v) => {
+      const claimedByMe = heldVoucherIds.has(v.id);
+      const quotaRemaining = v.quota != null ? Math.max(0, v.quota - v.claimedCount) : null;
+      return {
+        id: v.id,
+        code: v.code,
+        title: v.title,
+        kind: v.kind,
+        discountMinor: v.discountMinor,
+        percentOff: v.percentOff,
+        maxDiscountMinor: v.maxDiscountMinor,
+        minSpendMinor: v.minSpendMinor,
+        expiryAt: v.expiryAt,
+        startsAt: v.startsAt,
+        scope: v.scope,
+        regionLimit: v.regionLimit,
+        store: storeBrief(v.store),
+        claimedByMe,
+        quotaRemaining,
+        claimable: !claimedByMe && (quotaRemaining == null || quotaRemaining > 0),
+      };
+    });
+
+  return ok({ vouchers: legacy, mine, center });
 });
 
-const claimSchema = z.object({ code: z.string().trim().min(2).max(40) });
+const claimSchema = { code: "string (2-40 chars)" } as const;
 
-// POST /api/me/vouchers — claim a platform voucher from the pool by code.
+// POST /api/me/vouchers — claim a pool voucher by code (legacy contract; the
+// same engine powers POST /api/me/vouchers/claim which also accepts voucherId).
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const parsed = claimSchema.safeParse((await req.json().catch(() => ({}))) as unknown);
-  if (!parsed.success) throw new ApiError(400, "VALIDATION", "A voucher code is required");
-  const code = parsed.data.code.toUpperCase();
-
-  const voucher = await db.voucher.findUnique({ where: { code } });
-  if (!voucher || !voucher.isActive) throw new ApiError(404, "NOT_FOUND", "That voucher code does not exist");
-  if (isExpired(voucher)) throw new ApiError(410, "EXPIRED", "That voucher has expired");
-
-  const held = await db.userVoucher.findUnique({
-    where: { userId_voucherId: { userId: me.id, voucherId: voucher.id } },
-  });
-  if (held) throw new ApiError(409, "ALREADY_HELD", "You already have this voucher");
-
-  const row = await db.userVoucher.create({
-    data: { userId: me.id, voucherId: voucher.id, status: "AVAILABLE" },
-    include: { voucher: true },
-  });
-  return ok({ voucher: { code: row.voucher.code, title: row.voucher.title }, status: "AVAILABLE" }, { status: 201 });
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  if (code.length < 2 || code.length > 40) {
+    throw new ApiError(400, "VALIDATION", `A voucher code is required (${claimSchema.code})`);
+  }
+  const res = await claimVoucherForShopper(me.id, { code });
+  return ok(
+    {
+      voucher: { code: res.voucher.code, title: res.voucher.title, kind: res.voucher.kind, scope: res.voucher.scope },
+      status: res.userVoucher.status,
+    },
+    { status: 201 }
+  );
 });

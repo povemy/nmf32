@@ -133,6 +133,7 @@ export const ADMIN_CAPS: Record<string, string[]> = {
   "settings.manage": ["superadmin"],
   "impersonate": ["superadmin"],
   "logs.view": ["superadmin", "ops", "finance"],
+  "campaigns.manage": ["superadmin", "ops"],
 };
 
 export async function requireCap(cap: keyof typeof ADMIN_CAPS): Promise<AdminUserDTO> {
