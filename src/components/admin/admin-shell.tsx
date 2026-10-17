@@ -70,7 +70,7 @@ import { ModerationView } from "./moderation";
 import { CategoriesView } from "./categories";
 import { OrdersView, RefundsView, DisputesView } from "./orders";
 import { OrderDetailView } from "./order-detail";
-import { CommissionSettingsView, SimulatorView } from "./commission";
+import { CommissionView, SimulatorView } from "./commission";
 import { OverridesView, FeeHolidaysView } from "./finance";
 import { WalletsView, LedgerView } from "./wallets-ledger";
 import { PayoutsView, PayoutDetailView } from "./payouts";
@@ -164,7 +164,7 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   orders: OrdersView,
   refunds: RefundsView,
   disputes: DisputesView,
-  commission: CommissionSettingsView,
+  commission: CommissionView,
   overrides: OverridesView,
   holidays: FeeHolidaysView,
   simulator: SimulatorView,

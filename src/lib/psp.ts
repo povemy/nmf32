@@ -63,3 +63,36 @@ export const PSP_PROVIDERS: Record<PspProviderId, PspProvider> = {
 export function resolvePspProvider(id: string | null | undefined): PspProvider {
   return PSP_PROVIDERS[id ?? "mock"] ?? PSP_PROVIDERS.mock;
 }
+
+// ---------------------------------------------------------------------------
+// SPLIT-SETTLEMENT SCAFFOLD (Task 17-③, dormant)
+// ---------------------------------------------------------------------------
+// When a production PSP is contracted, its adapter implements PspProvider and
+// the split flow becomes: buyer pays → PSP deducts the application fee
+// (commission) at payment time → PSP settles each seller sub-account → the
+// gateway webhook fires → the platform mirrors the settlement in the ledger
+// (postGatewaySettlement today; per-seller split confirmations later) and
+// refreshes wallet caches, so wallet/payout numbers auto-update on release.
+// Until then auto_settle stays FALSE and nothing subscribes to the webhook.
+
+export type PspSplitCandidate = {
+  id: PspProviderId;
+  label: string;
+  /** Short capability note for the admin scaffold card. */
+  note: string;
+  /** true while no adapter exists yet. */
+  awaitingAdapter: boolean;
+};
+
+export const PSP_SPLIT_CANDIDATES: PspSplitCandidate[] = [
+  { id: "mock", label: "NomoPay Checkout (sandbox)", note: "Sandbox rails — simulate endpoint plays the PSP and emits the real webhook shape", awaitingAdapter: false },
+  { id: "stripe_my", label: "Stripe Malaysia + Connect", note: "Destination charges; commission via application_fee deducted at payment time", awaitingAdapter: true },
+  { id: "curlec", label: "Curlec Marketplace", note: "Strong FPX / DuitNow coverage; marketplace routing with split settlements", awaitingAdapter: true },
+  { id: "ipay88", label: "iPay88 Marketplace", note: "Largest local method coverage (FPX, e-wallets, cards)", awaitingAdapter: true },
+];
+
+/** Settings keys backing the dormant auto-settle toggle (admin Commission → Reports tab). */
+export const PSP_SPLIT_SETTING_KEYS = {
+  autoSettle: "psp.split.auto_settle",
+  provider: "psp.split.provider",
+} as const;

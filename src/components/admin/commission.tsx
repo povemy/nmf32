@@ -1,7 +1,10 @@
 "use client";
-// FIN-01 Commission Settings (w/ live example math) + FIN-04 Commission Simulator.
+// FIN-01 Commission Settings (w/ live example math) + FIN-04 Commission Simulator
+// + FIN-08 Reports & Exports (ledger-truth analytics, CSV export history, dormant
+// PSP split-settlement scaffold) — Task 17-③.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { BarChart3, Download, FileSpreadsheet, ShieldCheck, Webhook } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,10 +14,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toMinor, formatMinor } from "@/lib/money";
+import { authHeaders } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import { apiSend, useApi, useDebounced } from "./use-api";
-import { EmptyState, ErrorState, Money, PageHeader, TONE_CLASS } from "./ui-bits";
+import { EmptyState, ErrorState, Money, PageHeader, TONE_CLASS, fmtDT } from "./ui-bits";
 
 type SettingsBody = {
   defaultPercent: number;
@@ -549,5 +554,367 @@ function SimRow({ k, v, chip }: { k: string; v?: string; chip?: boolean }) {
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+/* --------------------------------------------- FIN-08 Reports & exports (Task 17-③) */
+
+type ExportRowT = {
+  id: string;
+  periodFrom: string;
+  periodTo: string;
+  totalMinor: number;
+  orderCount: number;
+  lineCount: number;
+  format: string;
+  createdByEmail: string;
+  createdAt: string;
+};
+
+type AnalyticsT = {
+  days: number;
+  summary: {
+    commissionMinor: number;
+    salesMinor: number;
+    effectiveRatePct: number;
+    orderCount: number;
+    refundsReversalMinor: number;
+    allTimeCommissionMinor: number;
+  };
+  weekly: { weekStart: string; commissionMinor: number; orderCount: number }[];
+  stores: { walletId: string; storeName: string; commissionMinor: number; orderCount: number }[];
+  exports: ExportRowT[];
+  psp: {
+    webhookPath: string;
+    candidates: { id: string; label: string; note: string; awaitingAdapter: boolean }[];
+    autoSettle: boolean;
+    provider: string;
+    lastSettlement: { description: string; occurredAt: string; amountMinor: number } | null;
+    note: string;
+  };
+};
+
+/** Tabbed entry point used by admin-shell: Settings | Reports & exports. */
+export function CommissionView() {
+  const [tab, setTab] = useState("settings");
+  return (
+    <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+      <TabsList className="h-auto w-full justify-start overflow-x-auto sm:w-auto" aria-label="Commission sections">
+        <TabsTrigger value="settings" className="min-h-[44px]">Settings</TabsTrigger>
+        <TabsTrigger value="reports" className="min-h-[44px] gap-1.5">
+          <BarChart3 className="h-3.5 w-3.5" /> Reports &amp; exports
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="settings" className="mt-0 space-y-4">
+        <CommissionSettingsView />
+      </TabsContent>
+      <TabsContent value="reports" className="mt-0 space-y-4">
+        <CommissionReportsView />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function ReportStat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "teal" | "emerald" }) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-base font-bold tabular-nums sm:text-lg", tone === "teal" && "text-teal-700 dark:text-teal-400", tone === "emerald" && "text-emerald-700 dark:text-emerald-400")}>{value}</p>
+      {sub ? <p className="text-[11px] text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
+}
+
+function CommissionReportsView() {
+  const [days, setDays] = useState("90");
+  const { data, error, loading, refetch } = useApi<AnalyticsT>(`/api/admin/commission/analytics?days=${days}`);
+  const [exporting, setExporting] = useState(false);
+
+  const createExport = async (d: number) => {
+    setExporting(true);
+    try {
+      const res = await apiSend<{ export: ExportRowT; csv: string }>("/api/admin/commission/exports", "POST", { days: d });
+      const href = URL.createObjectURL(new Blob([res.csv], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `NOMOFEE-commission-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      toast.success("Commission export created", { description: `${res.export.lineCount} rows · ${formatMinor(res.export.totalMinor)} commission` });
+      void refetch();
+    } catch (e) {
+      toast.error("Export failed", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadHistory = async (row: ExportRowT) => {
+    try {
+      const res = await fetch(`/api/admin/commission/exports/${row.id}/download`, { cache: "no-store", headers: authHeaders() });
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `NOMOFEE-commission-${row.periodFrom.slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      toast.error("Download failed", { description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  // The scaffold guard: enabling auto-settle is rejected server-side (409) until
+  // a production PSP adapter exists — the toast surfaces that honest message.
+  const tryEnableAutoSettle = async () => {
+    try {
+      await apiSend("/api/admin/commission/psp-settings", "PUT", { autoSettle: true });
+      toast.success("Auto-settle enabled");
+      void refetch();
+    } catch (e) {
+      toast.info("Auto-settle stays off", { description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  if (error) {
+    return <Card className="py-0"><CardContent className="p-4"><ErrorState message={error} onRetry={() => void refetch()} /></CardContent></Card>;
+  }
+  if (loading || !data) {
+    return (
+      <div className="space-y-4">
+        <div className="h-8 w-72 animate-pulse rounded bg-muted" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />)}</div>
+        <Card className="py-0"><CardContent className="h-56 p-4"><div className="h-full w-full animate-pulse rounded-lg bg-muted" /></CardContent></Card>
+      </div>
+    );
+  }
+
+  const { summary, weekly, stores, psp } = data;
+  const maxWeek = Math.max(1, ...weekly.map((w) => w.commissionMinor));
+  const avgPerOrder = summary.orderCount > 0 ? Math.round(summary.commissionMinor / summary.orderCount) : 0;
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Commission reports & exports"
+        description="Ledger-truth analytics (PLATFORM:REVENUE_COMMISSION lines). Every figure reconciles with the Ledger Explorer."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={days} onValueChange={setDays}>
+              <SelectTrigger className="min-h-[44px] w-[130px]" aria-label="Analytics period">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="365">Last 365 days</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="min-h-[44px]" disabled={exporting} onClick={() => void createExport(Number(days))}>
+              <FileSpreadsheet className="h-4 w-4" /> {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
+          </div>
+        }
+      />
+
+      {/* summary */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <ReportStat label="Commission (period)" value={formatMinor(summary.commissionMinor)} tone="teal" sub={`last ${data.days} days`} />
+        <ReportStat label="All-time commission" value={formatMinor(summary.allTimeCommissionMinor)} sub="paid orders − refund reversals" />
+        <ReportStat label="Gross sales (period)" value={formatMinor(summary.salesMinor)} sub="seller net + commission" />
+        <ReportStat label="Effective rate" value={`${summary.effectiveRatePct}%`} sub="commission ÷ gross sales" tone="emerald" />
+        <ReportStat label="Paid orders (period)" value={String(summary.orderCount)} sub={summary.orderCount > 0 ? `${formatMinor(avgPerOrder)} avg commission` : "no activity"} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {/* weekly trend */}
+        <Card className="py-0">
+          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+            <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Weekly commission trend</CardTitle>
+            <CardDescription>Monday-based buckets from ledger lines.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            {weekly.length === 0 ? (
+              <EmptyState title="No commission activity" hint="Commission posts when orders are paid (T1 journal)." />
+            ) : (
+              <div className="overflow-x-auto pb-1 [scrollbar-width:thin]">
+                <div className="flex h-36 min-w-[480px] items-end gap-2">
+                  {weekly.map((w) => {
+                    const hPct = Math.max(4, Math.round((w.commissionMinor / maxWeek) * 100));
+                    return (
+                      <div key={w.weekStart} className="flex min-w-[36px] flex-1 flex-col items-center gap-1" title={`${w.weekStart} · ${formatMinor(w.commissionMinor)} · ${w.orderCount} orders`}>
+                        <span className="text-[9px] font-semibold tabular-nums text-muted-foreground">{(w.commissionMinor / 100).toFixed(0)}</span>
+                        <div className="flex h-24 w-full items-end rounded-t bg-muted/60">
+                          <div className="w-full rounded-t bg-brand-gradient transition-all" style={{ height: `${hPct}%` }} />
+                        </div>
+                        <span className="text-[9px] tabular-nums text-muted-foreground">{w.weekStart.slice(5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* top stores */}
+        <Card className="py-0">
+          <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+            <CardTitle className="text-base">Top stores by commission</CardTitle>
+            <CardDescription>Period aggregate per seller wallet.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {stores.length === 0 ? (
+              <EmptyState title="No commission in this period" hint="Try a longer period or collect a paid order." />
+            ) : (
+              <div className="max-h-72 overflow-y-auto [scrollbar-width:thin]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Store</TableHead>
+                      <TableHead className="text-center">Orders</TableHead>
+                      <TableHead className="text-right">Commission</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stores.map((s) => (
+                      <TableRow key={s.walletId}>
+                        <TableCell className="max-w-[220px] truncate font-medium">{s.storeName}</TableCell>
+                        <TableCell className="text-center tabular-nums">{s.orderCount}</TableCell>
+                        <TableCell className="text-right"><Money minor={s.commissionMinor} bold /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* export history */}
+      <Card className="py-0">
+        <CardHeader className="gap-3 px-4 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Export history</CardTitle>
+          <CardDescription>Snapshots are frozen at creation — re-downloads are byte-stable for audit.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {data.exports.length === 0 ? (
+            <EmptyState title="No exports yet" hint="Create one with the Export CSV button above." />
+          ) : (
+            <div className="max-h-80 overflow-y-auto [scrollbar-width:thin]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="hidden text-center sm:table-cell">Orders</TableHead>
+                    <TableHead className="hidden text-center md:table-cell">Rows</TableHead>
+                    <TableHead className="text-right">Commission</TableHead>
+                    <TableHead className="hidden text-right lg:table-cell">Created</TableHead>
+                    <TableHead className="text-right">File</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.exports.map((x) => (
+                    <TableRow key={x.id}>
+                      <TableCell className="text-xs tabular-nums">{x.periodFrom.slice(0, 10)} → {x.periodTo.slice(0, 10)}</TableCell>
+                      <TableCell className="hidden text-center tabular-nums sm:table-cell">{x.orderCount}</TableCell>
+                      <TableCell className="hidden text-center tabular-nums md:table-cell">{x.lineCount}</TableCell>
+                      <TableCell className="text-right"><Money minor={x.totalMinor} bold /></TableCell>
+                      <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{fmtDT(x.createdAt)} · {x.createdByEmail}</TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" onClick={() => void downloadHistory(x)}>
+                          <Download className="h-3.5 w-3.5" /> CSV
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PSP split-settlement scaffold (dormant) */}
+      <Card className="py-0">
+        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Webhook className="h-4 w-4 text-teal-600 dark:text-teal-400" /> PSP split settlement
+            <Badge variant="outline" className={TONE_CLASS.amber}>dormant scaffold</Badge>
+          </CardTitle>
+          <CardDescription>Option B (licensed PSP): once a provider adapter is implemented, the gateway webhook mirrors each split into the ledger and wallet caches refresh automatically — amounts self-update on release.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Auto-update on payment release</p>
+              <p className="text-xs text-muted-foreground">{psp.note}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={psp.autoSettle} onCheckedChange={() => void tryEnableAutoSettle()} aria-label="Toggle PSP split auto-settle" />
+              <Badge variant="outline" className={psp.autoSettle ? TONE_CLASS.emerald : TONE_CLASS.amber}>{psp.autoSettle ? "ON" : "OFF"}</Badge>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Webhook endpoint (per provider)</p>
+              <p className="mt-1 break-all font-mono text-xs">{psp.webhookPath}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Signature-verified in webhooks/payments/process.ts (mock conforms today).</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Last gateway settlement</p>
+              {psp.lastSettlement ? (
+                <>
+                  <p className="mt-1 truncate text-sm font-medium">{psp.lastSettlement.description}</p>
+                  <p className="text-xs text-muted-foreground">{fmtDT(psp.lastSettlement.occurredAt)} · <Money minor={psp.lastSettlement.amountMinor} bold /></p>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">No gateway settlement posted yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="hidden md:table-cell">Split capability</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {psp.candidates.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <p className="font-medium">{c.label}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground">{c.id}</p>
+                    </TableCell>
+                    <TableCell className="hidden text-xs text-muted-foreground md:table-cell">{c.note}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className={c.awaitingAdapter ? TONE_CLASS.amber : TONE_CLASS.emerald}>
+                        {c.awaitingAdapter ? "awaiting adapter" : "sandbox active"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            Enabling auto-settle before a real adapter exists is blocked server-side (409 PSP_ADAPTER_REQUIRED) — the toggle cannot fake a settlement.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -347,3 +347,106 @@ export function buildPayoutStatement(params: {
 export function parseStatement(json: string) {
   return parseJson(json, { sellerName: "", periodFrom: "", periodTo: "", lines: [] as { label: string; amountMinor: number }[] });
 }
+
+// ------------------------------------------------------------- LEDGER-TRUTH STATEMENTS
+// INTEGRITY RULE (user directive): every number printed on a payout statement
+// must be DERIVED from ledger lines for the payout period — never decorated.
+// The lines always reconcile to the payout amount via an explicit
+// "Retained in wallet" balancing line, so Σ(lines) ≡ net payout.
+
+export type LedgerStatement = {
+  /** Parsed shape of the JSON string returned by buildLedgerStatementFromLedger
+   *  (Payout.statementJson column stores the serialized form). */
+  sellerName: string;
+  periodFrom: string;
+  periodTo: string;
+  orderCount: number;
+  reconciled: true;
+  generatedAt: string;
+  lines: { label: string; amountMinor: number }[];
+};
+
+/** Aggregate a wallet's ledger activity for [periodFrom, periodTo] and build a
+ *  payout statement whose lines sum EXACTLY to `payoutAmountMinor`.
+ *  Components (all from ledger truth):
+ *    • sales        — payable credits from order_paid (seller net) + matching
+ *                     commission-revenue credits (gross sales)
+ *    • commission   — commission-revenue credits from order_paid in the period
+ *    • refunds      — payable debits from refund txns + commission reversals
+ *    • adjustments  — net admin_adjustment movement on the payable account
+ *    • retained     — residual balancing line so Σ(lines) ≡ payout (holds, caps,
+ *                     prior-balance carry)                                   */
+export async function buildLedgerStatementFromLedger(params: {
+  walletId: string;
+  sellerName: string;
+  payoutAmountMinor: number;
+  orderCount: number;
+  periodFrom: Date;
+  periodTo: Date;
+}): Promise<string> {
+  const { walletId, sellerName, payoutAmountMinor, orderCount, periodFrom, periodTo } = params;
+  const payable = ACCOUNTS.sellerPayable(walletId);
+  const commissionAccount = ACCOUNTS.revenueCommission();
+
+  // Wallet-scope lines in the period, joined to their txn type. Period is
+  // evaluated on txn.occurredAt (business time) — rows are often backdated
+  // (seed) or posted later (payout T3 lands after the statement snapshot).
+  const lines = await db.ledgerLine.findMany({
+    where: {
+      OR: [{ accountCode: payable }, { accountCode: commissionAccount, walletId }],
+      txn: { occurredAt: { gte: periodFrom, lte: periodTo } },
+    },
+    select: { accountCode: true, direction: true, amountMinor: true, txn: { select: { txnType: true } } },
+  });
+
+  let salesNet = 0; // payable credits from order_paid
+  let commission = 0; // commission-revenue credits from order_paid
+  let refundSellerShare = 0; // payable debits from refund txns
+  let refundCommissionReversal = 0; // commission debits from refund txns
+  let adjustments = 0; // admin_adjustment net (credits − debits on payable)
+
+  for (const l of lines) {
+    const type = l.txn.txnType;
+    if (l.accountCode === payable) {
+      if (l.direction === "credit") {
+        if (type === "order_paid") salesNet += l.amountMinor;
+        else if (type === "admin_adjustment") adjustments += l.amountMinor;
+      } else {
+        if (type === "refund") refundSellerShare += l.amountMinor;
+        else if (type === "admin_adjustment") adjustments -= l.amountMinor;
+      }
+    } else if (l.accountCode === commissionAccount) {
+      if (l.direction === "credit") {
+        if (type === "order_paid") commission += l.amountMinor;
+      } else if (type === "refund") {
+        refundCommissionReversal += l.amountMinor;
+      }
+    }
+  }
+
+  const sales = salesNet + commission; // gross sales for the period
+  const refunds = refundSellerShare + refundCommissionReversal;
+  const netMovement = sales - commission - refunds + adjustments;
+  // Balancing line so Σ(statement lines) ≡ net payout: when the period's net
+  // movement exceeds the payout (pending holds, min-payout cap, prior carry),
+  // the difference is "retained"; when a payout draws on prior balance, it's
+  // a positive carry line. Either way the statement always reconciles.
+  const retained = payoutAmountMinor - netMovement;
+
+  const linesOut: { label: string; amountMinor: number }[] = [];
+  if (sales !== 0) linesOut.push({ label: "Sales (settled to available)", amountMinor: sales });
+  if (commission !== 0) linesOut.push({ label: "Platform commission", amountMinor: -commission });
+  if (refunds !== 0) linesOut.push({ label: "Refunds", amountMinor: -refunds });
+  if (adjustments !== 0) linesOut.push({ label: "Adjustments", amountMinor: adjustments });
+  if (retained !== 0) linesOut.push({ label: "Retained in wallet (hold/cap — not paid out)", amountMinor: retained });
+
+  return toJson({
+    sellerName,
+    periodFrom: periodFrom.toISOString(),
+    periodTo: periodTo.toISOString(),
+    orderCount,
+    reconciled: true,
+    generatedAt: new Date().toISOString(),
+    lines: linesOut,
+  });
+}

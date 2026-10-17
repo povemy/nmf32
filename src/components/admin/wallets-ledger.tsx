@@ -45,7 +45,7 @@ type LedgerTxn = {
   txnType: string;
   description?: string | null;
   occurredAt: string;
-  lines: { id: string; accountCode: string; direction: string; amountMinor: number; availableAt?: string | null; memo?: string | null }[];
+  lines: { id: string; accountCode: string; direction: string; amountMinor: number; walletId?: string | null; availableAt?: string | null; memo?: string | null }[];
 };
 
 export function WalletsView() {
@@ -183,7 +183,12 @@ function WalletActivity({ walletId }: { walletId: string }) {
       ) : (
         <ul className="space-y-2">
           {txns.slice(0, 12).map((t) => {
-            const mine = t.lines.filter((l) => l.direction);
+            // THIS WALLET's lines only. A double-entry transaction always
+            // balances (Σdebits ≡ Σcredits) — summing every line nets to 0,
+            // which is exactly why the drawer used to show "RM 0.00" on
+            // every row while the Ledger Explorer (per-line dr/cr columns)
+            // showed real amounts.
+            const mine = t.lines.filter((l) => l.walletId === walletId);
             const net = mine.reduce((s, l) => s + (l.direction === "credit" ? l.amountMinor : -l.amountMinor), 0);
             return (
               <li key={t.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5 text-sm">

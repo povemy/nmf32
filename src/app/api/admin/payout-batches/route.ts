@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { refreshWalletCache, postPayoutInitiated, buildPayoutStatement } from "@/lib/ledger";
+import { refreshWalletCache, postPayoutInitiated, buildLedgerStatementFromLedger } from "@/lib/ledger";
 import { parseMaybeJson, readBody, optBool, daysAgo } from "@/app/api/admin/_helpers";
 
 // GET /api/admin/payout-batches
@@ -96,17 +96,30 @@ export const POST = handle(async (req: NextRequest) => {
     });
     const referenceNo = `PO-${counter.value}`;
 
-    const orderCount = await db.order.count({ where: { storeId: w.seller.store?.id, paidAt: { not: null } } });
-    const statementJson = buildPayoutStatement({
+    // Statement period: since the seller's previous PAID payout (fallback:
+    // wallet creation). Every number is aggregated from ledger lines in that
+    // window — INTEGRITY RULE: statements never contain decorated numbers.
+    const prevPaid = await db.payout.findFirst({
+      where: { walletId: w.id, status: "paid" },
+      orderBy: { paidAt: "desc" },
+      select: { paidAt: true },
+    });
+    const walletRow = await db.wallet.findUnique({ where: { id: w.id }, select: { createdAt: true } });
+    const periodFrom = prevPaid?.paidAt ?? walletRow?.createdAt ?? daysAgo(30);
+    const periodTo = new Date();
+    // Defensive clamp — a period that starts after it ends yields empty (and
+    // misleading) statements.
+    const periodFromSafe = periodFrom > periodTo ? daysAgo(30) : periodFrom;
+    const orderCount = await db.order.count({
+      where: { storeId: w.seller.store?.id, paidAt: { not: null, gte: periodFromSafe, lte: periodTo } },
+    });
+    const statementJson = await buildLedgerStatementFromLedger({
+      walletId: w.id,
       sellerName: w.seller.store?.name ?? w.seller.displayName,
-      periodFrom: daysAgo(30),
-      periodTo: new Date(),
-      salesMinor: w.truth.lifetimeEarnedMinor + w.truth.lifetimeCommissionMinor,
-      commissionMinor: w.truth.lifetimeCommissionMinor,
-      refundsMinor: 0,
-      adjustmentsMinor: 0,
-      negativeCarryMinor: 0,
+      payoutAmountMinor: w.truth.availableMinor,
       orderCount,
+      periodFrom: periodFromSafe,
+      periodTo,
     });
 
     const payout = await db.payout.create({

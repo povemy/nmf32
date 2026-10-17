@@ -3,7 +3,7 @@
 // (per-payout statement trace, mark paid / mark failed with ledger T4 posts).
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Landmark, PlayCircle, PlusCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Landmark, PlayCircle, PlusCircle, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,6 +76,7 @@ type Statement = {
   adjustmentsMinor?: number;
   negativeCarryMinor?: number;
   orderCount?: number;
+  reconciled?: boolean;
   lines?: { label: string; amountMinor: number }[];
 };
 
@@ -472,6 +473,11 @@ function PayoutExpand({
 }) {
   const st = parseJsonSafe<Statement>(payout.statementJson, {});
   const lines = st.lines ?? [];
+  // Reconciliation audit: statement lines must sum EXACTLY to the net payout.
+  // Ledger-truth statements (reconciled: true) always do; legacy demo snapshots
+  // with decorated numbers fail this check and are flagged honestly.
+  const linesSum = lines.reduce((s, l) => s + l.amountMinor, 0);
+  const reconciles = lines.length > 0 && linesSum === payout.amountMinor;
   return (
     <div className="grid grid-cols-1 gap-4 p-3 lg:grid-cols-3">
       <div className="lg:col-span-2">
@@ -482,6 +488,17 @@ function PayoutExpand({
           <p className="text-xs text-muted-foreground">No statement lines recorded for this payout.</p>
         ) : (
           <div className="overflow-hidden rounded-lg border bg-card">
+            <div className={cn("flex items-center gap-1.5 border-b px-3 py-2 text-[11px] font-semibold", reconciles ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300")}>
+              {reconciles ? (
+                <>
+                  <ShieldCheck className="h-3.5 w-3.5" /> Ledger-reconciled — every figure is aggregated from ledger lines and Σ(lines) = net payout
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5" /> Not reconciled — Σ(lines) {formatMinor(linesSum)} ≠ payout {formatMinor(payout.amountMinor)} (legacy demo snapshot)
+                </>
+              )}
+            </div>
             <Table>
               <TableBody>
                 {lines.map((l, i) => (

@@ -33,6 +33,21 @@ model CommissionSetting {
   graceDaysAfterDelivered Int     @default(2)
 }
 
+// Snapshot of a commission report export (FIN-08). The CSV is regenerated
+// from snapshotJson at download time so the historical file never changes.
+model CommissionExport {
+  id             String   @id @default(cuid())
+  periodFrom     DateTime
+  periodTo       DateTime
+  totalMinor     Int
+  orderCount     Int
+  lineCount      Int
+  format         String   @default("csv")
+  snapshotJson   String
+  createdByEmail String
+  createdAt      DateTime @default(now())
+}
+
 model CommissionOverride {
   id            String    @id @default(cuid())
   scope         String

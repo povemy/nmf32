@@ -8,6 +8,7 @@ import { computeOrderCommissions } from "../src/lib/commission";
 import {
   ensureAccount, ensureWalletAccounts, postOrderPaid, postGatewaySettlement,
   postPayoutInitiated, postPayoutConfirmed, refreshWalletCache, ACCOUNTS,
+  buildLedgerStatementFromLedger,
 } from "../src/lib/ledger";
 import { defaultHomeSections, defaultPageSections } from "../src/lib/sections";
 import { toJson } from "../src/lib/json";
@@ -682,20 +683,22 @@ async function main() {
       data: { runType: "manual", status: "completed", totalMinor: payoutAmount, payoutCount: 1, startedAt: daysAgo(6, 7), finishedAt: daysAgo(6, 7) },
     });
     const bank = await db.bankAccount.findFirst({ where: { sellerId: lumina.seller.id } });
+    // Statement is DERIVED from ledger truth for the period (INTEGRITY RULE) —
+    // never decorated numbers. Period: 30 days back → the payout moment.
+    const statementJson = await buildLedgerStatementFromLedger({
+      walletId: lumina.wallet.id,
+      sellerName: "Lumina Living",
+      payoutAmountMinor: payoutAmount,
+      orderCount: await db.order.count({ where: { storeId: lumina.store.id, paidAt: { not: null, gte: daysAgo(30), lte: daysAgo(6, 8) } } }),
+      periodFrom: daysAgo(30),
+      periodTo: daysAgo(6, 8),
+    });
     const payout = await db.payout.create({
       data: {
         batchId: batch.id, sellerId: lumina.seller.id, walletId: lumina.wallet.id,
         referenceNo: "PO-100001", amountMinor: payoutAmount, status: "paid",
         method: "manual_csv", bankAccountId: bank?.id ?? null, paidAt: daysAgo(6, 8),
-        statementJson: toJson({
-          sellerName: "Lumina Living", periodFrom: daysAgo(30).toISOString(), periodTo: daysAgo(7).toISOString(),
-          orderCount: 4,
-          lines: [
-            { label: "Sales (settled to available)", amountMinor: payoutAmount + 15000 },
-            { label: "Platform commission", amountMinor: -12000 },
-            { label: "Refunds", amountMinor: -3000 },
-          ],
-        }),
+        statementJson,
       },
     });
     await postPayoutInitiated({ walletId: lumina.wallet.id, payoutId: payout.id, referenceNo: payout.referenceNo, amountMinor: payoutAmount });
