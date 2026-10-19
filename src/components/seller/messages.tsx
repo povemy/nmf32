@@ -26,6 +26,7 @@ import {
   ChatMessagesSkeleton,
   ChatEmptyDetail,
   MessageTicks,
+  filterChatThreads,
   useChatHub,
   type ChatThreadRow,
   type ChatMsg,
@@ -40,9 +41,7 @@ type ThreadContextCard =
 
 export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: string | null; onNavigate?: (n: SellerNav) => void } = {}) {
   const [threads, setThreads] = useState<ChatThreadRow[] | null>(null);
-  const [activeTotal, setActiveTotal] = useState(0);
   const [query, setQuery] = useState("");
-  const [debouncedQ, setDebouncedQ] = useState("");
   const [filter, setFilter] = useState<ChatFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [thread, setThread] = useState<{ shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
@@ -54,27 +53,21 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
   const scrollRef = useRef<HTMLDivElement>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // debounce search input → API
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQ(query.trim()), 300);
-    return () => clearTimeout(t);
-  }, [query]);
-
   const loadThreads = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ size: "50" });
-      if (debouncedQ) params.set("q", debouncedQ);
-      if (filter === "active") params.set("filter", "active");
-      const d = await apiGet<ChatThreadRow[]>(`/api/store/chat/threads?${params.toString()}`);
+      // Fetch the FULL list once; the All/Active pills and search filter the
+      // local snapshot instantly (filterChatThreads). Pill switches used to
+      // refetch from the remote DB first — that was the blink. Socket pushes
+      // + read receipts keep this snapshot live and authoritative.
+      const d = await apiGet<ChatThreadRow[]>("/api/store/chat/threads?size=100");
       const rows = d ?? [];
       setThreads(rows);
-      setActiveTotal(filter === "active" ? rows.length : rows.reduce((n, t) => n + (t.unreadCount > 0 ? 1 : 0), 0));
       return rows;
     } catch {
       setThreads([]);
       return [];
     }
-  }, [debouncedQ, filter]);
+  }, []);
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
@@ -120,7 +113,8 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
 
   useEffect(() => {
     // List-first entry: no auto-open — auto-reading the newest thread would
-    // instantly consume the unread badge the seller hasn't seen yet.
+    // instantly consume the unread badge the seller hasn't seen yet. Runs
+    // ONCE: pill switches/search are pure client-side filtering now.
     void loadThreads();
   }, [loadThreads]);
 
@@ -194,6 +188,11 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
     }
   };
 
+  // Instant client-side filtering of the live snapshot — pills + search are
+  // pure local compute (zero network), so switching feels immediate.
+  const visibleThreads = useMemo(() => (threads ? filterChatThreads(threads, filter, query) : null), [threads, filter, query]);
+  const activeTotal = useMemo(() => (threads ?? []).reduce((n, t) => n + (t.unreadCount > 0 ? 1 : 0), 0), [threads]);
+
   if (threads === null) return <RowsSkeleton5 />;
 
   return (
@@ -212,9 +211,9 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
             activeCount={activeTotal}
           />
           <div className="rounded-2xl border bg-card shadow-soft">
-            {threads.length === 0 ? (
+            {visibleThreads?.length === 0 ? (
               <p className="p-6 text-center text-sm text-muted-foreground">
-                {debouncedQ || filter === "active"
+                {query.trim() || filter === "active"
                   ? "No conversations match — try a different search or filter."
                   : "When shoppers message you from a product or an order, their messages show up here."}
               </p>
@@ -223,7 +222,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
                 className="space-y-1 overflow-y-auto p-2 max-h-96 md:max-h-[540px] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
                 aria-label="Chat threads"
               >
-                {threads.map((t) => (
+                {(visibleThreads ?? []).map((t) => (
                   <ChatListItem
                     key={t.id}
                     row={t}

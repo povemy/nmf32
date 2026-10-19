@@ -1,0 +1,762 @@
+     1→     1→"use client";
+     2→     2→// ============================================================================
+     3→     3→// ShopperShell — the SHOPPER surface root (Task 2-e).
+     4→     4→// Internal view state machine (no URL routing), sticky market header, category
+     5→     5→// menu, global cart drawer, footer, and mounting of every shopper view.
+     6→     6→// ============================================================================
+     7→     7→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     8→     8→import { AnimatePresence, motion } from "framer-motion";
+     9→     9→import {
+    10→    10→  ShoppingBag,
+    11→    11→  Search,
+    12→    12→  ShoppingCart,
+    13→    13→  ChevronDown,
+    14→    14→  Menu,
+    15→    15→  PackageSearch,
+    16→    16→  Trash2,
+    17→    17→  Store,
+    18→    18→  Sparkles,
+    19→    19→  ArrowRight,
+    20→    20→  ArrowLeft,
+    21→    21→  Loader2,
+    22→    22→  Package,
+    23→    23→  MessagesSquare,
+    24→    24→  LogIn,
+    25→    25→  LogOut,
+    26→    26→  Send,
+    27→    27→  User,
+    28→    28→} from "lucide-react";
+    29→    29→import { Toaster } from "@/components/ui/sonner";
+    30→    30→import { toast } from "sonner";
+    31→    31→import { Button } from "@/components/ui/button";
+    32→    32→import { Input } from "@/components/ui/input";
+    33→    33→import { Textarea } from "@/components/ui/textarea";
+    34→    34→import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+    35→    35→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    36→    36→import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+    37→    37→import { Separator } from "@/components/ui/separator";
+    38→    38→import {
+    39→    39→  DropdownMenu,
+    40→    40→  DropdownMenuContent,
+    41→    41→  DropdownMenuItem,
+    42→    42→  DropdownMenuSub,
+    43→    43→  DropdownMenuSubContent,
+    44→    44→  DropdownMenuSubTrigger,
+    45→    45→  DropdownMenuTrigger,
+    46→    46→} from "@/components/ui/dropdown-menu";
+    47→    47→import { useApp } from "@/lib/app-store";
+    48→    48→import { setSessionToken } from "@/lib/session-client";
+    49→    49→import { formatMinor } from "@/lib/money";
+    50→    50→import { cn } from "@/lib/utils";
+    51→    51→import {
+    52→    52→  fetchJson,
+    53→    53→  patchJson,
+    54→    54→  deleteJson,
+    55→    55→  postJson,
+    56→    56→  notifyCartUpdated,
+    57→    57→  useCart,
+    58→    58→  EmptyState,
+    59→    59→  QtyStepper,
+    60→    60→  fmtDateTime,
+    61→    61→  fetchEnvelope,
+    62→    62→  type CartItemT,
+    63→    63→  type CategoryT,
+    64→    64→  type ShopperCtx,
+    65→    65→  type ShopperView,
+    66→    66→} from "./ui-bits";
+    67→    67→import MarketHome, { ResultsView, categoryIcon } from "./market";
+    68→    68→import PdpView from "./pdp";
+    69→    69→import StorefrontView, { StorePageView } from "./storefront";
+    70→    70→import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
+    71→    71→import GenerateStoreView, { ClaimView } from "./generate";
+    72→    72→import MeHubView from "./me-hub";
+    73→    73→import {
+    74→    74→  ChatHeader,
+    75→    75→  ChatListItem,
+    76→    76→  ChatListSkeleton,
+    77→    77→  ChatMessagesSkeleton,
+    78→    78→  ChatEmptyDetail,
+    79→    79→  MessageTicks,
+    80→    80→  useChatHub,
+    81→    81→  type ChatThreadRow,
+    82→    82→  type ChatMsg,
+    83→    83→  type ChatFilter,
+    84→    84→} from "@/components/chat/chat-ui";
+    85→    85→import NotificationBell from "./notification-bell";
+    86→    86→
+    87→    87→const VIEW_KEY = "sm_shopper_view";
+    88→    88→
+    89→    89→function isStoreChrome(view: ShopperView): boolean {
+    90→    90→  return view.name === "storefront" || view.name === "store-page";
+    91→    91→}
+    92→    92→
+    93→    93→/** Total unread seller messages — powers the "My messages" header badge.
+    94→    94→ *  Polls lightly + refreshes when the messages view is opened/left. */
+    95→    95→function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) {
+    96→    96→  const [unread, setUnread] = useState(0);
+    97→    97→  useEffect(() => {
+    98→    98→    if (!shopperSignedIn) {
+    99→    99→      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the badge on sign-out (no fetch involved)
+   100→   100→      setUnread(0);
+   101→   101→      return;
+   102→   102→    }
+   103→   103→    let alive = true;
+   104→   104→    const load = () =>
+   105→   105→      fetchJson<{ total: number }>("/api/chat/unread")
+   106→   106→        .then((d) => alive && setUnread(d.total ?? 0))
+   107→   107→        .catch(() => {});
+   108→   108→    load();
+   109→   109→    const t = setInterval(load, 15000);
+   110→   110→    return () => {
+   111→   111→      alive = false;
+   112→   112→      clearInterval(t);
+   113→   113→    };
+   114→   114→  }, [shopperSignedIn]);
+   115→   115→  // instant re-sync when a thread is read inside the messages view (the view
+   116→   116→  // dispatches "nomofee:chat-sync" instead of prop-drilling a callback)
+   117→   117→  useEffect(() => {
+   118→   118→    if (!shopperSignedIn) return;
+   119→   119→    const sync = () =>
+   120→   120→      fetchJson<{ total: number }>("/api/chat/unread")
+   121→   121→        .then((d) => setUnread(d.total ?? 0))
+   122→   122→        .catch(() => {});
+   123→   123→    window.addEventListener("nomofee:chat-sync", sync);
+   124→   124→    return () => window.removeEventListener("nomofee:chat-sync", sync);
+   125→   125→  }, [shopperSignedIn]);
+   126→   126→  // opening (or leaving) the messages view should immediately re-sync the badge
+   127→   127→  useEffect(() => {
+   128→   128→    if (!shopperSignedIn) return;
+   129→   129→    const t = setTimeout(
+   130→   130→      () =>
+   131→   131→        fetchJson<{ total: number }>("/api/chat/unread")
+   132→   132→          .then((d) => setUnread(d.total ?? 0))
+   133→   133→          .catch(() => {}),
+   134→   134→      viewName === "messages" ? 600 : 0
+   135→   135→    );
+   136→   136→    return () => clearTimeout(t);
+   137→   137→  }, [shopperSignedIn, viewName]);
+   138→   138→  return unread;
+   139→   139→}
+   140→   140→
+   141→   141→export default function ShopperShell() {
+   142→   142→  const setSurface = useApp((s) => s.setSurface);
+   143→   143→  const activeStoreSlug = useApp((s) => s.activeStoreSlug);
+   144→   144→  const setActiveStoreSlug = useApp((s) => s.setActiveStoreSlug);
+   145→   145→
+   146→   146→  const [view, setView] = useState<ShopperView>({ name: "market" });
+   147→   147→  const [ready, setReady] = useState(false);
+   148→   148→  const [cartOpen, setCartOpen] = useState(false);
+   149→   149→  const [headerSearch, setHeaderSearch] = useState("");
+   150→   150→  // Back-navigation history stack (user request: back button on every page).
+   151→   151→  // viewRef mirrors `view` so nav() can push the PREVIOUS view without reading
+   152→   152→  // state inside the setState updater (StrictMode-safe).
+   153→   153→  const viewStack = useRef<ShopperView[]>([]);
+   154→   154→  const viewRef = useRef<ShopperView>({ name: "market" });
+   155→   155→  // Deep-link override for claim landing (?claim_job=…&claim_token=…):
+   156→   156→  // intentionally NOT part of ShopperView — a synthetic render override.
+   157→   157→  const [claimLink, setClaimLink] = useState<{ jobId: string; token: string } | null>(null);
+   158→   158→  const restored = useRef(false);
+   159→   159→
+   160→   160→  // ---- mount: activeStoreSlug override, else restore last view --------------
+   161→   161→  useEffect(() => {
+   162→   162→    if (restored.current) return;
+   163→   163→    restored.current = true;
+   164→   164→    // claim deep-link wins over everything
+   165→   165→    try {
+   166→   166→      const params = new URLSearchParams(window.location.search);
+   167→   167→      const cj = params.get("claim_job");
+   168→   168→      const ct = params.get("claim_token");
+   169→   169→      if (cj && ct) {
+   170→   170→        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link reset
+   171→   171→        setClaimLink({ jobId: cj, token: ct });
+   172→   172→        setReady(true);
+   173→   173→        return;
+   174→   174→      }
+   175→   175→      // SEO deep links (sitemap): /?sf={storeSlug} and /?sf={storeSlug}&sp={productSlug}
+   176→   176→      const sf = params.get("sf");
+   177→   177→      if (sf) {
+   178→   178→        const sp = params.get("sp");
+   179→   179→        setView(sp ? { name: "pdp", slug: sf, pSlug: sp } : { name: "storefront", slug: sf });
+   180→   180→        setReady(true);
+   181→   181→        return;
+   182→   182→      }
+   183→   183→    } catch {
+   184→   184→      /* ignore */
+   185→   185→    }
+   186→   186→    if (activeStoreSlug) {
+   187→   187→      setView({ name: "storefront", slug: activeStoreSlug });
+   188→   188→      setActiveStoreSlug(null);
+   189→   189→    } else {
+   190→   190→      try {
+   191→   191→        const raw = window.localStorage.getItem(VIEW_KEY);
+   192→   192→        if (raw) {
+   193→   193→          const v = JSON.parse(raw) as ShopperView;
+   194→   194→          if (v && typeof v.name === "string") setView(v);
+   195→   195→        }
+   196→   196→      } catch {
+   197→   197→        /* ignore */
+   198→   198→      }
+   199→   199→    }
+   200→   200→    setReady(true);
+   201→   201→  }, [activeStoreSlug, setActiveStoreSlug]);
+   202→   202→
+   203→   203→  // ---- nav helper: persist + scroll to top ----------------------------------
+   204→   204→  useEffect(() => {
+   205→   205→    viewRef.current = view;
+   206→   206→  }, [view]);
+   207→   207→
+   208→   208→  const nav = useCallback((v: ShopperView) => {
+   209→   209→    if (viewRef.current.name !== v.name || JSON.stringify(viewRef.current) !== JSON.stringify(v)) {
+   210→   210→      viewStack.current.push(viewRef.current);
+   211→   211→      if (viewStack.current.length > 25) viewStack.current.shift();
+   212→   212→    }
+   213→   213→    setView(v);
+   214→   214→    try {
+   215→   215→      window.localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+   216→   216→    } catch {
+   217→   217→      /* ignore */
+   218→   218→    }
+   219→   219→    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+   220→   220→  }, []);
+   221→   221→
+   222→   222→  const back = useCallback(() => {
+   223→   223→    const prev = viewStack.current.pop() ?? { name: "market" as const };
+   224→   224→    setView(prev);
+   225→   225→    try {
+   226→   226→      window.localStorage.setItem(VIEW_KEY, JSON.stringify(prev));
+   227→   227→    } catch {
+   228→   228→      /* ignore */
+   229→   229→    }
+   230→   230→    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+   231→   231→  }, []);
+   232→   232→
+   233→   233→  // refresh storefront/store-page when slug changes externally
+   234→   234→  useEffect(() => {
+   235→   235→    if (!ready) return;
+   236→   236→    if (activeStoreSlug) {
+   237→   237→      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   238→   238→      setView({ name: "storefront", slug: activeStoreSlug });
+   239→   239→      setActiveStoreSlug(null);
+   240→   240→    }
+   241→   241→  }, [activeStoreSlug, ready, setActiveStoreSlug]);
+   242→   242→
+   243→   243→  const ctx = useMemo<ShopperCtx>(() => ({ nav, back, openCart: () => setCartOpen(true) }), [nav, back]);
+   244→   244→
+   245→   245→  const showChrome = !isStoreChrome(view);
+   246→   246→  // App-like bottom navigation — mobile only, hidden during checkout focus mode.
+   247→   247→  const showBottomNav = showChrome && view.name !== "checkout" && view.name !== "pay";
+   248→   248→
+   249→   249→  return (
+   250→   250→    <div className="flex-1 flex flex-col min-h-screen">
+   251→   251→      <Toaster position="top-center" richColors />
+   252→   252→      <ShopperAuthDialog />
+   253→   253→
+   254→   254→      {showChrome ? (
+   255→   255→        <MarketHeader
+   256→   256→          view={view}
+   257→   257→          nav={nav}
+   258→   258→          openCart={() => setCartOpen(true)}
+   259→   259→          search={headerSearch}
+   260→   260→          setSearch={setHeaderSearch}
+   261→   261→        />
+   262→   262→      ) : null}
+   263→   263→
+   264→   264→      <AnimatePresence mode="wait">
+   265→   265→        <motion.main
+   266→   266→          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" ? view.tab ?? "" : ""}`}
+   267→   267→          initial={{ opacity: 0, y: 8 }}
+   268→   268→          animate={{ opacity: 1, y: 0 }}
+   269→   269→          exit={{ opacity: 0, y: -8 }}
+   270→   270→          transition={{ duration: 0.18, ease: "easeOut" }}
+   271→   271→          className={cn("flex-1 flex flex-col", showBottomNav && "pb-[calc(4.25rem+env(safe-area-inset-bottom))] md:pb-0")}
+   272→   272→        >
+   273→   273→          {claimLink ? null : (
+   274→   274→            <>
+   275→   275→              {view.name === "market" ? <MarketHome ctx={ctx} /> : null}
+   276→   276→              {view.name === "search" ? <ResultsView ctx={ctx} mode={{ kind: "search", q: view.q }} /> : null}
+   277→   277→              {view.name === "category" ? (
+   278→   278→                <ResultsView ctx={ctx} mode={{ kind: "category", categorySlug: view.categorySlug, label: view.label }} />
+   279→   279→              ) : null}
+   280→   280→              {view.name === "storefront" ? <StorefrontView ctx={ctx} slug={view.slug} /> : null}
+   281→   281→              {view.name === "store-page" ? <StorePageView ctx={ctx} slug={view.slug} pageSlug={view.pageSlug} /> : null}
+   282→   282→              {view.name === "pdp" ? <PdpView ctx={ctx} slug={view.slug} pSlug={view.pSlug} /> : null}
+   283→   283→              {view.name === "checkout" ? <CheckoutView ctx={ctx} /> : null}
+   284→   284→              {view.name === "pay" ? <PayView ctx={ctx} paymentRef={view.ref} /> : null}
+   285→   285→              {view.name === "order-status" ? <OrderStatusView ctx={ctx} orderNumber={view.orderNumber} /> : null}
+   286→   286→              {view.name === "orders" ? <OrdersView ctx={ctx} /> : null}
+   287→   287→              {view.name === "generate" ? <GenerateStoreView ctx={ctx} /> : null}
+   288→   288→              {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
+   289→   289→              {view.name === "messages" ? <MessagesView ctx={ctx} initialThreadId={view.threadId} /> : null}
+   290→   290→              {view.name === "me" ? <MeHubView ctx={ctx} initialTab={view.tab} /> : null}
+   291→   291→            </>
+   292→   292→          )}
+   293→   293→          {claimLink ? <ClaimView jobId={claimLink.jobId} token={claimLink.token} onExit={() => setClaimLink(null)} /> : null}
+   294→   294→        </motion.main>
+   295→   295→      </AnimatePresence>
+   296→   296→
+   297→   297→      {showBottomNav ? (
+   298→   298→        <BottomNav
+   299→   299→          view={view}
+   300→   300→          nav={nav}
+   301→   301→          openCart={() => setCartOpen(true)}
+   302→   302→        />
+   303→   303→      ) : null}
+   304→   304→
+   305→   305→      {showChrome ? (
+   306→   306→        <ShopperFooter
+   307→   307→          onSeller={() => setSurface("seller")}
+   308→   308→          onLookup={() => nav({ name: "lookup" })}
+   309→   309→          onMarket={() => nav({ name: "market" })}
+   310→   310→          onGenerate={() => nav({ name: "generate" })}
+   311→   311→        />
+   312→   312→      ) : null}
+   313→   313→
+   314→   314→      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} ctx={ctx} />
+   315→   315→    </div>
+   316→   316→  );
+   317→   317→}
+   318→   318→
+   319→   319→// =============================================================================================
+   320→   320→// Mobile bottom navigation (app-like) — Home / Orders / Cart / Chat / Me
+   321→   321→// =============================================================================================
+   322→   322→
+   323→   323→function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: ShopperView) => void; openCart: () => void }) {
+   324→   324→  const me = useApp((s) => s.me);
+   325→   325→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+   326→   326→  const signedIn = Boolean(me.loaded && me.shopper);
+   327→   327→  const { count } = useCart();
+   328→   328→  const unreadChats = useChatUnread(signedIn, view.name);
+   329→   329→
+   330→   330→  const items = [
+   331→   331→    { key: "home", label: "Home", icon: ShoppingBag, active: view.name === "market", badge: 0, onClick: () => nav({ name: "market" }) },
+   332→   332→    {
+   333→   333→      key: "orders",
+   334→   334→      label: "Orders",
+   335→   335→      icon: Package,
+   336→   336→      active: view.name === "orders" || (view.name === "me" && view.tab === "purchases"),
+   337→   337→      badge: 0,
+   338→   338→      onClick: () => (signedIn ? nav({ name: "me", tab: "purchases" }) : openShopperAuth()),
+   339→   339→    },
+   340→   340→    { key: "cart", label: "Cart", icon: ShoppingCart, active: false, badge: count, onClick: openCart },
+   341→   341→    { key: "chat", label: "Chat", icon: MessagesSquare, active: view.name === "messages", badge: unreadChats, onClick: () => (signedIn ? nav({ name: "messages" }) : openShopperAuth()) },
+   342→   342→    { key: "me", label: "Me", icon: User, active: view.name === "me", badge: 0, onClick: () => nav({ name: "me" }) },
+   343→   343→  ];
+   344→   344→
+   345→   345→  return (
+   346→   346→    <nav
+   347→   347→      aria-label="Bottom navigation"
+   348→   348→      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden"
+   349→   349→      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+   350→   350→    >
+   351→   351→      <div className="mx-auto grid max-w-lg grid-cols-5">
+   352→   352→        {items.map((it) => {
+   353→   353→          const Icon = it.icon;
+   354→   354→          return (
+   355→   355→            <button
+   356→   356→              key={it.key}
+   357→   357→              type="button"
+   358→   358→              onClick={it.onClick}
+   359→   359→              aria-label={it.label}
+   360→   360→              aria-current={it.active ? "page" : undefined}
+   361→   361→              className={cn(
+   362→   362→                "relative flex h-16 min-h-[56px] flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors",
+   363→   363→                it.active ? "text-teal-800" : "text-muted-foreground hover:text-foreground"
+   364→   364→              )}
+   365→   365→            >
+   366→   366→              <span className="relative">
+   367→   367→                <Icon className="h-5 w-5" aria-hidden="true" />
+   368→   368→                {it.badge > 0 ? (
+   369→   369→                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+   370→   370→                    {it.badge > 9 ? "9+" : it.badge}
+   371→   371→                  </span>
+   372→   372→                ) : null}
+   373→   373→              </span>
+   374→   374→              {it.label}
+   375→   375→              {it.active ? <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-brand-gradient" aria-hidden="true" /> : null}
+   376→   376→            </button>
+   377→   377→          );
+   378→   378→        })}
+   379→   379→      </div>
+   380→   380→    </nav>
+   381→   381→  );
+   382→   382→}
+   383→   383→
+   384→   384→// =============================================================================================
+   385→   385→// Market header (global chrome for market/search/category/pdp/checkout/… views)
+   386→   386→// =============================================================================================
+   387→   387→
+   388→   388→function MarketHeader({
+   389→   389→  view,
+   390→   390→  nav,
+   391→   391→  openCart,
+   392→   392→  search,
+   393→   393→  setSearch,
+   394→   394→}: {
+   395→   395→  view: ShopperView;
+   396→   396→  nav: (v: ShopperView) => void;
+   397→   397→  openCart: () => void;
+   398→   398→  search: string;
+   399→   399→  setSearch: (s: string) => void;
+   400→   400→}) {
+   401→   401→  const { count } = useCart();
+   402→   402→  const [categories, setCategories] = useState<CategoryT[] | null>(null);
+   403→   403→  const [mobileOpen, setMobileOpen] = useState(false);
+   404→   404→  const me = useApp((s) => s.me);
+   405→   405→  const shopperSignedIn = Boolean(me.loaded && me.shopper);
+   406→   406→  const unreadChats = useChatUnread(shopperSignedIn, view.name);
+   407→   407→
+   408→   408→  useEffect(() => {
+   409→   409→    let alive = true;
+   410→   410→    fetchJson<{ categories: CategoryT[] }>("/api/market/home")
+   411→   411→      .then((d) => alive && setCategories(d.categories ?? []))
+   412→   412→      .catch(() => alive && setCategories([]));
+   413→   413→    return () => {
+   414→   414→      alive = false;
+   415→   415→    };
+   416→   416→  }, []);
+   417→   417→
+   418→   418→  function submitSearch() {
+   419→   419→    nav({ name: "search", q: search.trim() });
+   420→   420→    setMobileOpen(false);
+   421→   421→  }
+   422→   422→
+   423→   423→  return (
+   424→   424→    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+   425→   425→      {/* brand gradient strip */}
+   426→   426→      <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
+   427→   427→      <div className="mx-auto flex max-w-7xl items-center gap-2 sm:gap-4 px-4 py-3">
+   428→   428→        {/* mobile menu */}
+   429→   429→        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+   430→   430→          <SheetTrigger asChild>
+   431→   431→            <button
+   432→   432→              type="button"
+   433→   433→              className="md:hidden flex h-10 w-10 min-h-[44px] items-center justify-center rounded-lg hover:bg-muted transition-colors"
+   434→   434→              aria-label="Open menu"
+   435→   435→            >
+   436→   436→              <Menu className="h-5 w-5" />
+   437→   437→            </button>
+   438→   438→          </SheetTrigger>
+   439→   439→          <SheetContent side="left" className="w-80 p-0">
+   440→   440→            <SheetHeader className="border-b p-4">
+   441→   441→              <SheetTitle className="flex items-center gap-2 text-left">
+   442→   442→                <ShoppingBag className="h-5 w-5 text-teal-700" /> NOMOFEE
+   443→   443→              </SheetTitle>
+   444→   444→            </SheetHeader>
+   445→   445→            <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-80px)]">
+   446→   446→              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Categories</p>
+   447→   447→              <ul className="space-y-1">
+   448→   448→                {(categories ?? []).flatMap((c) => [{ name: c.name, slug: c.slug, child: false }, ...c.children.map((ch) => ({ name: `↳ ${ch.name}`, slug: ch.slug, child: true }))]).map((c) => (
+   449→   449→                  <li key={c.slug}>
+   450→   450→                    <button
+   451→   451→                      type="button"
+   452→   452→                      onClick={() => {
+   453→   453→                        nav({ name: "category", categorySlug: c.slug, label: c.name.replace("↳ ", "") });
+   454→   454→                        setMobileOpen(false);
+   455→   455→                      }}
+   456→   456→                      className={cn(
+   457→   457→                        "w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-muted transition-colors min-h-[44px]",
+   458→   458→                        c.child && "text-muted-foreground pl-6"
+   459→   459→                      )}
+   460→   460→                    >
+   461→   461→                      {c.name}
+   462→   462→                    </button>
+   463→   463→                  </li>
+   464→   464→                ))}
+   465→   465→              </ul>
+   466→   466→              <Separator />
+   467→   467→              <button
+   468→   468→                type="button"
+   469→   469→                onClick={() => {
+   470→   470→                  nav({ name: "lookup" });
+   471→   471→                  setMobileOpen(false);
+   472→   472→                }}
+   473→   473→                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-muted min-h-[44px]"
+   474→   474→              >
+   475→   475→                <PackageSearch className="h-4 w-4 text-teal-700" /> Track my order
+   476→   476→              </button>
+   477→   477→            </div>
+   478→   478→          </SheetContent>
+   479→   479→        </Sheet>
+   480→   480→
+   481→   481→        {/* logo — wordmark hidden on the smallest phones so the search bar fits */}
+   482→   482→        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] shrink-0 items-center gap-2" aria-label="NOMOFEE home">
+   483→   483→          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
+   484→   484→            <ShoppingBag className="h-5 w-5" />
+   485→   485→          </span>
+   486→   486→          <span className="hidden text-lg font-extrabold tracking-tight text-teal-900 sm:inline">
+   487→   487→            NOMO<span className="text-brand-gradient">FEE</span>
+   488→   488→          </span>
+   489→   489→        </button>
+   490→   490→
+   491→   491→        {/* category dropdown (desktop) */}
+   492→   492→        <DropdownMenu>
+   493→   493→          <DropdownMenuTrigger asChild>
+   494→   494→            <button
+   495→   495→              type="button"
+   496→   496→              className="hidden md:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+   497→   497→              aria-label="Browse categories"
+   498→   498→            >
+   499→   499→              <Menu className="h-4 w-4" /> Categories <ChevronDown className="h-3.5 w-3.5" />
+   500→   500→            </button>
+   501→   501→          </DropdownMenuTrigger>
+   502→   502→          <DropdownMenuContent align="start" className="w-64 max-h-[70vh] overflow-y-auto">
+   503→   503→            {categories == null ? (
+   504→   504→              <div className="flex items-center justify-center py-6">
+   505→   505→                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+   506→   506→              </div>
+   507→   507→            ) : (
+   508→   508→              categories.map((c) => {
+   509→   509→                const Icon = categoryIcon(c.name);
+   510→   510→                return c.children.length > 0 ? (
+   511→   511→                  <DropdownMenuSub key={c.id}>
+   512→   512→                    <DropdownMenuSubTrigger className="min-h-[44px]">
+   513→   513→                      <span className="flex items-center gap-2">
+   514→   514→                        <Icon className="h-4 w-4 text-teal-700" />
+   515→   515→                        {c.name}
+   516→   516→                      </span>
+   517→   517→                    </DropdownMenuSubTrigger>
+   518→   518→                    <DropdownMenuSubContent className="w-56">
+   519→   519→                      <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: c.slug, label: c.name })}>
+   520→   520→                        All {c.name}
+   521→   521→                      </DropdownMenuItem>
+   522→   522→                      {c.children.map((ch) => (
+   523→   523→                        <DropdownMenuItem key={ch.id} className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: ch.slug, label: ch.name })}>
+   524→   524→                          {ch.name}
+   525→   525→                        </DropdownMenuItem>
+   526→   526→                      ))}
+   527→   527→                    </DropdownMenuSubContent>
+   528→   528→                  </DropdownMenuSub>
+   529→   529→                ) : (
+   530→   530→                  <DropdownMenuItem key={c.id} className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: c.slug, label: c.name })}>
+   531→   531→                    <span className="flex items-center gap-2">
+   532→   532→                      <Icon className="h-4 w-4 text-teal-700" />
+   533→   533→                      {c.name}
+   534→   534→                    </span>
+   535→   535→                  </DropdownMenuItem>
+   536→   536→                );
+   537→   537→              })
+   538→   538→            )}
+   539→   539→          </DropdownMenuContent>
+   540→   540→        </DropdownMenu>
+   541→   541→
+   542→   542→        {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons */}
+   543→   543→        <div className="relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md">
+   544→   544→          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   545→   545→          <Input
+   546→   546→            value={search}
+   547→   547→            onChange={(e) => setSearch(e.target.value)}
+   548→   548→            onKeyDown={(e) => e.key === "Enter" && submitSearch()}
+   549→   549→            placeholder="Search the marketplace…"
+   550→   550→            className="pl-9 min-h-[44px] rounded-full"
+   551→   551→            aria-label="Search the marketplace"
+   552→   552→          />
+   553→   553→        </div>
+   554→   554→
+   555→   555→        <div className="ml-0 flex shrink-0 items-center gap-1.5">
+   556→   556→          {/* buyer notification bell (Task 10-d) — self-gates for guests */}
+   557→   557→          <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} className="hidden sm:inline-flex" />
+   558→   558→
+   559→   559→          {/* messages — account feature, hidden for guests */}
+   560→   560→          {shopperSignedIn ? (
+   561→   561→            <button
+   562→   562→              type="button"
+   563→   563→              onClick={() => nav({ name: "messages" })}
+   564→   564→              aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
+   565→   565→              className={cn(
+   566→   566→                "relative inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+   567→   567→                view.name === "messages" && "text-teal-800 bg-teal-50"
+   568→   568→              )}
+   569→   569→            >
+   570→   570→              <MessagesSquare className="h-4 w-4" />
+   571→   571→              <span className="hidden md:inline">Messages</span>
+   572→   572→              {unreadChats > 0 ? (
+   573→   573→                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+   574→   574→                  {unreadChats > 9 ? "9+" : unreadChats}
+   575→   575→                </span>
+   576→   576→              ) : null}
+   577→   577→            </button>
+   578→   578→          ) : null}
+   579→   579→
+   580→   580→          {/* orders — account feature, hidden for guests (guests keep “Track order” via the footer/menu) */}
+   581→   581→          {shopperSignedIn ? (
+   582→   582→            <button
+   583→   583→              type="button"
+   584→   584→              onClick={() => nav({ name: "me", tab: "purchases" })}
+   585→   585→              aria-label="My orders"
+   586→   586→              className={cn(
+   587→   587→                "hidden sm:inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+   588→   588→                (view.name === "orders" || (view.name === "me" && view.tab === "purchases")) && "text-teal-800 bg-teal-50"
+   589→   589→              )}
+   590→   590→            >
+   591→   591→              <Package className="h-4 w-4" /> Orders
+   592→   592→            </button>
+   593→   593→          ) : null}
+   594→   594→
+   595→   595→          {/* track order */}
+   596→   596→          <button
+   597→   597→            type="button"
+   598→   598→            onClick={() => nav({ name: "lookup" })}
+   599→   599→            className={cn(
+   600→   600→              "hidden md:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+   601→   601→              view.name === "lookup" && "text-teal-800 bg-teal-50"
+   602→   602→            )}
+   603→   603→          >
+   604→   604→            <PackageSearch className="h-4 w-4" /> Track order
+   605→   605→          </button>
+   606→   606→
+   607→   607→          {/* cart */}
+   608→   608→          <button
+   609→   609→            type="button"
+   610→   610→            onClick={openCart}
+   611→   611→            aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
+   612→   612→            className="relative flex h-10 w-10 min-h-[44px] items-center justify-center rounded-lg border bg-card hover:bg-muted transition-colors"
+   613→   613→          >
+   614→   614→            <ShoppingCart className="h-5 w-5 text-teal-700" />
+   615→   615→            {count > 0 ? (
+   616→   616→              <motion.span
+   617→   617→                key={count}
+   618→   618→                initial={{ scale: 0.5 }}
+   619→   619→                animate={{ scale: 1 }}
+   620→   620→                className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-extrabold text-white shadow"
+   621→   621→              >
+   622→   622→                {count > 99 ? "99+" : count}
+   623→   623→              </motion.span>
+   624→   624→            ) : null}
+   625→   625→          </button>
+   626→   626→
+   627→   627→          {/* account (shopper auth) */}
+   628→   628→          <AccountButton nav={nav} />
+   629→   629→        </div>
+   630→   630→      </div>
+   631→   631→    </header>
+   632→   632→  );
+   633→   633→}
+   634→   634→
+   635→   635→// =============================================================================================
+   636→   636→// Shopper account (sign-in chip / dropdown) + auth dialog + messages view
+   637→   637→// =============================================================================================
+   638→   638→
+   639→   639→function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
+   640→   640→  const me = useApp((s) => s.me);
+   641→   641→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+   642→   642→  const logout = useApp((s) => s.logout);
+   643→   643→  const refreshMe = useApp((s) => s.refreshMe);
+   644→   644→  const shopper = me.loaded ? me.shopper : null;
+   645→   645→
+   646→   646→  if (!shopper) {
+   647→   647→    return (
+   648→   648→      <button
+   649→   649→        type="button"
+   650→   650→        onClick={() => openShopperAuth()}
+   651→   651→        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
+   652→   652→        aria-label="Sign in to NOMOFEE"
+   653→   653→      >
+   654→   654→        <LogIn className="h-4 w-4" />
+   655→   655→        <span className="hidden sm:inline">Sign in</span>
+   656→   656→      </button>
+   657→   657→    );
+   658→   658→  }
+   659→   659→  return (
+   660→   660→    <DropdownMenu>
+   661→   661→      <DropdownMenuTrigger asChild>
+   662→   662→        <button
+   663→   663→          type="button"
+   664→   664→          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
+   665→   665→          aria-label={`Signed in as ${shopper.fullName}`}
+   666→   666→        >
+   667→   667→          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-extrabold text-white">
+   668→   668→            {shopper.fullName.slice(0, 1).toUpperCase()}
+   669→   669→          </span>
+   670→   670→          <span className="hidden sm:inline max-w-28 truncate">{shopper.fullName.split(" ")[0]}</span>
+   671→   671→        </button>
+   672→   672→      </DropdownMenuTrigger>
+   673→   673→      <DropdownMenuContent align="end" className="w-56">
+   674→   674→        <div className="px-3 py-2">
+   675→   675→          <p className="truncate text-sm font-semibold">{shopper.fullName}</p>
+   676→   676→          <p className="truncate text-xs text-muted-foreground">{shopper.email}</p>
+   677→   677→        </div>
+   678→   678→        <Separator />
+   679→   679→        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me" })}>
+   680→   680→          <User className="h-4 w-4 text-teal-700" /> My dashboard
+   681→   681→        </DropdownMenuItem>
+   682→   682→        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me", tab: "purchases" })}>
+   683→   683→          <Package className="h-4 w-4 text-teal-700" /> My purchases
+   684→   684→        </DropdownMenuItem>
+   685→   685→        <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "messages" })}>
+   686→   686→          <MessagesSquare className="h-4 w-4 text-teal-700" /> My messages
+   687→   687→        </DropdownMenuItem>
+   688→   688→        <DropdownMenuItem
+   689→   689→          className="min-h-[44px] text-rose-600"
+   690→   690→          onClick={async () => {
+   691→   691→            await logout();
+   692→   692→            await refreshMe();
+   693→   693→            toast.success("Signed out");
+   694→   694→          }}
+   695→   695→        >
+   696→   696→          <LogOut className="h-4 w-4" /> Sign out
+   697→   697→        </DropdownMenuItem>
+   698→   698→      </DropdownMenuContent>
+   699→   699→    </DropdownMenu>
+   700→   700→  );
+   701→   701→}
+   702→   702→
+   703→   703→function ShopperAuthDialog() {
+   704→   704→  const open = useApp((s) => s.shopperAuthOpen);
+   705→   705→  const close = useApp((s) => s.closeShopperAuth);
+   706→   706→  const after = useApp((s) => s.afterShopperAuth);
+   707→   707→  const refreshMe = useApp((s) => s.refreshMe);
+   708→   708→  const [tab, setTab] = useState("login");
+   709→   709→  const [busy, setBusy] = useState(false);
+   710→   710→
+   711→   711→  useEffect(() => {
+   712→   712→    if (open) setTab("login");
+   713→   713→  }, [open]);
+   714→   714→
+   715→   715→  const finish = async () => {
+   716→   716→    await refreshMe();
+   717→   717→    close();
+   718→   718→    after?.();
+   719→   719→  };
+   720→   720→
+   721→   721→  const submitLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+   722→   722→    e.preventDefault();
+   723→   723→    if (busy) return;
+   724→   724→    const f = new FormData(e.currentTarget);
+   725→   725→    setBusy(true);
+   726→   726→    try {
+   727→   727→      const res = await postJson<{ token?: string }>("/api/auth/shopper/login", { email: f.get("email"), password: f.get("password") });
+   728→   728→      setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
+   729→   729→      toast.success("Welcome back!");
+   730→   730→      await finish();
+   731→   731→    } catch (err) {
+   732→   732→      toast.error(err instanceof Error ? err.message : "Sign in failed");
+   733→   733→    } finally {
+   734→   734→      setBusy(false);
+   735→   735→    }
+   736→   736→  };
+   737→   737→
+   738→   738→  const submitRegister = async (e: React.FormEvent<HTMLFormElement>) => {
+   739→   739→    e.preventDefault();
+   740→   740→    if (busy) return;
+   741→   741→    const f = new FormData(e.currentTarget);
+   742→   742→    setBusy(true);
+   743→   743→    try {
+   744→   744→      const res = await postJson<{ token?: string }>("/api/auth/shopper/register", {
+   745→   745→        fullName: f.get("fullName"),
+   746→   746→        email: f.get("email"),
+   747→   747→        password: f.get("password"),
+   748→   748→      });
+   749→   749→      setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
+   750→   750→      toast.success("Account created!", { description: "You can now chat with sellers and track orders." });
+   751→   751→      await finish();
+   752→   752→    } catch (err) {
+   753→   753→      toast.error(err instanceof Error ? err.message : "Registration failed");
+   754→   754→    } finally {
+   755→   755→      setBusy(false);
+   756→   756→    }
+   757→   757→  };
+   758→   758→
+   759→   759→  return (
+   760→   760→    <Dialog open={open} onOpenChange={(o) => (!o ? close() : null)}>
+   761→
+   762→[showing lines 1-760 of 1515; use offset=761 with limit to continue reading]

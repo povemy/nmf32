@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
+import { useChatUserRoom } from "@/lib/chat-presence";
 import { setSessionToken } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import {
@@ -89,6 +90,25 @@ export default function SellerShell() {
 
   const seller = me.loaded && "seller" in me ? me.seller : null;
   const sellerId = seller?.id ?? null;
+
+  // ---- global inbox presence (ONE socket on every seller view) ---------------
+  // Keeps the Messages nav badge instant (a push fires "nomofee:chat-sync",
+  // which useSellerChatUnread already listens to) and toasts the shopper's
+  // message with a jump-in action while the seller is on any other page.
+  useChatUserRoom(sellerId, {
+    onMessage: (msg) => {
+      if (msg.senderType === "seller") return; // own echo / assistant paths
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
+      if (nav.view !== "messages") {
+        const preview = msg.body.length > 90 ? `${msg.body.slice(0, 90)}…` : msg.body;
+        toast(`${msg.senderName} · New message`, {
+          description: preview,
+          action: { label: "Open messages", onClick: () => setNav({ view: "messages" }) },
+        });
+      }
+    },
+    onActivity: () => window.dispatchEvent(new Event("nomofee:chat-sync")),
+  });
 
   const refreshStoreMe = useCallback(async () => {
     try {

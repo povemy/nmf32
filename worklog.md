@@ -917,3 +917,26 @@ Stage Summary:
 - Quoted product/order cards: pinned under the conversation name bar (always visible while messages scroll), neutral styling, no amber border — desktop and mobile verified.
 - Migration fully verified end-to-end on Supabase: all logins, financial gates (21 balanced txns), commerce round-trip (order NM-100018), UI golden path.
 - Anon key is valid (root-endpoint restriction was a red herring). User should still rotate the service-role key + DB password (shared in chat) from the Supabase dashboard and swap the new values into .env.
+
+---
+Task ID: 24
+Agent: Z.ai Code (orchestrator)
+Task: Chat notification gaps + Messages-page UX round (per user's 3-point feedback): (1) no live notification when away from the Messages page — no badge on Message/Chat tabs (desktop+mobile), no per-conversation badge on the vendor list; (2) All/Active filter pill switching blinks (refetches from Supabase before showing); (3) vendor logo/name should deep-link to their store; product-entry chat should replace an existing order quote in the same conversation.
+
+Work Log:
+- Root-caused the "silent badge": the only live socket lived inside the Messages view; away from it, unread badges relied on a 15s poll (`useChatUnread`). Any push felt lost. (Also noted: sockets only work through the Caddy gateway :81 — direct :3000 cannot reach the hub; all verification must go through the gateway, which is the user's real preview path.)
+- NEW `src/lib/chat-presence.ts`: refcounted singleton socket.io client + `useChatUserRoom(userId, events)` hook — joins `user:{id}` inbox room on EVERY view, infinite reconnection, handlers kept in refs.
+- Wired into `ShopperShell`: on `chat:message` → dispatches `nomofee:chat-sync` (both badge hooks re-sync instantly) + sonner toast "sender · New message" with an "Open chat" jump-in action when NOT on the messages view (suppressed inside Messages to avoid double-notify). Seller own-echo guarded.
+- Wired into `SellerShell` (same pattern): instant Messages nav badge + toast with "Open messages" action while the seller is on any other page.
+- NEW shared `filterChatThreads(rows, filter, query)` in `chat-ui.tsx`; both Messages views (shopper `shopper-shell.tsx` + seller `messages.tsx`) now fetch the full list once (`size=100`) and filter All/Active + search purely client-side via useMemo — pill switching costs zero network (the blink is gone); list stays live via socket pushes + read receipts.
+- Shopper conversation header: avatar + store name are now a 44px-tall button → `nav storefront` for `storeSlug` (row type extended with optional `storeSlug`); hover affordance + Store icon.
+- Verified product-chat re-stamp end-to-end: existing order-context thread (NM-100018) → store → PDP "Message seller" → same thread re-stamped to product context; quoted card now shows "ASKING ABOUT THIS PRODUCT"; API `upsert` update-branch already re-stamps contextType/productId/subject (no API change needed).
+- Browser verification via agent-browser THROUGH THE GATEWAY (localhost:81): desktop badge 3→4 + toast ~130ms; list row badge 4→5 live; in-room instant delivery intact; pill switches = 0 network requests; search "byte" instant (0 fetches); toast correctly suppressed inside Messages; seller side: badge bump + toast from Dashboard; mobile viewport 390×844: Chat tab badge 2→3 live + toast. Vendor header → storefront ✓.
+- Housekeeping: `bun run lint` clean; tsc unchanged (61 pre-existing baseline errors, none in touched files); removed temp debug; dev server + chat hub healthy.
+
+Stage Summary:
+- Chat is now fully "ajax-style" everywhere: open conversation (existing), vendor list row badges, global Message/Chat tab badges (desktop + mobile) and cross-surface toasts all update instantly from the hub; the 15s poll remains only as a fallback.
+- All/Active + search = instant client-side filtering; no more blink.
+- Vendor identity in the chatroom deep-links to the store; product entry re-quotes the conversation context (order → product) exactly as requested.
+- Key artifacts: src/lib/chat-presence.ts (new), src/components/chat/chat-ui.tsx, src/components/shopper/shopper-shell.tsx, src/components/seller/seller-shell.tsx, src/components/seller/messages.tsx.
+- Ops note for the user: sandbox sockets only work through the gateway (:81/preview) — testing on :3000 directly cannot reach the chat hub; not a bug.

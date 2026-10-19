@@ -28,6 +28,8 @@ export type ChatThreadRow = {
   lastMessageAt: string;
   unreadCount: number;
   lastMessage: { body: string; senderType: string; createdAt: string; readAt: string | null } | null;
+  /** Shopper-side rows carry the vendor's store slug (→ "view store" links). */
+  storeSlug?: string | null;
 };
 
 export type ChatMsg = {
@@ -61,6 +63,29 @@ export function chatTimeLabel(iso: string): string {
   if (t >= startOfToday - 86_400_000) return "Yesterday";
   if (t >= startOfToday - 6 * 86_400_000) return d.toLocaleDateString(undefined, { weekday: "long" });
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/**
+ * Instant client-side thread filtering for the All/Active pills + search.
+ * Switching pills used to refetch the list from the server first — with the
+ * remote Supabase round-trip that read as a blink ("it validates before it
+ * shows"). Filtering the already-loaded snapshot costs nothing, always matches
+ * what is on screen, and stays live: socket pushes + read receipts mutate the
+ * same snapshot, and this runs on every render over it. The server keeps its
+ * ?filter/?q params for API compatibility; the clients simply stop using them.
+ */
+export function filterChatThreads(rows: ChatThreadRow[], filter: ChatFilter, query: string): ChatThreadRow[] {
+  const q = query.trim().toLowerCase();
+  return rows.filter((t) => {
+    if (filter === "active" && t.unreadCount <= 0) return false;
+    if (!q) return true;
+    return (
+      t.displayName.toLowerCase().includes(q) ||
+      (t.orderNumber ?? "").toLowerCase().includes(q) ||
+      (t.subject ?? "").toLowerCase().includes(q) ||
+      (t.lastMessage?.body ?? "").toLowerCase().includes(q)
+    );
+  });
 }
 
 /** Context chip under the title — what the conversation is about. */
