@@ -56,6 +56,22 @@ export const GET = handle(async (_req: NextRequest) => {
     if (p.paidAt && !lastPaidByWallet.has(p.walletId)) lastPaidByWallet.set(p.walletId, { amountMinor: p.amountMinor, paidAt: p.paidAt });
   }
 
+  // seller-initiated payout requests: still part of "available" (no T3 posted
+  // yet) but already promised to the seller — surfaced per wallet so the
+  // admin sees how much of the due total is committed.
+  const requestedRows = await db.payout.findMany({
+    where: { status: "requested", method: "seller_request" },
+    select: { walletId: true, amountMinor: true, referenceNo: true },
+  });
+  const requestedByWallet = new Map<string, { amountMinor: number; referenceNo: string }>();
+  for (const r of requestedRows) {
+    const prev = requestedByWallet.get(r.walletId);
+    requestedByWallet.set(r.walletId, {
+      amountMinor: (prev?.amountMinor ?? 0) + r.amountMinor,
+      referenceNo: prev ? `${prev.referenceNo}, ${r.referenceNo}` : r.referenceNo,
+    });
+  }
+
   const bankOf = (accounts: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean }[]) =>
     accounts.find((b) => b.verified) ?? accounts[0] ?? null;
 
@@ -64,12 +80,15 @@ export const GET = handle(async (_req: NextRequest) => {
     .map(({ w, truth }) => {
       const bank = bankOf(w.seller.bankAccounts);
       const last = lastPaidByWallet.get(w.id) ?? null;
+      const req = requestedByWallet.get(w.id) ?? null;
       return {
         walletId: w.id,
         sellerId: w.seller.id,
         sellerName: w.seller.displayName,
         storeName: w.seller.store?.name ?? null,
         availableMinor: truth.availableMinor,
+        requestedMinor: req?.amountMinor ?? 0,
+        requestedRef: req?.referenceNo ?? null,
         bank: bank
           ? { id: bank.id, bankName: bank.bankName, holderName: bank.holderName, accountNumberMasked: bank.accountNumberMasked, verified: bank.verified }
           : null,
@@ -80,6 +99,7 @@ export const GET = handle(async (_req: NextRequest) => {
 
   const pendingTotalMinor = refreshed.reduce((s, { truth }) => s + truth.pendingMinor, 0);
   const belowMin = refreshed.filter(({ truth }) => truth.availableMinor > 0 && truth.availableMinor < minMinor);
+  const requestedTotalMinor = [...requestedByWallet.values()].reduce((s, r) => s + r.amountMinor, 0);
 
   return ok({
     minMinor,
@@ -88,6 +108,7 @@ export const GET = handle(async (_req: NextRequest) => {
     dueTotalMinor: due.reduce((s, d) => s + d.availableMinor, 0),
     dueCount: due.length,
     due,
+    requestedTotalMinor,
     pendingTotalMinor,
     belowMinCount: belowMin.length,
     belowMinTotalMinor: belowMin.reduce((s, { truth }) => s + truth.availableMinor, 0),

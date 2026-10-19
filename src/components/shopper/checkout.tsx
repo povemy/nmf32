@@ -218,9 +218,18 @@ function loadDraft(): DraftT {
   if (typeof window === "undefined") return base;
   try {
     const raw = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY) ?? "{}") as Partial<DraftT>;
+    // Cart-drawer order note (Seller "Cart Experience" feature) pre-fills the
+    // checkout note when the shopper hasn't typed one here yet.
+    let drawerNote = "";
+    try {
+      drawerNote = window.localStorage.getItem("sm_cart_note") ?? "";
+    } catch {
+      /* ignore */
+    }
     return {
       ...base,
       ...raw,
+      note: raw.note || drawerNote || "",
       phase: raw.phase === 2 || raw.phase === 3 ? raw.phase : 1,
       idemKey: raw.idemKey || base.idemKey, // stable across retries → idempotent resubmits
     };
@@ -1304,7 +1313,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                     Only {i.stock} left of “{i.title}” — you have {i.qty} in cart.
                   </p>
                 ))}
-                <button type="button" onClick={ctx.openCart} className="pt-1 font-bold underline underline-offset-2">
+                <button type="button" onClick={() => ctx.openCart()} className="pt-1 font-bold underline underline-offset-2">
                   Update cart
                 </button>
               </div>

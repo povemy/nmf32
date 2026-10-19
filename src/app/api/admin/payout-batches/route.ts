@@ -53,13 +53,36 @@ export const POST = handle(async (req: NextRequest) => {
       seller: { select: { id: true, email: true, displayName: true, store: { select: { id: true, name: true } }, bankAccounts: true } },
     },
   });
-  const refreshed = [];
+  const refreshed: Array<(typeof wallets)[number] & { truth: Awaited<ReturnType<typeof refreshWalletCache>> }> = [];
   for (const w of wallets) {
     const truth = await refreshWalletCache(w.id);
     refreshed.push({ ...w, truth });
   }
 
-  const eligible = refreshed.filter((w) => w.truth.availableMinor >= minMinor);
+  // Seller payout requests: money already promised via status "requested" rows
+  // (no T3 posted yet, so still ledger-"available"). A batch sweep must NOT
+  // double-pay those wallets — skip them until the request is approved or rejected.
+  const openRequestWalletIds = new Set(
+    (await db.payout.findMany({
+      where: { status: "requested", method: "seller_request" },
+      select: { walletId: true },
+    })).map((r) => r.walletId)
+  );
+  const skipped = refreshed
+    .filter((w) => openRequestWalletIds.has(w.id))
+    .map((w) => {
+      const bank = w.seller.bankAccounts.find((b) => b.verified) ?? w.seller.bankAccounts[0] ?? null;
+      return {
+        walletId: w.id,
+        sellerName: w.seller.displayName,
+        storeName: w.seller.store?.name ?? null,
+        availableMinor: w.truth.availableMinor,
+        reason: "Payout request pending — approve/reject it in Seller requests first",
+        bank: bank ? { id: bank.id, bankName: bank.bankName, holderName: bank.holderName, accountNumberMasked: bank.accountNumberMasked, verified: bank.verified } : null,
+      };
+    });
+
+  const eligible = refreshed.filter((w) => w.truth.availableMinor >= minMinor && !openRequestWalletIds.has(w.id));
 
   const preview = eligible.map((w) => {
     const bank = w.seller.bankAccounts.find((b) => b.verified) ?? w.seller.bankAccounts[0] ?? null;
@@ -74,11 +97,25 @@ export const POST = handle(async (req: NextRequest) => {
   });
 
   if (dryRun) {
-    return ok({ dryRun: true, minMinor, mode, eligibleCount: preview.length, eligibleTotalMinor: preview.reduce((s, e) => s + e.availableMinor, 0), eligible: preview });
+    return ok({
+      dryRun: true,
+      minMinor,
+      mode,
+      eligibleCount: preview.length,
+      eligibleTotalMinor: preview.reduce((s, e) => s + e.availableMinor, 0),
+      eligible: preview,
+      skipped,
+    });
   }
 
   if (preview.length === 0) {
-    throw new ApiError(409, "NO_ELIGIBLE_WALLETS", `No wallet meets the minimum payout of ${minMinor} minor units`);
+    throw new ApiError(
+      409,
+      "NO_ELIGIBLE_WALLETS",
+      skipped.length > 0
+        ? `No eligible wallet meets the minimum of ${minMinor} minor units — ${skipped.length} wallet${skipped.length === 1 ? "" : "s"} skipped because a seller payout request is pending`
+        : `No wallet meets the minimum payout of ${minMinor} minor units`
+    );
   }
 
   // create batch + payouts (processing) + T3 per wallet

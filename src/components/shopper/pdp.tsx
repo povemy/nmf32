@@ -39,6 +39,7 @@ import {
   Stars,
   type ProductCardT,
   type ShopperCtx,
+  type CardStyleTokens,
 } from "./ui-bits";
 
 type VariantT = {
@@ -71,7 +72,7 @@ type PdpPayload = {
   };
   reviews: { id: string; customerName: string; rating: number; title: string | null; body: string | null; reply: string | null; createdAt: string }[];
   related: ProductCardT[];
-  store: { id: string; name: string; slug: string; tagline: string | null; logoUrl: string | null; whatsapp: string | null };
+  store: { id: string; name: string; slug: string; tagline: string | null; logoUrl: string | null; whatsapp: string | null; cardStyle?: CardStyleTokens | null };
 };
 
 export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: string; pSlug: string }) {
@@ -246,6 +247,10 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
       } else {
         toast.success("Added to cart", { description: `${data?.product.title}${qty > 1 ? ` × ${qty}` : ""}` });
       }
+      // Shopify-style: pop the cart drawer open after every successful add so
+      // the shopper immediately sees what's in the cart (with the seller's
+      // customized cart experience for THIS store).
+      if (data?.store?.slug) ctx.openCart(data.store.slug);
       return true;
     } catch (e) {
       // Belt-and-braces: an expired session gets the same sign-in-first flow.
@@ -535,7 +540,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
           <h2 className="text-lg font-bold">More from {store.name}</h2>
           <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {data.related.map((p) => (
-              <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
+              <ProductCard key={p.id} p={p} cardStyle={data.store.cardStyle} onOpen={(pp) => openProduct(ctx, pp)} />
             ))}
           </div>
         </div>

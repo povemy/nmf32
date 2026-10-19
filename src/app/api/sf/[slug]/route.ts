@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { parsePageDoc, parseTheme } from "@/lib/sections";
-import { parseSocial } from "../../_shared/product-card";
+import { parseSocial, cardStyleFor } from "../../_shared/product-card";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
 
   const doc = parsePageDoc(home.publishedJson);
   const followers = await db.storeFollow.count({ where: { storeId: store.id } }); // Task 10-d
+  const cardStyle = await cardStyleFor(store.id);
 
   return ok({
     store: {
@@ -37,6 +38,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       supportPhone: store.supportPhone,
       social: parseSocial(store.socialJson),
       followers,
+      cardStyle,
     },
     page: {
       id: home.id,

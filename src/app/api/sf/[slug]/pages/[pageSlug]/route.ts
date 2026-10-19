@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { parsePageDoc, parseTheme } from "@/lib/sections";
+import { cardStyleFor } from "../../../../_shared/product-card";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   if (!page || !page.publishedJson) throw new ApiError(404, "PAGE_NOT_PUBLISHED", "Page not found");
 
   const doc = parsePageDoc(page.publishedJson);
+  const cardStyle = await cardStyleFor(store.id);
 
   return ok({
     store: {
@@ -26,6 +28,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       whatsapp: store.whatsapp,
       supportEmail: store.supportEmail,
       theme: parseTheme(store.themeJson),
+      cardStyle,
     },
     page: {
       id: page.id,

@@ -250,6 +250,8 @@ model Store {
   domains          StoreDomain[]
   integrations     StoreIntegration[]
   webhookEndpoints WebhookEndpoint[]
+  cartSettings     CartSettings?
+  cardStyle        ProductCardStyle?
 }
 
 model StoreDomain {
@@ -1191,4 +1193,67 @@ model SeoMeta {
 
   @@unique([entityType, entityId])
   @@index([entityType])
+}
+
+// ============================================================================
+// SELLER CUSTOMIZATION — cart drawer experience + product card typography.
+// Vendors configure these through plain forms in the Seller Backend (toggles,
+// selects, pickers). The *_Json columns are BACKEND-ONLY storage written by
+// those forms — the vendor UI never edits raw JSON.
+// ============================================================================
+
+// Shopify-style cart drawer customization, one per store. The shopper-facing
+// drawer (/cart drawer + PDP auto-open) renders from these settings, so the
+// seller can add AOV boosters (free-shipping progress, upsells) and urgency
+// (low-stock, live viewers, reservation countdown) without any code.
+model CartSettings {
+  id                      String   @id @default(cuid())
+  storeId                 String   @unique
+  // drawer structure: compact | standard | pro (image-led, sections, full AOV)
+  layout                  String   @default("standard")
+  // AOV — free shipping progress bar
+  showFreeShippingBar     Boolean  @default(true)
+  freeShipThresholdMinor  Int      @default(10000)
+  // AOV — upsell / cross-sell strip (auto best-sellers or manual picks)
+  upsellEnabled           Boolean  @default(false)
+  upsellMode              String   @default("auto") // auto | manual
+  upsellProductIdsJson    String   @default("[]")   // backend-only storage
+  upsellTitle             String   @default("Frequently bought together")
+  upsellLimit             Int      @default(3)
+  // urgency — low stock warning
+  urgencyStockEnabled     Boolean  @default(false)
+  urgencyStockThreshold   Int      @default(5)
+  // urgency — simulated live viewers
+  urgencyViewersEnabled   Boolean  @default(false)
+  urgencyViewersMin       Int      @default(8)
+  urgencyViewersMax       Int      @default(28)
+  // urgency — cart reservation countdown (minutes from drawer open)
+  urgencyCountdownEnabled Boolean  @default(false)
+  urgencyCountdownMinutes Int      @default(15)
+  // trust / conversion extras
+  trustBadgesJson         String   @default("[]")   // backend-only storage
+  showOrderNote           Boolean  @default(false)
+  showDiscountHint        Boolean  @default(true)
+  checkoutLabel           String   @default("Checkout")
+  showContinueShopping    Boolean  @default(true)
+  stickyCta               Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  store                   Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+// Typography of product cards across the seller's own storefront catalogue:
+// font family / size / alignment for the product name and the price.
+model ProductCardStyle {
+  id         String   @id @default(cuid())
+  storeId    String   @unique
+  nameFont   String   @default("inter") // FONT ids from src/lib/fonts.ts
+  nameSize   String   @default("md")    // sm | md | lg
+  nameAlign  String   @default("left")  // left | center | right
+  priceFont  String   @default("inter")
+  priceSize  String   @default("md")    // sm | md | lg
+  priceAlign String   @default("left")  // left | center | right
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 }

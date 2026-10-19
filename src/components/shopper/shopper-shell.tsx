@@ -25,6 +25,17 @@ import {
   LogOut,
   Send,
   User,
+  ShieldCheck,
+  RotateCcw,
+  Headphones,
+  Truck,
+  Banknote,
+  BadgeCheck,
+  Timer,
+  Eye,
+  Flame,
+  Plus,
+  Gift,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -61,6 +72,7 @@ import {
   fetchEnvelope,
   type CartItemT,
   type CategoryT,
+  type ProductCardT,
   type ShopperCtx,
   type ShopperView,
 } from "./ui-bits";
@@ -149,6 +161,9 @@ export default function ShopperShell() {
   const [view, setView] = useState<ShopperView>({ name: "market" });
   const [ready, setReady] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  // Which store's customized cart experience to render in the drawer — set by
+  // PDP add-to-cart / storefront header; null = platform defaults.
+  const [cartStoreSlug, setCartStoreSlug] = useState<string | null>(null);
   const [headerSearch, setHeaderSearch] = useState("");
   // Back-navigation history stack (user request: back button on every page).
   // viewRef mirrors `view` so nav() can push the PREVIOUS view without reading
@@ -243,7 +258,17 @@ export default function ShopperShell() {
     }
   }, [activeStoreSlug, ready, setActiveStoreSlug]);
 
-  const ctx = useMemo<ShopperCtx>(() => ({ nav, back, openCart: () => setCartOpen(true) }), [nav, back]);
+  const ctx = useMemo<ShopperCtx>(
+    () => ({
+      nav,
+      back,
+      openCart: (storeSlug?: string) => {
+        setCartStoreSlug(storeSlug ?? null);
+        setCartOpen(true);
+      },
+    }),
+    [nav, back]
+  );
 
   // ---- global inbox presence (ONE socket on every view) ---------------------
   // Away from the messages page nothing used to listen for pushes, so the
@@ -339,7 +364,7 @@ export default function ShopperShell() {
         />
       ) : null}
 
-      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} ctx={ctx} />
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} ctx={ctx} storeSlug={cartStoreSlug} />
     </div>
   );
 }
@@ -1361,15 +1386,187 @@ function ShopperFooter({
 }
 
 // =============================================================================================
-// Cart drawer (global)
+// =============================================================================================
+// Cart drawer (global) — Shopify-style: slides in from the right on every
+// add-to-cart and renders the SELLER'S CUSTOMIZED cart experience for the
+// store the shopper is buying from (layout mode, free-shipping progress,
+// upsell strip, urgency elements, trust badges, custom CTA label). Configured
+// entirely through the Seller Backend's "Cart Experience" page — plain
+// forms there, structured settings here, no JSON anywhere in the vendor UI.
 // =============================================================================================
 
-function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: (o: boolean) => void; ctx: ShopperCtx }) {
+type CartDrawerConfig = {
+  layout: string;
+  showFreeShippingBar: boolean;
+  freeShipThresholdMinor: number;
+  upsellEnabled: boolean;
+  upsellTitle: string;
+  upsellLimit: number;
+  urgencyStockEnabled: boolean;
+  urgencyStockThreshold: number;
+  urgencyViewersEnabled: boolean;
+  urgencyViewersMin: number;
+  urgencyViewersMax: number;
+  urgencyCountdownEnabled: boolean;
+  urgencyCountdownMinutes: number;
+  showOrderNote: boolean;
+  showDiscountHint: boolean;
+  checkoutLabel: string;
+  showContinueShopping: boolean;
+  stickyCta: boolean;
+  trustBadges: string[];
+};
+
+const CART_DRAWER_DEFAULTS: CartDrawerConfig = {
+  layout: "standard",
+  showFreeShippingBar: true,
+  freeShipThresholdMinor: 10000,
+  upsellEnabled: false,
+  upsellTitle: "Frequently bought together",
+  upsellLimit: 3,
+  urgencyStockEnabled: false,
+  urgencyStockThreshold: 5,
+  urgencyViewersEnabled: false,
+  urgencyViewersMin: 8,
+  urgencyViewersMax: 28,
+  urgencyCountdownEnabled: false,
+  urgencyCountdownMinutes: 15,
+  showOrderNote: false,
+  showDiscountHint: true,
+  checkoutLabel: "Checkout",
+  showContinueShopping: true,
+  stickyCta: true,
+  trustBadges: [],
+};
+
+type UpsellProduct = ProductCardT & { variantId: string | null; stock: number };
+
+type SfCartSettingsPayload = {
+  store: { id: string; name: string; slug: string; theme?: { primaryColor?: string } | null };
+  settings: CartDrawerConfig | null;
+  upsell: UpsellProduct[];
+};
+
+// 60s module cache — keeps drawer opens snappy; the Seller Backend preview is
+// always live, so sellers never wait on this cache to see their changes.
+const cartSettingsCache = new Map<string, { at: number; payload: SfCartSettingsPayload | null; failed?: boolean }>();
+const CART_SETTINGS_TTL_MS = 60_000;
+
+const TRUST_BADGE_META: Record<string, { icon: typeof ShieldCheck; label: string }> = {
+  secure: { icon: ShieldCheck, label: "Secure checkout" },
+  returns: { icon: RotateCcw, label: "Easy returns" },
+  support: { icon: Headphones, label: "Local support" },
+  shipping: { icon: Truck, label: "Fast shipping" },
+  cod: { icon: Banknote, label: "COD available" },
+  warranty: { icon: BadgeCheck, label: "Warranty included" },
+};
+
+function CartDrawer({
+  open,
+  onOpenChange,
+  ctx,
+  storeSlug,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  ctx: ShopperCtx;
+  storeSlug: string | null;
+}) {
   const { cart, count, subtotal, loading } = useCart();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [addingUpsell, setAddingUpsell] = useState<string | null>(null);
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const signedIn = Boolean(me.loaded && me.shopper);
+
+  // ---- seller cart experience -------------------------------------------------
+  const [cfgPayload, setCfgPayload] = useState<SfCartSettingsPayload | null>(null);
+  const [cfgLoading, setCfgLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !storeSlug) return;
+    const cached = cartSettingsCache.get(storeSlug);
+    if (cached && Date.now() - cached.at < CART_SETTINGS_TTL_MS) {
+      setCfgPayload(cached.failed ? null : cached.payload);
+      return;
+    }
+    let alive = true;
+    setCfgLoading(true);
+    fetchJson<SfCartSettingsPayload>(`/api/sf/${encodeURIComponent(storeSlug)}/cart-settings`)
+      .then((payload) => {
+        cartSettingsCache.set(storeSlug, { at: Date.now(), payload });
+        if (alive) setCfgPayload(payload);
+      })
+      .catch(() => {
+        cartSettingsCache.set(storeSlug, { at: Date.now(), payload: null, failed: true });
+        if (alive) setCfgPayload(null);
+      })
+      .finally(() => alive && setCfgLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [open, storeSlug]);
+
+  const cfg: CartDrawerConfig = cfgPayload?.settings ? { ...CART_DRAWER_DEFAULTS, ...cfgPayload.settings } : { ...CART_DRAWER_DEFAULTS };
+  const themePrimary = cfgPayload?.store.theme?.primaryColor || null;
+  const accentStyle = themePrimary ? { backgroundColor: themePrimary, borderColor: themePrimary } : undefined;
+  const accentText = themePrimary ? { color: themePrimary } : undefined;
+
+  // structural gating: compact = essentials, standard = + urgency/trust, pro = + upsell/note
+  const showUpsell = cfg.layout === "pro" && cfg.upsellEnabled && (cfgPayload?.upsell.length ?? 0) > 0;
+  const showUrgency = cfg.layout !== "compact";
+  const showTrust = cfg.layout !== "compact" && cfg.trustBadges.length > 0;
+  const showShipBar = cfg.showFreeShippingBar && cfg.layout !== "compact" && cfg.freeShipThresholdMinor > 0;
+  const showCountdown = showUrgency && cfg.urgencyCountdownEnabled;
+  const showViewers = showUrgency && cfg.urgencyViewersEnabled;
+
+  // ---- urgency: reservation countdown (ticks once per second while open) ------
+  const [openedAtMs, setOpenedAtMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open) return;
+    setOpenedAtMs(Date.now());
+    setNowMs(Date.now());
+  }, [open]);
+  useEffect(() => {
+    if (!open || !showCountdown) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [open, showCountdown]);
+  const remainSec = Math.max(0, cfg.urgencyCountdownMinutes * 60 - Math.floor((nowMs - openedAtMs) / 1000));
+  const countdownLabel = `${String(Math.floor(remainSec / 60)).padStart(2, "0")}:${String(remainSec % 60).padStart(2, "0")}`;
+
+  // ---- urgency: live-viewers indicator ----------------------------------------
+  const [viewers, setViewers] = useState(12);
+  useEffect(() => {
+    if (!open || !showViewers) return;
+    const lo = Math.max(2, Math.min(cfg.urgencyViewersMin, cfg.urgencyViewersMax));
+    const hi = Math.max(cfg.urgencyViewersMin, cfg.urgencyViewersMax);
+    setViewers(lo + Math.floor(Math.random() * (hi - lo + 1)));
+    const t = setInterval(() => {
+      setViewers((v) => Math.min(hi, Math.max(lo, v + (Math.random() < 0.5 ? -1 : 1))));
+    }, 7000);
+    return () => clearInterval(t);
+  }, [open, showViewers, cfg.urgencyViewersMin, cfg.urgencyViewersMax]);
+
+  // ---- order note (handed off to checkout via localStorage) --------------------
+  const [orderNote, setOrderNote] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    try {
+      setOrderNote(window.localStorage.getItem("sm_cart_note") ?? "");
+    } catch {
+      /* ignore */
+    }
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    try {
+      window.localStorage.setItem("sm_cart_note", orderNote);
+    } catch {
+      /* ignore */
+    }
+  }, [orderNote, open]);
 
   // Multi-seller cart: one section per seller (Option A — one payment at checkout).
   const storeGroups = useMemo(() => {
@@ -1400,13 +1597,178 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
     }
   }
 
+  async function addUpsell(p: UpsellProduct) {
+    if (!p.variantId) return;
+    setAddingUpsell(p.id);
+    try {
+      await postJson("/api/cart/items", { variantId: p.variantId, qty: 1 });
+      notifyCartUpdated();
+      toast.success("Added to cart", { description: p.title });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add item");
+    } finally {
+      setAddingUpsell(null);
+    }
+  }
+
+  const upsellItems = (cfgPayload?.upsell ?? [])
+    .filter((u) => u.variantId && !(cart?.items ?? []).some((it) => it.productId === u.id || it.variantId === u.variantId))
+    .slice(0, cfg.upsellLimit);
+
+  const shipProgress = Math.min(1, cfg.freeShipThresholdMinor > 0 ? subtotal / cfg.freeShipThresholdMinor : 1);
+  const shipRemainingMinor = Math.max(0, cfg.freeShipThresholdMinor - subtotal);
+
+  const lowStockOf = (it: CartItemT): number | null =>
+    showUrgency && cfg.urgencyStockEnabled && it.stock > 0 && it.stock <= cfg.urgencyStockThreshold ? it.stock : null;
+
+  const itemsBlock = (
+    <div className="space-y-4">
+      {storeGroups.map((g) => (
+        <div key={g.storeId} className="space-y-2">
+          {cfg.layout !== "compact" ? (
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false);
+                  ctx.nav({ name: "storefront", slug: g.storeSlug });
+                }}
+                className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-teal-800 hover:underline"
+                aria-label={`View seller ${g.storeName}`}
+              >
+                <Store className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{g.storeName}</span>
+              </button>
+              <span className="shrink-0 text-xs font-semibold text-muted-foreground">
+                {g.subtotalMinor >= 10000 ? (
+                  <span className="text-emerald-700">FREE shipping unlocked</span>
+                ) : (
+                  `${formatMinor(g.subtotalMinor)} + shipping`
+                )}
+              </span>
+            </div>
+          ) : null}
+          <AnimatePresence initial={false}>
+            {g.items.map((it) => {
+              const low = lowStockOf(it);
+              return (
+                <motion.div
+                  key={it.id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: 40 }}
+                  transition={{ duration: 0.18 }}
+                  className={cn("flex gap-3 rounded-xl border bg-card p-3", busyId === it.id && "opacity-60")}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false);
+                      ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                    }}
+                    className="shrink-0"
+                    aria-label={`View ${it.title}`}
+                  >
+                    <img
+                      src={it.imageUrl}
+                      alt={it.title}
+                      loading="lazy"
+                      className={cn("rounded-lg border object-cover", cfg.layout === "compact" ? "h-14 w-14" : "h-20 w-20")}
+                    />
+                  </button>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                        }}
+                        className="text-left text-sm font-semibold leading-tight line-clamp-2 hover:text-teal-700"
+                      >
+                        {it.title}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQty(it.id, 0)}
+                        className="text-muted-foreground hover:text-rose-600 transition-colors p-1"
+                        aria-label={`Remove ${it.title}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-xs text-muted-foreground">{it.variantLabel}</p> : null}
+                    {low !== null ? (
+                      <p
+                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700"
+                        role="status"
+                      >
+                        <Flame className="h-3 w-3" /> Only {low} left in stock
+                      </p>
+                    ) : null}
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <QtyStepper small value={it.qty} min={0} max={Math.max(1, it.stock)} onChange={(v) => setQty(it.id, v)} />
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
+                        <p className="text-[11px] text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      ))}
+    </div>
+  );
+
+  const ctaBlock = (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Subtotal</span>
+        <span className="text-lg font-extrabold" style={accentText ?? { color: "#0f766e" }}>
+          {formatMinor(subtotal)}
+        </span>
+      </div>
+      {cfg.showDiscountHint ? (
+        <p className="text-[11px] text-muted-foreground">
+          Voucher / promo codes can be applied at checkout. Each seller ships separately — you pay once.
+        </p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">Each seller ships separately. You pay once — NOMOFEE collects the payment and disburses it to sellers.</p>
+      )}
+      <Button
+        size="lg"
+        onClick={() => {
+          onOpenChange(false);
+          ctx.nav({ name: "checkout" });
+        }}
+        className={cn("w-full min-h-[48px] text-white hover:brightness-110", !themePrimary && "bg-teal-700 hover:bg-teal-800")}
+        style={accentStyle}
+      >
+        {cfg.checkoutLabel || "Checkout"} <ArrowRight className="h-4 w-4" />
+      </Button>
+      {cfg.showContinueShopping ? (
+        <button
+          type="button"
+          onClick={() => onOpenChange(false)}
+          className="w-full text-center text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Continue shopping
+        </button>
+      ) : null}
+    </div>
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full sm:max-w-md flex-col p-0">
         <SheetHeader className="border-b p-4 space-y-0">
           <SheetTitle className="flex items-center gap-2 text-base">
-            <ShoppingCart className="h-5 w-5 text-teal-700" />
-            Your cart
+            <ShoppingCart className="h-5 w-5" style={accentText ?? { color: "#0f766e" }} />
+            {cfgPayload?.store.name ? `${cfgPayload.store.name} — your cart` : "Your cart"}
             {count > 0 ? <span className="text-sm font-normal text-muted-foreground">({count} item{count === 1 ? "" : "s"})</span> : null}
           </SheetTitle>
           {storeGroups.length > 1 ? (
@@ -1420,7 +1782,7 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
           ) : null}
         </SheetHeader>
 
-        {loading ? (
+        {loading || (storeSlug && cfgLoading && !cfgPayload) ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -1431,10 +1793,7 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
               title="Sign in to use your cart"
               hint="Carts live on your NOMOFEE account — your items stay with you on every device and are waiting when you come back."
               action={
-                <Button
-                  onClick={() => openShopperAuth()}
-                  className="bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
-                >
+                <Button onClick={() => openShopperAuth()} className="bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
                   <LogIn className="h-4 w-4" /> Sign in or create account
                 </Button>
               }
@@ -1461,120 +1820,136 @@ function CartDrawer({ open, onOpenChange, ctx }: { open: boolean; onOpenChange: 
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-230px)]">
-              {storeGroups.map((g) => (
-                <div key={g.storeId} className="space-y-2">
-                  <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenChange(false);
-                        ctx.nav({ name: "storefront", slug: g.storeSlug });
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* urgency: cart reservation countdown */}
+              {showCountdown ? (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+                  role="status"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Timer className="h-3.5 w-3.5" />
+                    {remainSec > 0 ? `Items reserved for ${countdownLabel}` : "Reservation expired — checkout to secure your items"}
+                  </span>
+                </div>
+              ) : null}
+
+              {/* urgency: live viewers */}
+              {showViewers ? (
+                <p className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600" role="status">
+                  <Eye className="h-3.5 w-3.5" />
+                  {viewers} people are viewing this store's products right now
+                </p>
+              ) : null}
+
+              {/* AOV: free-shipping progress */}
+              {showShipBar ? (
+                <div className="rounded-xl border p-3" role="status">
+                  <p className="text-xs font-semibold">
+                    {shipRemainingMinor <= 0 ? (
+                      <span className="text-emerald-700">You've unlocked FREE shipping</span>
+                    ) : (
+                      <>
+                        Spend <span className="font-extrabold">{formatMinor(shipRemainingMinor)}</span> more for FREE shipping
+                      </>
+                    )}
+                  </p>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.round(shipProgress * 100)}%`,
+                        backgroundColor: shipRemainingMinor <= 0 ? "#059669" : themePrimary ?? "#0f766e",
                       }}
-                      className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-teal-800 hover:underline"
-                      aria-label={`View seller ${g.storeName}`}
-                    >
-                      <Store className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{g.storeName}</span>
-                    </button>
-                    <span className="shrink-0 text-xs font-semibold text-muted-foreground">
-                      {g.subtotalMinor >= 10000 ? (
-                        <span className="text-emerald-700">FREE shipping unlocked</span>
-                      ) : (
-                        `${formatMinor(g.subtotalMinor)} + shipping`
-                      )}
-                    </span>
+                    />
                   </div>
-                  <AnimatePresence initial={false}>
-                    {g.items.map((it) => (
-                      <motion.div
-                        key={it.id}
-                        layout
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: 40 }}
-                        transition={{ duration: 0.18 }}
-                        className={cn("flex gap-3 rounded-xl border bg-card p-3", busyId === it.id && "opacity-60")}
-                      >
+                </div>
+              ) : null}
+
+              {itemsBlock}
+
+              {/* AOV: upsell / cross-sell strip (Pro layout) */}
+              {showUpsell ? (
+                <div className="space-y-2 border-t pt-3">
+                  <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <Gift className="h-3.5 w-3.5" /> {cfg.upsellTitle || "You may also like"}
+                  </p>
+                  <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:thin]">
+                    {upsellItems.map((u) => (
+                      <div key={u.id} className="w-28 shrink-0 rounded-xl border bg-card p-2">
                         <button
                           type="button"
                           onClick={() => {
                             onOpenChange(false);
-                            ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                            ctx.nav({ name: "pdp", slug: u.storeSlug, pSlug: u.slug });
                           }}
-                          className="shrink-0"
-                          aria-label={`View ${it.title}`}
+                          className="block"
+                          aria-label={`View ${u.title}`}
                         >
-                          <img src={it.imageUrl} alt={it.title} loading="lazy" className="h-20 w-20 rounded-lg border object-cover" />
+                          <img src={u.imageUrl} alt={u.title} loading="lazy" className="aspect-square w-full rounded-lg border object-cover" />
                         </button>
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onOpenChange(false);
-                                ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
-                              }}
-                              className="text-left text-sm font-semibold leading-tight line-clamp-2 hover:text-teal-700"
-                            >
-                              {it.title}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setQty(it.id, 0)}
-                              className="text-muted-foreground hover:text-rose-600 transition-colors p-1"
-                              aria-label={`Remove ${it.title}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                          {it.variantLabel && it.variantLabel !== "Default" ? (
-                            <p className="text-xs text-muted-foreground">{it.variantLabel}</p>
-                          ) : null}
-                          <div className="flex items-center justify-between gap-2 pt-0.5">
-                            <QtyStepper
-                              small
-                              value={it.qty}
-                              min={0}
-                              max={Math.max(1, it.stock)}
-                              onChange={(v) => setQty(it.id, v)}
-                            />
-                            <div className="text-right">
-                              <p className="text-sm font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
-                              <p className="text-[11px] text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
-                            </div>
-                          </div>
+                        <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-tight">{u.title}</p>
+                        <div className="mt-1 flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold text-teal-700">{formatMinor(u.priceMinor)}</span>
+                          <Button
+                            type="button"
+                            size="icon"
+                            className="h-7 w-7"
+                            style={accentStyle}
+                            disabled={!u.variantId || u.stock <= 0 || addingUpsell === u.id}
+                            onClick={() => addUpsell(u)}
+                            aria-label={`Add ${u.title} to cart`}
+                          >
+                            {addingUpsell === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                          </Button>
                         </div>
-                      </motion.div>
+                      </div>
                     ))}
-                  </AnimatePresence>
+                  </div>
                 </div>
-              ))}
+              ) : null}
+
+              {/* conversion: order note (Pro layout) */}
+              {cfg.layout === "pro" && cfg.showOrderNote ? (
+                <div className="space-y-1.5 border-t pt-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Order note</p>
+                  <Textarea
+                    value={orderNote}
+                    onChange={(e) => setOrderNote(e.target.value)}
+                    rows={2}
+                    placeholder="Anything the seller should know? (e.g. gift wrap, delivery instructions)"
+                    className="min-h-[44px] text-sm"
+                    aria-label="Order note"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Saved automatically — carried into checkout.</p>
+                </div>
+              ) : null}
+
+              {/* conversion: trust badges */}
+              {showTrust ? (
+                <div className="grid grid-cols-3 gap-2 border-t pt-3">
+                  {cfg.trustBadges.map((id) => {
+                    const meta = TRUST_BADGE_META[id];
+                    if (!meta) return null;
+                    const Icon = meta.icon;
+                    return (
+                      <div key={id} className="flex flex-col items-center gap-1 rounded-lg border bg-muted/30 p-2 text-center">
+                        <Icon className="h-4 w-4 text-teal-700" aria-hidden />
+                        <span className="text-[10px] font-semibold leading-tight text-muted-foreground">{meta.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {/* non-sticky CTA renders inline at the end of the scroll area */}
+              {!cfg.stickyCta ? <div className="border-t pt-3">{ctaBlock}</div> : null}
             </div>
 
-            <div className="border-t bg-background p-4 space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="text-lg font-extrabold text-teal-700">{formatMinor(subtotal)}</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Each seller ships separately. You pay once — NOMOFEE collects the payment and disburses it to sellers minus commission.
-              </p>
-              <Button
-                size="lg"
-                onClick={() => {
-                  onOpenChange(false);
-                  ctx.nav({ name: "checkout" });
-                }}
-                className="w-full min-h-[48px] bg-teal-700 text-white hover:bg-teal-800"
-              >
-                Checkout <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
+            {cfg.stickyCta ? <div className="border-t bg-background p-4 space-y-3">{ctaBlock}</div> : null}
           </>
         )}
       </SheetContent>
     </Sheet>
   );
 }
-

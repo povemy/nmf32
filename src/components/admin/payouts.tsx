@@ -3,7 +3,7 @@
 // (per-payout statement trace, mark paid / mark failed with ledger T4 posts).
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, ChevronDown, ChevronRight, Landmark, PlayCircle, PlusCircle, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, HandCoins, Landmark, PlayCircle, PlusCircle, ShieldCheck, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,6 +94,13 @@ type DryRunBody = {
     availableMinor: number;
     bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
   }[];
+  skipped?: {
+    walletId: string;
+    sellerName: string;
+    storeName: string | null;
+    availableMinor: number;
+    reason: string;
+  }[];
 };
 
 /** GET /api/admin/payouts/due — mirrors the dashboard "Payouts due" card:
@@ -110,13 +117,33 @@ type PayoutsDueBody = {
     sellerName: string;
     storeName: string | null;
     availableMinor: number;
+    requestedMinor: number;
+    requestedRef: string | null;
     bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
     lastPayout: { amountMinor: number; paidAt: string } | null;
   }[];
+  requestedTotalMinor: number;
   pendingTotalMinor: number;
   belowMinCount: number;
   belowMinTotalMinor: number;
 };
+
+/** GET /api/admin/payouts/requests — seller-initiated payout requests. */
+type RequestRow = {
+  id: string;
+  referenceNo: string;
+  amountMinor: number;
+  status: string;
+  method: string;
+  failReason?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+  seller: { id: string; email: string; displayName: string } | null;
+  storeName: string | null;
+  bankAccount: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
+};
+
+type RequestsBody = { open: RequestRow[]; recent: RequestRow[] };
 
 /* ------------------------------------------------------------ PayoutsView */
 
@@ -126,8 +153,54 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   // two always tally (this used to be the missing piece — the card navigated
   // straight to batch HISTORY, which only shows payouts already run).
   const due = useApi<PayoutsDueBody>("/api/admin/payouts/due");
+  const requests = useApi<RequestsBody>("/api/admin/payouts/requests");
   const rows = useMemo(() => data ?? [], [data]);
   const dueRows = useMemo(() => due.data?.due ?? [], [due.data]);
+  const openRequests = useMemo(() => requests.data?.open ?? [], [requests.data]);
+  const recentRequests = useMemo(() => requests.data?.recent ?? [], [requests.data]);
+
+  const [rejectTarget, setRejectTarget] = useState<RequestRow | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const refreshAllPanels = useCallback(() => {
+    void requests.refetch();
+    void due.refetch();
+  }, [requests, due]);
+
+  const approveRequest = useCallback(
+    async (r: RequestRow) => {
+      setBusyId(r.id);
+      try {
+        await apiSend(`/api/admin/payouts/${r.id}/approve`, "POST", {});
+        toast.success(`${r.referenceNo} approved`, {
+          description: `${formatMinor(r.amountMinor)} moved to payout clearing (T3) — mark it paid once the transfer lands.`,
+        });
+        refreshAllPanels();
+      } catch (e) {
+        toast.error("Not approved", { description: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [refreshAllPanels]
+  );
+
+  const rejectRequest = useCallback(
+    async (r: RequestRow, reason: string) => {
+      setBusyId(r.id);
+      try {
+        await apiSend(`/api/admin/payouts/${r.id}/reject`, "POST", { reason });
+        toast.success(`${r.referenceNo} rejected`, { description: "The seller's available balance is untouched (no ledger movement)." });
+        setRejectTarget(null);
+        refreshAllPanels();
+      } catch (e) {
+        toast.error("Not rejected", { description: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [refreshAllPanels]
+  );
 
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<DryRunBody | null>(null);
@@ -236,6 +309,7 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
                 <TableRow>
                   <TableHead>Seller</TableHead>
                   <TableHead className="text-right">Available</TableHead>
+                  <TableHead className="text-right">Requested</TableHead>
                   <TableHead className="hidden md:table-cell">Bank account</TableHead>
                   <TableHead className="hidden text-right lg:table-cell">Last paid</TableHead>
                 </TableRow>
@@ -249,6 +323,16 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
                     </TableCell>
                     <TableCell className="text-right">
                       <Money minor={d.availableMinor} bold />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {d.requestedMinor > 0 ? (
+                        <span title={d.requestedRef ?? undefined}>
+                          <Money minor={d.requestedMinor} />
+                          <p className="text-[10px] text-muted-foreground">seller request</p>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {d.bank ? (
@@ -286,6 +370,146 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
                 : " · no wallets below the minimum"}
               .
             </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Seller payout requests — seller-initiated withdrawals awaiting action.
+          Approve posts T3 (available → clearing) exactly like a batch run;
+          reject releases the request with no ledger movement. */}
+      <Card className="py-0">
+        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+            <HandCoins className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+            Seller requests
+            {openRequests.length > 0 ? (
+              <Badge className="font-semibold">{openRequests.length} awaiting action</Badge>
+            ) : (
+              <Badge variant="outline" className="font-normal text-muted-foreground">none pending</Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            Payouts sellers requested from their own wallets. Approve posts T3; reject needs a reason and moves nothing.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 pb-2">
+          {requests.error ? (
+            <div className="px-4 sm:px-6">
+              <ErrorState message={requests.error} onRetry={() => void requests.refetch()} />
+            </div>
+          ) : requests.loading ? (
+            <TableSkeleton rows={2} cols={4} />
+          ) : openRequests.length === 0 ? (
+            <div className="px-4 sm:px-6">
+              <EmptyState
+                title="No seller payout requests"
+                hint="Sellers can request a payout from their Wallet & Payouts page — requests land here for approval."
+              />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Request</TableHead>
+                  <TableHead>Seller / Store</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="hidden md:table-cell">Bank account</TableHead>
+                  <TableHead className="hidden text-right lg:table-cell">Requested</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {openRequests.map((r) => (
+                  <TableRow key={r.id} className={busyId === r.id ? "opacity-60" : undefined}>
+                    <TableCell className="font-mono text-xs font-semibold">{r.referenceNo}</TableCell>
+                    <TableCell>
+                      <p className="truncate text-sm font-medium">{r.storeName ?? r.seller?.displayName ?? "—"}</p>
+                      <p className="truncate text-xs text-muted-foreground">{r.seller?.email ?? ""}</p>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Money minor={r.amountMinor} bold />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {r.bankAccount ? (
+                        <span className="text-xs">
+                          {r.bankAccount.bankName} · {r.bankAccount.accountNumberMasked}
+                          {r.bankAccount.verified ? (
+                            <ShieldCheck className="ml-1 inline h-3 w-3 text-emerald-600" aria-label="Verified" />
+                          ) : (
+                            <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-600" aria-label="Unverified" />
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No bank account</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{timeAgo(r.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          className="h-8 min-h-[36px] gap-1"
+                          disabled={busyId === r.id}
+                          onClick={() => void approveRequest(r)}
+                        >
+                          <Check className="h-3.5 w-3.5" /> Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 min-h-[36px] gap-1 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                          disabled={busyId === r.id}
+                          onClick={() => setRejectTarget(r)}
+                        >
+                          <X className="h-3.5 w-3.5" /> Reject
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {recentRequests.length > 0 ? (
+            <div className="border-t px-4 pb-3 pt-3 sm:px-6">
+              <p className="pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recently actioned</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Request</TableHead>
+                    <TableHead>Seller</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden text-right md:table-cell">Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentRequests.slice(0, 6).map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-mono text-xs">{r.referenceNo}</TableCell>
+                      <TableCell className="max-w-48 truncate text-sm">{r.storeName ?? r.seller?.displayName ?? "—"}</TableCell>
+                      <TableCell className="text-right">
+                        <Money minor={r.amountMinor} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusChip status={r.status} />
+                        {r.failReason ? (
+                          <p className="max-w-48 truncate text-[11px] text-muted-foreground" title={r.failReason}>
+                            {r.failReason}
+                          </p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="hidden text-right text-xs text-muted-foreground md:table-cell">
+                        {r.paidAt ? fmtDT(r.paidAt) : timeAgo(r.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="pt-2 text-[11px] text-muted-foreground">
+                Processing requests are marked paid / failed from the batch detail once the bank transfer confirms.
+              </p>
+            </div>
           ) : null}
         </CardContent>
       </Card>
@@ -406,6 +630,18 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
                   </Table>
                 </div>
               )}
+              {preview.skipped && preview.skipped.length > 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                  <p className="font-semibold">
+                    {preview.skipped.length} wallet{preview.skipped.length === 1 ? "" : "s"} skipped — seller payout request pending
+                  </p>
+                  {preview.skipped.map((s) => (
+                    <p key={s.walletId} className="mt-1">
+                      {s.storeName ?? s.sellerName} ({formatMinor(s.availableMinor)}) — {s.reason}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -419,6 +655,19 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* reject reason dialog */}
+      <ReasonDialog
+        open={rejectTarget != null}
+        onOpenChange={(o) => !o && setRejectTarget(null)}
+        title={`Reject payout request ${rejectTarget?.referenceNo ?? ""}`}
+        description="No money has moved — the request is released and the seller keeps the balance. The reason is emailed to the seller."
+        placeholder="e.g. Bank account unverified — verify it and re-request"
+        submitLabel="Reject request"
+        destructive
+        loading={busyId === rejectTarget?.id}
+        onSubmit={(reason) => rejectTarget && void rejectRequest(rejectTarget, reason)}
+      />
     </div>
   );
 }

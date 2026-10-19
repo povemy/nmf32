@@ -7,6 +7,7 @@ import { useState } from "react";
 import {
   apiSend,
   EmptyState,
+  MoneyInput,
   RowsSkeleton,
   StatCard,
   StatusChip,
@@ -49,6 +50,8 @@ type WalletData = {
     paidAt: string | null;
     createdAt: string;
   }[];
+  minPayoutMinor?: number;
+  openRequest?: { id: string; referenceNo: string; amountMinor: number; createdAt: string } | null;
 };
 
 const BANKS = ["Maybank", "CIMB", "Public Bank", "Bank Rakyat", "Hong Leong"];
@@ -66,6 +69,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
   const { data, loading, error, refetch } = useApi<WalletData>("/api/store/wallet");
   const { data: bankAccounts, refetch: refetchBanks } = useApi<BankAccount[]>("/api/store/bank-accounts");
   const [addOpen, setAddOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
 
   const openActivity = (id: string) => onNavigate?.({ view: "wallet", activityId: id });
 
@@ -86,9 +90,59 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
   }
 
   const w = data.wallet;
+  const minPayout = data.minPayoutMinor ?? 1000;
+  const openRequest = data.openRequest ?? null;
 
   return (
     <div className="space-y-6">
+      {/* payout request CTA + pending banner */}
+      <section aria-label="Payout request" className="rounded-xl border bg-card p-4">
+        {openRequest ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Clock3 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                Payout request {openRequest.referenceNo} · {formatMinor(openRequest.amountMinor)} — awaiting approval
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Requested {fmtDateTime(openRequest.createdAt)}. NOMOFEE finance reviews payout requests — the amount stays in your available balance until the transfer is initiated.
+              </p>
+            </div>
+            <StatusChip status="requested" />
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Banknote className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Ready to get paid?</p>
+              <p className="text-xs text-muted-foreground">
+                Request a payout of your available balance (min {formatMinor(minPayout)}). NOMOFEE reviews and transfers to your bank — usually within 1–3 working days.
+              </p>
+            </div>
+            <Button
+              className="min-h-[44px] gap-2"
+              onClick={() => setRequestOpen(true)}
+              disabled={w.availableMinor < minPayout || (bankAccounts ?? []).length === 0}
+            >
+              <Banknote className="h-4 w-4" />
+              Request payout
+            </Button>
+          </div>
+        )}
+        {!openRequest && w.availableMinor < minPayout ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Available balance is below the {formatMinor(minPayout)} minimum — keep selling and request once you clear it.
+          </p>
+        ) : null}
+        {!openRequest && (bankAccounts ?? []).length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">Add a bank account below to enable payout requests.</p>
+        ) : null}
+      </section>
+
       {/* balance cards */}
       <section aria-label="Balances" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -254,7 +308,105 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
           refetch();
         }}
       />
+
+      {requestOpen ? (
+        <RequestPayoutDialog
+          open={requestOpen}
+          onOpenChange={setRequestOpen}
+          availableMinor={w.availableMinor}
+          minPayoutMinor={minPayout}
+          bankAccounts={bankAccounts ?? []}
+          onDone={refetch}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- request payout dialog
+
+function RequestPayoutDialog({
+  open,
+  onOpenChange,
+  availableMinor,
+  minPayoutMinor,
+  bankAccounts,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  availableMinor: number;
+  minPayoutMinor: number;
+  bankAccounts: BankAccount[];
+  onDone: () => void;
+}) {
+  // Fresh mount on open (parent conditionally renders it) — defaults to the
+  // full available balance without a setState-in-effect.
+  const [amountMinor, setAmountMinor] = useState<number | null>(availableMinor);
+  const [busy, setBusy] = useState(false);
+
+  const bank = bankAccounts.find((b) => b.verified) ?? bankAccounts[0] ?? null;
+  const amount = amountMinor ?? 0;
+  const valid = amount >= minPayoutMinor && amount <= availableMinor;
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    const ok = await runMutation(
+      () => apiSend("POST", "/api/store/payouts", { amountMinor: amount }),
+      "Payout request submitted — NOMOFEE finance will review it"
+    );
+    setBusy(false);
+    if (ok) {
+      onOpenChange(false);
+      onDone();
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Request a payout</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3.5">
+          <div className="space-y-1.5">
+            <Label htmlFor="pr-amount">Amount *</Label>
+            <MoneyInput id="pr-amount" valueMinor={amountMinor} onChangeMinor={setAmountMinor} placeholder="0.00" />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Min {formatMinor(minPayoutMinor)}</span>
+              <button
+                type="button"
+                className="font-semibold text-teal-700 hover:underline"
+                onClick={() => setAmountMinor(availableMinor)}
+              >
+                Use full balance ({formatMinor(availableMinor)})
+              </button>
+            </div>
+          </div>
+          <div className="rounded-xl border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+              <Landmark className="h-3.5 w-3.5" /> Paying to
+            </p>
+            {bank ? (
+              <p className="mt-1">
+                {bank.bankName} · {bank.holderName} · {bank.accountNumberMasked}
+                {bank.verified ? " (verified)" : " (verification pending)"}
+              </p>
+            ) : (
+              <p className="mt-1">No bank account on file — add one first.</p>
+            )}
+            <p className="mt-2">
+              Your funds stay in the available balance while the request is reviewed. NOMOFEE transfers to this account once approved.
+            </p>
+          </div>
+          <Button onClick={submit} disabled={busy || !valid || !bank} className="w-full min-h-[44px] gap-2">
+            {busy ? <Wallet2 className="h-4 w-4 animate-pulse" /> : <Banknote className="h-4 w-4" />}
+            Submit request
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

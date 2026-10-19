@@ -32,6 +32,8 @@ import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
 import SellerImports from "./imports";
 import SellerSeo from "./seo";
+import SellerCardStyle from "./card-style";
+import SellerCartSettings from "./cart-settings";
 import { Toaster } from "@/components/ui/sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -62,6 +64,7 @@ import {
   ShoppingCart,
   Sparkles,
   TicketPercent,
+  Type,
   Wallet,
 } from "lucide-react";
 
@@ -74,6 +77,8 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "seo", label: "SEO", icon: Search },
   { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
+  { key: "cardstyle", label: "Product Cards", icon: Type },
+  { key: "cart", label: "Cart Experience", icon: ShoppingBag },
   { key: "domains", label: "Domains", icon: Globe },
   { key: "coupons", label: "Coupons", icon: TicketPercent },
   { key: "vouchers", label: "Vouchers", icon: BadgePercent },
@@ -294,6 +299,8 @@ export default function SellerShell() {
               />
             )}
             {nav.view === "domains" && <SellerDomains storeSlug={storeSlug} />}
+            {nav.view === "cardstyle" && <SellerCardStyle />}
+            {nav.view === "cart" && <SellerCartSettings />}
             {nav.view === "coupons" && <SellerCoupons />}
             {nav.view === "vouchers" && <SellerVouchers />}
             {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}

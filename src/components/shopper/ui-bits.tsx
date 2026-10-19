@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders } from "@/lib/session-client";
 import { useApp } from "@/lib/app-store";
+import { fontStack, nameSizePx, priceSizePx, fontLinkHref, type CardStyleTokens } from "@/lib/fonts";
 import {
   AlertTriangle,
   Bike,
@@ -54,7 +55,9 @@ export type ShopperCtx = {
   nav: (v: ShopperView) => void;
   /** Pop the internal history stack (back navigation on every page). */
   back: () => void;
-  openCart: () => void;
+  /** Open the global cart drawer; pass the store slug to load that seller's
+   *  customized cart experience (Shopify-style auto-open after add-to-cart). */
+  openCart: (storeSlug?: string) => void;
 };
 
 export function openProduct(ctx: ShopperCtx, p: { storeSlug: string; slug: string }) {
@@ -348,6 +351,28 @@ export function useCart() {
 }
 
 // ---------------------------------------------------------------------------
+// Seller card typography — fonts for product name/price on a seller's OWN
+// storefront (Feature: product card customization). Defaults keep the
+// platform look; the store payload carries cardStyle only when configured.
+// ---------------------------------------------------------------------------
+
+export type { CardStyleTokens };
+
+/** Idempotently inject a Google Fonts stylesheet for the given font ids. */
+export function ensureFontsLoaded(ids: (string | null | undefined)[]) {
+  if (typeof document === "undefined") return;
+  const href = fontLinkHref(ids);
+  if (!href) return;
+  if (!document.querySelector(`link[data-sm-fonts="${href}"]`)) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.dataset.smFonts = href;
+    document.head.appendChild(link);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Stars
 // ---------------------------------------------------------------------------
 
@@ -386,16 +411,25 @@ export function ProductCard({
   onOpen,
   showStore = true,
   hidePrice = false,
+  cardStyle,
 }: {
   p: ProductCardT;
   onOpen: (p: ProductCardT) => void;
   showStore?: boolean;
   hidePrice?: boolean;
+  /** Seller-customized typography — only passed on the seller's own storefront. */
+  cardStyle?: CardStyleTokens | null;
 }) {
   const discount =
     p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
       ? Math.round(100 - (p.priceMinor / p.compareAtPriceMinor) * 100)
       : null;
+  const nameCss: React.CSSProperties = cardStyle
+    ? { fontFamily: fontStack(cardStyle.nameFont), fontSize: `${nameSizePx(cardStyle.nameSize)}px`, textAlign: cardStyle.nameAlign as React.CSSProperties["textAlign"] }
+    : {};
+  const priceCss: React.CSSProperties = cardStyle
+    ? { fontFamily: fontStack(cardStyle.priceFont), fontSize: `${priceSizePx(cardStyle.priceSize)}px`, textAlign: cardStyle.priceAlign as React.CSSProperties["textAlign"] }
+    : {};
   return (
     <button
       type="button"
@@ -418,10 +452,10 @@ export function ProductCard({
         ) : null}
       </div>
       <div className="p-2.5 space-y-1">
-        <h3 className="text-xs font-medium leading-snug line-clamp-2 min-h-[2rem]">{p.title}</h3>
+        <h3 className={cn("font-medium leading-snug line-clamp-2 min-h-[2rem]", !cardStyle && "text-xs")} style={nameCss}>{p.title}</h3>
         {!hidePrice ? (
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="text-sm font-bold text-teal-700">{formatMinor(p.priceMinor)}</span>
+          <div className="flex items-baseline gap-1.5 flex-wrap" style={cardStyle?.priceAlign === "center" ? { justifyContent: "center" } : cardStyle?.priceAlign === "right" ? { justifyContent: "flex-end" } : undefined}>
+            <span className={cn("font-bold text-teal-700", !cardStyle && "text-sm")} style={priceCss}>{formatMinor(p.priceMinor)}</span>
             {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
               <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
             ) : null}

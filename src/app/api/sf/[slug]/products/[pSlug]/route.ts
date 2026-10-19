@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { productCardInclude, toProductCard, minVariant, type ProductWithRelations } from "../../../../_shared/product-card";
+import { productCardInclude, toProductCard, minVariant, cardStyleFor, type ProductWithRelations } from "../../../../_shared/product-card";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   });
 
   const mv = minVariant(product.variants);
+  const cardStyle = await cardStyleFor(store.id);
 
   return ok({
     product: {
@@ -72,6 +73,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       tagline: store.tagline,
       logoUrl: store.logoUrl,
       whatsapp: store.whatsapp,
+      cardStyle,
     },
   });
 });

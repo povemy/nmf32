@@ -47,6 +47,8 @@ import {
   ProductCard,
   type ProductCardT,
   type ShopperCtx,
+  ensureFontsLoaded,
+  type CardStyleTokens,
 } from "./ui-bits";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,8 @@ export type SfStore = {
   social?: Record<string, string>;
   /** Task 10-d — follower count carried by /api/sf/[slug]. */
   followers?: number | null;
+  /** Seller-customized product-card typography (null = platform defaults). */
+  cardStyle?: CardStyleTokens | null;
 };
 
 type SfHomePayload = { store: SfStore; page: { id: string; title: string; slug: string; sections: Section[]; publishedVersion: number } };
@@ -157,7 +161,7 @@ function resolveSfLink(url: string, store: SfStore, ctx: ShopperCtx) {
 type SfRenderCtx = {
   store: SfStore;
   nav: ShopperCtx;
-  openCart: () => void;
+  openCart: (storeSlug?: string) => void;
   sfSearch: string;
   onSearch: (q: string) => void;
   productAnchorId: string | null;
@@ -470,7 +474,7 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
           ) : null}
           <button
             type="button"
-            onClick={openCart}
+            onClick={() => openCart(store.slug)}
             aria-label="Open cart"
             className="relative flex h-10 min-h-[44px] w-10 items-center justify-center rounded-[var(--sf-radius)] border transition-colors hover:bg-muted"
           >
@@ -619,7 +623,7 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
       ) : (
         <div className={cn("grid gap-3 sm:gap-4", colClass)}>
           {products.map((p) => (
-            <ProductCard key={p.id} p={p} showStore={false} hidePrice={!showPrice} onOpen={(pp) => openProduct(rctx.nav, pp)} />
+            <ProductCard key={p.id} p={p} showStore={false} hidePrice={!showPrice} cardStyle={rctx.store.cardStyle} onOpen={(pp) => openProduct(rctx.nav, pp)} />
           ))}
         </div>
       )}
@@ -1259,6 +1263,11 @@ function StorefrontChrome({
   ctx: ShopperCtx;
   children: React.ReactNode;
 }) {
+  // Load the seller's chosen webfonts once (idempotent; no-op when defaults).
+  useEffect(() => {
+    ensureFontsLoaded(store.cardStyle ? [store.cardStyle.nameFont, store.cardStyle.priceFont] : []);
+  }, [store.cardStyle]);
+
   return (
     <div
       className="flex-1 flex flex-col"

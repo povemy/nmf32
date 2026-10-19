@@ -2,6 +2,7 @@
 // ProductCard = {id, slug, title, priceMinor, compareAtPriceMinor, imageUrl,
 //                storeName, storeSlug, ratingAvg, ratingCount, salesCount, categoryName}
 import { parseJson } from "@/lib/json";
+import { db } from "@/lib/db";
 
 export const FALLBACK_IMG = "/api/img/fallback?w=600&h=600";
 
@@ -12,7 +13,9 @@ export const productCardInclude = {
   category: { select: { id: true, name: true, slug: true } },
 };
 
-type VariantLike = { priceMinor: number; compareAtPriceMinor: number | null; isActive?: boolean };
+// id/stock optional so callers holding full Prisma variants can read them
+// (e.g. the cart drawer upsell payload) while toProductCard keeps working.
+type VariantLike = { priceMinor: number; compareAtPriceMinor: number | null; isActive?: boolean; id?: string; stock?: number };
 
 export function minVariant(variants: VariantLike[]): VariantLike | null {
   const active = variants.filter((v) => v.isActive !== false);
@@ -58,4 +61,20 @@ export function toProductCard(p: ProductWithRelations) {
 
 export function parseSocial(json: string | null | undefined): Record<string, string> {
   return parseJson<Record<string, string>>(json, {});
+}
+
+/** The store's product-card typography (Feature: seller card customization).
+ *  Returns null when the store never saved a style — shopper surfaces then
+ *  render the platform defaults. */
+export async function cardStyleFor(storeId: string) {
+  const style = await db.productCardStyle.findUnique({ where: { storeId } });
+  if (!style) return null;
+  return {
+    nameFont: style.nameFont,
+    nameSize: style.nameSize,
+    nameAlign: style.nameAlign,
+    priceFont: style.priceFont,
+    priceSize: style.priceSize,
+    priceAlign: style.priceAlign,
+  };
 }

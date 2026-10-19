@@ -86,6 +86,8 @@ export type SellerViewName =
   | "vouchers"
   | "integrations"
   | "messages"
+  | "cardstyle"
+  | "cart"
   | "settings";
 
 export type SellerNav = { view: SellerViewName; pageId?: string; orderId?: string; productId?: string; activityId?: string };
