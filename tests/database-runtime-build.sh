@@ -1,4 +1,9 @@
 #!/bin/bash
+# Runtime-build test for the Supabase (PostgreSQL) era.
+# Asserts that the deploy helper:
+#   1. runs `bun run db:push` exactly once per invocation (schema sync to Supabase),
+#   2. does NOT create or copy any local SQLite database (db/custom.db) — SQLite
+#      was eradicated in the SQLite→Supabase migration.
 
 set -euo pipefail
 
@@ -17,34 +22,14 @@ if [ "$#" -ne 2 ] || [ "$1" != "run" ] || [ "$2" != "db:push" ]; then
     exit 1
 fi
 
-case "${DATABASE_URL:-}" in
-    file:*) db_path="${DATABASE_URL#file:}" ;;
-    *)
-        echo "DATABASE_URL must be an absolute SQLite file URL" >&2
-        exit 1
-        ;;
-esac
-
-case "$db_path" in
-    /*) ;;
-    *)
-        echo "database path must be absolute: $db_path" >&2
-        exit 1
-        ;;
-esac
-
-mkdir -p "$(dirname "$db_path")"
-if [ ! -f "$db_path" ]; then
-    printf 'initialized\n' >"$db_path"
-fi
-printf '%s\n' "$DATABASE_URL" >>"${DB_PUSH_CALLS:?}"
+printf 'db:push\n' >>"${DB_PUSH_CALLS:?}"
 EOF
 chmod +x "$FAKE_BIN/bun"
 
 export PATH="$FAKE_BIN:$PATH"
 export DB_PUSH_CALLS="$TEST_ROOT/db-push-calls"
 
-# 没有 Preview 数据库时，应只在部署产物中初始化空库，不修改项目目录。
+# 无本地数据库时应只同步云端 schema，不在部署产物中生成任何 SQLite 文件。
 EMPTY_PROJECT="$TEST_ROOT/empty-project"
 EMPTY_BUILD="$TEST_ROOT/empty-build"
 mkdir -p "$EMPTY_PROJECT"
@@ -52,24 +37,21 @@ mkdir -p "$EMPTY_PROJECT"
 PROJECT_DIR="$EMPTY_PROJECT" BUILD_DIR="$EMPTY_BUILD" \
     bash "$SCRIPT_DIR/database-runtime-build.sh"
 
-test -f "$EMPTY_BUILD/db/custom.db"
-test "$(cat "$EMPTY_BUILD/db/custom.db")" = "initialized"
-test ! -e "$EMPTY_PROJECT/db/custom.db"
+test "$(wc -l <"$DB_PUSH_CALLS" | tr -d ' ')" = "1"
+test ! -e "$EMPTY_BUILD/db"
+test ! -e "$EMPTY_PROJECT/db"
 
-# 有 Preview 数据库时，应保留数据和同目录文件，再对产物执行 schema 同步。
+# 遗留 SQLite 文件必须保持原样且绝不复制进构建产物。
 EXISTING_PROJECT="$TEST_ROOT/existing-project"
 EXISTING_BUILD="$TEST_ROOT/existing-build"
 mkdir -p "$EXISTING_PROJECT/db"
-printf 'preview-data\n' >"$EXISTING_PROJECT/db/custom.db"
-printf 'sidecar\n' >"$EXISTING_PROJECT/db/README.txt"
+printf 'legacy-sqlite\n' >"$EXISTING_PROJECT/db/custom.db"
 
 PROJECT_DIR="$EXISTING_PROJECT" BUILD_DIR="$EXISTING_BUILD" \
     bash "$SCRIPT_DIR/database-runtime-build.sh"
 
-test "$(cat "$EXISTING_BUILD/db/custom.db")" = "preview-data"
-test "$(cat "$EXISTING_BUILD/db/README.txt")" = "sidecar"
 test "$(wc -l <"$DB_PUSH_CALLS" | tr -d ' ')" = "2"
-grep -Fx "file:$EMPTY_BUILD/db/custom.db" "$DB_PUSH_CALLS"
-grep -Fx "file:$EXISTING_BUILD/db/custom.db" "$DB_PUSH_CALLS"
+test ! -e "$EXISTING_BUILD/db"
+test "$(cat "$EXISTING_PROJECT/db/custom.db")" = "legacy-sqlite"   # untouched, not copied
 
 echo "database runtime build tests passed"

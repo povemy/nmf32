@@ -1,6 +1,6 @@
 # NOMOFEE — Marketplace Platform
 
-A multi-vendor marketplace platform built with Next.js 16 (App Router), TypeScript, Prisma (SQLite), and shadcn/ui.
+A multi-vendor marketplace platform built with Next.js 16 (App Router), TypeScript, Prisma (PostgreSQL via Supabase), and shadcn/ui.
 
 ## What's Inside
 
@@ -16,7 +16,7 @@ A multi-vendor marketplace platform built with Next.js 16 (App Router), TypeScri
 
 - **Framework**: Next.js 16 (App Router) + TypeScript 5
 - **Styling**: Tailwind CSS 4 + shadcn/ui (New York) + Lucide icons
-- **Database**: Prisma ORM with SQLite (`db/custom.db`, schema in `prisma/schema.prisma`)
+- **Database**: Prisma ORM with PostgreSQL on **Supabase** (schema in `prisma/schema.prisma`; connection string in `.env` — see `.env.example`. The datasource reads `SUPABASE_DATABASE_URL`)
 - **State**: Zustand (client), TanStack Query ready
 
 ## Getting Started
@@ -25,11 +25,9 @@ A multi-vendor marketplace platform built with Next.js 16 (App Router), TypeScri
 # 1. Install dependencies (bun or npm/pnpm work)
 bun install
 
-# 2. Set up the database
-#    Option A: use the included seeded database (db/custom.db) as-is
-#    Option B: create fresh + seed
+# 2. Set up the database (Supabase Postgres — credentials in .env)
 bunx prisma db push
-bunx prisma db seed   # runs prisma/seed.ts
+bun prisma/seed.ts    # canonical demo data seeder
 
 # 3. Run the dev server
 bun run dev           # or: npm run dev
@@ -60,9 +58,9 @@ src/
   lib/                        # db client, auth, money, ledger, commission, utils
   hooks/                      # use-toast, use-mobile
 prisma/
-  schema.prisma               # full data model
+  schema.prisma               # full data model (PostgreSQL provider → Supabase)
   seed.ts                     # demo data seeder
-db/custom.db                  # SQLite database (seeded)
+supabase/                     # (cloud DB — no local database files; SQLite removed in the SQLite→Supabase migration)
 upload/                       # original product specification documents
 ```
 

@@ -8,7 +8,7 @@ Generated: Phase 1 of Nexova-style upgrade. Scope: existing NOMOFEE application 
 |---|---|
 | Framework | Next.js 16 App Router, TypeScript 5, single user-visible route `/` |
 | UI | Tailwind CSS 4 + shadcn/ui (New York) + framer-motion + lucide; theme = NomoFee Modern Gradient (teal→cyan) in `src/app/globals.css` |
-| DB | SQLite via Prisma (`prisma/schema.prisma`, ~55 models, db at `db/custom.db`). Money = Int minor units. JSON stored in String columns via `src/lib/json.ts` |
+| DB | PostgreSQL on **Supabase** via Prisma (`prisma/schema.prisma` → `postgresql`, ~55 models; connection via `SUPABASE_DATABASE_URL` in `.env` — Supavisor session pooler). SQLite (`db/custom.db`) removed in the SQLite→Supabase migration. Money = Int minor units. JSON stored in String columns via `src/lib/json.ts` |
 | State | zustand (`src/lib/app-store.ts`) switches surfaces: shopper / seller / admin — all client-side views in `src/components/{shopper,seller,admin}` |
 | Auth | Cookie session (`sm_session`, `Session` model) via `src/lib/auth.ts` — `createSession/destroySession/getSession/requireSeller/requireAdmin` |
 | API | REST under `src/app/api/**` wrapped by `handle()` (`src/lib/api.ts`); envelope `{data}|{data,meta}|{error}`; audit/activity logging + webhook dispatch built in |
