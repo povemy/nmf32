@@ -117,6 +117,8 @@ export type CartItemT = {
   storeId: string;
   storeSlug: string;
   storeName: string;
+  /** Buyer's checkout selection — unchecked lines stay in the cart. */
+  selected: boolean;
 };
 
 export type CartStoreT = {
@@ -347,7 +349,11 @@ export function useCart() {
 
   const count = cart?.items.reduce((s, i) => s + i.qty, 0) ?? 0;
   const subtotal = cart?.items.reduce((s, i) => s + i.lineTotalMinor, 0) ?? 0;
-  return { cart, count, subtotal, loading, refresh };
+  // Selection-aware figures — only checked lines proceed to checkout.
+  const selectedItems = cart?.items.filter((i) => i.selected) ?? [];
+  const selectedCount = selectedItems.reduce((s, i) => s + i.qty, 0);
+  const selectedSubtotal = selectedItems.reduce((s, i) => s + i.lineTotalMinor, 0);
+  return { cart, count, subtotal, selectedCount, selectedSubtotal, loading, refresh };
 }
 
 // ---------------------------------------------------------------------------

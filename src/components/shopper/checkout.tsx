@@ -472,7 +472,10 @@ function validateForm(form: typeof emptyForm): Record<string, string | null> {
 
 export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const { cart, loading: cartLoading, refresh: refreshCart } = useCart();
-  const items = cart?.items ?? EMPTY_CART_ITEMS;
+  // Selection-aware checkout: only TICKED cart lines are bought — anything
+  // unticked in the drawer stays in the cart for a later purchase.
+  const items = useMemo(() => (cart?.items ?? EMPTY_CART_ITEMS).filter((i) => i.selected), [cart]);
+  const keptCount = (cart?.items.length ?? 0) - items.length;
 
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
@@ -856,12 +859,22 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       <div className="flex-1">
         <EmptyState
           icon={ShoppingBag}
-          title="Your cart is empty"
-          hint="Add something lovely from the marketplace or a store first."
+          title={keptCount > 0 ? "Nothing selected for checkout" : "Your cart is empty"}
+          hint={
+            keptCount > 0
+              ? "Everything is unticked — your items are safe in the cart. Open the cart and tick what you'd like to buy now."
+              : "Add something lovely from the marketplace or a store first."
+          }
           action={
-            <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
-              Start shopping
-            </Button>
+            keptCount > 0 ? (
+              <Button onClick={() => ctx.openCart()} className="bg-brand-gradient-deep hover:brightness-110">
+                Open cart
+              </Button>
+            ) : (
+              <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
+                Start shopping
+              </Button>
+            )
           }
         />
       </div>
@@ -1305,6 +1318,12 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         <aside className="lg:col-span-2">
           <div className="space-y-4 rounded-xl border bg-card p-5 shadow-soft lg:sticky lg:top-20">
             <h2 className="text-base font-bold">Order summary</h2>
+
+            {keptCount > 0 ? (
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground" role="status">
+                {keptCount === 1 ? "1 item is" : `${keptCount} items are`} still in your cart (unticked at the cart) — not part of this checkout.
+              </p>
+            ) : null}
 
             {stockIssues.length > 0 ? (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">

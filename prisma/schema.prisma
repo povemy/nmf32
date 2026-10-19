@@ -446,6 +446,10 @@ model CartItem {
   cartId    String
   variantId String
   qty       Int            @default(1)
+  // Buyer-controlled checkout selection: uncheck an item (or a whole seller)
+  // to keep it in the cart while checking out the rest. Checked-out lines are
+  // removed by the payment webhook; unselected lines survive for later.
+  selected  Boolean        @default(true)
   createdAt DateTime       @default(now())
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)

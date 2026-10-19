@@ -95,6 +95,7 @@ export type ShapedCartItem = {
   storeId: string;
   storeSlug: string;
   storeName: string;
+  selected: boolean;
 };
 
 export function shapeCart(cart: CartWithItems | null) {
@@ -121,6 +122,7 @@ export function shapeCart(cart: CartWithItems | null) {
       storeId: p.store.id,
       storeSlug: p.store.slug,
       storeName: p.store.name,
+      selected: it.selected,
     };
   });
 

@@ -12,28 +12,41 @@ async function requireShopperCartItem(cartId: string | null, itemId: string) {
   return item;
 }
 
-// PATCH /api/cart/items/[id] {qty} — qty 0 removes the item. Sign-in required;
-// the cart is resolved from the SESSION, so a shopper can never touch another
-// account's items (no ids in the wild beyond the session's own cart).
+// PATCH /api/cart/items/[id] {qty?, selected?} — qty 0 removes the item;
+// selected toggles the buyer's checkout selection (unchecked = kept in cart).
+// Sign-in required; the cart is resolved from the SESSION, so a shopper can
+// never touch another account's items (no ids in the wild beyond the session's
+// own cart).
 export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const me = await requireShopper();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-  const qty = Math.round(Number(body.qty));
-  if (!Number.isFinite(qty) || qty < 0) throw new ApiError(400, "VALIDATION", "qty must be >= 0");
-  if (qty > 99) throw new ApiError(400, "VALIDATION", "qty cannot exceed 99");
+  const hasQty = body.qty !== undefined;
+  const hasSelected = body.selected !== undefined;
+  if (!hasQty && !hasSelected) throw new ApiError(400, "VALIDATION", "qty or selected is required");
+  if (hasSelected && typeof body.selected !== "boolean") throw new ApiError(400, "VALIDATION", "selected must be a boolean");
+
+  let qty = 0;
+  if (hasQty) {
+    qty = Math.round(Number(body.qty));
+    if (!Number.isFinite(qty) || qty < 0) throw new ApiError(400, "VALIDATION", "qty must be >= 0");
+    if (qty > 99) throw new ApiError(400, "VALIDATION", "qty cannot exceed 99");
+  }
 
   const cart = await findCartForShopper(me.id);
   const item = await requireShopperCartItem(cart?.id ?? null, id);
 
-  if (qty === 0) {
+  if (hasQty && qty === 0) {
     await db.cartItem.delete({ where: { id: item.id } });
   } else {
-    if (qty > item.variant.stock) {
+    if (hasQty && qty > item.variant.stock) {
       throw new ApiError(409, "OUT_OF_STOCK", `Only ${item.variant.stock} in stock`);
     }
-    await db.cartItem.update({ where: { id: item.id }, data: { qty } });
+    await db.cartItem.update({
+      where: { id: item.id },
+      data: { ...(hasQty ? { qty } : {}), ...(hasSelected ? { selected: body.selected as boolean } : {}) },
+    });
   }
 
   const fresh = await findCartForShopper(me.id);

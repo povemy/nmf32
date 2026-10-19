@@ -182,10 +182,16 @@ export async function processPaymentWebhook(input: {
       await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: group.provider, totalMinor: order.totalMinor, paymentGroup: true } });
     }
 
-    // Server-side cart clearing — the cart that produced this group is emptied
-    // only on verified payment success (never on failure/pending).
+    // Server-side cart clearing — only the PURCHASED variants leave the cart,
+    // and only on verified payment success (never on failure/pending). Lines
+    // the buyer unchecked (kept for later) survive: selection-aware carts.
     // PaymentGroups are account-scoped (shopperId always set).
-    await db.cartItem.deleteMany({ where: { cart: { shopperId: group.shopperId } } });
+    const purchasedVariantIds = [
+      ...new Set(group.orders.flatMap((o) => o.items.map((it) => it.variantId)).filter((v): v is string => Boolean(v))),
+    ];
+    await db.cartItem.deleteMany({
+      where: { cart: { shopperId: group.shopperId }, variantId: { in: purchasedVariantIds } },
+    });
 
     await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
 
@@ -252,14 +258,20 @@ export async function processPaymentWebhook(input: {
 
   await transitionOrder({ orderId: order.id, toStatus: "paid", actor: "system", note: `Payment ${providerRef} succeeded via ${intent.provider}`, timestamps: { paidAt } });
 
-  // Server-side cart clearing — the cart that produced this order is emptied
-  // only on verified payment success (never on failure/pending, never
+  // Server-side cart clearing — only the PURCHASED variants leave the cart,
+  // and only on verified payment success (never on failure/pending, never
   // client-driven). Account carts clear by shopperId; the token is a legacy/
   // reconciliation fallback for rows that predate account-scoped carts.
+  // Selection-aware: unchecked (kept-for-later) lines are never removed here.
+  const purchasedVariantIds = [...new Set(order.items.map((it) => it.variantId).filter((v): v is string => Boolean(v)))];
   if (order.shopperId) {
-    await db.cartItem.deleteMany({ where: { cart: { shopperId: order.shopperId } } });
+    await db.cartItem.deleteMany({
+      where: { cart: { shopperId: order.shopperId }, variantId: { in: purchasedVariantIds } },
+    });
   } else if (order.cartToken) {
-    await db.cartItem.deleteMany({ where: { cart: { token: order.cartToken } } });
+    await db.cartItem.deleteMany({
+      where: { cart: { token: order.cartToken }, variantId: { in: purchasedVariantIds } },
+    });
   }
 
   // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.

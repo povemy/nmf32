@@ -40,6 +40,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1472,7 +1473,7 @@ function CartDrawer({
   ctx: ShopperCtx;
   storeSlug: string | null;
 }) {
-  const { cart, count, subtotal, loading } = useCart();
+  const { cart, count, selectedCount, selectedSubtotal, loading } = useCart();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [addingUpsell, setAddingUpsell] = useState<string | null>(null);
   const me = useApp((s) => s.me);
@@ -1569,17 +1570,35 @@ function CartDrawer({
   }, [orderNote, open]);
 
   // Multi-seller cart: one section per seller (Option A — one payment at checkout).
+  // Each group carries its own selection figures for the seller-level checkbox.
   const storeGroups = useMemo(() => {
     const items = cart?.items ?? [];
-    const map = new Map<string, { storeId: string; storeSlug: string; storeName: string; items: CartItemT[]; subtotalMinor: number }>();
+    const map = new Map<
+      string,
+      { storeId: string; storeSlug: string; storeName: string; items: CartItemT[]; subtotalMinor: number; selectedSubtotalMinor: number; allSelected: boolean; someSelected: boolean }
+    >();
     for (const it of items) {
       const g = map.get(it.storeId);
       if (g) {
         g.items.push(it);
         g.subtotalMinor += it.lineTotalMinor;
+        if (it.selected) g.selectedSubtotalMinor += it.lineTotalMinor;
       } else {
-        map.set(it.storeId, { storeId: it.storeId, storeSlug: it.storeSlug, storeName: it.storeName, items: [it], subtotalMinor: it.lineTotalMinor });
+        map.set(it.storeId, {
+          storeId: it.storeId,
+          storeSlug: it.storeSlug,
+          storeName: it.storeName,
+          items: [it],
+          subtotalMinor: it.lineTotalMinor,
+          selectedSubtotalMinor: it.selected ? it.lineTotalMinor : 0,
+          allSelected: it.selected,
+          someSelected: it.selected,
+        });
       }
+    }
+    for (const g of map.values()) {
+      g.allSelected = g.items.every((it) => it.selected);
+      g.someSelected = g.items.some((it) => it.selected);
     }
     return [...map.values()];
   }, [cart]);
@@ -1592,6 +1611,33 @@ function CartDrawer({
       notifyCartUpdated(); // keep badge + every useCart() instance in sync
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update cart");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Checkout selection — one item, or a whole seller's group at once.
+  // Unchecked lines STAY in the cart (kept for later); only checked lines go
+  // to checkout, and the payment webhook removes exactly the purchased items.
+  async function setItemSelected(itemId: string, selected: boolean) {
+    setBusyId(itemId);
+    try {
+      await patchJson(`/api/cart/items/${itemId}`, { selected });
+      notifyCartUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update selection");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function setStoreSelected(g: (typeof storeGroups)[number], selected: boolean) {
+    setBusyId(g.storeId);
+    try {
+      await patchJson("/api/cart/selection", { itemIds: g.items.map((it) => it.id), selected });
+      notifyCartUpdated();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update selection");
     } finally {
       setBusyId(null);
     }
@@ -1615,18 +1661,35 @@ function CartDrawer({
     .filter((u) => u.variantId && !(cart?.items ?? []).some((it) => it.productId === u.id || it.variantId === u.variantId))
     .slice(0, cfg.upsellLimit);
 
-  const shipProgress = Math.min(1, cfg.freeShipThresholdMinor > 0 ? subtotal / cfg.freeShipThresholdMinor : 1);
-  const shipRemainingMinor = Math.max(0, cfg.freeShipThresholdMinor - subtotal);
+  // Selection-aware free-shipping progress — the bar tracks what is actually
+  // going to checkout, not the whole cart.
+  const shipProgress = Math.min(1, cfg.freeShipThresholdMinor > 0 ? selectedSubtotal / cfg.freeShipThresholdMinor : 1);
+  const shipRemainingMinor = Math.max(0, cfg.freeShipThresholdMinor - selectedSubtotal);
+  const keptLines = (cart?.items.length ?? 0) - (cart?.items.filter((it) => it.selected).length ?? 0);
 
   const lowStockOf = (it: CartItemT): number | null =>
     showUrgency && cfg.urgencyStockEnabled && it.stock > 0 && it.stock <= cfg.urgencyStockThreshold ? it.stock : null;
 
   const itemsBlock = (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {storeGroups.map((g) => (
-        <div key={g.storeId} className="space-y-2">
-          {cfg.layout !== "compact" ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2">
+        <div key={g.storeId} className="space-y-1.5">
+          {/* Seller header — select-all / deselect-all for this seller's items.
+              Always rendered (selection is core cart mechanics in every layout);
+              the compact layout hides only the shipping hint. */}
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <Checkbox
+                checked={g.allSelected ? true : g.someSelected ? "indeterminate" : false}
+                // Convention for tri-state seller checkbox: mixed or empty →
+                // select ALL of this seller; all selected → deselect all.
+                // (Radix's own next-value treats indeterminate as checked,
+                // which would deselect on the first click of a mixed group.)
+                onCheckedChange={() => setStoreSelected(g, !g.allSelected)}
+                disabled={busyId === g.storeId}
+                aria-label={`Select all ${g.storeName} items`}
+                className="h-4 w-4 shrink-0 data-[state=indeterminate]:border-teal-700 data-[state=indeterminate]:bg-teal-700 data-[state=indeterminate]:text-white"
+              />
               <button
                 type="button"
                 onClick={() => {
@@ -1639,15 +1702,19 @@ function CartDrawer({
                 <Store className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{g.storeName}</span>
               </button>
-              <span className="shrink-0 text-xs font-semibold text-muted-foreground">
-                {g.subtotalMinor >= 10000 ? (
+            </div>
+            {cfg.layout !== "compact" ? (
+              <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+                {g.selectedSubtotalMinor >= 10000 ? (
                   <span className="text-emerald-700">FREE shipping unlocked</span>
+                ) : g.selectedSubtotalMinor > 0 ? (
+                  `${formatMinor(g.selectedSubtotalMinor)} + shipping`
                 ) : (
-                  `${formatMinor(g.subtotalMinor)} + shipping`
+                  "Nothing selected"
                 )}
               </span>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
           <AnimatePresence initial={false}>
             {g.items.map((it) => {
               const low = lowStockOf(it);
@@ -1659,8 +1726,20 @@ function CartDrawer({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: 40 }}
                   transition={{ duration: 0.18 }}
-                  className={cn("flex gap-3 rounded-xl border bg-card p-3", busyId === it.id && "opacity-60")}
+                  className={cn(
+                    "flex items-start gap-2.5 rounded-xl border bg-card p-2 transition-opacity",
+                    !it.selected && "opacity-55",
+                    (busyId === it.id || busyId === g.storeId) && "pointer-events-none opacity-60"
+                  )}
                 >
+                  {/* checkout selection — unchecked = keep this item in the cart */}
+                  <Checkbox
+                    checked={it.selected}
+                    onCheckedChange={(v) => setItemSelected(it.id, v === true)}
+                    disabled={busyId === it.id || busyId === g.storeId}
+                    aria-label={`Include ${it.title} in checkout`}
+                    className="mt-6 h-4 w-4 shrink-0"
+                  />
                   <button
                     type="button"
                     onClick={() => {
@@ -1674,10 +1753,14 @@ function CartDrawer({
                       src={it.imageUrl}
                       alt={it.title}
                       loading="lazy"
-                      className={cn("rounded-lg border object-cover", cfg.layout === "compact" ? "h-14 w-14" : "h-20 w-20")}
+                      className={cn(
+                        "rounded-lg border object-cover",
+                        cfg.layout === "compact" ? "h-12 w-12" : "h-16 w-16",
+                        !it.selected && "grayscale-[35%]"
+                      )}
                     />
                   </button>
-                  <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-start justify-between gap-2">
                       <button
                         type="button"
@@ -1685,33 +1768,33 @@ function CartDrawer({
                           onOpenChange(false);
                           ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
                         }}
-                        className="text-left text-sm font-semibold leading-tight line-clamp-2 hover:text-teal-700"
+                        className="text-left text-[12px] font-medium leading-tight line-clamp-2 hover:text-teal-700"
                       >
                         {it.title}
                       </button>
                       <button
                         type="button"
                         onClick={() => setQty(it.id, 0)}
-                        className="text-muted-foreground hover:text-rose-600 transition-colors p-1"
+                        className="text-muted-foreground transition-colors hover:text-rose-600 p-0.5"
                         aria-label={`Remove ${it.title}`}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-xs text-muted-foreground">{it.variantLabel}</p> : null}
+                    {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-[11px] leading-tight text-muted-foreground">{it.variantLabel}</p> : null}
                     {low !== null ? (
                       <p
-                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700"
+                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
                         role="status"
                       >
                         <Flame className="h-3 w-3" /> Only {low} left in stock
                       </p>
                     ) : null}
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <div className="flex items-end justify-between gap-2 pt-0.5">
                       <QtyStepper small value={it.qty} min={0} max={Math.max(1, it.stock)} onChange={(v) => setQty(it.id, v)} />
                       <div className="text-right">
-                        <p className="text-sm font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
-                        <p className="text-[11px] text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
+                        <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
+                        <p className="text-[10px] leading-tight text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
                       </div>
                     </div>
                   </div>
@@ -1727,11 +1810,18 @@ function CartDrawer({
   const ctaBlock = (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">Subtotal</span>
+        <span className="text-muted-foreground">
+          Subtotal{keptLines > 0 ? ` (${selectedCount} of ${count} items)` : ""}
+        </span>
         <span className="text-lg font-extrabold" style={accentText ?? { color: "#0f766e" }}>
-          {formatMinor(subtotal)}
+          {formatMinor(selectedSubtotal)}
         </span>
       </div>
+      {keptLines > 0 ? (
+        <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] font-medium text-muted-foreground" role="status">
+          {keptLines === 1 ? "1 item is" : `${keptLines} items are`} kept in your cart — untick to buy later.
+        </p>
+      ) : null}
       {cfg.showDiscountHint ? (
         <p className="text-[11px] text-muted-foreground">
           Voucher / promo codes can be applied at checkout. Each seller ships separately — you pay once.
@@ -1741,6 +1831,7 @@ function CartDrawer({
       )}
       <Button
         size="lg"
+        disabled={selectedCount === 0}
         onClick={() => {
           onOpenChange(false);
           ctx.nav({ name: "checkout" });
@@ -1769,7 +1860,11 @@ function CartDrawer({
           <SheetTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="h-5 w-5" style={accentText ?? { color: "#0f766e" }} />
             {cfgPayload?.store.name ? `${cfgPayload.store.name} — your cart` : "Your cart"}
-            {count > 0 ? <span className="text-sm font-normal text-muted-foreground">({count} item{count === 1 ? "" : "s"})</span> : null}
+            {count > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                ({keptLines > 0 ? `${selectedCount} of ${count}` : count} item{count === 1 ? "" : "s"})
+              </span>
+            ) : null}
           </SheetTitle>
           {storeGroups.length > 1 ? (
             <p className="text-xs text-muted-foreground">

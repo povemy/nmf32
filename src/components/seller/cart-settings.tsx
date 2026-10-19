@@ -20,6 +20,7 @@ import {
   Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -600,22 +601,24 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
               </div>
             ) : null}
 
-            {/* sample items */}
+            {/* sample items — mirror the real drawer: selection checkbox,
+                compact 20%-smaller card, 12px/500 product title */}
             {[
-              { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, low: supports.urgency && cfg.urgencyStockEnabled },
-              { t: "Terra Linen Table Runner", v: "Default", p: 1500, low: false },
+              { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, low: supports.urgency && cfg.urgencyStockEnabled, sel: true },
+              { t: "Terra Linen Table Runner", v: "Default", p: 1500, low: false, sel: true },
             ].map((it, i) => (
-              <div key={i} className="flex gap-3 rounded-xl border bg-card p-3">
+              <div key={i} className="flex items-start gap-2.5 rounded-xl border bg-card p-2">
+                <Checkbox checked disabled aria-label="Included in checkout" className="mt-6 h-4 w-4 shrink-0" />
                 <img src={`/api/img/preview-item-${i + 1}?w=200&h=200`} alt="" className="h-16 w-16 rounded-lg border object-cover" />
                 <div className="min-w-0 flex-1 space-y-1">
-                  <p className="truncate text-xs font-semibold">{it.t}</p>
-                  <p className="text-[10px] text-muted-foreground">{it.v}</p>
+                  <p className="truncate text-[12px] font-medium leading-tight">{it.t}</p>
+                  <p className="text-[11px] leading-tight text-muted-foreground">{it.v}</p>
                   {it.low ? (
                     <p className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
                       <Flame className="h-2.5 w-2.5" /> Only {cfg.urgencyStockThreshold} left in stock
                     </p>
                   ) : null}
-                  <p className="text-xs font-bold text-teal-700">{formatMinor(it.p)}</p>
+                  <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.p)}</p>
                 </div>
               </div>
             ))}
