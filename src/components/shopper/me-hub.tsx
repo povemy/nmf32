@@ -6,7 +6,7 @@
 // Data comes from /api/me/* (all account-scoped server-side via requireShopper).
 // Money is integer minor units — always format via formatMinor.
 // ============================================================================
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -14,7 +14,6 @@ import {
   Bell,
   BellRing,
   Check,
-  ChevronDown,
   ChevronRight,
   Coins,
   CreditCard,
@@ -27,7 +26,6 @@ import {
   LifeBuoy,
   Loader2,
   MapPin,
-  MessagesSquare,
   Package,
   PackageCheck,
   Pencil,
@@ -63,7 +61,6 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
-import NotificationBell from "./notification-bell";
 import {
   ApiFail,
   fetchJson,
@@ -303,6 +300,30 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
   const [purchaseTab, setPurchaseTab] = useState<string>(initialTab && initialTab.startsWith("bucket:") ? initialTab.slice(7) : "all");
   const data = useMeData(Boolean(shopper));
 
+  // Task 30 — the Me-page (mobile) header's "Settings" item dispatches
+  // nomofee:open-settings. The Dashboard below listens for it too; if a
+  // sub-view (purchases, wallet, likes…) is currently mounted we return to
+  // the dashboard first, then re-dispatch once the Dashboard is live so the
+  // settings dialog still opens.
+  const settingsReentry = useRef(false);
+  useEffect(() => {
+    const onOpenSettings = () => {
+      if (sub !== null) {
+        settingsReentry.current = true;
+        setSub(null);
+      }
+    };
+    window.addEventListener("nomofee:open-settings", onOpenSettings);
+    return () => window.removeEventListener("nomofee:open-settings", onOpenSettings);
+  }, [sub]);
+  useEffect(() => {
+    if (sub === null && settingsReentry.current) {
+      settingsReentry.current = false;
+      const t = window.setTimeout(() => window.dispatchEvent(new Event("nomofee:open-settings")), 60);
+      return () => window.clearTimeout(t);
+    }
+  }, [sub]);
+
   if (!shopper) {
     return (
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
@@ -381,6 +402,14 @@ function Dashboard({
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [sort, setSort] = useState("popular");
 
+  // Task 30 — "Settings" from the Me-page (mobile) header account menu opens
+  // this dashboard's settings dialog (the header itself has no dialog state).
+  useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener("nomofee:open-settings", open);
+    return () => window.removeEventListener("nomofee:open-settings", open);
+  }, []);
+
   useEffect(() => {
     try {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate the dismiss flag from storage after mount
@@ -433,16 +462,11 @@ function Dashboard({
 
         {/* ------------------------------ main column ------------------------------ */}
         <div className="min-w-0 space-y-4 sm:space-y-5">
-          {/* profile header */}
-          <ProfileHeader
-            profile={data.profile}
-            loading={data.loading}
-            onSettings={() => setSettingsOpen(true)}
-            onCart={ctx.openCart}
-            onChat={() => ctx.nav({ name: "messages" })}
-            onMarket={() => ctx.nav({ name: "market" })}
-            onOpenOrder={(orderNumber) => ctx.nav({ name: "order-status", orderNumber })}
-          />
+          {/* profile header — Task 30: the Settings / bell / cart / messages
+              icon actions were removed from the banner (they live in the top
+              header now); the banner is a pure identity card with restructured
+              follow stats and a progressive membership row. */}
+          <ProfileHeader profile={data.profile} loading={data.loading} onMarket={() => ctx.nav({ name: "market" })} />
 
           {/* notification prompt */}
           {notifOpen ? (
@@ -694,23 +718,20 @@ function Avatar({ profile, size = "md" }: { profile: ProfileT | null; size?: "sm
 function ProfileHeader({
   profile,
   loading,
-  onSettings,
-  onCart,
-  onChat,
   onMarket,
-  onOpenOrder,
 }: {
   profile: ProfileT | null;
   loading: boolean;
-  onSettings: () => void;
-  onCart: () => void;
-  onChat: () => void;
   onMarket: () => void;
-  onOpenOrder: (orderNumber: string) => void;
 }) {
-  const { count } = useCartCount();
+  // Task 30 — the four icon actions (Settings / bell / cart / messages) that
+  // used to sit here were removed: they now live in the top header (Me page
+  // account bar on mobile; the global header on desktop). The banner is a
+  // pure identity card: avatar + name, restructured follow stats, and a
+  // progressive membership row whose right-chevron opens the details modal.
   const [tierOpen, setTierOpen] = useState(false);
   const tier = profile?.membershipLevel ?? "SILVER";
+  const pct = profile?.tierProgress ? profile.tierProgress.percent : 100;
 
   return (
     <section className="overflow-hidden rounded-2xl bg-brand-gradient-deep text-white shadow-soft" aria-label="Profile">
@@ -728,47 +749,57 @@ function ProfileHeader({
               <p className="truncate text-xs text-white/80">
                 {profile?.username ? `@${profile.username}` : (profile?.email ?? "")}
               </p>
-              <p className="pt-1 text-[11px] font-medium text-white/90 tabular-nums">
-                {profile ? `${profile.followingCount} Following · ${profile.followerCount} Followers` : ""}
-              </p>
             </>
           )}
         </div>
-        <div className="flex items-center gap-1">
-          <IconAction label="Settings" onClick={onSettings}><Settings className="h-4.5 w-4.5" /></IconAction>
-          <NotificationBell
-            className="text-white/90 hover:bg-white/20 hover:text-white"
-            onOpenOrder={onOpenOrder}
-          />
-          <IconAction label={`Cart, ${count} item${count === 1 ? "" : "s"}`} onClick={onCart}>
-            <ShoppingCart className="h-4.5 w-4.5" />
-            {count > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
-                {count > 99 ? "99+" : count}
-              </span>
-            ) : null}
-          </IconAction>
-          <IconAction label="My messages" onClick={onChat}><MessagesSquare className="h-4.5 w-4.5" /></IconAction>
-        </div>
       </div>
 
-      <div className="px-4 pb-4 sm:px-5">
+      {/* Following / Followers — restructured from a cramped text line into
+          two scannable stat tiles that breathe with the banner */}
+      <div className="flex flex-wrap gap-2 px-4 pb-1 sm:px-5">
+        <FollowStat label="Following" value={profile?.followingCount} />
+        <FollowStat label="Followers" value={profile?.followerCount} />
+      </div>
+
+      <div className="space-y-2.5 px-4 pb-4 pt-2.5 sm:px-5">
+        {/* Membership — progressive: the current tier with its live progress
+            bar visible at a glance; tapping the right-chevron opens the modal
+            with the full breakdown (lifetime spend, next tier, member since). */}
         <button
           type="button"
           onClick={() => setTierOpen(true)}
-          className="inline-flex min-h-[28px] items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide backdrop-blur transition-colors hover:bg-white/30"
+          className="flex w-full items-center gap-3 rounded-xl bg-white/15 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/25"
           aria-haspopup="dialog"
-          aria-label={`${tier} membership — view benefits`}
+          aria-label={`${tier} membership — ${
+            profile?.tierProgress ? `${pct}% of the way to ${profile.tierProgress.nextTier}` : "highest tier reached"
+          }. View details.`}
         >
-          <Crown className="h-3.5 w-3.5" aria-hidden="true" />
-          {tier} Member
-          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+          <Crown className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center justify-between gap-2">
+              <span className="text-xs font-extrabold uppercase tracking-wide">{tier} Member</span>
+              <span className="shrink-0 text-[11px] font-semibold tabular-nums text-white/90">
+                {profile?.tierProgress ? `${pct}% → ${profile.tierProgress.nextTier}` : "Top tier reached"}
+              </span>
+            </span>
+            <span
+              className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+              role="progressbar"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Progress to next membership tier"
+            >
+              <span className="block h-full rounded-full bg-amber-400" style={{ width: `${Math.max(6, pct)}%` }} />
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
 
         <button
           type="button"
           onClick={onMarket}
-          className="group mt-3 flex w-full items-center justify-between gap-2 rounded-xl bg-white/15 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/25"
+          className="group flex w-full items-center justify-between gap-2 rounded-xl bg-white/15 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/25"
           aria-label="Everything free shipping, no minimum spend — shop now"
         >
           <span className="flex items-center gap-2 text-xs font-bold sm:text-sm">
@@ -784,16 +815,14 @@ function ProfileHeader({
   );
 }
 
-function IconAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function FollowStat({ label, value }: { label: string; value?: number }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="relative flex h-10 w-10 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/20 hover:text-white"
-    >
-      {children}
-    </button>
+    <span className="inline-flex min-w-[76px] flex-col rounded-lg bg-white/15 px-3 py-1.5 backdrop-blur">
+      <span className="text-sm font-extrabold leading-tight tabular-nums">
+        {typeof value === "number" ? value.toLocaleString() : "—"}
+      </span>
+      <span className="text-[10px] font-medium uppercase tracking-wide text-white/80">{label}</span>
+    </span>
   );
 }
 
@@ -2221,21 +2250,5 @@ function AddressesView({ onBack }: { onBack: () => void }) {
   );
 }
 
-// cart count (lightweight local hook so the header badge stays live)
-function useCartCount() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      fetchJson<{ cart: { items: { qty: number }[] } }>("/api/cart")
-        .then((d) => alive && setCount(d.cart?.items.reduce((s, i) => s + i.qty, 0) ?? 0))
-        .catch(() => {});
-    load();
-    window.addEventListener("sm-cart-updated", load);
-    return () => {
-      alive = false;
-      window.removeEventListener("sm-cart-updated", load);
-    };
-  }, []);
-  return { count };
-}
+// (Task 30: the local cart-count hook was removed with the banner's cart icon
+// — the top-header cart badge already tracks the live count via useCart.)

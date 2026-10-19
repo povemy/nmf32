@@ -32,7 +32,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { formatMinor } from "@/lib/money";
 import { apiGet, apiSend, MoneyInput } from "./ui-bits";
@@ -87,7 +86,7 @@ const DEFAULTS: CartConfig = {
 
 const TRUST_BADGES: { id: string; label: string; emoji: string }[] = [
   { id: "secure", label: "Secure checkout", emoji: "🛡️" },
-  { id: "returns", label: "Easy returns", emoji: "↩️" },
+  { id: "returns", label: "Data protection", emoji: "🔒" },
   { id: "support", label: "Local support", emoji: "🎧" },
   { id: "shipping", label: "Fast shipping", emoji: "🚚" },
   { id: "cod", label: "COD available", emoji: "💵" },
@@ -97,7 +96,7 @@ const TRUST_BADGES: { id: string; label: string; emoji: string }[] = [
 const LAYOUTS = [
   { id: "compact", label: "Compact", desc: "Lean drawer — items, subtotal, checkout. Fastest path to payment." },
   { id: "standard", label: "Standard", desc: "Balanced drawer with urgency + trust badges. Great default." },
-  { id: "pro", label: "Pro (AOV)", desc: "Everything: upsell strip, free-shipping progress, urgency, order note." },
+  { id: "pro", label: "Pro (AOV)", desc: "Everything: upsell strip, free-shipping progress, urgency, trust badges." },
 ];
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
@@ -156,7 +155,7 @@ export default function SellerCartSettings() {
     setThresholdText((cfg.freeShipThresholdMinor / 100).toFixed(2));
   }, [cfg.freeShipThresholdMinor]);
 
-  const layoutSupports = (feature: "upsell" | "urgency" | "note") =>
+  const layoutSupports = (feature: "upsell" | "urgency") =>
     cfg.layout === "pro"
       ? true
       : cfg.layout === "standard"
@@ -495,17 +494,10 @@ export default function SellerCartSettings() {
                 </div>
               ) : null}
 
-              {cfg.layout === "pro" ? (
-                <Toggle
-                  label="Order note box"
-                  hint="Let buyers add gift wrap / delivery instructions right in the cart."
-                  checked={cfg.showOrderNote}
-                  onChange={(v) => set({ showOrderNote: v })}
-                />
-              ) : null}
-
-              {/* Task 28: the voucher/discount hint line was removed from the
-                  drawer (cleaner CTA area) — the dead toggle is gone too. */}
+              {/* Task 30: the order-note box was removed from the cart drawer
+                  (buyers chat the seller directly; checkout keeps its own
+                  note field), so the seller toggle is gone too. The API field
+                  stays for storage tolerance. */}
               <Toggle
                 label="Show “Continue shopping” link"
                 hint="Secondary action under the checkout button — jumps back to the marketplace."
@@ -557,7 +549,6 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
   const supports = {
     upsell: cfg.layout === "pro",
     urgency: cfg.layout !== "compact",
-    note: cfg.layout === "pro",
   };
   const showShip = cfg.showFreeShippingBar && supports.urgency && cfg.freeShipThresholdMinor > 0;
   const badges = cfg.trustBadges.slice(0, 6);
@@ -584,8 +575,9 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
               </div>
             ) : null}
             {supports.urgency && cfg.urgencyViewersEnabled ? (
-              <p className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600">
-                <Eye className="h-3 w-3" /> {cfg.urgencyViewersMin} people are viewing this store's products right now
+              <p className="flex h-5 items-center gap-1.5 overflow-hidden text-[11px] font-medium text-rose-600">
+                <Eye className="h-3 w-3 shrink-0" />
+                <span className="truncate">{cfg.urgencyViewersMin} people are viewing this store's products right now</span>
               </p>
             ) : null}
             {showShip ? (
@@ -662,13 +654,6 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            {supports.note && cfg.showOrderNote ? (
-              <div className="space-y-1 border-t pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Order note</p>
-                <Textarea rows={2} placeholder="Gift wrap, delivery instructions…" className="text-xs" disabled />
               </div>
             ) : null}
 

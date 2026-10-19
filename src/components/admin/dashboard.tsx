@@ -187,7 +187,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
 
             <Card className="py-0 xl:col-span-2">
               <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
-                <CardTitle className="text-base">Top sellers — 30d</CardTitle>
+                <CardTitle className="text-base">Featured stores — 30d</CardTitle>
                 <CardDescription>Ranked by GMV</CardDescription>
               </CardHeader>
               <CardContent className="px-0 pb-2">

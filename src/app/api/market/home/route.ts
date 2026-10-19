@@ -49,7 +49,8 @@ export const GET = handle(async () => {
     categories,
     featured: featuredSlots.map((fs) => toProductCard(fs.product as ProductWithRelations)),
     latest: latest.map((p) => toProductCard(p as ProductWithRelations)),
-    topStores: topStores.map((s) => ({
+    // Task 30: renamed topStores → featuredStores ("Featured stores" section).
+    featuredStores: topStores.map((s) => ({
       id: s.id,
       name: s.name,
       slug: s.slug,

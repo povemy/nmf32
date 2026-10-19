@@ -26,7 +26,8 @@ import {
   Send,
   User,
   ShieldCheck,
-  RotateCcw,
+  Settings,
+  LockKeyhole,
   Headphones,
   Truck,
   Banknote,
@@ -459,8 +460,15 @@ function MarketHeader({
   const [categories, setCategories] = useState<CategoryT[] | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const logout = useApp((s) => s.logout);
+  const refreshMe = useApp((s) => s.refreshMe);
   const shopperSignedIn = Boolean(me.loaded && me.shopper);
   const unreadChats = useChatUnread(shopperSignedIn, view.name);
+  // Task 30 — the Me page (MOBILE ONLY) swaps the header to an account bar:
+  // no logo, no search — just quick actions (right→left: Me, Chat, Cart, Bell).
+  // Desktop keeps the full header everywhere.
+  const isMe = view.name === "me";
 
   useEffect(() => {
     let alive = true;
@@ -535,8 +543,13 @@ function MarketHeader({
           </SheetContent>
         </Sheet>
 
-        {/* logo — wordmark hidden on the smallest phones so the search bar fits */}
-        <button type="button" onClick={() => nav({ name: "market" })} className="flex min-h-[44px] shrink-0 items-center gap-2" aria-label="NOMOFEE home">
+        {/* logo — hidden on the Me page (mobile) which becomes an account bar */}
+        <button
+          type="button"
+          onClick={() => nav({ name: "market" })}
+          className={cn("flex min-h-[44px] shrink-0 items-center gap-2", isMe && "max-md:hidden")}
+          aria-label="NOMOFEE home"
+        >
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
             <ShoppingBag className="h-5 w-5" />
           </span>
@@ -596,8 +609,9 @@ function MarketHeader({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons */}
-        <div className="relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md">
+        {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons;
+            hidden on the Me page (mobile) which swaps to an account bar */}
+        <div className={cn("relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md", isMe && "max-md:hidden")}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
@@ -609,7 +623,7 @@ function MarketHeader({
           />
         </div>
 
-        <div className="ml-0 flex shrink-0 items-center gap-1.5">
+        <div className={cn("ml-0 flex shrink-0 items-center gap-1.5", isMe && "max-md:hidden")}>
           {/* buyer notification bell (Task 10-d) — self-gates for guests */}
           <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} className="hidden sm:inline-flex" />
 
@@ -684,6 +698,82 @@ function MarketHeader({
           {/* account (shopper auth) */}
           <AccountButton nav={nav} />
         </div>
+
+        {/* Task 30 — Me page account bar (MOBILE ONLY). Order right→left as
+            specified: Me menu (Dashboard / Purchases / Settings / Sign out —
+            deliberately NO “Messages”), then Chat, then Cart, then Bell. */}
+        {isMe ? (
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 md:hidden" aria-label="Account quick actions">
+            <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} />
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-muted"
+            >
+              <ShoppingCart className="h-4.5 w-4.5" />
+              {count > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+                  {count > 99 ? "99+" : count}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => (shopperSignedIn ? nav({ name: "messages" }) : openShopperAuth())}
+              aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-muted"
+            >
+              <MessagesSquare className="h-4.5 w-4.5" />
+              {unreadChats > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow" aria-hidden>
+                  {unreadChats > 9 ? "9+" : unreadChats}
+                </span>
+              ) : null}
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-muted"
+                  aria-label="Account menu"
+                  aria-haspopup="menu"
+                >
+                  <User className="h-4.5 w-4.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me" })}>
+                  <User className="h-4 w-4 text-teal-700" /> Dashboard
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "me", tab: "purchases" })}>
+                  <Package className="h-4 w-4 text-teal-700" /> Purchases
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="min-h-[44px]"
+                  onClick={() => window.dispatchEvent(new CustomEvent("nomofee:open-settings"))}
+                >
+                  <Settings className="h-4 w-4 text-teal-700" /> Settings
+                </DropdownMenuItem>
+                <Separator />
+                <DropdownMenuItem
+                  className="min-h-[44px] text-rose-600"
+                  onClick={async () => {
+                    if (!shopperSignedIn) {
+                      openShopperAuth();
+                      return;
+                    }
+                    await logout();
+                    await refreshMe();
+                    toast.success("Signed out");
+                  }}
+                >
+                  <LogOut className="h-4 w-4" /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
       </div>
     </header>
   );
@@ -1449,6 +1539,10 @@ type SfCartSettingsPayload = {
   store: { id: string; name: string; slug: string; theme?: { primaryColor?: string } | null };
   settings: CartDrawerConfig | null;
   upsell: UpsellProduct[];
+  // Task 30: top sellers resolved for EVERY live store — the cross-vendor AOV
+  // strip uses these for stores WITHOUT a cart-experience config so every
+  // vendor in the cart is represented, not just the configured one.
+  bestSellers?: UpsellProduct[];
 };
 
 // 60s module cache — keeps drawer opens snappy; the Seller Backend preview is
@@ -1458,7 +1552,9 @@ const CART_SETTINGS_TTL_MS = 60_000;
 
 const TRUST_BADGE_META: Record<string, { icon: typeof ShieldCheck; label: string }> = {
   secure: { icon: ShieldCheck, label: "Secure checkout" },
-  returns: { icon: RotateCcw, label: "Easy returns" },
+  // Task 30: "Easy returns" renamed to "Data protection" (same `returns` id so
+  // sellers' saved badge selections keep working — only the label/icon changed).
+  returns: { icon: LockKeyhole, label: "Data protection" },
   support: { icon: Headphones, label: "Local support" },
   shipping: { icon: Truck, label: "Fast shipping" },
   cod: { icon: Banknote, label: "COD available" },
@@ -1483,40 +1579,75 @@ function CartDrawer({
   const signedIn = Boolean(me.loaded && me.shopper);
 
   // ---- seller cart experience -------------------------------------------------
-  const [cfgPayload, setCfgPayload] = useState<SfCartSettingsPayload | null>(null);
+  // Task 30: settings are loaded for EVERY store present in the cart (60s
+  // cache per store). The "primary" store — the one whose PDP opened the
+  // drawer, else the single store in the cart — supplies the branding (title,
+  // theme accent, urgency, trust badges, CTA), while the AOV strip merges
+  // recommendations from ALL vendors so no seller's picks are hidden.
+  const [cfgMap, setCfgMap] = useState<Map<string, SfCartSettingsPayload | null>>(new Map());
   const [cfgLoading, setCfgLoading] = useState(false);
 
+  const cartStoreSlugs = useMemo(
+    () => [...new Set((cart?.items ?? []).map((it) => it.storeSlug).filter(Boolean))] as string[],
+    [cart]
+  );
+  const cartSlugsKey = cartStoreSlugs.join(",");
+
   useEffect(() => {
-    if (!open || !storeSlug) return;
-    const cached = cartSettingsCache.get(storeSlug);
-    if (cached && Date.now() - cached.at < CART_SETTINGS_TTL_MS) {
-      setCfgPayload(cached.failed ? null : cached.payload);
-      return;
-    }
+    if (!open) return;
+    const slugs = [...new Set([storeSlug, ...cartStoreSlugs].filter(Boolean))] as string[];
+    if (slugs.length === 0) return;
     let alive = true;
-    setCfgLoading(true);
-    fetchJson<SfCartSettingsPayload>(`/api/sf/${encodeURIComponent(storeSlug)}/cart-settings`)
-      .then((payload) => {
-        cartSettingsCache.set(storeSlug, { at: Date.now(), payload });
-        if (alive) setCfgPayload(payload);
+    const uncached = slugs.some((s) => {
+      const c = cartSettingsCache.get(s);
+      return !(c && Date.now() - c.at < CART_SETTINGS_TTL_MS);
+    });
+    if (uncached) setCfgLoading(true);
+    Promise.all(
+      slugs.map(async (slug) => {
+        const cached = cartSettingsCache.get(slug);
+        if (cached && Date.now() - cached.at < CART_SETTINGS_TTL_MS) {
+          return [slug, cached.failed ? null : cached.payload] as const;
+        }
+        try {
+          const payload = await fetchJson<SfCartSettingsPayload>(`/api/sf/${encodeURIComponent(slug)}/cart-settings`);
+          cartSettingsCache.set(slug, { at: Date.now(), payload });
+          return [slug, payload] as const;
+        } catch {
+          cartSettingsCache.set(slug, { at: Date.now(), payload: null, failed: true });
+          return [slug, null] as const;
+        }
       })
-      .catch(() => {
-        cartSettingsCache.set(storeSlug, { at: Date.now(), payload: null, failed: true });
-        if (alive) setCfgPayload(null);
+    )
+      .then((entries) => {
+        if (alive) setCfgMap(new Map(entries));
       })
-      .finally(() => alive && setCfgLoading(false));
+      .finally(() => {
+        if (alive) setCfgLoading(false);
+      });
     return () => {
       alive = false;
     };
-  }, [open, storeSlug]);
+    // cartSlugsKey stands in for cartStoreSlugs: the slug SET is what matters,
+    // not item counts — this keeps the effect off every cart mutation path.
+  }, [open, storeSlug, cartSlugsKey]);
 
-  const cfg: CartDrawerConfig = cfgPayload?.settings ? { ...CART_DRAWER_DEFAULTS, ...cfgPayload.settings } : { ...CART_DRAWER_DEFAULTS };
-  const themePrimary = cfgPayload?.store.theme?.primaryColor || null;
+  // Primary store config: explicit slug wins, else a single-store cart borrows
+  // that store's experience; multi-store carts opened from the global header
+  // stay on neutral platform defaults.
+  const primaryPayload = storeSlug
+    ? cfgMap.get(storeSlug) ?? null
+    : cartStoreSlugs.length === 1
+      ? cfgMap.get(cartStoreSlugs[0]) ?? null
+      : null;
+
+  const cfg: CartDrawerConfig = primaryPayload?.settings ? { ...CART_DRAWER_DEFAULTS, ...primaryPayload.settings } : { ...CART_DRAWER_DEFAULTS };
+  const cfgPayloadTitle = primaryPayload?.store.name ?? null;
+  const themePrimary = primaryPayload?.store.theme?.primaryColor || null;
   const accentStyle = themePrimary ? { backgroundColor: themePrimary, borderColor: themePrimary } : undefined;
   const accentText = themePrimary ? { color: themePrimary } : undefined;
 
-  // structural gating: compact = essentials, standard = + urgency/trust, pro = + upsell/note
-  const showUpsell = cfg.layout === "pro" && cfg.upsellEnabled && (cfgPayload?.upsell.length ?? 0) > 0;
+  // structural gating: compact = essentials, standard = + urgency/trust, pro = + upsell
   const showUrgency = cfg.layout !== "compact";
   const showTrust = cfg.layout !== "compact" && cfg.trustBadges.length > 0;
   const showShipBar = cfg.showFreeShippingBar && cfg.layout !== "compact" && cfg.freeShipThresholdMinor > 0;
@@ -1552,24 +1683,8 @@ function CartDrawer({
     return () => clearInterval(t);
   }, [open, showViewers, cfg.urgencyViewersMin, cfg.urgencyViewersMax]);
 
-  // ---- order note (handed off to checkout via localStorage) --------------------
-  const [orderNote, setOrderNote] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    try {
-      setOrderNote(window.localStorage.getItem("sm_cart_note") ?? "");
-    } catch {
-      /* ignore */
-    }
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    try {
-      window.localStorage.setItem("sm_cart_note", orderNote);
-    } catch {
-      /* ignore */
-    }
-  }, [orderNote, open]);
+  // (Task 30: the cart order-note box was removed — buyers who need to tell a
+  // seller something can reach them in chat, and checkout keeps its own note.)
 
   // Multi-seller cart: one section per seller (Option A — one payment at checkout).
   // Each group carries its own selection figures for the seller-level checkbox.
@@ -1787,9 +1902,76 @@ function CartDrawer({
     }
   }
 
-  const upsellItems = (cfgPayload?.upsell ?? [])
-    .filter((u) => u.variantId && !(cart?.items ?? []).some((it) => it.productId === u.id || it.variantId === u.variantId))
-    .slice(0, cfg.upsellLimit);
+  // Task 30 — AOV strip across ALL vendors in the cart. Contribution rules:
+  //   • store with upsell ENABLED → its own curated/auto list (their limit);
+  //   • store with NO cart-experience config → its best-sellers fallback, so
+  //     unconfigured sellers are still represented in multi-vendor carts;
+  //   • store that explicitly DISABLED upsell → excluded (their choice).
+  // Lists are ROUND-ROBIN merged so every vendor gets fair placement in the
+  // strip instead of one store monopolising it, capped at 9 cards.
+  const upsellStrip = useMemo(() => {
+    const inCartProduct = new Set((cart?.items ?? []).map((it) => it.productId));
+    const inCartVariant = new Set((cart?.items ?? []).map((it) => it.variantId));
+    const lists: { slug: string; title: string; curated: boolean; items: UpsellProduct[] }[] = [];
+    for (const payload of cfgMap.values()) {
+      if (!payload) continue;
+      const merged: CartDrawerConfig | null = payload.settings
+        ? { ...CART_DRAWER_DEFAULTS, ...payload.settings }
+        : null;
+      if (merged?.upsellEnabled) {
+        const items = (payload.upsell ?? [])
+          .filter((u) => u.variantId && !inCartProduct.has(u.id) && !inCartVariant.has(u.variantId))
+          .slice(0, Math.max(1, merged.upsellLimit));
+        if (items.length > 0) lists.push({ slug: payload.store.slug, title: merged.upsellTitle || "You may also like", curated: true, items });
+      } else if (!merged) {
+        // never configured — platform-curated fallback keeps this vendor visible
+        const items = (payload.bestSellers ?? [])
+          .filter((u) => u.variantId && !inCartProduct.has(u.id) && !inCartVariant.has(u.variantId))
+          .slice(0, 3);
+        if (items.length > 0) lists.push({ slug: payload.store.slug, title: "You may also like", curated: false, items });
+      }
+    }
+    if (lists.length === 0) return { items: [] as UpsellProduct[], title: "You may also like" };
+    const mergedOut: UpsellProduct[] = [];
+    const seen = new Set<string>();
+    const cursor = lists.map(() => 0);
+    let guard = 0;
+    while (mergedOut.length < 9 && guard++ < 60) {
+      let addedThisRound = false;
+      for (let i = 0; i < lists.length && mergedOut.length < 9; i++) {
+        while (cursor[i] < lists[i].items.length) {
+          const cand = lists[i].items[cursor[i]++];
+          const key = `${cand.id}:${cand.variantId ?? ""}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          mergedOut.push(cand);
+          addedThisRound = true;
+          break;
+        }
+      }
+      if (!addedThisRound) break;
+    }
+    // Title: keep the primary seller's configured strip title when their own
+    // list contributed (the section keeps its identity — only the CONTENT
+    // became multi-vendor); otherwise one list keeps its title, several
+    // unbranded lists fall back to the neutral marketplace title.
+    const primaryCurated = primaryPayload && lists.find((l) => l.slug === primaryPayload.store.slug && l.curated);
+    const title = primaryCurated
+      ? primaryCurated.title
+      : lists.length === 1
+        ? lists[0].title
+        : "You may also like";
+    return { items: mergedOut, title };
+  }, [cfgMap, cart, primaryPayload]);
+
+  // Strip visibility: the drawer's primary seller keeps control (their layout
+  // must not be compact and, when they have an explicit config, they must
+  // have upsell on). A multi-vendor cart opened WITHOUT any primary config
+  // still gets the platform's cross-vendor strip — that's a marketplace
+  // feature, not one seller's marketing.
+  const crossVendorNeutralStrip = !primaryPayload?.settings && cartStoreSlugs.length > 1;
+  const showUpsellStrip =
+    cfg.layout !== "compact" && (cfg.upsellEnabled || crossVendorNeutralStrip) && upsellStrip.items.length > 0;
 
   // Selection-aware free-shipping progress — the bar tracks what is actually
   // going to checkout, not the whole cart.
@@ -1996,7 +2178,7 @@ function CartDrawer({
         <SheetHeader className="border-b px-4 py-3">
           <SheetTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="h-5 w-5" style={accentText ?? { color: "#0f766e" }} />
-            {cfgPayload?.store.name ? `${cfgPayload.store.name} — your cart` : "Your cart"}
+            {cfgPayloadTitle ? `${cfgPayloadTitle} — your cart` : "Your cart"}
             {count > 0 ? (
               <span className="text-sm font-normal text-muted-foreground">
                 ({keptLines > 0 ? `${selectedCount} of ${count}` : count} item{count === 1 ? "" : "s"})
@@ -2005,7 +2187,7 @@ function CartDrawer({
           </SheetTitle>
         </SheetHeader>
 
-        {loading || (storeSlug && cfgLoading && !cfgPayload) ? (
+        {loading || (cfgLoading && !primaryPayload) ? (
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -2044,31 +2226,38 @@ function CartDrawer({
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 space-y-3">
-              {/* urgency: cart reservation countdown */}
+              {/* urgency: cart reservation countdown — Task 30: fixed-height,
+                  single-line row so the label never reflows the items below */}
               {showCountdown ? (
                 <div
-                  className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+                  className="flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800"
                   role="status"
                 >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Timer className="h-3.5 w-3.5" />
-                    {remainSec > 0 ? `Items reserved for ${countdownLabel}` : "Reservation expired — checkout to secure your items"}
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Timer className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate tabular-nums">
+                      {remainSec > 0 ? `Items reserved for ${countdownLabel}` : "Reservation expired — checkout to secure your items"}
+                    </span>
                   </span>
                 </div>
               ) : null}
 
-              {/* urgency: live viewers */}
+              {/* urgency: live viewers — Task 30: locked to a fixed 20px row with
+                  a truncated single line + tabular digits, so the count ticking
+                  up/down every few seconds can NEVER wrap to a second line and
+                  shift the item cards up/down */}
               {showViewers ? (
-                <p className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600" role="status">
-                  <Eye className="h-3.5 w-3.5" />
-                  {viewers} people are viewing this store's products right now
+                <p className="flex h-5 items-center gap-1.5 overflow-hidden text-[11px] font-medium text-rose-600" role="status">
+                  <Eye className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate tabular-nums">{viewers} people are viewing this store's products right now</span>
                 </p>
               ) : null}
 
-              {/* AOV: free-shipping progress */}
+              {/* AOV: free-shipping progress — fixed-height text line (truncate)
+                  so toggling selection can never push the item cards around */}
               {showShipBar ? (
                 <div className="rounded-xl border p-3" role="status">
-                  <p className="text-xs font-semibold">
+                  <p className="truncate text-xs font-semibold tabular-nums">
                     {shipRemainingMinor <= 0 ? (
                       <span className="text-emerald-700">You've unlocked FREE shipping</span>
                     ) : (
@@ -2091,14 +2280,17 @@ function CartDrawer({
 
               {itemsBlock}
 
-              {/* AOV: upsell / cross-sell strip (Pro layout) */}
-              {showUpsell ? (
+              {/* AOV: upsell / cross-sell strip — Task 30: covers EVERY vendor
+                  in the cart (round-robin merged; best-seller fallback for
+                  unconfigured sellers), so a 2-seller cart surfaces
+                  recommendations from both sellers */}
+              {showUpsellStrip ? (
                 <div className="space-y-2 border-t pt-3">
                   <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    <Gift className="h-3.5 w-3.5" /> {cfg.upsellTitle || "You may also like"}
+                    <Gift className="h-3.5 w-3.5" /> {upsellStrip.title || "You may also like"}
                   </p>
                   <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:thin]">
-                    {upsellItems.map((u) => (
+                    {upsellStrip.items.map((u) => (
                       <div key={u.id} className="w-28 shrink-0 rounded-xl border bg-card p-2">
                         <button
                           type="button"
@@ -2132,21 +2324,8 @@ function CartDrawer({
                 </div>
               ) : null}
 
-              {/* conversion: order note (Pro layout) */}
-              {cfg.layout === "pro" && cfg.showOrderNote ? (
-                <div className="space-y-1.5 border-t pt-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Order note</p>
-                  <Textarea
-                    value={orderNote}
-                    onChange={(e) => setOrderNote(e.target.value)}
-                    rows={2}
-                    placeholder="Anything the seller should know? (e.g. gift wrap, delivery instructions)"
-                    className="min-h-[44px] text-sm"
-                    aria-label="Order note"
-                  />
-                  <p className="text-[11px] text-muted-foreground">Saved automatically — carried into checkout.</p>
-                </div>
-              ) : null}
+              {/* (Task 30: order-note box removed — buyers chat the seller
+                  directly, and checkout keeps its own note field.) */}
 
               {/* conversion: trust badges */}
               {showTrust ? (

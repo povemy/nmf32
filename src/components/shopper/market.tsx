@@ -49,7 +49,7 @@ type HomePayload = {
   categories: CategoryT[];
   featured: ProductCardT[];
   latest: ProductCardT[];
-  topStores: StoreCardT[];
+  featuredStores: StoreCardT[];
 };
 
 const CATEGORY_ICONS: [RegExp, typeof Package][] = [
@@ -179,47 +179,47 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
           )}
         </SectionBlock>
 
-        {/* top stores */}
-        <SectionBlock title="Top stores" subtitle="Independent shops you'll love" icon={<Store className="h-5 w-5 text-teal-700" />}>
+        {/* featured stores — Task 30: the old banner-style store list didn't
+            blend with the page, so stores now live in compact cards: 3 stores
+            per card, logo + name only (regular weight); overflow stores stack
+            into another card below. */}
+        <SectionBlock title="Featured stores" subtitle="Shops our team hand-picked" icon={<Store className="h-5 w-5 text-teal-700" />}>
           {home ? (
-            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {home.topStores.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
-                  className="group overflow-hidden rounded-xl border bg-card shadow-soft text-left hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all"
-                  aria-label={`Visit ${s.name}`}
-                >
-                  <div className="relative h-20 bg-brand-gradient overflow-hidden">
-                    {s.bannerUrl ? (
-                      <img src={s.bannerUrl} alt="" loading="lazy" className="h-full w-full object-cover opacity-80" />
-                    ) : null}
+            home.featuredStores.length === 0 ? (
+              <EmptyState title="No featured stores yet" hint="Check back soon — shops are being curated." />
+            ) : (
+              <div className="space-y-3">
+                {chunkEvery(home.featuredStores, 3).map((group, gi) => (
+                  <div key={gi} className="overflow-hidden rounded-xl border bg-card shadow-soft">
+                    <ul className="divide-y">
+                      {group.map((s) => (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+                            aria-label={`Visit ${s.name}`}
+                          >
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                              {s.logoUrl ? (
+                                <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
+                              ) : (
+                                <Store className="h-4 w-4 text-teal-700" />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-normal">{s.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <div className="flex items-center gap-3 p-4 -mt-6">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border bg-background shadow-sm overflow-hidden">
-                      {s.logoUrl ? (
-                        <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
-                      ) : (
-                        <Store className="h-5 w-5 text-teal-700" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{s.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{s.tagline ?? "Curated goods"}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs font-semibold text-teal-700">{s.productCount}</p>
-                      <p className="text-[10px] text-muted-foreground">products</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+                ))}
+              </div>
+            )
           ) : (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-[120px] rounded-xl bg-muted animate-pulse" />
+            <div className="space-y-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="h-[172px] rounded-xl bg-muted animate-pulse" />
               ))}
             </div>
           )}
@@ -240,6 +240,13 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
       </div>
     </div>
   );
+}
+
+// split a list into fixed-size groups (featured stores: 3 per card)
+function chunkEvery<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 function SectionBlock({
