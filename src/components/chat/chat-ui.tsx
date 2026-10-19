@@ -93,10 +93,15 @@ export function useChatHub(input: {
   const { threadRooms, userRoom, handlers } = input;
   const socketRef = useRef<Socket | null>(null);
   const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
-  const roomsKey = `${userRoom ?? ""}|${threadRooms.join(",")}`;
   const roomsRef = useRef({ threadRooms, userRoom });
-  roomsRef.current = { threadRooms, userRoom };
+  // Keep the latest handlers/rooms reachable from the socket's event
+  // callbacks (registered once at mount) — updated in an effect, never
+  // during render (react-hooks/refs).
+  useEffect(() => {
+    handlersRef.current = handlers;
+    roomsRef.current = { threadRooms, userRoom };
+  });
+  const roomsKey = `${userRoom ?? ""}|${threadRooms.join(",")}`;
 
   useEffect(() => {
     const socket = io("/?XTransformPort=3003", {
@@ -139,7 +144,6 @@ export function useChatHub(input: {
     if (!socket || !socket.connected) return;
     const rooms = [...threadRooms, ...(userRoom ? [userRoom] : [])];
     if (rooms.length) socket.emit("join", { rooms });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomsKey]);
 }
 
