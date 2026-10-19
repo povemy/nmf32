@@ -66,6 +66,7 @@ import {
   deleteJson,
   postJson,
   notifyCartUpdated,
+  mutateCartItems,
   useCart,
   EmptyState,
   QtyStepper,
@@ -1619,28 +1620,32 @@ function CartDrawer({
   // Checkout selection — one item, or a whole seller's group at once.
   // Unchecked lines STAY in the cart (kept for later); only checked lines go
   // to checkout, and the payment webhook removes exactly the purchased items.
-  async function setItemSelected(itemId: string, selected: boolean) {
-    setBusyId(itemId);
-    try {
-      await patchJson(`/api/cart/items/${itemId}`, { selected });
-      notifyCartUpdated();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update selection");
-    } finally {
-      setBusyId(null);
-    }
+  //
+  // Task 28: OPTIMISTIC — the shared cart store (module-level, see useCart)
+  // is mutated synchronously so the checkbox, subtotal, free-shipping bar and
+  // header count repaint in the same frame; the PATCH rides in the background
+  // and only a failure rolls the change back (guarded so it can't clobber a
+  // newer toggle). Zero waiting, zero refetch — the messaging-filter approach.
+  function setItemSelected(itemId: string, selected: boolean) {
+    mutateCartItems((items) => items.map((it) => (it.id === itemId ? { ...it, selected } : it)));
+    patchJson(`/api/cart/items/${itemId}`, { selected }).catch(() => {
+      mutateCartItems((items) =>
+        items.map((it) => (it.id === itemId && it.selected === selected ? { ...it, selected: !selected } : it))
+      );
+      toast.error("Could not update selection");
+    });
   }
 
-  async function setStoreSelected(g: (typeof storeGroups)[number], selected: boolean) {
-    setBusyId(g.storeId);
-    try {
-      await patchJson("/api/cart/selection", { itemIds: g.items.map((it) => it.id), selected });
-      notifyCartUpdated();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update selection");
-    } finally {
-      setBusyId(null);
-    }
+  function setStoreSelected(g: (typeof storeGroups)[number], selected: boolean) {
+    const ids = g.items.map((it) => it.id);
+    const idSet = new Set(ids);
+    mutateCartItems((items) => items.map((it) => (idSet.has(it.id) ? { ...it, selected } : it)));
+    patchJson("/api/cart/selection", { itemIds: ids, selected }).catch(() => {
+      mutateCartItems((items) =>
+        items.map((it) => (idSet.has(it.id) && it.selected === selected ? { ...it, selected: !selected } : it))
+      );
+      toast.error("Could not update selection");
+    });
   }
 
   async function addUpsell(p: UpsellProduct) {
@@ -1671,13 +1676,16 @@ function CartDrawer({
     showUrgency && cfg.urgencyStockEnabled && it.stock > 0 && it.stock <= cfg.urgencyStockThreshold ? it.stock : null;
 
   const itemsBlock = (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
+      {/* Task 28: ONE card per vendor — every item from a seller lives inside
+          the seller's card as a divided row (no per-item borders), so a
+          2-seller cart is exactly 2 cards. */}
       {storeGroups.map((g) => (
-        <div key={g.storeId} className="space-y-1.5">
+        <div key={g.storeId} className="overflow-hidden rounded-xl border bg-card">
           {/* Seller header — select-all / deselect-all for this seller's items.
               Always rendered (selection is core cart mechanics in every layout);
               the compact layout hides only the shipping hint. */}
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
+          <div className="flex items-center justify-between gap-2 bg-muted/60 px-2.5 py-1.5">
             <div className="flex min-w-0 items-center gap-2">
               <Checkbox
                 checked={g.allSelected ? true : g.someSelected ? "indeterminate" : false}
@@ -1686,7 +1694,6 @@ function CartDrawer({
                 // (Radix's own next-value treats indeterminate as checked,
                 // which would deselect on the first click of a mixed group.)
                 onCheckedChange={() => setStoreSelected(g, !g.allSelected)}
-                disabled={busyId === g.storeId}
                 aria-label={`Select all ${g.storeName} items`}
                 className="h-4 w-4 shrink-0 data-[state=indeterminate]:border-teal-700 data-[state=indeterminate]:bg-teal-700 data-[state=indeterminate]:text-white"
               />
@@ -1715,93 +1722,94 @@ function CartDrawer({
               </span>
             ) : null}
           </div>
-          <AnimatePresence initial={false}>
-            {g.items.map((it) => {
-              const low = lowStockOf(it);
-              return (
-                <motion.div
-                  key={it.id}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: 40 }}
-                  transition={{ duration: 0.18 }}
-                  className={cn(
-                    "flex items-start gap-2.5 rounded-xl border bg-card p-2 transition-opacity",
-                    !it.selected && "opacity-55",
-                    (busyId === it.id || busyId === g.storeId) && "pointer-events-none opacity-60"
-                  )}
-                >
-                  {/* checkout selection — unchecked = keep this item in the cart */}
-                  <Checkbox
-                    checked={it.selected}
-                    onCheckedChange={(v) => setItemSelected(it.id, v === true)}
-                    disabled={busyId === it.id || busyId === g.storeId}
-                    aria-label={`Include ${it.title} in checkout`}
-                    className="mt-6 h-4 w-4 shrink-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenChange(false);
-                      ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
-                    }}
-                    className="shrink-0"
-                    aria-label={`View ${it.title}`}
+          <div className="divide-y">
+            <AnimatePresence initial={false}>
+              {g.items.map((it) => {
+                const low = lowStockOf(it);
+                return (
+                  <motion.div
+                    key={it.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: 40 }}
+                    transition={{ duration: 0.18 }}
+                    className={cn(
+                      "flex items-start gap-2.5 p-2 transition-opacity",
+                      !it.selected && "opacity-55",
+                      busyId === it.id && "pointer-events-none opacity-60"
+                    )}
                   >
-                    <img
-                      src={it.imageUrl}
-                      alt={it.title}
-                      loading="lazy"
-                      className={cn(
-                        "rounded-lg border object-cover",
-                        cfg.layout === "compact" ? "h-12 w-12" : "h-16 w-16",
-                        !it.selected && "grayscale-[35%]"
-                      )}
+                    {/* checkout selection — unchecked = keep this item in the cart */}
+                    <Checkbox
+                      checked={it.selected}
+                      onCheckedChange={(v) => setItemSelected(it.id, v === true)}
+                      aria-label={`Include ${it.title} in checkout`}
+                      className="mt-6 h-4 w-4 shrink-0"
                     />
-                  </button>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onOpenChange(false);
-                          ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
-                        }}
-                        className="text-left text-[12px] font-medium leading-tight line-clamp-2 hover:text-teal-700"
-                      >
-                        {it.title}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setQty(it.id, 0)}
-                        className="text-muted-foreground transition-colors hover:text-rose-600 p-0.5"
-                        aria-label={`Remove ${it.title}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-[11px] leading-tight text-muted-foreground">{it.variantLabel}</p> : null}
-                    {low !== null ? (
-                      <p
-                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
-                        role="status"
-                      >
-                        <Flame className="h-3 w-3" /> Only {low} left in stock
-                      </p>
-                    ) : null}
-                    <div className="flex items-end justify-between gap-2 pt-0.5">
-                      <QtyStepper small value={it.qty} min={0} max={Math.max(1, it.stock)} onChange={(v) => setQty(it.id, v)} />
-                      <div className="text-right">
-                        <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
-                        <p className="text-[10px] leading-tight text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenChange(false);
+                        ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                      }}
+                      className="shrink-0"
+                      aria-label={`View ${it.title}`}
+                    >
+                      <img
+                        src={it.imageUrl}
+                        alt={it.title}
+                        loading="lazy"
+                        className={cn(
+                          "rounded-lg border object-cover",
+                          cfg.layout === "compact" ? "h-12 w-12" : "h-16 w-16",
+                          !it.selected && "grayscale-[35%]"
+                        )}
+                      />
+                    </button>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenChange(false);
+                            ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                          }}
+                          className="text-left text-[12px] font-medium leading-tight line-clamp-2 hover:text-teal-700"
+                        >
+                          {it.title}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQty(it.id, 0)}
+                          className="text-muted-foreground transition-colors hover:text-rose-600 p-0.5"
+                          aria-label={`Remove ${it.title}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-[11px] leading-tight text-muted-foreground">{it.variantLabel}</p> : null}
+                      {low !== null ? (
+                        <p
+                          className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
+                          role="status"
+                        >
+                          <Flame className="h-3 w-3" /> Only {low} left in stock
+                        </p>
+                      ) : null}
+                      <div className="flex items-end justify-between gap-2 pt-0.5">
+                        <QtyStepper small value={it.qty} min={0} max={Math.max(1, it.stock)} onChange={(v) => setQty(it.id, v)} />
+                        <div className="text-right">
+                          <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
+                          <p className="text-[10px] leading-tight text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         </div>
       ))}
     </div>
@@ -1810,25 +1818,11 @@ function CartDrawer({
   const ctaBlock = (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          Subtotal{keptLines > 0 ? ` (${selectedCount} of ${count} items)` : ""}
-        </span>
+        <span className="text-muted-foreground">Subtotal ({selectedCount} of {count} items)</span>
         <span className="text-lg font-extrabold" style={accentText ?? { color: "#0f766e" }}>
           {formatMinor(selectedSubtotal)}
         </span>
       </div>
-      {keptLines > 0 ? (
-        <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] font-medium text-muted-foreground" role="status">
-          {keptLines === 1 ? "1 item is" : `${keptLines} items are`} kept in your cart — untick to buy later.
-        </p>
-      ) : null}
-      {cfg.showDiscountHint ? (
-        <p className="text-[11px] text-muted-foreground">
-          Voucher / promo codes can be applied at checkout. Each seller ships separately — you pay once.
-        </p>
-      ) : (
-        <p className="text-[11px] text-muted-foreground">Each seller ships separately. You pay once — NOMOFEE collects the payment and disburses it to sellers.</p>
-      )}
       <Button
         size="lg"
         disabled={selectedCount === 0}
@@ -1844,7 +1838,10 @@ function CartDrawer({
       {cfg.showContinueShopping ? (
         <button
           type="button"
-          onClick={() => onOpenChange(false)}
+          onClick={() => {
+            onOpenChange(false);
+            ctx.nav({ name: "market" }); // back to the marketplace, not just drawer-close
+          }}
           className="w-full text-center text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
         >
           Continue shopping
@@ -1856,7 +1853,7 @@ function CartDrawer({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full sm:max-w-md flex-col p-0">
-        <SheetHeader className="border-b p-4 space-y-0">
+        <SheetHeader className="border-b px-4 py-3">
           <SheetTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="h-5 w-5" style={accentText ?? { color: "#0f766e" }} />
             {cfgPayload?.store.name ? `${cfgPayload.store.name} — your cart` : "Your cart"}
@@ -1866,15 +1863,6 @@ function CartDrawer({
               </span>
             ) : null}
           </SheetTitle>
-          {storeGroups.length > 1 ? (
-            <p className="text-xs text-muted-foreground">
-              Items from <span className="font-semibold text-teal-700">{storeGroups.length} sellers</span> — one cart, one payment at checkout
-            </p>
-          ) : cart?.storeName ? (
-            <p className="text-xs text-muted-foreground">
-              Items from <span className="font-semibold text-teal-700">{cart.storeName}</span>
-            </p>
-          ) : null}
         </SheetHeader>
 
         {loading || (storeSlug && cfgLoading && !cfgPayload) ? (
@@ -1915,7 +1903,7 @@ function CartDrawer({
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 space-y-3">
               {/* urgency: cart reservation countdown */}
               {showCountdown ? (
                 <div

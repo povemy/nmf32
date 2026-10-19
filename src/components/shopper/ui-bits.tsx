@@ -5,7 +5,7 @@
 // Task 10/11 rebuild: shipment-event timeline (StatusTimeline) + ViewProofButton
 // (POD photo dialog) shared by the buyer order detail / purchases surfaces.
 // ============================================================================
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders } from "@/lib/session-client";
 import { useApp } from "@/lib/app-store";
@@ -321,36 +321,80 @@ export function readOrderRefs(): OrderRefT[] {
 }
 
 /** Fetch the account cart and live-refresh on sm-cart-updated events + on any
- *  sign-in / sign-out change (carts are account-scoped — guests have none). */
+ *  sign-in / sign-out change (carts are account-scoped — guests have none).
+ *
+ *  Task 28: cart state lives in a MODULE-LEVEL shared store, so every useCart()
+ *  instance (drawer, header badge, checkout) renders from the same snapshot —
+ *  one fetch per event instead of one per instance — and checkout-selection
+ *  toggles can mutate it optimistically (mutateCartItems): the UI updates in
+ *  the same frame the user clicks while the PATCH rides in the background.
+ *  Zero network in the render path — same philosophy as the client-side
+ *  Messages list filter. */
+const EMPTY_CART: CartT = { id: null, storeId: null, storeSlug: null, storeName: null, items: [] };
+
+type CartState = { cart: CartT; loading: boolean };
+let cartState: CartState = { cart: EMPTY_CART, loading: true };
+const CART_SERVER_STATE: CartState = { cart: EMPTY_CART, loading: true };
+const cartSubs = new Set<() => void>();
+
+function emitCart() {
+  for (const fn of cartSubs) fn();
+}
+
+function subscribeCart(fn: () => void) {
+  cartSubs.add(fn);
+  return () => {
+    cartSubs.delete(fn);
+  };
+}
+
+/** Optimistically mutate the shared cart state — no network, no refetch.
+ *  Consumers must keep the failure path honest: revert via mutateCartItems
+ *  (guarded so it only undoes its own change) and surface a toast. */
+export function mutateCartItems(mutate: (items: CartItemT[]) => CartItemT[]) {
+  const cur = cartState.cart;
+  if (!cur) return;
+  cartState = { ...cartState, cart: { ...cur, items: mutate(cur.items) } };
+  emitCart();
+}
+
 export function useCart() {
   const me = useApp((s) => s.me);
   const authed = Boolean(me.loaded && me.shopper);
-  const [cart, setCart] = useState<CartT | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { cart, loading } = useSyncExternalStore(
+    subscribeCart,
+    () => cartState,
+    () => CART_SERVER_STATE
+  );
 
   const refresh = useCallback(async () => {
     try {
       const data = await fetchJson<{ cart: CartT }>("/api/cart");
-      setCart(data.cart ?? { id: null, storeId: null, storeSlug: null, storeName: null, items: [] });
+      cartState = { cart: data.cart ?? EMPTY_CART, loading: false };
     } catch {
-      setCart({ id: null, storeId: null, storeSlug: null, storeName: null, items: [] });
-    } finally {
-      setLoading(false);
+      cartState = { cart: EMPTY_CART, loading: false };
     }
+    emitCart();
   }, []);
 
   useEffect(() => {
-    setLoading(true);
+    // Show the loader only when there is nothing to paint yet — data-bearing
+    // re-syncs (mounts, sign-in flips, sm-cart-updated events) stay silent so
+    // no surface ever flashes a skeleton over live data.
+    if (cartState.cart.items.length === 0) {
+      cartState = { ...cartState, loading: true };
+      emitCart();
+    }
     void refresh();
-    const onEvt = () => refresh();
+    const onEvt = () => void refresh();
     window.addEventListener(CART_EVENT, onEvt);
     return () => window.removeEventListener(CART_EVENT, onEvt);
   }, [refresh, authed]);
 
-  const count = cart?.items.reduce((s, i) => s + i.qty, 0) ?? 0;
-  const subtotal = cart?.items.reduce((s, i) => s + i.lineTotalMinor, 0) ?? 0;
+  const count = cart.items.reduce((s, i) => s + i.qty, 0);
+  const subtotal = cart.items.reduce((s, i) => s + i.lineTotalMinor, 0);
   // Selection-aware figures — only checked lines proceed to checkout.
-  const selectedItems = cart?.items.filter((i) => i.selected) ?? [];
+  const selectedItems = cart.items.filter((i) => i.selected);
   const selectedCount = selectedItems.reduce((s, i) => s + i.qty, 0);
   const selectedSubtotal = selectedItems.reduce((s, i) => s + i.lineTotalMinor, 0);
   return { cart, count, subtotal, selectedCount, selectedSubtotal, loading, refresh };
@@ -415,7 +459,10 @@ export function Stars({ rating, count, className }: { rating: number; count?: nu
 export function ProductCard({
   p,
   onOpen,
-  showStore = true,
+  // Task 28: vendor name no longer renders on product cards by default —
+  // cards are cleaner and the seller is always one tap away (store link in
+  // the cart groups, storefront header). Pass true to opt back in.
+  showStore = false,
   hidePrice = false,
   cardStyle,
 }: {
@@ -440,7 +487,7 @@ export function ProductCard({
     <button
       type="button"
       onClick={() => onOpen(p)}
-      className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
+      className="group text-left rounded-[8px] border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
       aria-label={`${p.title} from ${p.storeName}, ${formatMinor(p.priceMinor)}`}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
@@ -457,8 +504,8 @@ export function ProductCard({
           </span>
         ) : null}
       </div>
-      <div className="p-2.5 space-y-1">
-        <h3 className={cn("font-medium leading-snug line-clamp-2 min-h-[2rem]", !cardStyle && "text-xs")} style={nameCss}>{p.title}</h3>
+      <div className="p-2.5 space-y-0.5">
+        <h3 className={cn("font-normal leading-snug line-clamp-2 min-h-[2rem]", !cardStyle && "text-xs")} style={nameCss}>{p.title}</h3>
         {!hidePrice ? (
           <div className="flex items-baseline gap-1.5 flex-wrap" style={cardStyle?.priceAlign === "center" ? { justifyContent: "center" } : cardStyle?.priceAlign === "right" ? { justifyContent: "flex-end" } : undefined}>
             <span className={cn("font-bold text-teal-700", !cardStyle && "text-sm")} style={priceCss}>{formatMinor(p.priceMinor)}</span>

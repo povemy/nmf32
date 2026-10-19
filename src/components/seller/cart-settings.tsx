@@ -16,6 +16,7 @@ import {
   Loader2,
   Save,
   ShoppingCart,
+  Store,
   Timer,
   Truck,
 } from "lucide-react";
@@ -502,15 +503,11 @@ export default function SellerCartSettings() {
                 />
               ) : null}
 
-              <Toggle
-                label="Mention vouchers at checkout"
-                hint="A small line reminding buyers promo codes apply at checkout."
-                checked={cfg.showDiscountHint}
-                onChange={(v) => set({ showDiscountHint: v })}
-              />
+              {/* Task 28: the voucher/discount hint line was removed from the
+                  drawer (cleaner CTA area) — the dead toggle is gone too. */}
               <Toggle
                 label="Show “Continue shopping” link"
-                hint="Secondary action under the checkout button."
+                hint="Secondary action under the checkout button — jumps back to the marketplace."
                 checked={cfg.showContinueShopping}
                 onChange={(v) => set({ showContinueShopping: v })}
               />
@@ -579,7 +576,7 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
             <span className="text-xs text-muted-foreground">(2 items)</span>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4 pt-3">
             {supports.urgency && cfg.urgencyCountdownEnabled ? (
               <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
                 <Timer className="h-3 w-3" /> Items reserved for {String(cfg.urgencyCountdownMinutes).padStart(2, "0")}:00
@@ -601,27 +598,38 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
               </div>
             ) : null}
 
-            {/* sample items — mirror the real drawer: selection checkbox,
-                compact 20%-smaller card, 12px/500 product title */}
-            {[
-              { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, low: supports.urgency && cfg.urgencyStockEnabled, sel: true },
-              { t: "Terra Linen Table Runner", v: "Default", p: 1500, low: false, sel: true },
-            ].map((it, i) => (
-              <div key={i} className="flex items-start gap-2.5 rounded-xl border bg-card p-2">
-                <Checkbox checked disabled aria-label="Included in checkout" className="mt-6 h-4 w-4 shrink-0" />
-                <img src={`/api/img/preview-item-${i + 1}?w=200&h=200`} alt="" className="h-16 w-16 rounded-lg border object-cover" />
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="truncate text-[12px] font-medium leading-tight">{it.t}</p>
-                  <p className="text-[11px] leading-tight text-muted-foreground">{it.v}</p>
-                  {it.low ? (
-                    <p className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                      <Flame className="h-2.5 w-2.5" /> Only {cfg.urgencyStockThreshold} left in stock
-                    </p>
-                  ) : null}
-                  <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.p)}</p>
-                </div>
+            {/* sample items — mirror the real drawer: ONE card per vendor with
+                divided rows, selection checkbox, compact 20%-smaller card,
+                12px/500 product title */}
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="flex items-center justify-between gap-2 bg-muted/60 px-2.5 py-1.5">
+                <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-teal-800">
+                  <Store className="h-3 w-3 shrink-0" /> <span className="truncate">Your store</span>
+                </span>
+                <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">RM 64.00 + shipping</span>
               </div>
-            ))}
+              <div className="divide-y">
+                {[
+                  { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, low: supports.urgency && cfg.urgencyStockEnabled, sel: true },
+                  { t: "Terra Linen Table Runner", v: "Default", p: 1500, low: false, sel: true },
+                ].map((it, i) => (
+                  <div key={i} className="flex items-start gap-2.5 p-2">
+                    <Checkbox checked={it.sel} disabled aria-label="Included in checkout" className="mt-6 h-4 w-4 shrink-0" />
+                    <img src={`/api/img/preview-item-${i + 1}?w=200&h=200`} alt="" className="h-16 w-16 rounded-lg border object-cover" />
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="truncate text-[12px] font-medium leading-tight">{it.t}</p>
+                      <p className="text-[11px] leading-tight text-muted-foreground">{it.v}</p>
+                      {it.low ? (
+                        <p className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                          <Flame className="h-2.5 w-2.5" /> Only {cfg.urgencyStockThreshold} left in stock
+                        </p>
+                      ) : null}
+                      <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.p)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {supports.upsell && cfg.upsellEnabled ? (
               <div className="space-y-2 border-t pt-3">
@@ -673,12 +681,9 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
           {/* CTA */}
           <div className={"border-t bg-background p-4" + (cfg.stickyCta ? "" : " opacity-90")}>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Subtotal</span>
+              <span className="text-muted-foreground">Subtotal (2 of 2 items)</span>
               <span className="text-base font-extrabold text-teal-700">{formatMinor(6400)}</span>
             </div>
-            {cfg.showDiscountHint ? (
-              <p className="mt-1 text-[10px] text-muted-foreground">Voucher / promo codes can be applied at checkout.</p>
-            ) : null}
             <div className="mt-2 rounded-lg bg-teal-700 py-2.5 text-center text-sm font-semibold text-white">
               {cfg.checkoutLabel || "Checkout"}
             </div>

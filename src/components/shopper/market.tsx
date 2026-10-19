@@ -152,8 +152,8 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
                   onClick={() => ctx.nav({ name: "category", categorySlug: cat.slug, label: cat.name })}
                   className="group flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card shadow-soft p-3 hover:border-teal-600/50 hover:shadow-md transition-all min-h-[44px]"
                 >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-50 text-teal-700 group-hover:bg-brand-gradient group-hover:text-white transition-all">
-                    <Icon className="h-5 w-5" />
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-50 text-teal-700 group-hover:bg-brand-gradient group-hover:text-white transition-all">
+                    <Icon className="h-3.5 w-3.5" />
                   </span>
                   <span className="text-[11px] font-medium leading-tight text-center line-clamp-2">{cat.name}</span>
                 </button>
@@ -276,7 +276,7 @@ function SectionBlock({
 function CategoryChipSkeleton() {
   return (
     <div className="flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card p-3">
-      <span className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+      <span className="h-7 w-7 rounded-full bg-muted animate-pulse" />
       <span className="h-3 w-12 rounded bg-muted animate-pulse" />
     </div>
   );
