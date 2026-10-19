@@ -2,6 +2,7 @@
 // App-wide client state: which surface is active + auth session.
 import { create } from "zustand";
 import { authHeaders, clearSessionToken } from "./session-client";
+import { clearMeHubCache, prefetchMeHub } from "./me-hub-cache";
 
 export type Surface = "shopper" | "seller" | "admin";
 
@@ -63,6 +64,10 @@ export const useApp = create<AppState>((set, get) => ({
         set({ me: { loaded: true, admin: null, seller: data.seller, shopper: null } } as MeState);
       } else if (data?.userType === "shopper") {
         set({ me: { loaded: true, admin: null, seller: null, shopper: data.shopper } } as MeState);
+        // Task 34: warm the Me-hub cache the moment the shopper identity
+        // lands (boot, sign-in, register) — the Me page banner then paints
+        // from prefetched/persisted data instead of skeleton-while-fetching.
+        prefetchMeHub(data.shopper.id);
       } else {
         set({ me: { loaded: true, admin: null, seller: null, shopper: null } } as MeState);
       }
@@ -72,6 +77,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
   logout: async () => {
     clearSessionToken();
+    clearMeHubCache(); // Task 34: drop the persisted Me banner snapshot with the session
     await fetch("/api/auth/logout", { method: "POST", headers: authHeaders() });
     await get().refreshMe();
   },

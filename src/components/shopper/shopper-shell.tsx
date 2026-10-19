@@ -1167,14 +1167,20 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">
-      <div className="grid gap-4 md:grid-cols-[360px_1fr]">
+      {/* Task 34: min-w-0 on the grid items — a grid/flex item defaults to
+          min-width:auto, so the thread rows' unbreakable min-content (nowrap
+          preview line, ~267px) used to force the whole master column wider
+          than narrow viewports (≤300px: Fold cover screens, split view),
+          overflowing the page horizontally. With min-w-0 the column can
+          shrink to any width and the truncate chain does its job. */}
+      <div className="grid min-w-0 gap-4 md:grid-cols-[360px_1fr]">
         {/* master — header + search + filter pills + thread list (hidden on
             mobile while a conversation is open: the panel replaces the list) */}
         {/* Task 33: the list auto-fits the mobile viewport — its height is
             capped to exactly the space under the app chrome (header 4.25rem +
             page padding 2rem + bottom-nav reserve 4.25rem + ChatHeader ~9.25rem
             + slack), never pushing the page into scroll on short phones. */}
-        <aside className={cn("space-y-3", activeId && "hidden md:block")}>
+        <aside className={cn("min-w-0 space-y-3", activeId && "hidden md:block")}>
           <ChatHeader
             onBack={() => ctx.nav({ name: "me" })}
             backLabel="Back to my account"
@@ -1224,7 +1230,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
             above the bottom nav with zero page scroll. Desktop keeps 600px. */}
         <section
           className={cn(
-            "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
+            "flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
             activeId
               ? "flex h-[calc(100dvh-10.625rem-env(safe-area-inset-bottom))] min-h-[320px] md:h-[600px] md:min-h-[440px]"
               : "hidden md:flex md:h-[600px]",
@@ -1336,7 +1342,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                     rows={1}
                     placeholder="Type a message… (Enter to send)"
                     aria-label="Message"
-                    className="min-h-[44px] resize-none"
+                    className="min-h-[44px] min-w-0 flex-1 resize-none"
                   />
                   <Button onClick={send} disabled={sending || !draft.trim()} className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110" aria-label="Send message">
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

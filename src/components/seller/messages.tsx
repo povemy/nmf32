@@ -219,9 +219,13 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-[360px_1fr]">
+      {/* Task 34: min-w-0 on grid items — same narrow-viewport fix as the
+          shopper inbox (grid items default to min-width:auto, letting the
+          nowrap thread-preview min-content force the column past small
+          screens). With min-w-0 the column shrinks and truncation engages. */}
+      <div className="grid min-w-0 gap-4 md:grid-cols-[360px_1fr]">
         {/* master — header + search + pills + inbox list */}
-        <aside className={cn("space-y-3", activeId && "hidden md:block")}>
+        <aside className={cn("min-w-0 space-y-3", activeId && "hidden md:block")}>
           <ChatHeader
             onBack={() => onNavigate?.({ view: "dashboard" })}
             backLabel="Back to dashboard"
@@ -264,7 +268,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
         {/* detail — conversation panel (mobile: full-screen slide-in) */}
         <section
           className={cn(
-            "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
+            "flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
             activeId ? "flex h-[72dvh] min-h-[440px]" : "hidden md:flex md:h-[600px]",
           )}
         >
@@ -391,7 +395,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
                     rows={1}
                     placeholder="Type a reply… (Enter to send)"
                     aria-label="Reply"
-                    className="min-h-[44px] resize-none"
+                    className="min-h-[44px] min-w-0 flex-1 resize-none"
                   />
                   <Button onClick={reply} disabled={sending || !draft.trim()} className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110" aria-label="Send reply">
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

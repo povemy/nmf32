@@ -17,12 +17,15 @@ export const GET = handle(async (req: Request) => {
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url, 40);
   const sort = url.searchParams.get("sort") ?? "popular";
+  // Task 34: the id tiebreaker makes the order DETERMINISTIC — rating/sales
+  // ties are everywhere (most products sit at 0/0) and Postgres returns tied
+  // rows in arbitrary order, which shuffled pages 2+ under the old query.
   const orderBy =
     sort === "sales"
-      ? [{ salesCount: "desc" as const }, { ratingCount: "desc" as const }]
+      ? [{ salesCount: "desc" as const }, { ratingCount: "desc" as const }, { id: "asc" as const }]
       : sort === "new"
-        ? [{ publishedAt: "desc" as const }, { createdAt: "desc" as const }]
-        : [{ ratingCount: "desc" as const }, { salesCount: "desc" as const }];
+        ? [{ publishedAt: "desc" as const }, { createdAt: "desc" as const }, { id: "asc" as const }]
+        : [{ ratingCount: "desc" as const }, { salesCount: "desc" as const }, { id: "asc" as const }];
 
   // Personalisation seeds — most recent 30 activities, categories + product ids.
   const acts = await db.userActivity.findMany({
@@ -36,32 +39,45 @@ export const GET = handle(async (req: Request) => {
   const baseWhere = { status: "active" as const };
   const liveScope = { store: { status: "live" as const } };
 
-  // Round 1 — boosted categories (fresh items the shopper hasn't seen yet).
+  // Round 1 — boosted categories, properly PAGINATED. (The old code re-ran
+  // this round from the top on EVERY page, so "Load more" page 2 returned
+  // the same boosted rows as page 1 — the literal source of React's
+  // "two children with the same key" in the feed.)
   const boostedWhere =
     catIds.length > 0
       ? { ...baseWhere, ...liveScope, categoryId: { in: catIds }, id: { notIn: viewedIds } }
       : null;
-  const primary = boostedWhere
-    ? await db.product.findMany({
-        where: boostedWhere,
-        include: productCardInclude,
-        orderBy,
-        take,
-      })
-    : [];
+  const boostedCount = boostedWhere ? await db.product.count({ where: boostedWhere }) : 0;
+  const rows =
+    boostedWhere && skip < boostedCount
+      ? await db.product.findMany({
+          where: boostedWhere,
+          include: productCardInclude,
+          orderBy,
+          skip,
+          take: Math.min(take, boostedCount - skip),
+        })
+      : [];
 
-  let rows = primary;
-  // Round 2 — top up with globally popular live products.
+  // Round 2 — top up with the REST of the catalogue (boosted categories are
+  // excluded wholesale so the two pools are disjoint and can never repeat
+  // each other), offset by how far past the boosted window this page is.
   if (rows.length < take) {
+    const fillSkip = Math.max(0, skip - boostedCount);
     const exclude = [...viewedIds, ...rows.map((r) => r.id)];
     const fill = await db.product.findMany({
-      where: { ...baseWhere, ...liveScope, id: { notIn: exclude } },
+      where: {
+        ...baseWhere,
+        ...liveScope,
+        ...(catIds.length > 0 ? { categoryId: { notIn: catIds } } : {}),
+        id: { notIn: exclude },
+      },
       include: productCardInclude,
       orderBy,
-      skip: Math.max(0, skip - (catIds.length > 0 ? 0 : 0)),
+      skip: fillSkip,
       take: take - rows.length,
     });
-    rows = [...rows, ...fill];
+    rows.push(...fill);
   }
 
   const total = await db.product.count({ where: { ...baseWhere, ...liveScope } });

@@ -6,7 +6,7 @@
 // Data comes from /api/me/* (all account-scoped server-side via requireShopper).
 // Money is integer minor units — always format via formatMinor.
 // ============================================================================
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -62,6 +62,16 @@ import { cn } from "@/lib/utils";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
 import {
+  hydrateMeHub,
+  refreshMeHub,
+  subscribeMeHub,
+  getMeHubSnapshot,
+  getMeHubServerSnapshot,
+  type MeProfile as ProfileT,
+  type MeWallet as WalletT,
+  type MeBucketCounts as BucketCounts,
+} from "@/lib/me-hub-cache";
+import {
   ApiFail,
   fetchJson,
   fetchEnvelope,
@@ -89,36 +99,10 @@ import {
 
 type Tier = "SILVER" | "GOLD" | "PLATINUM";
 
-type ProfileT = {
-  id: string;
-  email: string;
-  fullName: string;
-  username: string | null;
-  avatarUrl: string | null;
-  phone: string | null;
-  membershipLevel: Tier;
-  followingCount: number;
-  followerCount: number;
-  memberSince: string;
-  addressCount: number;
-  lifetimeSpendMinor: number;
-  tierProgress: { nextTier: Tier; remainingMinor: number; percent: number } | null;
-};
-
-type WalletT = {
-  wallet: {
-    balanceMinor: number;
-    coinBalance: number;
-    payLaterLimitMinor: number;
-    payLaterUsedMinor: number;
-    payLaterAvailableMinor: number;
-    checkInStreak: number;
-  };
-  vouchers: { available: number; used: number };
-  checkIn: { canClaim: boolean; nextClaimAt: string | null };
-};
-
-type BucketCounts = Record<string, number>;
+// ProfileT / WalletT / BucketCounts now live in @/lib/me-hub-cache (Task 34):
+// the Me-hub data is a shared module store there — prefetched on sign-in and
+// persisted per shopper — so the banner paints instantly instead of
+// skeleton-while-fetching. Type aliases stay local for the file's JSX.
 
 type OrderRowT = {
   id: string;
@@ -233,59 +217,44 @@ const TIER_STYLE: Record<Tier, string> = {
 
 // ---------------------------------------------------------------------------
 // data hook — profile + wallet + purchase counts + like/viewed counters
+// (Task 34: backed by the module-level Me-hub cache in @/lib/me-hub-cache —
+//  prefetched at sign-in, persisted per shopper, stale-while-revalidate — so
+// the banner paints instantly instead of waiting on five remote fetches.)
 // ---------------------------------------------------------------------------
 
 function useMeData(enabled: boolean) {
-  const [profile, setProfile] = useState<ProfileT | null>(null);
-  const [wallet, setWallet] = useState<WalletT | null>(null);
-  const [counts, setCounts] = useState<BucketCounts | null>(null);
-  const [likeCount, setLikeCount] = useState(0);
-  const [viewedCount, setViewedCount] = useState(0);
-  const [loading, setLoading] = useState(enabled);
-
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
-    const [p, w, o, lk, vw] = await Promise.allSettled([
-      fetchJson<ProfileT>("/api/me/profile"),
-      fetchJson<WalletT>("/api/me/wallet"),
-      fetchJson<{ bucketCounts: BucketCounts; orders: OrderRowT[] }>("/api/me/orders?size=1"),
-      fetchEnvelope<{ activities: unknown[] }>("/api/me/activity?type=LIKE&size=1"),
-      fetchEnvelope<{ activities: unknown[] }>("/api/me/activity?type=VIEWED&size=1"),
-    ]);
-    if (p.status === "fulfilled") setProfile(p.value);
-    if (w.status === "fulfilled") {
-      // DORMANT SCAFFOLD — NOMO FINANCE: while NOMO_FINANCE_ENABLED is false
-      // the wallet API answers a `disabled` envelope (wallet/checkIn null).
-      // Normalize it into the UI shape so the kept scaffold cards render
-      // inert zeroes instead of crashing; the cards stay hidden behind the flag.
-      const raw = w.value as Partial<WalletT> & { disabled?: boolean };
-      setWallet({
-        wallet: raw.wallet ?? { balanceMinor: 0, coinBalance: 0, payLaterLimitMinor: 0, payLaterUsedMinor: 0, payLaterAvailableMinor: 0, checkInStreak: 0 },
-        vouchers: raw.vouchers ?? { available: 0, used: 0 },
-        checkIn: raw.checkIn ?? { canClaim: false, nextClaimAt: null },
-      });
-    }
-    if (o.status === "fulfilled") setCounts(o.value.bucketCounts);
-    if (lk.status === "fulfilled") setLikeCount(lk.value.meta?.total ?? 0);
-    if (vw.status === "fulfilled") setViewedCount(vw.value.meta?.total ?? 0);
-    setLoading(false);
-  }, [enabled]);
+  const me = useApp((s) => s.me);
+  const shopperId = me.loaded ? (me.shopper?.id ?? null) : null;
+  const snap = useSyncExternalStore(subscribeMeHub, getMeHubSnapshot, getMeHubServerSnapshot);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial dashboard data load (async fetch inside refresh)
-    void refresh();
-  }, [refresh]);
-
-  // Address CRUD (in this hub's sub-view or during checkout) must reflect on
-  // the dashboard teaser instantly — "N saved addresses" never goes stale.
-  useEffect(() => {
-    if (!enabled) return;
-    const sync = () => void refresh();
+    if (!enabled || !shopperId) return;
+    // 1) paint whatever the persisted snapshot has (same frame, zero network)
+    hydrateMeHub(shopperId);
+    // 2) revalidate in the background (skipped when a prefetch <45s old is
+    //    already fresh) — data-bearing updates never flip a loading flag
+    void refreshMeHub(shopperId).catch(() => {});
+    // 3) address CRUD (here or during checkout) must reflect instantly
+    const sync = () => void refreshMeHub(shopperId, { force: true }).catch(() => {});
     window.addEventListener("nomofee:addresses-changed", sync);
     return () => window.removeEventListener("nomofee:addresses-changed", sync);
-  }, [enabled, refresh]);
+  }, [enabled, shopperId]);
 
-  return { profile, wallet, counts, likeCount, viewedCount, loading, refresh };
+  const refresh = useCallback(async () => {
+    if (!shopperId) return;
+    await refreshMeHub(shopperId, { force: true }).catch(() => {});
+  }, [shopperId]);
+
+  return {
+    profile: snap.profile,
+    wallet: snap.wallet,
+    counts: snap.counts,
+    likeCount: snap.likeCount,
+    viewedCount: snap.viewedCount,
+    // skeleton only when NOTHING has ever painted (no prefetch, no cache)
+    loading: snap.fetchedAt === null,
+    refresh,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -448,8 +417,8 @@ function Dashboard({
             {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
             <SideItem icon={Ticket} label="My Vouchers" onClick={() => onSub("vouchers")} />
             <SideItem icon={MapPin} label="Delivery Addresses" onClick={() => onSub("addresses")} />
-            <SideItem icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
-            <SideItem icon={History} label="Recently Viewed" badge={data.viewedCount} onClick={() => onSub("viewed")} />
+            <SideItem icon={Heart} label="My Likes" onClick={() => onSub("likes")} />
+            <SideItem icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
             <SideItem icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           </nav>
           <nav className="rounded-2xl border bg-card p-2 shadow-soft">
@@ -2033,11 +2002,16 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
+  // Task 34: true once a page added zero new products — hides "Load more" so
+  // boundary drift (live activity shifting the personalised window between
+  // requests) can never spin on an exhausted feed.
+  const [exhausted, setExhausted] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setItems([]);
+    setExhausted(false);
     fetchEnvelope<{ products: RecProductT[] }>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=1&size=12`)
       .then((d) => {
         if (!alive) return;
@@ -2057,7 +2031,16 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
     try {
       const next = page + 1;
       const d = await fetchEnvelope<{ products: RecProductT[] }>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=${next}&size=12`);
-      setItems((prev) => [...prev, ...d.data.products]);
+      // Dedupe by id — the server paginates deterministically now, but the
+      // personalised window legitimately shifts as the shopper browses
+      // (VIEWED activities), so a belt-and-braces client guard keeps React's
+      // key list unique no matter what arrives.
+      const seen = new Set(items.map((x) => x.id));
+      if (d.data.products.every((p) => seen.has(p.id))) setExhausted(true);
+      setItems((prev) => {
+        const s = new Set(prev.map((x) => x.id));
+        return [...prev, ...d.data.products.filter((p) => !s.has(p.id))];
+      });
       setPage(next);
     } catch {
       /* keep list */
@@ -2096,7 +2079,7 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
               <MeProductCard key={p.id} p={p} onOpen={(prod) => ctx.nav({ name: "pdp", slug: prod.storeSlug, pSlug: prod.slug })} />
             ))}
           </div>
-          {items.length < total ? (
+          {items.length < total && !exhausted ? (
             <div className="flex justify-center pt-4">
               <Button variant="outline" disabled={more} onClick={() => void loadMore()} className="min-h-[44px]">
                 {more ? <Loader2 className="h-4 w-4 animate-spin" /> : `Load more (${total - items.length} left)`}
