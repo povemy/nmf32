@@ -96,11 +96,38 @@ type DryRunBody = {
   }[];
 };
 
+/** GET /api/admin/payouts/due — mirrors the dashboard "Payouts due" card:
+ *  wallets re-derived from ledger truth with the same minimum as a batch run. */
+type PayoutsDueBody = {
+  minMinor: number;
+  mode: string;
+  asOf: string;
+  dueTotalMinor: number;
+  dueCount: number;
+  due: {
+    walletId: string;
+    sellerId: string;
+    sellerName: string;
+    storeName: string | null;
+    availableMinor: number;
+    bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
+    lastPayout: { amountMinor: number; paidAt: string } | null;
+  }[];
+  pendingTotalMinor: number;
+  belowMinCount: number;
+  belowMinTotalMinor: number;
+};
+
 /* ------------------------------------------------------------ PayoutsView */
 
 export function PayoutsView({ nav }: { nav: AdminNav }) {
   const { data, error, loading, refetch } = useApi<PayoutBatch[]>("/api/admin/payout-batches");
+  // Due-now panel: same ledger-derived truth the dashboard card shows, so the
+  // two always tally (this used to be the missing piece — the card navigated
+  // straight to batch HISTORY, which only shows payouts already run).
+  const due = useApi<PayoutsDueBody>("/api/admin/payouts/due");
   const rows = useMemo(() => data ?? [], [data]);
+  const dueRows = useMemo(() => due.data?.due ?? [], [due.data]);
 
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<DryRunBody | null>(null);
@@ -136,6 +163,7 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
       });
       setOpen(false);
       void refetch();
+      void due.refetch(); // sweep happened → the due-now list shrinks
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error("Batch not created", { description: msg });
@@ -149,14 +177,118 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Payout Batches"
-        description="Weekly settlement runs — wallets above the minimum are swept to seller banks (T3 → T4)."
+        title="Payouts"
+        description="Who is owed money right now, plus settlement run history — wallets above the minimum are swept to seller banks (T3 → T4)."
         actions={
           <Button size="sm" className="min-h-[44px]" onClick={() => setOpen(true)}>
             <PlusCircle className="h-4 w-4" /> New Payout Batch
           </Button>
         }
       />
+
+      {/* Due now — mirrors the dashboard "Payouts due" card (same ledger-derived
+          truth, same minimum setting). This closes the gap that made the two
+          disagree: this page used to show only batch HISTORY. */}
+      <Card className="py-0">
+        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+            <Landmark className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+            Due now
+            {due.data ? (
+              <>
+                <span className="text-sm font-bold text-teal-700 dark:text-teal-300">
+                  <Money minor={due.data.dueTotalMinor} bold />
+                </span>
+                <Badge variant="outline" className="font-normal text-muted-foreground">
+                  across {due.data.dueCount} seller{due.data.dueCount === 1 ? "" : "s"}
+                </Badge>
+              </>
+            ) : null}
+            <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+              min payout <Money minor={due.data?.minMinor ?? 1000} muted /> · {due.data?.mode ?? "manual_csv"}
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Wallet available balances derived from the ledger — exactly what “Run payout batch” will sweep.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 pb-2">
+          {due.error ? (
+            <div className="px-4 sm:px-6">
+              <ErrorState message={due.error} onRetry={() => void due.refetch()} />
+            </div>
+          ) : due.loading ? (
+            <TableSkeleton rows={2} cols={4} />
+          ) : dueRows.length === 0 ? (
+            <div className="px-4 sm:px-6">
+              <EmptyState
+                title="No payouts due right now"
+                hint={
+                  due.data
+                    ? `${due.data.pendingTotalMinor > 0 ? `${formatMinor(due.data.pendingTotalMinor)} is still in the holding period` : "No funds available"}${due.data.belowMinCount > 0 ? ` · ${formatMinor(due.data.belowMinTotalMinor)} across ${due.data.belowMinCount} wallet${due.data.belowMinCount === 1 ? "" : "s"} below the minimum` : ""}.`
+                    : undefined
+                }
+              />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Seller</TableHead>
+                  <TableHead className="text-right">Available</TableHead>
+                  <TableHead className="hidden md:table-cell">Bank account</TableHead>
+                  <TableHead className="hidden text-right lg:table-cell">Last paid</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dueRows.map((d) => (
+                  <TableRow key={d.walletId}>
+                    <TableCell>
+                      <p className="truncate text-sm font-medium">{d.storeName ?? d.sellerName}</p>
+                      <p className="truncate text-xs text-muted-foreground">{d.sellerName}</p>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Money minor={d.availableMinor} bold />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {d.bank ? (
+                        <span className="text-xs">
+                          {d.bank.bankName} · {d.bank.accountNumberMasked}
+                          {d.bank.verified ? (
+                            <ShieldCheck className="ml-1 inline h-3 w-3 text-emerald-600" aria-label="Verified" />
+                          ) : (
+                            <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-600" aria-label="Unverified" />
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No bank account on file</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">
+                      {d.lastPayout ? (
+                        <>
+                          {formatMinor(d.lastPayout.amountMinor)} · {fmtDT(d.lastPayout.paidAt)}
+                        </>
+                      ) : (
+                        "never"
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {due.data && (due.data.pendingTotalMinor > 0 || due.data.belowMinCount > 0) ? (
+            <p className="px-4 pb-3 pt-2 text-xs text-muted-foreground sm:px-6">
+              Where the rest is: {formatMinor(due.data.pendingTotalMinor)} pending in the holding period (released after the hold)
+              {due.data.belowMinCount > 0
+                ? ` · ${formatMinor(due.data.belowMinTotalMinor)} below the ${(due.data.minMinor / 100).toFixed(0)} MYR minimum across ${due.data.belowMinCount} wallet${due.data.belowMinCount === 1 ? "" : "s"}`
+                : " · no wallets below the minimum"}
+              .
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="py-0">
         <CardContent className="p-4">

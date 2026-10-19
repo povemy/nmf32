@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { dayKey, startOfToday, daysAgo } from "@/app/api/admin/_helpers";
+import { dayKey, startOfToday, daysAgo, parseMaybeJson } from "@/app/api/admin/_helpers";
 
 // GET /api/admin/dashboard — command centre KPIs
 export const GET = handle(async (req: NextRequest) => {
@@ -21,7 +21,8 @@ export const GET = handle(async (req: NextRequest) => {
     productsToModerate,
     refundsQueue,
     disputesOpen,
-    wallets,
+    payableLines,
+    payoutMinSetting,
     seriesOrders,
     topStoreGroups,
     stores,
@@ -37,7 +38,17 @@ export const GET = handle(async (req: NextRequest) => {
     db.product.count({ where: { status: "pending_review" } }),
     db.refund.count({ where: { status: "requested" } }),
     db.dispute.count({ where: { status: { in: ["open", "under_review"] } } }),
-    db.wallet.findMany({ select: { availableMinor: true } }),
+    // payouts-due truth: raw SELLER:*:PAYABLE ledger lines — the dashboard
+    // derives available balances with the SAME math as refreshWalletCache
+    // (matured credits − debits), so a stale cache or a just-expired hold can
+    // never make this card disagree with the payouts page / a batch run
+    db.ledgerLine.findMany({
+      where: { accountCode: { startsWith: "SELLER:", endsWith: ":PAYABLE" }, walletId: { not: null } },
+      select: { walletId: true, direction: true, amountMinor: true, availableAt: true },
+    }),
+    // the SAME minimum the payout-batch run uses — the dashboard card and the
+    // payouts page must never disagree about what "due" means
+    db.setting.findUnique({ where: { key: "payout.min_minor" } }),
     // 30d series (compute per-day in JS)
     db.order.findMany({
       where: { paidAt: { gte: d30Start, not: null } },
@@ -60,8 +71,21 @@ export const GET = handle(async (req: NextRequest) => {
     }),
   ]);
 
-  // payouts due: wallets with availableMinor >= 1000 (RM 10.00)
-  const dueWallets = wallets.filter((w) => w.availableMinor >= 1000);
+  // payouts due: ledger-derived available ≥ payout.min_minor (RM 10 default) —
+  // identical eligibility + math to GET /api/admin/payouts/due and the batch run
+  const payoutMinMinor = parseMaybeJson<number>(payoutMinSetting?.valueJson, 1000);
+  const availByWallet = new Map<string, number>();
+  const nowMs = Date.now();
+  for (const l of payableLines) {
+    if (!l.walletId) continue;
+    const avail = availByWallet.get(l.walletId) ?? 0;
+    if (l.direction === "credit") {
+      if (!l.availableAt || l.availableAt.getTime() <= nowMs) availByWallet.set(l.walletId, avail + l.amountMinor);
+    } else {
+      availByWallet.set(l.walletId, avail - l.amountMinor);
+    }
+  }
+  const dueAmounts = [...availByWallet.values()].filter((v) => v >= payoutMinMinor);
 
   // gmv series 30d
   const seriesMap = new Map<string, { gmvMinor: number; orders: number }>();
@@ -88,8 +112,8 @@ export const GET = handle(async (req: NextRequest) => {
     productsToModerate,
     refundsQueue,
     disputesOpen,
-    payoutsDueMinor: dueWallets.reduce((s, w) => s + w.availableMinor, 0),
-    payoutsDueSellers: dueWallets.length,
+    payoutsDueMinor: dueAmounts.reduce((s, v) => s + v, 0),
+    payoutsDueSellers: dueAmounts.length,
     gmvSeries30d: [...seriesMap.entries()].map(([date, v]) => ({ date, gmvMinor: v.gmvMinor, orders: v.orders })),
     topStores: topStoreGroups.map((g) => ({
       storeName: storeNameById.get(g.storeId) ?? "Unknown store",

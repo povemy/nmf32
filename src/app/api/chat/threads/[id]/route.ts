@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { getSession, requireShopper } from "@/lib/auth";
-import { resolveThreadContext } from "@/lib/chat-context";
+import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
 import { broadcastToThread } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
@@ -89,4 +89,35 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       readAt: m.readAt,
     })),
   });
+});
+
+// PATCH /api/chat/threads/[id] { action: "clearContext" } — the shopper (or
+// the store) closes the quoted product/order, turning the thread into a
+// casual direct message. Broadcasts `chat:context` so the other party's
+// pinned card disappears live.
+export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const { id } = await ctx.params;
+  const sess = await getSession();
+  if (!sess) throw new ApiError(401, "UNAUTHORIZED", "Login required");
+  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  if (body.action !== "clearContext") throw new ApiError(400, "BAD_REQUEST", "Unsupported action");
+
+  const thread = await db.chatThread.findUnique({
+    where: { id },
+    select: { id: true, shopperId: true, storeId: true },
+  });
+  if (!thread) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+
+  if (sess.userType === "shopper") {
+    const me = await requireShopper();
+    if (thread.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "Not your conversation");
+  } else if (sess.userType === "seller") {
+    const store = await db.store.findUnique({ where: { sellerId: sess.userId }, select: { id: true } });
+    if (!store || thread.storeId !== store.id) throw new ApiError(403, "FORBIDDEN", "Not your store's conversation");
+  } else {
+    throw new ApiError(403, "FORBIDDEN", "No access to this conversation");
+  }
+
+  await clearThreadContext(thread.id);
+  return ok({ threadId: thread.id, contextType: null });
 });

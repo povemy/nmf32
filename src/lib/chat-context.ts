@@ -34,6 +34,22 @@ export type ThreadContextCard =
     };
 
 /**
+ * Either party "closes the quote": the thread stops referencing the product /
+ * order entirely, so both sides see a plain direct message and can keep
+ * chatting casually (re-entering from a product/order re-stamps it later).
+ * Clears the DB fields and pushes `chat:context` so the other party's pinned
+ * card disappears live.
+ */
+export async function clearThreadContext(threadId: string): Promise<void> {
+  await db.chatThread.update({
+    where: { id: threadId },
+    data: { contextType: null, productId: null, orderId: null, orderNumber: null, subject: null },
+  });
+  const { broadcastToThread } = await import("./chat");
+  await broadcastToThread(threadId, "chat:context", { threadId, context: null });
+}
+
+/**
  * Resolve the context card for a chat thread (null when the thread has no
  * product/order context — e.g. a plain direct message).
  */

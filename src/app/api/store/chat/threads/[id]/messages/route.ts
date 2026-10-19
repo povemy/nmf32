@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { broadcastToThread, notifyUserInbox } from "@/lib/chat";
-import { resolveThreadContext } from "@/lib/chat-context";
+import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
 
 export const dynamic = "force-dynamic";
 
@@ -115,3 +115,23 @@ async function logActivitySafe(sellerId: string, email: string) {
     /* activity log is best-effort */
   }
 }
+
+// PATCH /api/store/chat/threads/[id]/messages { action: "clearContext" } — the
+// seller closes the quoted product/order, turning the thread into a casual
+// direct message. Broadcasts `chat:context` so the shopper's pinned card
+// disappears live.
+export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const { id } = await ctx.params;
+  const { store } = await requireActiveSellerStore();
+  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  if (body.action !== "clearContext") throw new ApiError(400, "BAD_REQUEST", "Unsupported action");
+
+  const thread = await db.chatThread.findUnique({
+    where: { id },
+    select: { id: true, storeId: true },
+  });
+  if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+
+  await clearThreadContext(thread.id);
+  return ok({ threadId: thread.id, contextType: null });
+});

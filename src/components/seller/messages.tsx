@@ -25,6 +25,7 @@ import {
   ChatListSkeleton,
   ChatMessagesSkeleton,
   ChatEmptyDetail,
+  ContextClearButton,
   MessageTicks,
   filterChatThreads,
   useChatHub,
@@ -130,6 +131,20 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
     });
   }, [activeId, loadMessages, loadThreads]);
 
+  /** Either party closed the quoted product/order → plain direct message.
+   *  Optimistic locally, authoritative via the PATCH, mirrored live to the
+   *  shopper through the `chat:context` hub event. */
+  const clearContext = useCallback(async (threadId: string) => {
+    setContext(null);
+    setThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
+    setThreads((prev) => (prev ? prev.map((t) => (t.id === threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
+    try {
+      await apiSend("PATCH", `/api/store/chat/threads/${threadId}/messages`, { action: "clearContext" });
+    } catch {
+      toast.error("Could not remove the quote — try again");
+    }
+  }, []);
+
   // live updates via the chat hub (thread rooms + seller user room)
   useChatHub({
     threadRooms: useMemo(() => (threads ?? []).map((t) => `thread:${t.id}`), [threads]),
@@ -149,6 +164,13 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
         reloadThreadsSoon();
       },
       onActivity: () => reloadThreadsSoon(), // brand-new conversation arrives live
+      onContext: (c) => {
+        if (c.threadId === activeId) {
+          setContext(null);
+          setThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
+        }
+        setThreads((prev) => (prev ? prev.map((t) => (t.id === c.threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
+      },
       onRead: (r) => {
         if (r.readerType !== "shopper") return; // shopper read → my ticks flip ✓✓
         if (r.threadId === activeId) {
@@ -281,10 +303,12 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
 
               {/* quoted product / order — pinned directly under the shopper name
                   bar so both parties always see what this conversation is about
-                  while the messages scroll underneath */}
+                  while the messages scroll underneath; "x" drops the quote so
+                  the chat can continue casually */}
               {context ? (
-                <div className="shrink-0 border-b bg-muted/30 px-3 py-2.5">
+                <div className="relative shrink-0 border-b bg-muted/30 px-3 py-2.5">
                   <SellerContextBubble onNavigate={onNavigate} context={context} />
+                  <ContextClearButton onClear={() => activeId && void clearContext(activeId)} />
                 </div>
               ) : null}
 

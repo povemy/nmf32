@@ -940,3 +940,25 @@ Stage Summary:
 - Vendor identity in the chatroom deep-links to the store; product entry re-quotes the conversation context (order → product) exactly as requested.
 - Key artifacts: src/lib/chat-presence.ts (new), src/components/chat/chat-ui.tsx, src/components/shopper/shopper-shell.tsx, src/components/seller/seller-shell.tsx, src/components/seller/messages.tsx.
 - Ops note for the user: sandbox sockets only work through the gateway (:81/preview) — testing on :3000 directly cannot reach the chat hub; not a bug.
+
+---
+Task ID: 26
+Agent: Z.ai Code (main)
+Task: User's 2-point round — (1) small "x" to close the quoted order/product in chat so buyer/seller can chat casually without a quote; (2) Payouts Due card mismatch (dashboard RM 661.17 / 2 sellers vs payouts page 1 record RM 556.60) + dig for further financial discrepancies.
+
+Work Log:
+- (2) ROOT CAUSE — semantic disconnect, NOT a ledger bug: the dashboard "Payouts due" KPI = wallets with available ≥ min (RM 661.17 = Glow Theory 474.11 + ByteBazaar 187.06), but clicking it landed on Payout Batches = batch HISTORY (only the seeded paid PO-100001, RM 556.60, 13 Oct). The due money had never been swept, and the page had NO "due now" view at all.
+- Financial audit (clean): all 5 wallet caches == ledger truth (avail+pending == PAYABLE balance per seller); PLATFORM:PAYOUT_CLEARING nets 0 (T3 credit + T4 debit for PO-100001); payout.min_minor=1000; verify-ledger.ts PASS (22 txns → 23 after commerce gate); verify-commerce.ts PASS (order NM-100020, invariants hold). Only real defect was the dashboard↔page disconnect + a latent threshold drift (dashboard hardcoded RM 10 while batch runs read payout.min_minor).
+- NEW GET /api/admin/payouts/due: refreshes every wallet cache from ledger truth (same as a real run), returns due list (seller, store, available, verified bank, last paid), dueTotal/dueCount, pendingTotal (holding period), belowMin totals, min+mode settings.
+- PayoutsView: new "Due now" panel at top (total + "across N sellers" chip + min/mode, per-seller table with bank + verified icon + last paid, and a "Where the rest is: … pending in the holding period · … below the minimum" reconciliation footer). Batch history card retitled/kept below; due list refetches after a batch run. Page title now "Payouts".
+- Dashboard route: payoutsDue now derived from raw SELLER:*:PAYABLE ledger lines with walletTruth math (matured credits − debits) + payout.min_minor setting — same math as the due endpoint and batch runs; a stale cache or just-expired hold can no longer make the card disagree. (One transient 500 "payableLines is not iterable" from a positional destructure mismatch during the edit — fixed, verified 200.)
+- Browser E2E through gateway :81: dashboard card "RM 661.17 across 2 sellers" → click → Due now panel shows RM 661.17 / Glow Theory 474.11 (Public Bank ****1170 ✓) + ByteBazaar 187.06 (CIMB ****9032 ✓); pending line RM 2,133.05 → live-grew to RM 2,205.91 after the commerce gate's new order (pending ≠ due, correct). tsc: touched files clean, 61 pre-existing baseline; lint clean.
+- (1) Quote "x": NEW clearThreadContext() in src/lib/chat-context.ts (nulls contextType/productId/orderId/orderNumber/subject + broadcasts chat:context to the thread room). NEW PATCH /api/chat/threads/[id] {action:"clearContext"} (shopper-or-store-seller access, mirrors GET) and PATCH /api/store/chat/threads/[id]/messages (seller). chat-ui.tsx: ChatHubHandlers.onContext + socket.on("chat:context") + shared ContextClearButton (28px round x, top-right of the pinned strip, backdrop-blur, teal hover).
+- Both messages views (shopper-shell + seller/messages): pinned strip is now relative and renders ContextClearButton; clearContext() = optimistic local clear (card, header subtitle, list-row chip → "💬 direct message") then PATCH; onContext handler mirrors the other party's clear live. Re-entering from a product/order later re-stamps a new quote (existing upsert behavior).
+- E2E: shopper UI click → card gone, header "Direct message", row chip updates (screenshot); seller UI click → same (screenshot); hub log shows "broadcast to thread:… chat:context" both times; curl PATCH on both routes verified + access control intact. QA thread context restored to its product quote afterwards so the user can try the x themselves.
+- Housekeeping: temp audit/restore scripts removed; dev.log clean post-fix; hub + dev watchdogs healthy (3000/3003/3103/81 listening).
+
+Stage Summary:
+- Payouts reconciliation is now structural: dashboard card, payouts page "Due now", and a dry-run/real batch all read the SAME ledger-derived available with the SAME payout.min_minor — they cannot disagree. The old RM 556.60 record is clearly batch history, and pending-in-hold money is explicitly called out so "where's the rest" is answered on-page.
+- Chat quotes are now dismissible by either party with one tap; both sides' pinned cards and list chips update live via the chat:context hub event; casual direct-message chat + later re-quoting both work.
+- No financial discrepancies found in ledger/wallets/payouts/clearing — all gates PASS on Supabase Postgres.

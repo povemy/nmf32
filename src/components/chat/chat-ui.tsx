@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
-import { ArrowLeft, Check, CheckCheck, Loader2, MessagesSquare, Search } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Loader2, MessagesSquare, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +103,9 @@ export type ChatHubHandlers = {
   onMessage: (msg: ChatMsg) => void;
   onActivity?: (a: { threadId: string; at: string; preview: string | null; senderType: string | null }) => void;
   onRead?: (r: { threadId: string; readerType: string; at: string }) => void;
+  /** Either party cleared the quoted product/order ("x" on the pinned card) —
+   *  the conversation becomes a plain direct message for BOTH sides live. */
+  onContext?: (c: { threadId: string; context: null }) => void;
 };
 
 /** One socket per messages view: joins the thread rooms + this user's private
@@ -155,6 +158,7 @@ export function useChatHub(input: {
       (a: { threadId: string; at: string; preview: string | null; senderType: string | null }) => handlersRef.current.onActivity?.(a)
     );
     socket.on("chat:read", (r: { threadId: string; readerType: string; at: string }) => handlersRef.current.onRead?.(r));
+    socket.on("chat:context", (c: { threadId: string; context: null }) => handlersRef.current.onContext?.(c));
 
     return () => {
       socket.disconnect();
@@ -237,6 +241,28 @@ export function ChatHeader(input: {
         ))}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context card clear ("x") — small round button pinned to the corner of the
+// quoted product/order strip. Tapping it drops the quote so both parties can
+// keep chatting casually; the other side's card disappears live via the
+// `chat:context` hub event.
+// ---------------------------------------------------------------------------
+
+export function ContextClearButton({ onClear, disabled }: { onClear: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      disabled={disabled}
+      aria-label="Remove the quoted order or product from this chat"
+      title="Remove quote — keep chatting casually"
+      className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border bg-background/85 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:border-teal-300 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300"
+    >
+      <X className="h-3.5 w-3.5" aria-hidden />
+    </button>
   );
 }
 

@@ -76,6 +76,7 @@ import {
   ChatListSkeleton,
   ChatMessagesSkeleton,
   ChatEmptyDetail,
+  ContextClearButton,
   MessageTicks,
   filterChatThreads,
   useChatHub,
@@ -938,6 +939,25 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     });
   }, [activeId, loadMessages, loadThreads]);
 
+  /** Either party closed the quoted product/order → plain direct message.
+   *  Optimistic locally, authoritative via the PATCH, and mirrored live to
+   *  the other party through the `chat:context` hub event. */
+  const clearContext = useCallback(
+    async (threadId: string) => {
+      setContext(null);
+      // the "x" only exists on the open conversation, so clearing the header
+      // subtitle unconditionally is safe here
+      setActiveThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
+      setThreads((prev) => (prev ? prev.map((t) => (t.id === threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
+      try {
+        await patchJson(`/api/chat/threads/${threadId}`, { action: "clearContext" });
+      } catch {
+        toast.error("Could not remove the quote — try again");
+      }
+    },
+    [],
+  );
+
   // live updates via the socket.io chat hub (thread rooms + user inbox room)
   useChatHub({
     threadRooms: useMemo(() => (threads ?? []).map((t) => `thread:${t.id}`), [threads]),
@@ -958,6 +978,13 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
         reloadThreadsSoon();
       },
       onActivity: () => reloadThreadsSoon(), // brand-new thread or inbox refresh
+      onContext: (c) => {
+        if (c.threadId === activeId) {
+          setContext(null);
+          setActiveThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
+        }
+        setThreads((prev) => (prev ? prev.map((t) => (t.id === c.threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
+      },
       onRead: (r) => {
         if (r.readerType !== "seller") return; // seller read → my ticks flip ✓✓
         if (r.threadId === activeId) {
@@ -1118,10 +1145,12 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
 
               {/* quoted product / order — pinned directly under the vendor name
                   bar so both parties always see what this conversation is about
-                  while the messages scroll underneath */}
+                  while the messages scroll underneath; "x" drops the quote so
+                  the chat can continue casually */}
               {context ? (
-                <div className="shrink-0 border-b bg-muted/30 px-3 py-2.5">
+                <div className="relative shrink-0 border-b bg-muted/30 px-3 py-2.5">
                   <ShopperContextBubble ctx={ctx} context={context} />
+                  <ContextClearButton onClear={() => activeId && void clearContext(activeId)} />
                 </div>
               ) : null}
 
