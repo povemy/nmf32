@@ -3,8 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  // Named SUPABASE_DATABASE_URL (not DATABASE_URL) deliberately: this sandbox's
+  // harness injects a stale DATABASE_URL=file:... into every shell session, and
+  // exported env vars override .env files for Prisma/Next. A distinct var name
+  // makes the Supabase connection immune to that override.
+  url = env("SUPABASE_DATABASE_URL")
 }
 
 model Plan {
