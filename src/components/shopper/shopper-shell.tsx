@@ -1170,6 +1170,10 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       <div className="grid gap-4 md:grid-cols-[360px_1fr]">
         {/* master — header + search + filter pills + thread list (hidden on
             mobile while a conversation is open: the panel replaces the list) */}
+        {/* Task 33: the list auto-fits the mobile viewport — its height is
+            capped to exactly the space under the app chrome (header 4.25rem +
+            page padding 2rem + bottom-nav reserve 4.25rem + ChatHeader ~9.25rem
+            + slack), never pushing the page into scroll on short phones. */}
         <aside className={cn("space-y-3", activeId && "hidden md:block")}>
           <ChatHeader
             onBack={() => ctx.nav({ name: "me" })}
@@ -1192,7 +1196,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
               </p>
             ) : (
               <ul
-                className="space-y-1 overflow-y-auto p-2 max-h-96 md:max-h-[540px] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
+                className="space-y-1 overflow-y-auto p-2 max-h-[min(24rem,calc(100dvh-20.5rem-env(safe-area-inset-bottom)))] md:max-h-[540px] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
                 aria-label="Chat threads"
               >
                 {visibleThreads.map((t) => (
@@ -1212,11 +1216,18 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
           </div>
         </aside>
 
-        {/* detail — conversation panel (mobile: full-screen slide-in) */}
+        {/* detail — conversation panel. Task 33 mobile auto-fit: instead of a
+            blanket 72dvh (dead space below on tall phones, page scroll on
+            short ones), the panel is sized to EXACTLY the viewport minus the
+            app chrome — header 4.25rem + page padding 2rem + bottom-nav
+            reserve 4.25rem (+ safe-area) — so the composer always sits just
+            above the bottom nav with zero page scroll. Desktop keeps 600px. */}
         <section
           className={cn(
             "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
-            activeId ? "flex h-[72dvh] min-h-[440px]" : "hidden md:flex md:h-[600px]",
+            activeId
+              ? "flex h-[calc(100dvh-10.625rem-env(safe-area-inset-bottom))] min-h-[320px] md:h-[600px] md:min-h-[440px]"
+              : "hidden md:flex md:h-[600px]",
           )}
         >
           {activeId && activeThread ? (
@@ -2174,7 +2185,10 @@ function CartDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full sm:max-w-md flex-col p-0">
+      {/* Task 33: gap-0 — the shadcn SheetContent base carries `flex flex-col
+          gap-4`, which injected a dead 16px band between the header and the
+          item list and again above the Subtotal/CTA block. */}
+      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md p-0">
         <SheetHeader className="border-b px-4 py-3">
           <SheetTitle className="flex items-center gap-2 text-base">
             <ShoppingCart className="h-5 w-5" style={accentText ?? { color: "#0f766e" }} />
@@ -2257,13 +2271,19 @@ function CartDrawer({
                   so toggling selection can never push the item cards around */}
               {showShipBar ? (
                 <div className="rounded-xl border p-3" role="status">
-                  <p className="truncate text-xs font-semibold tabular-nums">
+                  {/* Task 30: fixed h-5 row so crossing the threshold never
+                      reflows the items. Task 33: unlocked state now carries a
+                      lorry icon slightly larger than the text. */}
+                  <p className="flex h-5 items-center gap-1.5 text-xs font-semibold tabular-nums">
                     {shipRemainingMinor <= 0 ? (
-                      <span className="text-emerald-700">You've unlocked FREE shipping</span>
-                    ) : (
                       <>
-                        Spend <span className="font-extrabold">{formatMinor(shipRemainingMinor)}</span> more for FREE shipping
+                        <Truck className="h-[18px] w-[18px] shrink-0 text-emerald-700" aria-hidden="true" />
+                        <span className="min-w-0 truncate text-emerald-700">You've unlocked FREE shipping</span>
                       </>
+                    ) : (
+                      <span className="min-w-0 truncate">
+                        Spend <span className="font-extrabold">{formatMinor(shipRemainingMinor)}</span> more for FREE shipping
+                      </span>
                     )}
                   </p>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">

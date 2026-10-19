@@ -623,8 +623,10 @@ function Dashboard({
                   <ServiceCard icon={Coins} title="Money+" tag="4.1% p.a." onClick={() => toast.info("Money+", { description: "Coming soon in this demo." })} />
                 </>
               ) : null}
-              <ServiceCard icon={Landmark} title="Cash Financing" tag="0.75% monthly" onClick={() => toast.info("Cash Financing", { description: "Coming soon in this demo." })} />
-              <ServiceCard icon={ShieldCheck} title="Insurance" tag="From RM1.20" onClick={() => toast.info("Insurance", { description: "Coming soon in this demo." })} />
+              {/* Task 33 — parked services: removed from the active offering,
+                  cards remain as greyed placeholders for future functions */}
+              <ServiceCard icon={Landmark} title="Cash Financing" tag="0.75% monthly" disabled />
+              <ServiceCard icon={ShieldCheck} title="Insurance" tag="From RM1.20" disabled />
             </div>
           </section>
 
@@ -690,7 +692,9 @@ function Dashboard({
 const GRADIENT_AVATARS = ["grad:teal", "grad:amber", "grad:rose", "grad:violet", "grad:emerald", "grad:slate"];
 
 function Avatar({ profile, size = "md" }: { profile: ProfileT | null; size?: "sm" | "md" | "lg" }) {
-  const px = size === "lg" ? "h-16 w-16 text-xl" : size === "md" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
+  // Task 33: the banner avatar shrinks with the mobile banner (−40% height
+  // goal) and returns to the full 64px on desktop.
+  const px = size === "lg" ? "h-11 w-11 text-base md:h-16 md:w-16 md:text-xl" : size === "md" ? "h-10 w-10 text-sm" : "h-8 w-8 text-xs";
   const gradKey = profile?.avatarUrl?.startsWith("grad:") ? profile.avatarUrl : null;
   const gradClass =
     gradKey === "grad:amber"
@@ -734,8 +738,12 @@ function ProfileHeader({
   const pct = profile?.tierProgress ? profile.tierProgress.percent : 100;
 
   return (
+    // Task 33 — MOBILE ONLY banner compaction (−40% height): smaller avatar,
+    // smaller name, no email line, follow stats folded into the name block as
+    // plain text (no tiles), and the membership + free-shipping rows slimmed
+    // down. Desktop (md+) keeps the Task-30 banner exactly as it was.
     <section className="overflow-hidden rounded-2xl bg-brand-gradient-deep text-white shadow-soft" aria-label="Profile">
-      <div className="flex items-center gap-3 p-4 sm:gap-4 sm:p-5">
+      <div className="flex items-center gap-2.5 p-3 md:gap-4 md:p-5">
         <Avatar profile={profile} size="lg" />
         <div className="min-w-0 flex-1">
           {loading && !profile ? (
@@ -745,45 +753,51 @@ function ProfileHeader({
             </div>
           ) : (
             <>
-              <p className="truncate text-base font-extrabold sm:text-lg">{profile?.fullName ?? "…"}</p>
-              <p className="truncate text-xs text-white/80">
+              <p className="truncate text-sm font-extrabold md:text-lg">{profile?.fullName ?? "…"}</p>
+              {/* desktop keeps the handle line — mobile banner drops the email */}
+              <p className="hidden truncate text-xs text-white/80 md:block">
                 {profile?.username ? `@${profile.username}` : (profile?.email ?? "")}
+              </p>
+              {/* mobile: follow stats as one quiet line under the name — no cards */}
+              <p className="truncate text-[11px] text-white/85 md:hidden">
+                {typeof profile?.followingCount === "number" ? profile.followingCount.toLocaleString() : "—"} Following ·{" "}
+                {typeof profile?.followerCount === "number" ? profile.followerCount.toLocaleString() : "—"} Followers
               </p>
             </>
           )}
         </div>
       </div>
 
-      {/* Following / Followers — restructured from a cramped text line into
-          two scannable stat tiles that breathe with the banner */}
-      <div className="flex flex-wrap gap-2 px-4 pb-1 sm:px-5">
+      {/* Following / Followers — desktop keeps the two stat tiles; mobile got
+          the inline line above, so the tile row is hidden there */}
+      <div className="hidden flex-wrap gap-2 px-5 pb-1 md:flex">
         <FollowStat label="Following" value={profile?.followingCount} />
         <FollowStat label="Followers" value={profile?.followerCount} />
       </div>
 
-      <div className="space-y-2.5 px-4 pb-4 pt-2.5 sm:px-5">
+      <div className="space-y-2 px-3 pb-3 pt-1.5 md:space-y-2.5 md:px-5 md:pb-4 md:pt-2.5">
         {/* Membership — progressive: the current tier with its live progress
             bar visible at a glance; tapping the right-chevron opens the modal
             with the full breakdown (lifetime spend, next tier, member since). */}
         <button
           type="button"
           onClick={() => setTierOpen(true)}
-          className="flex w-full items-center gap-3 rounded-xl bg-white/15 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/25"
+          className="group flex w-full items-center gap-2.5 rounded-xl bg-white/15 px-2.5 py-1.5 text-left backdrop-blur transition-colors hover:bg-white/25 md:gap-3 md:px-3.5 md:py-2.5"
           aria-haspopup="dialog"
           aria-label={`${tier} membership — ${
             profile?.tierProgress ? `${pct}% of the way to ${profile.tierProgress.nextTier}` : "highest tier reached"
           }. View details.`}
         >
-          <Crown className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+          <Crown className="h-3.5 w-3.5 shrink-0 text-amber-300 md:h-4 md:w-4" aria-hidden="true" />
           <span className="min-w-0 flex-1">
             <span className="flex items-center justify-between gap-2">
-              <span className="text-xs font-extrabold uppercase tracking-wide">{tier} Member</span>
-              <span className="shrink-0 text-[11px] font-semibold tabular-nums text-white/90">
+              <span className="text-[11px] font-extrabold uppercase tracking-wide md:text-xs">{tier} Member</span>
+              <span className="shrink-0 text-[10px] font-semibold tabular-nums text-white/90 md:text-[11px]">
                 {profile?.tierProgress ? `${pct}% → ${profile.tierProgress.nextTier}` : "Top tier reached"}
               </span>
             </span>
             <span
-              className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-white/25"
+              className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-white/25 md:mt-1.5 md:h-1.5"
               role="progressbar"
               aria-valuenow={pct}
               aria-valuemin={0}
@@ -793,20 +807,20 @@ function ProfileHeader({
               <span className="block h-full rounded-full bg-amber-400" style={{ width: `${Math.max(6, pct)}%` }} />
             </span>
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 md:h-4 md:w-4" aria-hidden="true" />
         </button>
 
         <button
           type="button"
           onClick={onMarket}
-          className="group flex w-full items-center justify-between gap-2 rounded-xl bg-white/15 px-3.5 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/25"
+          className="group flex w-full items-center justify-between gap-2 rounded-xl bg-white/15 px-2.5 py-1.5 text-left backdrop-blur transition-colors hover:bg-white/25 md:px-3.5 md:py-2.5"
           aria-label="Everything free shipping, no minimum spend — shop now"
         >
-          <span className="flex items-center gap-2 text-xs font-bold sm:text-sm">
-            <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
+          <span className="flex min-w-0 items-center gap-1.5 truncate text-[11px] font-bold md:gap-2 md:text-sm">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300 md:h-4 md:w-4" aria-hidden="true" />
             Everything Free Shipping <span className="hidden font-medium text-white/85 sm:inline">· No Min. Spend</span>
           </span>
-          <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 md:h-4 md:w-4" aria-hidden="true" />
         </button>
       </div>
 
@@ -1009,13 +1023,32 @@ function FinanceComingSoonView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ServiceCard({ icon: Icon, title, tag, onClick }: { icon: typeof Package; title: string; tag: string; onClick: () => void }) {
+function ServiceCard({
+  icon: Icon,
+  title,
+  tag,
+  onClick,
+  disabled,
+}: {
+  icon: typeof Package;
+  title: string;
+  tag: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  // Task 33: `disabled` parks a service — the card stays as a greyed-out
+  // placeholder (no click, no toast) so future products can slot straight in.
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
-      aria-label={`${title} — ${tag}`}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled || undefined}
+      aria-label={`${title} — ${tag}${disabled ? " (coming soon)" : ""}`}
+      className={cn(
+        "flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 text-left transition-all",
+        disabled ? "cursor-not-allowed opacity-50 grayscale" : "hover:-translate-y-0.5 hover:shadow-md",
+      )}
     >
       <Icon className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
       <span className="min-w-0">
