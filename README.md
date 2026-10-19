@@ -97,4 +97,4 @@ Check `prisma/seed.ts` for seeded credentials (admin, sellers, and demo shoppers
 
 - The app is a single-route UI (`/`) with portal shells switched client-side; all data flows through REST APIs under `/api/*`.
 - Payments are simulated via webhook endpoints — no external payment provider keys required.
-- SQLite keeps it zero-config; swap `prisma/schema.prisma` datasource to Postgres/MySQL for production.
+- Database is **Supabase PostgreSQL 17** (ap-southeast-1) accessed via Prisma; connection lives in `SUPABASE_DATABASE_URL` (.env — Supavisor session pooler). All new code must target Postgres — do not reintroduce SQLite.

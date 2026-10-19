@@ -280,6 +280,15 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
                 </div>
               </header>
 
+              {/* quoted product / order — pinned directly under the shopper name
+                  bar so both parties always see what this conversation is about
+                  while the messages scroll underneath */}
+              {context ? (
+                <div className="shrink-0 border-b bg-muted/30 px-3 py-2.5">
+                  <SellerContextBubble onNavigate={onNavigate} context={context} />
+                </div>
+              ) : null}
+
               <div
                 ref={scrollRef}
                 className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
@@ -288,8 +297,11 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
                   <ChatMessagesSkeleton />
                 ) : (
                   <>
-                    {/* what the shopper is asking about — tap to jump there */}
-                    <SellerContextBubble onNavigate={onNavigate} context={context} />
+                    {!context ? (
+                      <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                        💬 Direct message from this shopper
+                      </p>
+                    ) : null}
                     {messages.length === 0 ? (
                       <p className="pt-6 text-center text-sm text-muted-foreground">No messages yet.</p>
                     ) : (
@@ -393,13 +405,9 @@ function RowsSkeleton5() {
 /** Seller-side context bubble: taps through to the order detail or the
  *  product editor the shopper is asking about. */
 function SellerContextBubble({ onNavigate, context }: { onNavigate?: (n: SellerNav) => void; context: ThreadContextCard | null }) {
-  if (!context) {
-    return (
-      <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
-        💬 Direct message from this shopper
-      </p>
-    );
-  }
+  // Rendered only when a product/order context exists — it is pinned under
+  // the shopper name bar. Direct messages show their inline pill instead.
+  if (!context) return null;
 
   if (context.kind === "product") {
     const go = () => onNavigate?.({ view: "products", productId: context.productId });
@@ -408,7 +416,7 @@ function SellerContextBubble({ onNavigate, context }: { onNavigate?: (n: SellerN
         type="button"
         onClick={go}
         disabled={!onNavigate}
-        className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/60 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-500 hover:shadow-md"
+        className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border bg-card p-2.5 text-left shadow-sm transition-colors hover:bg-accent/40"
         aria-label={`Open product: ${context.title}`}
       >
         <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">
@@ -434,7 +442,7 @@ function SellerContextBubble({ onNavigate, context }: { onNavigate?: (n: SellerN
       type="button"
       onClick={go}
       disabled={!onNavigate}
-      className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/70 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-500 hover:shadow-md"
+      className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border bg-card p-2.5 text-left shadow-sm transition-colors hover:bg-accent/40"
       aria-label={`Open order ${context.orderNumber}`}
     >
       <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">

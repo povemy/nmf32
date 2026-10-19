@@ -1079,6 +1079,15 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                 </div>
               </header>
 
+              {/* quoted product / order — pinned directly under the vendor name
+                  bar so both parties always see what this conversation is about
+                  while the messages scroll underneath */}
+              {context ? (
+                <div className="shrink-0 border-b bg-muted/30 px-3 py-2.5">
+                  <ShopperContextBubble ctx={ctx} context={context} />
+                </div>
+              ) : null}
+
               <div
                 ref={scrollRef}
                 className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
@@ -1087,8 +1096,11 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                   <ChatMessagesSkeleton />
                 ) : (
                   <>
-                    {/* what this conversation is about — tap to jump there */}
-                    <ShopperContextBubble ctx={ctx} context={context} />
+                    {!context ? (
+                      <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                        💬 Direct message with this store
+                      </p>
+                    ) : null}
                     {messages.length === 0 ? (
                       <p className="pt-6 text-center text-sm text-muted-foreground">No messages yet — say hello!</p>
                     ) : (
@@ -1150,13 +1162,9 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
  *  product (PDP entry point) or the order (order page entry point) the
  *  shopper is asking about, and taps through to that exact page. */
 function ShopperContextBubble({ ctx, context }: { ctx: ShopperCtx; context: ThreadContextCard | null }) {
-  if (!context) {
-    return (
-      <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
-        💬 Direct message with this store
-      </p>
-    );
-  }
+  // Rendered only when a product/order context exists — it is pinned under
+  // the vendor name bar. Direct messages show their inline pill instead.
+  if (!context) return null;
 
   if (context.kind === "product") {
     const go = () => ctx.nav({ name: "pdp", slug: context.storeSlug, pSlug: context.slug });
@@ -1164,7 +1172,7 @@ function ShopperContextBubble({ ctx, context }: { ctx: ShopperCtx; context: Thre
       <button
         type="button"
         onClick={go}
-        className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/60 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-500 hover:shadow-md"
+        className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border bg-card p-2.5 text-left shadow-sm transition-colors hover:bg-accent/40"
         aria-label={`View product: ${context.title}`}
       >
         <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">
@@ -1194,7 +1202,7 @@ function ShopperContextBubble({ ctx, context }: { ctx: ShopperCtx; context: Thre
     <button
       type="button"
       onClick={go}
-      className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/70 p-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-500 hover:shadow-md"
+      className="group mx-auto flex w-full max-w-xs items-center gap-3 rounded-2xl border bg-card p-2.5 text-left shadow-sm transition-colors hover:bg-accent/40"
       aria-label={`View order ${context.orderNumber}`}
     >
       <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-inner">
