@@ -176,11 +176,15 @@ export const POST = handle(async (req: Request) => {
   const orderNumbers = await Promise.all(pricing.groups.map(() => nextOrderNumber()));
 
   const group = await db.$transaction(async (tx) => {
-    // Re-validate stock inside the transaction (guards concurrent checkouts).
+    // Friendly fast-fail re-validation inside the transaction (stock snapshot;
+    // the AUTHORITATIVE race-proof guard is the conditional decrement below).
     for (const line of pricing.items) {
       const v = await tx.productVariant.findUnique({ where: { id: line.variantId } });
       if (!v || !v.isActive || v.stock < line.qty) {
         throw new ApiError(409, "OUT_OF_STOCK", `Insufficient stock for "${line.title}"${line.variantLabel ? ` (${line.variantLabel})` : ""}`);
+      }
+      if (line.qty < Math.max(1, v.moq)) {
+        throw new ApiError(409, "MOQ_NOT_MET", `Seller minimum for "${line.title}" is ${Math.max(1, v.moq)}`);
       }
     }
 
@@ -292,8 +296,24 @@ export const POST = handle(async (req: Request) => {
       });
 
       // Stock + sales move AT CHECKOUT (per contract) — never repeated in webhook.
+      // LAUNCH-RUSH OVERSELL GUARD: the decrement is CONDITIONAL (UPDATE …
+      // WHERE stock >= qty). Under concurrent checkouts — think an influencer
+      // drop where hundreds of buyers hit Pay at once — the read above cannot
+      // be trusted (two transactions both see 1 left); Postgres evaluates the
+      // row-locked condition atomically, so EXACTLY ONE of the racing
+      // transactions matches. The loser gets count=0 → 409 → the WHOLE
+      // transaction (orders, items, vouchers, ledger) rolls back and the buyer
+      // is asked to adjust, while the winner takes the goods. Stock can never
+      // go negative, no reservation tables, no extra services — one UPDATE per
+      // line, the cheapest possible correctness at any concurrency.
       for (const line of g.lines) {
-        await tx.productVariant.update({ where: { id: line.variantId }, data: { stock: { decrement: line.qty } } });
+        const moved = await tx.productVariant.updateMany({
+          where: { id: line.variantId, isActive: true, stock: { gte: line.qty } },
+          data: { stock: { decrement: line.qty } },
+        });
+        if (moved.count === 0) {
+          throw new ApiError(409, "OUT_OF_STOCK", `Insufficient stock for "${line.title}"${line.variantLabel ? ` (${line.variantLabel})` : ""}`);
+        }
         await tx.inventoryLog.create({
           data: { variantId: line.variantId, delta: -line.qty, reason: `order:${orderNumber}`, refId: order.id },
         });

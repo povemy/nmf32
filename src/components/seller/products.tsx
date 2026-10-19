@@ -36,6 +36,8 @@ type Variant = {
   price: string; // RM decimal as typed
   compareAt: string;
   stock: string;
+  /** Minimum order quantity the buyer must purchase (1 = no minimum). */
+  moq: string;
   sku: string;
 };
 
@@ -50,7 +52,7 @@ type ProductRow = {
   salesCount: number;
   flagsJson: string;
   images: { url: string }[];
-  variants: { id: string; name: string; optionValue: string | null; priceMinor: number; stock: number; sku: string | null }[];
+  variants: { id: string; name: string; optionValue: string | null; priceMinor: number; stock: number; moq: number; sku: string | null }[];
   category: { id: string; name: string } | null;
 };
 
@@ -229,7 +231,7 @@ export default function SellerProducts({
 
 // ---------------------------------------------------------------- editor
 
-const emptyVariants: Variant[] = [{ name: "Default", optionValue: "", price: "", compareAt: "", stock: "0", sku: "" }];
+const emptyVariants: Variant[] = [{ name: "Default", optionValue: "", price: "", compareAt: "", stock: "0", moq: "1", sku: "" }];
 
 function ProductEditor({
   open,
@@ -273,6 +275,7 @@ function ProductEditor({
             price: (v.priceMinor / 100).toFixed(2),
             compareAt: "",
             stock: String(v.stock),
+            moq: String(Math.max(1, v.moq ?? 1)),
             sku: v.sku ?? "",
           }))
         : [{ ...emptyVariants[0] }]
@@ -317,6 +320,7 @@ function ProductEditor({
       priceMinor: toMinor(v.price),
       compareAtPriceMinor: v.compareAt ? toMinor(v.compareAt) : null,
       stock: Math.max(0, Math.round(Number(v.stock) || 0)),
+      moq: Math.max(1, Math.round(Number(v.moq) || 1)),
       sku: v.sku || null,
     }));
     if (payloadVariants.some((v) => v.priceMinor <= 0)) {
@@ -481,7 +485,7 @@ function ProductEditor({
                 variant="outline"
                 size="sm"
                 className="gap-1"
-                onClick={() => setVariants((prev) => [...prev, { name: "Variant", optionValue: "", price: "", compareAt: "", stock: "0", sku: "" }])}
+                onClick={() => setVariants((prev) => [...prev, { name: "Variant", optionValue: "", price: "", compareAt: "", stock: "0", moq: "1", sku: "" }])}
               >
                 <Plus className="h-3.5 w-3.5" /> Add variant
               </Button>
@@ -489,7 +493,7 @@ function ProductEditor({
             <div className="space-y-2">
               {variants.map((v, i) => (
                 <div key={v.id ?? `new-${i}`} className="grid grid-cols-2 items-end gap-2 rounded-xl border p-3 sm:grid-cols-12">
-                  <div className="col-span-2 space-y-1 sm:col-span-3">
+                  <div className="col-span-2 space-y-1 sm:col-span-2">
                     <Label className="text-[11px] text-muted-foreground">Name</Label>
                     <Input className="h-9" value={v.name} onChange={(e) => setVariant(i, { name: e.target.value })} placeholder="Default" />
                   </div>
@@ -508,6 +512,16 @@ function ProductEditor({
                   <div className="space-y-1 sm:col-span-1">
                     <Label className="text-[11px] text-muted-foreground">Stock</Label>
                     <Input className="h-9" inputMode="numeric" value={v.stock} onChange={(e) => setVariant(i, { stock: e.target.value.replace(/[^0-9]/g, "") })} />
+                  </div>
+                  <div className="space-y-1 sm:col-span-1">
+                    <Label className="text-[11px] text-muted-foreground" title="Buyers must order at least this many of this item">Min. order</Label>
+                    <Input
+                      className="h-9"
+                      inputMode="numeric"
+                      value={v.moq}
+                      onChange={(e) => setVariant(i, { moq: e.target.value.replace(/[^0-9]/g, "") })}
+                      placeholder="1"
+                    />
                   </div>
                   <div className="space-y-1 sm:col-span-1">
                     <Label className="text-[11px] text-muted-foreground">SKU</Label>

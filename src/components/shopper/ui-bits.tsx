@@ -112,6 +112,8 @@ export type CartItemT = {
   compareAtPriceMinor: number | null;
   qty: number;
   stock: number;
+  /** Seller-set minimum order quantity for this item (client-side clamp). */
+  moq: number;
   lineTotalMinor: number;
   imageUrl: string;
   storeId: string;
@@ -358,6 +360,22 @@ export function mutateCartItems(mutate: (items: CartItemT[]) => CartItemT[]) {
   emitCart();
 }
 
+/** Adopt a server cart payload directly into the shared store (no refetch).
+ *  Add-to-cart responses already carry the fresh cart — feeding it here keeps
+ *  every consumer (badge, drawer, checkout) in sync in the same frame without
+ *  the event-driven /api/cart refetch storm. */
+export function applyServerCart(cart: CartT | null | undefined) {
+  if (!cart) return;
+  cartState = { cart, loading: false };
+  emitCart();
+}
+
+/** Read-only snapshot of the shared cart (for non-render code paths, e.g. the
+ *  drawer's stock probe building the variant-id list). */
+export function cartSnapshot(): CartT {
+  return cartState.cart;
+}
+
 export function useCart() {
   const me = useApp((s) => s.me);
   const authed = Boolean(me.loaded && me.shopper);
@@ -548,16 +566,21 @@ export function QtyStepper({
   min = 1,
   max = 99,
   small = false,
+  xs = false,
 }: {
   value: number;
   onChange: (v: number) => void;
   min?: number;
   max?: number;
   small?: boolean;
+  /** Cart-drawer minimalist size (Task 29): 24px buttons, 11px digits. */
+  xs?: boolean;
 }) {
-  const btn = small ? "h-8 w-8" : "h-10 w-10";
+  const btn = xs ? "h-6 w-6" : small ? "h-8 w-8" : "h-10 w-10";
+  const icon = xs ? "h-3 w-3" : "h-3.5 w-3.5";
+  const field = xs ? "w-6" : small ? "w-8" : "w-10";
   return (
-    <div className="inline-flex items-center rounded-lg border" role="group" aria-label="Quantity">
+    <div className={cn("inline-flex items-center border", xs ? "rounded-md" : "rounded-lg")} role="group" aria-label="Quantity">
       <Button
         type="button"
         variant="ghost"
@@ -567,10 +590,14 @@ export function QtyStepper({
         onClick={() => onChange(Math.max(min, value - 1))}
         aria-label="Decrease quantity"
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className={icon} />
       </Button>
       <span
-        className={cn("flex items-center justify-center text-sm font-semibold tabular-nums", small ? "w-8" : "w-10")}
+        className={cn(
+          "flex items-center justify-center font-semibold tabular-nums",
+          xs ? "w-6 text-[11px]" : "text-sm",
+          field
+        )}
         aria-live="polite"
       >
         {value}
@@ -584,7 +611,7 @@ export function QtyStepper({
         onClick={() => onChange(Math.min(max, value + 1))}
         aria-label="Increase quantity"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className={icon} />
       </Button>
     </div>
   );

@@ -18,6 +18,7 @@ import {
   ShoppingCart,
   Store,
   Timer,
+  Trash2,
   Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -600,7 +601,8 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
 
             {/* sample items — mirror the real drawer: ONE card per vendor with
                 divided rows, selection checkbox, compact 20%-smaller card,
-                12px/500 product title */}
+                12px/500 title, price under the name, trash + minimalist
+                quantity stepper in the right column */}
             <div className="overflow-hidden rounded-xl border bg-card">
               <div className="flex items-center justify-between gap-2 bg-muted/60 px-2.5 py-1.5">
                 <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-teal-800">
@@ -610,21 +612,29 @@ function DrawerPreview({ cfg, picked }: { cfg: CartConfig; picked: ProductPick[]
               </div>
               <div className="divide-y">
                 {[
-                  { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, low: supports.urgency && cfg.urgencyStockEnabled, sel: true },
-                  { t: "Terra Linen Table Runner", v: "Default", p: 1500, low: false, sel: true },
+                  { t: "Aria Ceramic Vase — Nordic Matte", v: "Color: White", p: 4900, q: 1, low: supports.urgency && cfg.urgencyStockEnabled, sel: true },
+                  { t: "Terra Linen Table Runner", v: "Default", p: 1500, q: 1, low: false, sel: true },
                 ].map((it, i) => (
                   <div key={i} className="flex items-start gap-2.5 p-2">
                     <Checkbox checked={it.sel} disabled aria-label="Included in checkout" className="mt-6 h-4 w-4 shrink-0" />
                     <img src={`/api/img/preview-item-${i + 1}?w=200&h=200`} alt="" className="h-16 w-16 rounded-lg border object-cover" />
-                    <div className="min-w-0 flex-1 space-y-1">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <p className="truncate text-[12px] font-medium leading-tight">{it.t}</p>
+                      <p className="text-[13px] font-bold leading-tight text-teal-700">{formatMinor(it.p)}</p>
                       <p className="text-[11px] leading-tight text-muted-foreground">{it.v}</p>
                       {it.low ? (
                         <p className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
                           <Flame className="h-2.5 w-2.5" /> Only {cfg.urgencyStockThreshold} left in stock
                         </p>
                       ) : null}
-                      <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.p)}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="inline-flex items-center rounded-md border" aria-hidden>
+                        <span className="flex h-6 w-6 items-center justify-center rounded-r-none text-muted-foreground">−</span>
+                        <span className="flex w-6 items-center justify-center text-[11px] font-semibold tabular-nums">{it.q}</span>
+                        <span className="flex h-6 w-6 items-center justify-center text-muted-foreground">+</span>
+                      </span>
                     </div>
                   </div>
                 ))}

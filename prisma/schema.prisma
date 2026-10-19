@@ -369,6 +369,10 @@ model ProductVariant {
   priceMinor          Int
   compareAtPriceMinor Int?
   stock               Int            @default(0)
+  // Minimum order quantity set by the seller for THIS item (variant-level).
+  // Enforced in the cart (add/patch), the quote and checkout-create, so a
+  // launch rush can never slip a below-MOQ line through.
+  moq                 Int            @default(1)
   lowStockThreshold   Int            @default(5)
   sku                 String?
   isActive            Boolean        @default(true)

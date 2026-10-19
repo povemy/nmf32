@@ -52,6 +52,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
         priceMinor: v.priceMinor,
         compareAtPriceMinor: v.compareAtPriceMinor,
         stock: v.stock,
+        moq: Math.max(1, v.moq),
         sku: v.sku,
         isActive: v.isActive,
       })),

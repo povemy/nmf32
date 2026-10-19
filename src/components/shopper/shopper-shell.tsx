@@ -65,14 +65,16 @@ import {
   patchJson,
   deleteJson,
   postJson,
-  notifyCartUpdated,
   mutateCartItems,
+  applyServerCart,
+  cartSnapshot,
   useCart,
   EmptyState,
   QtyStepper,
   fmtDateTime,
   fetchEnvelope,
   type CartItemT,
+  type CartT,
   type CategoryT,
   type ProductCardT,
   type ShopperCtx,
@@ -1475,7 +1477,6 @@ function CartDrawer({
   storeSlug: string | null;
 }) {
   const { cart, count, selectedCount, selectedSubtotal, loading } = useCart();
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [addingUpsell, setAddingUpsell] = useState<string | null>(null);
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
@@ -1604,18 +1605,141 @@ function CartDrawer({
     return [...map.values()];
   }, [cart]);
 
-  async function setQty(itemId: string, qty: number) {
-    setBusyId(itemId);
-    try {
-      if (qty <= 0) await deleteJson(`/api/cart/items/${itemId}`);
-      else await patchJson(`/api/cart/items/${itemId}`, { qty });
-      notifyCartUpdated(); // keep badge + every useCart() instance in sync
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update cart");
-    } finally {
-      setBusyId(null);
-    }
+  // -----------------------------------------------------------------------
+  // Task 29 — INSTANT quantity + remove (same philosophy as the Task 28
+  // selection toggles and the Messages filter): the shared cart store is
+  // mutated SYNCHRONOUSLY — the row, price, subtotal, free-ship bar, header
+  // count and header badge all repaint in the same frame, ZERO network in the
+  // render path — while the PATCH/DELETE rides in the background.
+  //
+  // Rapid +/- taps are coalesced into ONE PATCH per item (350ms trailing
+  // debounce), so a burst of five taps costs one request, not five. Server
+  // truth (stock clamps) is adopted only if the buyer hasn't tapped since,
+  // and any failure rolls back to the pre-burst quantity (guarded so it can
+  // never clobber a newer edit).
+  // -----------------------------------------------------------------------
+  const qtyTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const qtyRevertPoint = useRef(new Map<string, number>());
+
+  function bumpQty(itemId: string, nextQty: number) {
+    const it = cartSnapshot().items.find((x) => x.id === itemId);
+    if (!it) return;
+    // Client-side guard rails: 1..stock (moq compliance is the stepper's min;
+    // checkout/create re-validates authoritatively either way).
+    const clamped = Math.max(1, Math.min(nextQty, Math.max(1, it.stock)));
+    if (clamped === it.qty) return;
+    if (!qtyTimers.current.has(itemId)) qtyRevertPoint.current.set(itemId, it.qty);
+    mutateCartItems((items) =>
+      items.map((x) => (x.id === itemId ? { ...x, qty: clamped, lineTotalMinor: x.unitPriceMinor * clamped } : x))
+    );
+    const t = qtyTimers.current.get(itemId);
+    if (t) clearTimeout(t);
+    qtyTimers.current.set(
+      itemId,
+      setTimeout(() => {
+        qtyTimers.current.delete(itemId);
+        const intended = cartSnapshot().items.find((x) => x.id === itemId)?.qty ?? clamped;
+        patchJson<{ cart: CartT }>(`/api/cart/items/${itemId}`, { qty: intended })
+          .then((res) => {
+            qtyRevertPoint.current.set(itemId, intended);
+            if (qtyTimers.current.has(itemId)) return; // newer taps pending — they will settle
+            const serverItem = res.cart.items.find((x) => x.id === itemId);
+            const localItem = cartSnapshot().items.find((x) => x.id === itemId);
+            // The server clamps on stock changes (another device bought the
+            // last units mid-burst). Adopt its number if we're still pristine.
+            if (serverItem && localItem && serverItem.qty !== localItem.qty) {
+              mutateCartItems((items) =>
+                items.map((x) =>
+                  x.id === itemId
+                    ? { ...x, qty: serverItem.qty, stock: serverItem.stock, moq: serverItem.moq, lineTotalMinor: serverItem.lineTotalMinor }
+                    : x
+                )
+              );
+              toast.warning("Quantity adjusted", { description: `${localItem.title}: only ${serverItem.stock} left in stock` });
+            }
+          })
+          .catch(() => {
+            if (qtyTimers.current.has(itemId)) return; // a newer PATCH owns the outcome
+            const revertTo = qtyRevertPoint.current.get(itemId);
+            mutateCartItems((items) =>
+              items.map((x) => {
+                if (x.id !== itemId) return x;
+                if (revertTo == null || x.qty !== intended) return x; // guarded revert
+                return { ...x, qty: revertTo, lineTotalMinor: x.unitPriceMinor * revertTo };
+              })
+            );
+            toast.error("Could not update quantity");
+          });
+      }, 350)
+    );
   }
+
+  function removeItem(itemId: string) {
+    const items = cartSnapshot().items;
+    const idx = items.findIndex((x) => x.id === itemId);
+    if (idx === -1) return;
+    const snapshot = items[idx];
+    const pendingTimer = qtyTimers.current.get(itemId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer); // don't let a queued PATCH 404 behind the DELETE
+      qtyTimers.current.delete(itemId);
+    }
+    qtyRevertPoint.current.delete(itemId);
+    mutateCartItems((items) => items.filter((x) => x.id !== itemId));
+    deleteJson(`/api/cart/items/${itemId}`).catch(() => {
+      // Failure is rare (offline / session expired) — put the line back where
+      // it was (guarded: never duplicate if state moved on) and say so.
+      mutateCartItems((items) => {
+        if (items.some((x) => x.id === snapshot.id)) return items;
+        const at = Math.min(idx, items.length);
+        return [...items.slice(0, at), snapshot, ...items.slice(at)];
+      });
+      toast.error("Could not remove item");
+    });
+  }
+
+  // Launch-rush stock probe — ONCE per drawer open, ONE tiny indexed request
+  // (GET /api/cart/stock?ids=…) refreshes only the volatile numbers (stock,
+  // moq, purchasability). The UI then clamps LOCALLY: quantities over the real
+  // stock are adjusted (with a notice), so the buyer never fights a stale
+  // number while ten thousand other people are buying. Checkout/create still
+  // runs the authoritative atomic decrement — this probe is the cheap first
+  // layer, not the last.
+  const stockProbeSeq = useRef(0);
+  useEffect(() => {
+    if (!open || !signedIn) return;
+    const ids = [...new Set(cartSnapshot().items.map((i) => i.variantId))];
+    if (ids.length === 0) return;
+    const seq = ++stockProbeSeq.current;
+    fetchJson<{ stocks: Record<string, { stock: number; moq: number; purchasable: boolean }> }>(
+      `/api/cart/stock?ids=${encodeURIComponent(ids.join(","))}`
+    )
+      .then(({ stocks }) => {
+        if (seq !== stockProbeSeq.current) return; // a newer open/refresh supersedes
+        const adjusted: string[] = [];
+        mutateCartItems((items) =>
+          items.map((it) => {
+            const s = stocks[it.variantId];
+            if (!s) return it;
+            const stock = s.purchasable ? s.stock : 0;
+            let next: CartItemT = { ...it, stock, moq: s.moq };
+            if (next.qty > stock && stock > 0) {
+              adjusted.push(`“${it.title}” — only ${stock} left, quantity adjusted`);
+              next = { ...next, qty: stock, lineTotalMinor: next.unitPriceMinor * stock };
+            }
+            return next;
+          })
+        );
+        if (adjusted.length > 0) {
+          toast.warning("Stock changed while you were away", {
+            description: adjusted[0] + (adjusted.length > 1 ? ` (+${adjusted.length - 1} more)` : ""),
+          });
+        }
+      })
+      .catch(() => {
+        /* probe is best-effort — checkout re-validates authoritatively */
+      });
+  }, [open, signedIn]);
 
   // Checkout selection — one item, or a whole seller's group at once.
   // Unchecked lines STAY in the cart (kept for later); only checked lines go
@@ -1652,9 +1776,10 @@ function CartDrawer({
     if (!p.variantId) return;
     setAddingUpsell(p.id);
     try {
-      await postJson("/api/cart/items", { variantId: p.variantId, qty: 1 });
-      notifyCartUpdated();
-      toast.success("Added to cart", { description: p.title });
+      const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", { variantId: p.variantId, qty: 1 });
+      applyServerCart(res.cart); // same-frame badge/drawer update, zero refetch
+      if (res.notice) toast.warning("Cart updated", { description: res.notice });
+      else toast.success("Added to cart", { description: p.title });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add item");
     } finally {
@@ -1726,6 +1851,9 @@ function CartDrawer({
             <AnimatePresence initial={false}>
               {g.items.map((it) => {
                 const low = lowStockOf(it);
+                const outOfStock = it.stock <= 0;
+                const overStock = !outOfStock && it.qty > it.stock; // seller reduced stock / others bought
+                const belowMoq = it.qty < it.moq; // seller raised the minimum after add
                 return (
                   <motion.div
                     key={it.id}
@@ -1734,11 +1862,7 @@ function CartDrawer({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: 40 }}
                     transition={{ duration: 0.18 }}
-                    className={cn(
-                      "flex items-start gap-2.5 p-2 transition-opacity",
-                      !it.selected && "opacity-55",
-                      busyId === it.id && "pointer-events-none opacity-60"
-                    )}
+                    className={cn("flex items-start gap-2.5 p-2 transition-opacity", !it.selected && "opacity-55")}
                   >
                     {/* checkout selection — unchecked = keep this item in the cart */}
                     <Checkbox
@@ -1767,43 +1891,59 @@ function CartDrawer({
                         )}
                       />
                     </button>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onOpenChange(false);
-                            ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
-                          }}
-                          className="text-left text-[12px] font-medium leading-tight line-clamp-2 hover:text-teal-700"
-                        >
-                          {it.title}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setQty(it.id, 0)}
-                          className="text-muted-foreground transition-colors hover:text-rose-600 p-0.5"
-                          aria-label={`Remove ${it.title}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    {/* main column — title, then price directly under the name
+                        (Task 29: price lives where the stepper used to be) */}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          ctx.nav({ name: "pdp", slug: it.storeSlug, pSlug: it.productSlug });
+                        }}
+                        className="block text-left text-[12px] font-medium leading-tight line-clamp-2 hover:text-teal-700"
+                      >
+                        {it.title}
+                      </button>
+                      <p className="text-[13px] font-bold leading-tight text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
                       {it.variantLabel && it.variantLabel !== "Default" ? <p className="text-[11px] leading-tight text-muted-foreground">{it.variantLabel}</p> : null}
-                      {low !== null ? (
+                      {outOfStock ? (
+                        <p className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" role="status">
+                          <Flame className="h-3 w-3" /> Out of stock
+                        </p>
+                      ) : overStock ? (
+                        <p className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" role="status">
+                          <Flame className="h-3 w-3" /> Only {it.stock} left — reduce quantity
+                        </p>
+                      ) : low !== null ? (
                         <p
                           className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
                           role="status"
                         >
                           <Flame className="h-3 w-3" /> Only {low} left in stock
                         </p>
+                      ) : belowMoq ? (
+                        <p className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" role="status">
+                          Seller minimum {it.moq} — increase quantity
+                        </p>
                       ) : null}
-                      <div className="flex items-end justify-between gap-2 pt-0.5">
-                        <QtyStepper small value={it.qty} min={0} max={Math.max(1, it.stock)} onChange={(v) => setQty(it.id, v)} />
-                        <div className="text-right">
-                          <p className="text-[13px] font-bold text-teal-700">{formatMinor(it.lineTotalMinor)}</p>
-                          <p className="text-[10px] leading-tight text-muted-foreground">{formatMinor(it.unitPriceMinor)} each</p>
-                        </div>
-                      </div>
+                    </div>
+                    {/* right column — trash on top, minimalist stepper under it */}
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => removeItem(it.id)}
+                        className="p-0.5 text-muted-foreground transition-colors hover:text-rose-600"
+                        aria-label={`Remove ${it.title}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                      <QtyStepper
+                        xs
+                        value={it.qty}
+                        min={it.moq}
+                        max={Math.max(it.qty, it.stock)}
+                        onChange={(v) => bumpQty(it.id, v)}
+                      />
                     </div>
                   </motion.div>
                 );

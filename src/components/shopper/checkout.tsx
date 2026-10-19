@@ -330,6 +330,7 @@ type QuoteT = {
     unitPriceMinor: number;
     lineTotalMinor: number;
     stock: number;
+    moq?: number;
     storeId?: string;
     storeSlug?: string;
     storeName?: string;
@@ -640,6 +641,14 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 
   const stockIssues = useMemo(
     () => (quote?.items ?? []).filter((i) => i.qty > i.stock),
+    [quote]
+  );
+
+  // Seller minimum-order-quantity issues — same soft-warning pattern as the
+  // oversell list: the quote stays renderable, Pay is blocked, and the buyer
+  // gets a persistent fix-it box (checkout/create still hard-rejects).
+  const moqIssues = useMemo(
+    () => (quote?.items ?? []).filter((i) => i.moq != null && i.qty < i.moq),
     [quote]
   );
 
@@ -1303,7 +1312,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                 <Button
                   size="lg"
                   onClick={placeOrder}
-                  disabled={submitting || quoting || !quote || stockIssues.length > 0}
+                  disabled={submitting || quoting || !quote || stockIssues.length > 0 || moqIssues.length > 0}
                   className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
@@ -1330,6 +1339,19 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                 {stockIssues.map((i) => (
                   <p key={i.title}>
                     Only {i.stock} left of “{i.title}” — you have {i.qty} in cart.
+                  </p>
+                ))}
+                <button type="button" onClick={() => ctx.openCart()} className="pt-1 font-bold underline underline-offset-2">
+                  Update cart
+                </button>
+              </div>
+            ) : null}
+
+            {moqIssues.length > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {moqIssues.map((i) => (
+                  <p key={i.title}>
+                    “{i.title}” has a seller minimum of {i.moq} — you have {i.qty} in cart.
                   </p>
                 ))}
                 <button type="button" onClick={() => ctx.openCart()} className="pt-1 font-bold underline underline-offset-2">

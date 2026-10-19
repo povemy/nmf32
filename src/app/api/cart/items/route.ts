@@ -23,6 +23,10 @@ export const POST = handle(async (req: Request) => {
   if (!variant) throw new ApiError(400, "VARIANT_UNAVAILABLE", "This item is not available for purchase");
   if (variant.stock <= 0) throw new ApiError(409, "OUT_OF_STOCK", "This item is out of stock");
 
+  // Seller-set minimum order quantity for THIS item. Enforced here so the cart
+  // can never hold a below-MOQ line (checkout re-validates it as well).
+  const moq = Math.max(1, variant.moq);
+
   let cart = await findCartForShopper(me.id);
   if (!cart) {
     await createCartForShopper(me.id);
@@ -42,8 +46,16 @@ export const POST = handle(async (req: Request) => {
       await db.cartItem.update({ where: { id: existing.id }, data: { qty: capped } });
     }
   } else {
-    const capped = Math.min(qty, variant.stock);
+    // Respect the seller's MOQ: a smaller ask is adjusted UP to the minimum
+    // (same friendly "adjusted" contract as the stock cap). If even the MOQ
+    // exceeds available stock the line simply cannot exist — refuse honestly.
+    if (variant.stock < moq) {
+      throw new ApiError(409, "MOQ_EXCEEDS_STOCK", `Seller minimum is ${moq} but only ${variant.stock} in stock`);
+    }
+    const wanted = Math.max(qty, moq);
+    const capped = Math.min(wanted, 99, variant.stock);
     if (capped < qty) notice = `Only ${variant.stock} in stock — quantity adjusted`;
+    else if (capped > qty) notice = `Seller minimum is ${moq} — quantity adjusted`;
     await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty: capped } });
   }
 

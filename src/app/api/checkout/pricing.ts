@@ -68,6 +68,7 @@ export type PricedLine = {
   compareAtPriceMinor: number | null;
   lineTotalMinor: number;
   stock: number;
+  moq: number;
 };
 
 /** Validate + price cart items against a store. Throws ApiError on any invalid line. */
@@ -91,6 +92,10 @@ export async function priceItems(storeId: string, items: QuoteItemInput[]): Prom
     if (!v || !v.isActive || v.product.status !== "active" || v.product.storeId !== storeId) {
       throw new ApiError(400, "VARIANT_INVALID", "One of the items is unavailable in this store");
     }
+    // NOTE: MOQ is deliberately NOT hard-thrown here — quotes stay renderable
+    // so the checkout UI can show a persistent "seller minimum" warning (same
+    // pattern as the oversell warning). The AUTHORITATIVE MOQ gate lives in
+    // checkout/create's transaction.
     const variantLabel = [v.optionName, v.optionValue].filter(Boolean).join(": ") || null;
     lines.push({
       variantId: v.id,
@@ -103,6 +108,7 @@ export async function priceItems(storeId: string, items: QuoteItemInput[]): Prom
       compareAtPriceMinor: v.compareAtPriceMinor ?? null,
       lineTotalMinor: v.priceMinor * qty,
       stock: v.stock,
+      moq: Math.max(1, v.moq),
     });
   }
   return lines;
@@ -254,6 +260,9 @@ export async function computeGroupPricing(input: {
     if (!v || !v.isActive || v.product.status !== "active" || v.product.store.status !== "live") {
       throw new ApiError(400, "VARIANT_INVALID", "One of the items is no longer available — please update your cart");
     }
+    // Seller's minimum order quantity rides on the line (moq) so the checkout
+    // UI can warn and block pre-payment; the HARD gate is checkout/create's
+    // transaction (qty below moq can never become an order).
     const variantLabel = [v.optionName, v.optionValue].filter(Boolean).join(": ") || null;
     items.push({
       variantId: v.id,
@@ -266,6 +275,7 @@ export async function computeGroupPricing(input: {
       compareAtPriceMinor: v.compareAtPriceMinor ?? null,
       lineTotalMinor: v.priceMinor * qty,
       stock: v.stock,
+      moq: Math.max(1, v.moq),
       storeId: v.product.storeId,
       storeSlug: v.product.store.slug,
       storeName: v.product.store.name,

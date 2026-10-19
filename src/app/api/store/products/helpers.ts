@@ -38,6 +38,7 @@ export type VariantInput = {
   priceMinor: number;
   compareAtPriceMinor: number | null;
   stock: number;
+  moq: number;
   lowStockThreshold: number;
   sku: string | null;
 };
@@ -60,6 +61,8 @@ export function validateVariants(raw: unknown): VariantInput[] {
       priceMinor,
       compareAtPriceMinor: vv.compareAtPriceMinor != null ? Math.max(0, Math.round(Number(vv.compareAtPriceMinor))) : null,
       stock,
+      // Seller-set minimum order quantity (per item). Defaults to 1 = no minimum.
+      moq: Math.max(1, Math.round(Number(vv.moq ?? 1)) || 1),
       lowStockThreshold: vv.lowStockThreshold != null ? Math.max(0, Math.round(Number(vv.lowStockThreshold))) : 5,
       sku: vv.sku != null ? String(vv.sku) : null,
     };

@@ -90,6 +90,8 @@ export type ShapedCartItem = {
   compareAtPriceMinor: number | null;
   qty: number;
   stock: number;
+  /** Seller-set minimum order quantity for THIS item (variant-level). */
+  moq: number;
   lineTotalMinor: number;
   imageUrl: string;
   storeId: string;
@@ -117,6 +119,7 @@ export function shapeCart(cart: CartWithItems | null) {
       compareAtPriceMinor: v.compareAtPriceMinor,
       qty: it.qty,
       stock: v.stock,
+      moq: Math.max(1, v.moq),
       lineTotalMinor: v.priceMinor * it.qty,
       imageUrl: p.images[0]?.url ?? FALLBACK_IMG,
       storeId: p.store.id,

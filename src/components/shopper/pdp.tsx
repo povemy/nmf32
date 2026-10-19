@@ -28,7 +28,7 @@ import { breadcrumbJsonLd, injectJsonLd, productJsonLd, setMeta } from "@/lib/se
 import {
   fetchJson,
   postJson,
-  notifyCartUpdated,
+  applyServerCart,
   discountPercent,
   dateShort,
   openProduct,
@@ -40,6 +40,7 @@ import {
   type ProductCardT,
   type ShopperCtx,
   type CardStyleTokens,
+  type CartT,
 } from "./ui-bits";
 
 type VariantT = {
@@ -50,6 +51,7 @@ type VariantT = {
   priceMinor: number;
   compareAtPriceMinor: number | null;
   stock: number;
+  moq: number;
   sku: string | null;
   isActive: boolean;
 };
@@ -144,6 +146,10 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   const compareAt = variant?.compareAtPriceMinor ?? data?.product.compareAtPriceMinor ?? null;
   const off = discountPercent(price, compareAt);
   const outOfStock = !variant || variant.stock <= 0;
+  // Seller-set minimum order quantity for the selected variant — the stepper
+  // starts there and can never go below it (the cart + checkout re-enforce).
+  const moq = Math.max(1, variant?.moq ?? 1);
+  const effectiveQty = Math.max(qty, moq);
 
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
@@ -240,8 +246,8 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     }
     setAdding(true);
     try {
-      const res = await postJson<{ cart: unknown; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty });
-      notifyCartUpdated();
+      const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty: Math.max(moq, qty) });
+      applyServerCart(res.cart); // same-frame badge/drawer update, zero refetch
       if (res.notice) {
         toast.warning("Cart updated", { description: res.notice });
       } else {
@@ -405,10 +411,16 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
 
           {/* qty + actions */}
           <div className="flex flex-wrap items-center gap-3">
-            <QtyStepper value={qty} onChange={setQty} max={variant ? Math.max(1, variant.stock) : 99} />
+            <QtyStepper
+              value={effectiveQty}
+              min={moq}
+              onChange={(v) => setQty(Math.max(moq, v))}
+              max={variant ? Math.max(moq, variant.stock) : 99}
+            />
             {variant && variant.stock > 0 && variant.stock <= 5 ? (
               <span className="text-xs font-semibold text-amber-600">Only {variant.stock} left!</span>
             ) : null}
+            {moq > 1 ? <span className="text-xs font-semibold text-muted-foreground">Min. order {moq}</span> : null}
           </div>
 
           <div className="grid gap-2.5 sm:grid-cols-2">

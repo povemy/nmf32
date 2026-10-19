@@ -43,6 +43,11 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     if (hasQty && qty > item.variant.stock) {
       throw new ApiError(409, "OUT_OF_STOCK", `Only ${item.variant.stock} in stock`);
     }
+    // Seller's minimum order quantity for THIS item — qty 0 (remove) stays
+    // allowed above, but any kept line must respect the MOQ.
+    if (hasQty && qty < Math.max(1, item.variant.moq)) {
+      throw new ApiError(409, "MOQ_NOT_MET", `Seller minimum for this item is ${Math.max(1, item.variant.moq)}`);
+    }
     await db.cartItem.update({
       where: { id: item.id },
       data: { ...(hasQty ? { qty } : {}), ...(hasSelected ? { selected: body.selected as boolean } : {}) },
