@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { getSession, requireShopper } from "@/lib/auth";
 import { resolveThreadContext } from "@/lib/chat-context";
+import { broadcastToThread } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +37,26 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     throw new ApiError(403, "FORBIDDEN", "No access to this conversation");
   }
 
-  // opening the conversation = the reader has seen everything in it
-  await db.chatThread.update({
-    where: { id: thread.id },
-    data: isShopper ? { shopperUnread: 0 } : { sellerUnread: 0 },
-  });
+  // opening the conversation = the reader has seen everything in it; stamp
+  // readAt on the other party's messages so the sender sees ✓✓ (chat:read push)
+  const now = new Date();
+  const [, marked] = await Promise.all([
+    db.chatThread.update({
+      where: { id: thread.id },
+      data: isShopper ? { shopperUnread: 0 } : { sellerUnread: 0 },
+    }),
+    db.chatMessage.updateMany({
+      where: { threadId: thread.id, senderType: isShopper ? { not: "shopper" } : { not: "seller" }, readAt: null },
+      data: { readAt: now },
+    }),
+  ]);
+  if (marked.count > 0) {
+    await broadcastToThread(thread.id, "chat:read", {
+      threadId: thread.id,
+      readerType: isShopper ? "shopper" : "seller",
+      at: now.toISOString(),
+    });
+  }
 
   const context = await resolveThreadContext({
     contextType: thread.contextType,
@@ -70,6 +86,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       senderName: m.senderName,
       body: m.body,
       createdAt: m.createdAt,
+      readAt: m.readAt,
     })),
   });
 });

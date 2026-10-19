@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
-import { broadcastToThread } from "@/lib/chat";
+import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
 import { maybeAutoReply } from "@/lib/chat-quick-replies";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +35,18 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     senderName: me.fullName,
     body: message.body,
     createdAt: message.createdAt,
+    readAt: null,
   };
-  await broadcastToThread(thread.id, "chat:message", payload);
+  const sellerUserId = await sellerIdForStore(thread.storeId);
+  // thread room → open panels; seller user room → inbox feed refresh
+  await broadcastToThread(thread.id, "chat:message", payload, sellerUserId ? [`user:${sellerUserId}`] : []);
+  await notifyUserInbox([sellerUserId], {
+    threadId: thread.id,
+    event: "chat:activity",
+    at: new Date().toISOString(),
+    preview: message.body,
+    senderType: "shopper",
+  });
 
   // ---- auto-reply scaffold (dormant — see src/lib/chat-quick-replies.ts) ----
   const counts = await db.chatMessage.groupBy({
@@ -61,6 +71,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
       senderName: "NOMOFEE Assistant",
       body: botMsg.body,
       createdAt: botMsg.createdAt,
+      readAt: null,
       isAutoReply: true,
     });
   }

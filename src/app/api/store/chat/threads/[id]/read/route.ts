@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import { broadcastToThread } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,16 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
   const { store } = await requireActiveSellerStore();
   const thread = await db.chatThread.findUnique({ where: { id }, select: { id: true, storeId: true } });
   if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
-  await db.chatThread.update({ where: { id: thread.id }, data: { sellerUnread: 0 } });
-  return ok({ read: true });
+  const now = new Date();
+  const [_, marked] = await Promise.all([
+    db.chatThread.update({ where: { id: thread.id }, data: { sellerUnread: 0 } }),
+    db.chatMessage.updateMany({
+      where: { threadId: thread.id, senderType: { not: "seller" }, readAt: null },
+      data: { readAt: now },
+    }),
+  ]);
+  if (marked.count > 0) {
+    await broadcastToThread(thread.id, "chat:read", { threadId: thread.id, readerType: "seller", at: now.toISOString() });
+  }
+  return ok({ read: true, marked });
 });

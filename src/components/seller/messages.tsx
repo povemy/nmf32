@@ -1,12 +1,15 @@
 "use client";
-// Seller Messages — inbox of shopper conversations + reply composer.
-// Live updates via the socket.io chat hub (rooms: thread:{id}).
-// • Every conversation shows a clickable context bubble quoting the product
-//   or order the shopper is asking about → tap to jump to that order/product.
-// • Thread cards show an unread badge (no message preview).
-// • Quick-reply chips (src/lib/chat-quick-replies.ts) fill the composer.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+// ============================================================================
+// Seller Messages — master-detail chat hub (shared chat module).
+// • ChatHeader: back button + "Chats" + live search + All/Active pills.
+// • Thread list: avatar/initials, smart timestamps, last-message preview with
+//   ✓/✓✓ ticks, unread badges — instantly reordered by the socket.io hub.
+// • Conversation: context bubble, ticks, quick-reply chips, 44px targets.
+// • Live: thread rooms + this seller's user room (brand-new conversations
+//   appear without a refresh).
+// ============================================================================
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, ChevronDown, Loader2, MessagesSquare, PackageSearch, Send, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,41 +19,31 @@ import { cn } from "@/lib/utils";
 import { SELLER_QUICK_REPLIES } from "@/lib/chat-quick-replies";
 import { formatMinor } from "@/lib/money";
 import { fmtDateTime } from "@/components/shopper/ui-bits";
-import { apiGet, apiSend, EmptyState, RowsSkeleton, type SellerNav } from "./ui-bits";
-
-type SellerThread = {
-  id: string;
-  shopperName: string;
-  shopperEmail: string;
-  orderNumber: string | null;
-  contextType: string | null;
-  subject: string | null;
-  lastMessageAt: string;
-  unreadCount: number;
-  lastMessage: { body: string; senderType: string; createdAt: string } | null;
-};
-
-type ChatMsg = { id: string; senderType: "shopper" | "seller"; senderName: string; body: string; createdAt: string };
+import {
+  ChatHeader,
+  ChatListItem,
+  ChatListSkeleton,
+  ChatMessagesSkeleton,
+  ChatEmptyDetail,
+  MessageTicks,
+  useChatHub,
+  type ChatThreadRow,
+  type ChatMsg,
+  type ChatFilter,
+} from "@/components/chat/chat-ui";
+import { apiGet, apiSend, EmptyState, type SellerNav } from "./ui-bits";
 
 /** The clickable "what is this chat about" bubble — product or order. */
 type ThreadContextCard =
   | { kind: "product"; productId: string; title: string; slug: string; storeSlug: string; image: string | null; priceMinor: number; compareAtPriceMinor: number | null }
   | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; itemCount: number; firstItemTitle: string | null; firstItemImage: string | null };
 
-function timeAgoShort(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-export default function SellerMessages({ onNavigate }: { onNavigate?: (n: SellerNav) => void } = {}) {
-  const [threads, setThreads] = useState<SellerThread[] | null>(null);
+export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: string | null; onNavigate?: (n: SellerNav) => void } = {}) {
+  const [threads, setThreads] = useState<ChatThreadRow[] | null>(null);
+  const [activeTotal, setActiveTotal] = useState(0);
+  const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [filter, setFilter] = useState<ChatFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [thread, setThread] = useState<{ shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
@@ -58,19 +51,30 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // debounce search input → API
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const loadThreads = useCallback(async () => {
     try {
-      const rows = await apiGet<SellerThread[]>("/api/store/chat/threads");
+      const params = new URLSearchParams({ size: "50" });
+      if (debouncedQ) params.set("q", debouncedQ);
+      if (filter === "active") params.set("filter", "active");
+      const d = await apiGet<ChatThreadRow[]>(`/api/store/chat/threads?${params.toString()}`);
+      const rows = d ?? [];
       setThreads(rows);
+      setActiveTotal(filter === "active" ? rows.length : rows.reduce((n, t) => n + (t.unreadCount > 0 ? 1 : 0), 0));
       return rows;
     } catch {
       setThreads([]);
       return [];
     }
-  }, []);
+  }, [debouncedQ, filter]);
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
@@ -88,6 +92,32 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
     }
   }, []);
 
+  /** Debounced background list refresh — new threads + authoritative state. */
+  const reloadThreadsSoon = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => {
+      void loadThreads();
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
+    }, 250);
+  }, [loadThreads]);
+
+  /** Optimistic list patch: fresh preview, unread bump, moved to the top. */
+  const patchRow = useCallback((threadId: string, body: string, senderType: string, at: string, isOpen: boolean) => {
+    setThreads((prev) => {
+      if (!prev) return prev;
+      const idx = prev.findIndex((t) => t.id === threadId);
+      if (idx === -1) return prev; // brand-new thread → the reload brings it in
+      const row = prev[idx];
+      const patched: ChatThreadRow = {
+        ...row,
+        lastMessageAt: at,
+        unreadCount: senderType === "shopper" && !isOpen ? row.unreadCount + 1 : row.unreadCount,
+        lastMessage: { body, senderType, createdAt: at, readAt: null },
+      };
+      return [patched, ...prev.filter((t) => t.id !== threadId)];
+    });
+  }, []);
+
   useEffect(() => {
     // List-first entry: no auto-open — auto-reading the newest thread would
     // instantly consume the unread badge the seller hasn't seen yet.
@@ -101,38 +131,45 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
     // the messages GET marks the thread read server-side — refresh the list so
     // the unread pill on the row (and the nav badge) drops immediately
     loadMessages(activeId).then(() => {
-      loadThreads();
+      void loadThreads();
       window.dispatchEvent(new Event("nomofee:chat-sync"));
     });
   }, [activeId, loadMessages, loadThreads]);
 
-  // live updates from the chat hub
-  useEffect(() => {
-    const socket = io("/?XTransformPort=3003", {
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      timeout: 10000,
-    });
-    socketRef.current = socket;
-    socket.on("connect", () => {
-      socket.emit("join", { rooms: (threads ?? []).map((t) => `thread:${t.id}`) });
-    });
-    socket.on("chat:message", (msg: ChatMsg & { threadId?: string }) => {
-      if (msg.threadId && msg.threadId === activeId) {
-        setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
-        if (msg.senderType === "shopper") {
-          // the shopper's message is visible right now — clear the badge at once
-          void apiSend("POST", `/api/store/chat/threads/${activeId}/read`, {}).catch(() => {});
+  // live updates via the chat hub (thread rooms + seller user room)
+  useChatHub({
+    threadRooms: useMemo(() => (threads ?? []).map((t) => `thread:${t.id}`), [threads]),
+    userRoom: sellerId ? `user:${sellerId}` : null,
+    handlers: {
+      onMessage: (msg) => {
+        if (msg.threadId && msg.threadId === activeId) {
+          setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
+          if (msg.senderType === "shopper") {
+            // arrived while the conversation is open — clear the badge + stamp ✓✓
+            void apiSend("POST", `/api/store/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
+          }
+          patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, true);
+        } else if (msg.threadId) {
+          patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, false);
         }
-      }
-      loadThreads();
-    });
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [threads, activeId, loadThreads]);
+        reloadThreadsSoon();
+      },
+      onActivity: () => reloadThreadsSoon(), // brand-new conversation arrives live
+      onRead: (r) => {
+        if (r.readerType !== "shopper") return; // shopper read → my ticks flip ✓✓
+        if (r.threadId === activeId) {
+          setMessages((prev) => (prev ? prev.map((m) => (m.senderType === "seller" && !m.readAt ? { ...m, readAt: r.at } : m)) : prev));
+        }
+        setThreads((prev) =>
+          prev
+            ? prev.map((t) =>
+                t.id === r.threadId && t.lastMessage && t.lastMessage.senderType === "seller" ? { ...t, lastMessage: { ...t.lastMessage, readAt: r.at } } : t
+              )
+            : prev
+        );
+      },
+    },
+  });
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -148,8 +185,8 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
       // dedupe — the socket broadcast may have delivered this message already
       setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");
-      loadThreads();
-      window.dispatchEvent(new Event("nomofee:chat-sync"));
+      patchRow(activeId, msg.body, msg.senderType, msg.createdAt, true);
+      reloadThreadsSoon();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the reply");
     } finally {
@@ -157,190 +194,198 @@ export default function SellerMessages({ onNavigate }: { onNavigate?: (n: Seller
     }
   };
 
-  if (threads === null) return <RowsSkeleton rows={5} />;
+  if (threads === null) return <RowsSkeleton5 />;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight">
-          <MessagesSquare className="h-5 w-5 text-primary" /> Messages
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Conversations with shoppers about your orders and products. New messages arrive in real time.
-        </p>
-      </div>
-
-      {threads.length === 0 ? (
-        <Card>
-          <CardContent className="p-2">
-            <EmptyState
-              icon={<MessagesSquare className="h-8 w-8" />}
-              title="No conversations yet"
-              hint="When shoppers message you from a product or an order, their messages show up here."
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-[300px_1fr]">
-          <aside className={cn("rounded-2xl border bg-card p-2 shadow-soft", activeId && "hidden md:block")}>
-            <ul className="space-y-1 max-h-[520px] overflow-y-auto">
-              {threads.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveId(t.id);
-                      setThread({ shopperName: t.shopperName, shopperEmail: t.shopperEmail, orderNumber: t.orderNumber, contextType: t.contextType, subject: t.subject });
-                    }}
-                    className={cn(
-                      "w-full rounded-xl p-3 text-left transition-colors min-h-[60px]",
-                      activeId === t.id ? "bg-teal-50 ring-1 ring-teal-200 dark:bg-teal-950/40" : "hover:bg-muted"
-                    )}
-                    aria-label={`Conversation with ${t.shopperName}${t.unreadCount > 0 ? `, ${t.unreadCount} unread messages` : ""}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[11px] font-extrabold text-white">
-                        {t.shopperName.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t.shopperName}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgoShort(t.lastMessageAt)}</span>
-                      {t.unreadCount > 0 ? (
-                        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${t.unreadCount} unread`}>
-                          {t.unreadCount > 99 ? "99+" : t.unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="flex items-center gap-1.5 truncate pt-1 pl-10 text-[11px] font-medium text-teal-700 dark:text-teal-300">
-                      {t.contextType === "order" && t.orderNumber ? (
-                        <>🧾 order {t.orderNumber}</>
-                      ) : t.contextType === "product" ? (
-                        <>🏷️ product enquiry</>
-                      ) : (
-                        <>💬 direct message</>
-                      )}
-                    </p>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </aside>
-
-          <section className={cn("flex flex-col rounded-2xl border bg-card shadow-soft", !activeId && "hidden md:flex", "min-h-[420px] md:min-h-[520px]")}>
-            {activeId && thread ? (
-              <>
-                <header className="flex items-center gap-2 border-b p-3">
-                  <button
-                    type="button"
-                    className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted"
-                    onClick={() => setActiveId(null)}
-                    aria-label="Back to inbox"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold">{thread.shopperName}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {thread.contextType === "order" && thread.orderNumber
-                        ? `Order ${thread.orderNumber} · `
-                        : thread.contextType === "product"
-                          ? "Product enquiry · "
-                          : ""}
-                      {thread.shopperEmail}
-                    </p>
-                  </div>
-                </header>
-
-                <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4 max-h-80 md:max-h-[380px]">
-                  {messages === null ? (
-                    <div className="flex h-full items-center justify-center">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <>
-                      {/* what the shopper is asking about — tap to jump there */}
-                      <SellerContextBubble onNavigate={onNavigate} context={context} />
-                      {messages.length === 0 ? (
-                        <p className="pt-6 text-center text-sm text-muted-foreground">No messages yet.</p>
-                      ) : (
-                        messages.map((m) => (
-                          <div key={m.id} className={cn("flex", m.senderType === "seller" ? "justify-end" : "justify-start")}>
-                            <div
-                              className={cn(
-                                "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
-                                m.senderType === "seller" ? "bg-brand-gradient text-white rounded-br-md" : "bg-muted rounded-bl-md"
-                              )}
-                            >
-                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                              <p className={cn("pt-1 text-[10px]", m.senderType === "seller" ? "text-white/70" : "text-muted-foreground")}>
-                                {m.senderType === "shopper" ? `${m.senderName} · ` : ""}
-                                {fmtDateTime(m.createdAt)}
-                              </p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <footer className="border-t p-3">
-                  {/* quick replies scaffold — chips fill the composer, seller stays in control */}
-                  <div className="mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowQuickReplies((v) => !v)}
-                      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold text-teal-700 hover:bg-teal-50 transition-colors"
-                      aria-expanded={showQuickReplies}
-                    >
-                      <Zap className="h-3 w-3" /> Quick replies
-                      <ChevronDown className={cn("h-3 w-3 transition-transform", showQuickReplies && "rotate-180")} aria-hidden />
-                    </button>
-                    {showQuickReplies ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {SELLER_QUICK_REPLIES.map((qr) => (
-                          <button
-                            key={qr.label}
-                            type="button"
-                            onClick={() => setDraft((d) => (d.trim() ? `${d.trimEnd()} ${qr.text}` : qr.text))}
-                            className="rounded-full bg-teal-50 px-3 py-1.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-200 transition-colors hover:bg-teal-100"
-                            title={qr.text}
-                          >
-                            {qr.label}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void reply();
-                        }
-                      }}
-                      rows={1}
-                      placeholder="Type a reply… (Enter to send)"
-                      aria-label="Reply"
-                      className="min-h-[44px] resize-none"
-                    />
-                    <Button onClick={reply} disabled={sending || !draft.trim()} className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110" aria-label="Send reply">
-                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      <span className="hidden sm:inline">Reply</span>
-                    </Button>
-                  </div>
-                </footer>
-              </>
+      <div className="grid gap-4 md:grid-cols-[360px_1fr]">
+        {/* master — header + search + pills + inbox list */}
+        <aside className={cn("space-y-3", activeId && "hidden md:block")}>
+          <ChatHeader
+            onBack={() => onNavigate?.({ view: "dashboard" })}
+            backLabel="Back to dashboard"
+            query={query}
+            onQuery={setQuery}
+            filter={filter}
+            onFilter={setFilter}
+            searchPlaceholder="Search chats"
+            activeCount={activeTotal}
+          />
+          <div className="rounded-2xl border bg-card shadow-soft">
+            {threads.length === 0 ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                {debouncedQ || filter === "active"
+                  ? "No conversations match — try a different search or filter."
+                  : "When shoppers message you from a product or an order, their messages show up here."}
+              </p>
             ) : (
-              <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-                Pick a conversation to reply.
-              </div>
+              <ul
+                className="space-y-1 overflow-y-auto p-2 max-h-96 md:max-h-[540px] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
+                aria-label="Chat threads"
+              >
+                {threads.map((t) => (
+                  <ChatListItem
+                    key={t.id}
+                    row={t}
+                    active={activeId === t.id}
+                    mySide="seller"
+                    onSelect={() => {
+                      setActiveId(t.id);
+                      setThread({ shopperName: t.displayName, shopperEmail: "", orderNumber: t.orderNumber, contextType: t.contextType, subject: t.subject });
+                    }}
+                  />
+                ))}
+              </ul>
             )}
-          </section>
-        </div>
-      )}
+          </div>
+        </aside>
+
+        {/* detail — conversation panel (mobile: full-screen slide-in) */}
+        <section
+          className={cn(
+            "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
+            activeId ? "flex h-[72dvh] min-h-[440px]" : "hidden md:flex md:h-[600px]",
+          )}
+        >
+          {activeId && thread ? (
+            <motion.div
+              key={activeId}
+              initial={{ opacity: 0, x: 56 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              className="flex h-full min-h-0 flex-col"
+            >
+              <header className="flex items-center gap-2 border-b p-3">
+                <button
+                  type="button"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted md:hidden"
+                  onClick={() => setActiveId(null)}
+                  aria-label="Back to chats"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-extrabold text-white">
+                  {thread.shopperName.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{thread.shopperName}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {thread.contextType === "order" && thread.orderNumber
+                      ? `Order ${thread.orderNumber} · `
+                      : thread.contextType === "product"
+                        ? "Product enquiry · "
+                        : ""}
+                    {thread.shopperEmail || thread.subject || "Direct message"}
+                  </p>
+                </div>
+              </header>
+
+              <div
+                ref={scrollRef}
+                className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
+              >
+                {messages === null ? (
+                  <ChatMessagesSkeleton />
+                ) : (
+                  <>
+                    {/* what the shopper is asking about — tap to jump there */}
+                    <SellerContextBubble onNavigate={onNavigate} context={context} />
+                    {messages.length === 0 ? (
+                      <p className="pt-6 text-center text-sm text-muted-foreground">No messages yet.</p>
+                    ) : (
+                      messages.map((m) => (
+                        <div key={m.id} className={cn("flex", m.senderType === "seller" ? "justify-end" : "justify-start")}>
+                          <div
+                            className={cn(
+                              "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
+                              m.senderType === "seller" ? "bg-brand-gradient text-white rounded-br-md" : "bg-muted rounded-bl-md"
+                            )}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                            <p className={cn("flex items-center justify-end gap-1 pt-1 text-[10px]", m.senderType === "seller" ? "text-white/70" : "text-muted-foreground")}>
+                              {m.senderType === "shopper" ? `${m.senderName} · ` : ""}
+                              {fmtDateTime(m.createdAt)}
+                              {m.senderType === "seller" ? <MessageTicks readAt={m.readAt} light className="h-3 w-3" /> : null}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+              </div>
+
+              <footer className="border-t p-3">
+                {/* quick replies — chips fill the composer, seller stays in control */}
+                <div className="mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickReplies((v) => !v)}
+                    className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-50 transition-colors"
+                    aria-expanded={showQuickReplies}
+                  >
+                    <Zap className="h-3 w-3" /> Quick replies
+                    <ChevronDown className={cn("h-3 w-3 transition-transform", showQuickReplies && "rotate-180")} aria-hidden />
+                  </button>
+                  {showQuickReplies ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {SELLER_QUICK_REPLIES.map((qr) => (
+                        <button
+                          key={qr.label}
+                          type="button"
+                          onClick={() => setDraft((d) => (d.trim() ? `${d.trimEnd()} ${qr.text}` : qr.text))}
+                          className="rounded-full bg-teal-50 px-3 py-1.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-200 transition-colors hover:bg-teal-100"
+                          title={qr.text}
+                        >
+                          {qr.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex items-end gap-2">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void reply();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Type a reply… (Enter to send)"
+                    aria-label="Reply"
+                    className="min-h-[44px] resize-none"
+                  />
+                  <Button onClick={reply} disabled={sending || !draft.trim()} className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110" aria-label="Send reply">
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    <span className="hidden sm:inline">Reply</span>
+                  </Button>
+                </div>
+              </footer>
+            </motion.div>
+          ) : (
+            <ChatEmptyDetail />
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** First-paint skeleton for the whole hub (list + detail). */
+function RowsSkeleton5() {
+  return (
+    <div className="grid gap-4 md:grid-cols-[360px_1fr]">
+      <Card>
+        <CardContent className="p-2">
+          <ChatListSkeleton rows={5} />
+        </CardContent>
+      </Card>
+      <Card className="hidden md:block">
+        <CardContent className="h-[420px] p-2" />
+      </Card>
     </div>
   );
 }

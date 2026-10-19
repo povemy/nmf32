@@ -6,7 +6,6 @@
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { io, type Socket } from "socket.io-client";
 import {
   ShoppingBag,
   Search,
@@ -59,6 +58,7 @@ import {
   EmptyState,
   QtyStepper,
   fmtDateTime,
+  fetchEnvelope,
   type CartItemT,
   type CategoryT,
   type ShopperCtx,
@@ -70,6 +70,18 @@ import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
 import GenerateStoreView, { ClaimView } from "./generate";
 import MeHubView from "./me-hub";
+import {
+  ChatHeader,
+  ChatListItem,
+  ChatListSkeleton,
+  ChatMessagesSkeleton,
+  ChatEmptyDetail,
+  MessageTicks,
+  useChatHub,
+  type ChatThreadRow,
+  type ChatMsg,
+  type ChatFilter,
+} from "@/components/chat/chat-ui";
 import NotificationBell from "./notification-bell";
 
 const VIEW_KEY = "sm_shopper_view";
@@ -785,64 +797,55 @@ function ShopperAuthDialog() {
 
 // ---------------------------------------------------------------- messages (chat)
 
-type ThreadRow = {
-  id: string;
-  storeId: string;
-  storeName: string;
-  storeSlug: string;
-  storeLogoUrl: string | null;
-  orderNumber: string | null;
-  contextType: string | null;
-  subject: string | null;
-  lastMessageAt: string;
-  unreadCount: number;
-  lastMessage: { body: string; senderType: string; createdAt: string } | null;
-};
-
-type ChatMsg = { id: string; senderType: "shopper" | "seller"; senderName: string; body: string; createdAt: string };
-
-/** The clickable "what is this chat about" bubble — product or order. */
+/** The "what is this chat about" bubble — product or order. */
 type ThreadContextCard =
   | { kind: "product"; productId: string; title: string; slug: string; storeSlug: string; image: string | null; priceMinor: number; compareAtPriceMinor: number | null }
   | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; itemCount: number; firstItemTitle: string | null; firstItemImage: string | null };
 
-function timeAgoShort(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
+/** The shopper messages hub — master-detail chat per the messaging redesign:
+ *  ChatHeader (back button + "Chats" + live search + All/Active pills), rich
+ *  thread list (previews, ✓/✓✓ ticks, unread badges, smart timestamps),
+ *  slide-in conversation on mobile, split pane on desktop, and instant
+ *  two-way sync through the socket.io chat hub (thread + user rooms). */
 function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThreadId?: string }) {
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const shopper = me.loaded ? me.shopper : null;
 
-  const [threads, setThreads] = useState<ThreadRow[] | null>(null);
+  const [threads, setThreads] = useState<ChatThreadRow[] | null>(null);
+  const [activeTotal, setActiveTotal] = useState(0);
+  const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [filter, setFilter] = useState<ChatFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(initialThreadId ?? null);
-  const [messages, setMessages] = useState<ChatMsg[] | null>(null);
   const [activeThread, setActiveThread] = useState<{ storeName: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
+  const [messages, setMessages] = useState<ChatMsg[] | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // debounce search input → API
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const loadThreads = useCallback(async () => {
     try {
-      const rows = await fetchJson<ThreadRow[]>("/api/chat/threads");
-      setThreads(rows);
-      return rows;
+      const params = new URLSearchParams({ size: "50" });
+      if (debouncedQ) params.set("q", debouncedQ);
+      if (filter === "active") params.set("filter", "active");
+      const { data, meta } = await fetchEnvelope<ChatThreadRow[]>(`/api/chat/threads?${params.toString()}`);
+      setThreads(data);
+      setActiveTotal(filter === "active" ? meta?.total ?? data.length : data.reduce((n, t) => n + (t.unreadCount > 0 ? 1 : 0), 0));
+      return data;
     } catch {
       setThreads([]);
       return [];
     }
-  }, []);
+  }, [debouncedQ, filter]);
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
@@ -858,6 +861,32 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       setMessages([]);
       setContext(null);
     }
+  }, []);
+
+  /** Debounced background list refresh — new threads + authoritative state. */
+  const reloadThreadsSoon = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => {
+      void loadThreads();
+      window.dispatchEvent(new Event("nomofee:chat-sync"));
+    }, 250);
+  }, [loadThreads]);
+
+  /** Optimistic list patch: fresh preview, unread bump, moved to the top. */
+  const patchRow = useCallback((threadId: string, body: string, senderType: string, at: string, isOpen: boolean) => {
+    setThreads((prev) => {
+      if (!prev) return prev;
+      const idx = prev.findIndex((t) => t.id === threadId);
+      if (idx === -1) return prev; // unknown (brand-new) thread → reload covers it
+      const row = prev[idx];
+      const patched: ChatThreadRow = {
+        ...row,
+        lastMessageAt: at,
+        unreadCount: senderType === "seller" && !isOpen ? row.unreadCount + 1 : row.unreadCount,
+        lastMessage: { body, senderType, createdAt: at, readAt: null },
+      };
+      return [patched, ...prev.filter((t) => t.id !== threadId)];
+    });
   }, []);
 
   // initial load
@@ -883,42 +912,46 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     // the detail GET marks the thread read server-side — refresh the list so
     // the unread pill on the row (and the header badge) drops immediately
     loadMessages(activeId).then(() => {
-      loadThreads();
+      void loadThreads();
       window.dispatchEvent(new Event("nomofee:chat-sync"));
     });
   }, [activeId, loadMessages, loadThreads]);
 
-  // live updates via the socket.io chat hub
-  useEffect(() => {
-    if (!shopper) return;
-    const socket = io("/?XTransformPort=3003", {
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      timeout: 10000,
-    });
-    socketRef.current = socket;
-    socket.on("connect", () => {
-      // join all thread rooms so the sidebar stays fresh too
-      const rooms = (threads ?? []).map((t) => `thread:${t.id}`);
-      socket.emit("join", { rooms });
-    });
-    socket.on("chat:message", (msg: ChatMsg & { threadId?: string }) => {
-      if (msg.threadId && msg.threadId === activeId) {
-        setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
-        if (msg.senderType === "seller") {
-          // message arrived while the shopper is looking at this conversation —
-          // clear the badge straight away instead of waiting for the poller
-          void postJson(`/api/chat/threads/${activeId}/read`, {}).catch(() => {});
+  // live updates via the socket.io chat hub (thread rooms + user inbox room)
+  useChatHub({
+    threadRooms: useMemo(() => (threads ?? []).map((t) => `thread:${t.id}`), [threads]),
+    userRoom: shopper ? `user:${shopper.id}` : null,
+    handlers: {
+      onMessage: (msg) => {
+        if (msg.threadId && msg.threadId === activeId) {
+          setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
+          if (msg.senderType === "seller") {
+            // arrived while the shopper is looking at this conversation —
+            // clear the badge + stamp ✓✓ for the seller straight away
+            void postJson(`/api/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
+          }
+          patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, true);
+        } else if (msg.threadId) {
+          patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, false);
         }
-      }
-      loadThreads();
-    });
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [shopper, threads, activeId, loadThreads]);
+        reloadThreadsSoon();
+      },
+      onActivity: () => reloadThreadsSoon(), // brand-new thread or inbox refresh
+      onRead: (r) => {
+        if (r.readerType !== "seller") return; // seller read → my ticks flip ✓✓
+        if (r.threadId === activeId) {
+          setMessages((prev) => (prev ? prev.map((m) => (m.senderType === "shopper" && !m.readAt ? { ...m, readAt: r.at } : m)) : prev));
+        }
+        setThreads((prev) =>
+          prev
+            ? prev.map((t) =>
+                t.id === r.threadId && t.lastMessage && t.lastMessage.senderType === "shopper" ? { ...t, lastMessage: { ...t.lastMessage, readAt: r.at } } : t
+              )
+            : prev
+        );
+      },
+    },
+  });
 
   // auto-scroll to latest
   useEffect(() => {
@@ -932,10 +965,10 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     setSending(true);
     try {
       const msg = await postJson<ChatMsg>(`/api/chat/threads/${activeId}/messages`, { body: text });
-      setMessages((prev) => (prev ? [...prev, msg] : [msg]));
+      setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");
-      loadThreads();
-      window.dispatchEvent(new Event("nomofee:chat-sync"));
+      patchRow(activeId, msg.body, msg.senderType, msg.createdAt, true);
+      reloadThreadsSoon();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send the message");
     } finally {
@@ -961,82 +994,79 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:py-8">
-      <div className="pb-4">
-        <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight">
-          <MessagesSquare className="h-6 w-6 text-teal-700" /> Messages
-        </h1>
-        <p className="text-sm text-muted-foreground">Chat with sellers about your orders — replies arrive in real time.</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-[300px_1fr]">
-        {/* thread list */}
-        <aside className={cn("rounded-2xl border bg-card p-2 shadow-soft", activeId && "hidden md:block")}>
-          {threads === null ? (
-            <div className="flex justify-center p-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : threads.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              No conversations yet — use “Message seller” on any product or “Contact seller” on an order to start one.
-            </p>
-          ) : (
-            <ul className="space-y-1 max-h-96 md:max-h-[520px] overflow-y-auto">
-              {threads.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
+    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">
+      <div className="grid gap-4 md:grid-cols-[360px_1fr]">
+        {/* master — header + search + filter pills + thread list (hidden on
+            mobile while a conversation is open: the panel replaces the list) */}
+        <aside className={cn("space-y-3", activeId && "hidden md:block")}>
+          <ChatHeader
+            onBack={() => ctx.nav({ name: "me" })}
+            backLabel="Back to my account"
+            query={query}
+            onQuery={setQuery}
+            filter={filter}
+            onFilter={setFilter}
+            searchPlaceholder="Search chats"
+            activeCount={activeTotal}
+          />
+          <div className="rounded-2xl border bg-card shadow-soft">
+            {threads === null ? (
+              <ChatListSkeleton />
+            ) : threads.length === 0 ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                {debouncedQ || filter === "active"
+                  ? "No conversations match — try a different search or filter."
+                  : "No conversations yet — use “Message seller” on any product or “Contact seller” on an order to start one."}
+              </p>
+            ) : (
+              <ul
+                className="space-y-1 overflow-y-auto p-2 max-h-96 md:max-h-[540px] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
+                aria-label="Chat threads"
+              >
+                {threads.map((t) => (
+                  <ChatListItem
+                    key={t.id}
+                    row={t}
+                    active={activeId === t.id}
+                    mySide="shopper"
+                    onSelect={() => {
                       setActiveId(t.id);
-                      setActiveThread({ storeName: t.storeName, orderNumber: t.orderNumber, contextType: t.contextType, subject: t.subject });
+                      setActiveThread({ storeName: t.displayName, orderNumber: t.orderNumber, contextType: t.contextType, subject: t.subject });
                     }}
-                    className={cn(
-                      "w-full rounded-xl p-3 text-left transition-colors min-h-[60px]",
-                      activeId === t.id ? "bg-teal-50 ring-1 ring-teal-200" : "hover:bg-muted"
-                    )}
-                    aria-label={`Conversation with ${t.storeName}${t.unreadCount > 0 ? `, ${t.unreadCount} unread messages` : ""}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-gradient text-[11px] font-extrabold text-white">
-                        {t.storeLogoUrl ? (
-                          <img src={t.storeLogoUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          t.storeName.slice(0, 1).toUpperCase()
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t.storeName}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgoShort(t.lastMessageAt)}</span>
-                      {t.unreadCount > 0 ? (
-                        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${t.unreadCount} unread`}>
-                          {t.unreadCount > 99 ? "99+" : t.unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
-                    {t.contextType ? (
-                      <p className="truncate pt-1 pl-10 text-[11px] font-medium text-teal-700">
-                        {t.contextType === "order" ? "🧾 order enquiry" : "🏷️ product enquiry"}
-                      </p>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
         </aside>
 
-        {/* conversation */}
-        <section className={cn("flex flex-col rounded-2xl border bg-card shadow-soft", !activeId && "hidden md:flex", "min-h-[420px] md:min-h-[520px]")}>
+        {/* detail — conversation panel (mobile: full-screen slide-in) */}
+        <section
+          className={cn(
+            "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-soft md:flex",
+            activeId ? "flex h-[72dvh] min-h-[440px]" : "hidden md:flex md:h-[600px]",
+          )}
+        >
           {activeId && activeThread ? (
-            <>
+            <motion.div
+              key={activeId}
+              initial={{ opacity: 0, x: 56 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              className="flex h-full min-h-0 flex-col"
+            >
               <header className="flex items-center gap-2 border-b p-3">
                 <button
                   type="button"
-                  className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted md:hidden"
                   onClick={() => setActiveId(null)}
-                  aria-label="Back to conversations"
+                  aria-label="Back to chats"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-gradient text-xs font-extrabold text-white">
+                  {activeThread.storeName.slice(0, 1).toUpperCase()}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{activeThread.storeName}</p>
                   <p className="truncate text-xs text-muted-foreground">
@@ -1049,11 +1079,12 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                 </div>
               </header>
 
-              <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4 max-h-80 md:max-h-[380px]">
+              <div
+                ref={scrollRef}
+                className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/25"
+              >
                 {messages === null ? (
-                  <div className="flex h-full items-center justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
+                  <ChatMessagesSkeleton />
                 ) : (
                   <>
                     {/* what this conversation is about — tap to jump there */}
@@ -1070,9 +1101,10 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                             )}
                           >
                             <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                            <p className={cn("pt-1 text-[10px]", m.senderType === "shopper" ? "text-white/70" : "text-muted-foreground")}>
+                            <p className={cn("flex items-center justify-end gap-1 pt-1 text-[10px]", m.senderType === "shopper" ? "text-white/70" : "text-muted-foreground")}>
                               {m.senderType === "seller" ? `${m.senderName} · ` : ""}
                               {fmtDateTime(m.createdAt)}
+                              {m.senderType === "shopper" ? <MessageTicks readAt={m.readAt} light className="h-3 w-3" /> : null}
                             </p>
                           </div>
                         </div>
@@ -1104,11 +1136,9 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                   </Button>
                 </div>
               </footer>
-            </>
+            </motion.div>
           ) : (
-            <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-              Pick a conversation to start chatting.
-            </div>
+            <ChatEmptyDetail />
           )}
         </section>
       </div>

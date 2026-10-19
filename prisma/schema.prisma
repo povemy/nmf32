@@ -201,8 +201,11 @@ model ChatMessage {
   senderType String
   senderName String
   body       String
+  readAt     DateTime?
   createdAt  DateTime   @default(now())
   thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, readAt])
 }
 
 model Store {

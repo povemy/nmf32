@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
-import { broadcastToThread } from "@/lib/chat";
+import { broadcastToThread, notifyUserInbox } from "@/lib/chat";
 import { resolveThreadContext } from "@/lib/chat-context";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,18 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
   });
   if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
 
-  await db.chatThread.update({ where: { id: thread.id }, data: { sellerUnread: 0 } });
+  const now = new Date();
+  const [_, marked] = await Promise.all([
+    db.chatThread.update({ where: { id: thread.id }, data: { sellerUnread: 0 } }),
+    db.chatMessage.updateMany({
+      where: { threadId: thread.id, senderType: { not: "seller" }, readAt: null },
+      data: { readAt: now },
+    }),
+  ]);
+  if (marked.count > 0) {
+    // shopper's open panel flips their messages to ✓✓ live
+    await broadcastToThread(thread.id, "chat:read", { threadId: thread.id, readerType: "seller", at: now.toISOString() });
+  }
 
   const context = await resolveThreadContext({
     contextType: thread.contextType,
@@ -49,6 +60,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       senderName: m.senderName,
       body: m.body,
       createdAt: m.createdAt,
+      readAt: m.readAt,
     })),
   });
 });
@@ -80,8 +92,17 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     senderName: store.name,
     body: message.body,
     createdAt: message.createdAt,
+    readAt: null,
   };
-  await broadcastToThread(thread.id, "chat:message", payload);
+  // thread room → open panels; shopper user room → inbox feed refresh
+  await broadcastToThread(thread.id, "chat:message", payload, [`user:${thread.shopperId}`]);
+  await notifyUserInbox([thread.shopperId], {
+    threadId: thread.id,
+    event: "chat:activity",
+    at: new Date().toISOString(),
+    preview: message.body,
+    senderType: "seller",
+  });
   await logActivitySafe(me.id, me.email);
   return ok(payload);
 });

@@ -1,30 +1,62 @@
 import { db } from "@/lib/db";
-import { handle, ok, ApiError } from "@/lib/api";
+import { handle, ok, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
-import { broadcastToThread } from "@/lib/chat";
+import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
 import type { ChatMessage } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/chat/threads — the signed-in shopper's conversations.
-// `unreadCount` = seller messages newer than the shopper's last read mark.
-export const GET = handle(async () => {
+// GET /api/chat/threads?q=&filter=all|active&page=&size= — the signed-in
+// shopper's conversations, newest activity first. Search matches store name,
+// subject, order reference or the latest message body. `filter=active` keeps
+// only threads with unread activity. `unreadCount` = seller messages newer
+// than the shopper's last read mark.
+export const GET = handle(async (req: Request) => {
   const me = await requireShopper();
-  const threads = await db.chatThread.findMany({
-    where: { shopperId: me.id },
-    orderBy: { lastMessageAt: "desc" },
-    include: {
-      store: { select: { id: true, name: true, slug: true, logoUrl: true } },
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
-  });
-  return ok(
+  const url = new URL(req.url);
+  const q = (url.searchParams.get("q") ?? "").trim();
+  const filter = url.searchParams.get("filter") === "active" ? "active" : "all";
+  const { page, size, skip, take } = getPagination(url, 100);
+
+  // Search across store name, subject/order reference AND the latest message
+  // body: SQLite `contains` is ASCII-case-insensitive, good enough for lookup.
+  const baseWhere = {
+    shopperId: me.id,
+    ...(q
+      ? {
+          OR: [
+            { store: { name: { contains: q } } },
+            { store: { slug: { contains: q } } },
+            { subject: { contains: q } },
+            { orderNumber: { contains: q } },
+            { messages: { some: { body: { contains: q } } } },
+          ],
+        }
+      : {}),
+    ...(filter === "active" ? { shopperUnread: { gt: 0 } } : {}),
+  };
+
+  const [threads, total] = await Promise.all([
+    db.chatThread.findMany({
+      where: baseWhere,
+      orderBy: { lastMessageAt: "desc" },
+      skip,
+      take,
+      include: {
+        store: { select: { id: true, name: true, slug: true, logoUrl: true } },
+        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    }),
+    db.chatThread.count({ where: baseWhere }),
+  ]);
+
+  return okPaged(
     threads.map((t) => ({
       id: t.id,
       storeId: t.store.id,
-      storeName: t.store.name,
+      displayName: t.store.name,
+      avatarUrl: t.store.logoUrl,
       storeSlug: t.store.slug,
-      storeLogoUrl: t.store.logoUrl,
       orderNumber: t.orderNumber,
       contextType: t.contextType,
       subject: t.subject,
@@ -32,9 +64,10 @@ export const GET = handle(async () => {
       lastMessageAt: t.lastMessageAt,
       unreadCount: t.shopperUnread,
       lastMessage: t.messages[0]
-        ? { body: t.messages[0].body, senderType: t.messages[0].senderType, createdAt: t.messages[0].createdAt }
+        ? { body: t.messages[0].body, senderType: t.messages[0].senderType, createdAt: t.messages[0].createdAt, readAt: t.messages[0].readAt }
         : null,
-    }))
+    })),
+    { page, size, total }
   );
 });
 
@@ -132,13 +165,25 @@ export const POST = handle(async (req: Request) => {
       where: { id: thread.id },
       data: { lastMessageAt: new Date(), sellerUnread: { increment: 1 } },
     });
-    await broadcastToThread(thread.id, "chat:message", {
+    const payload = {
       id: message.id,
       threadId: thread.id,
       senderType: "shopper",
       senderName: me.fullName,
       body: message.body,
       createdAt: message.createdAt,
+      readAt: null,
+    };
+    const sellerUserId = await sellerIdForStore(store.id);
+    // thread room → open conversation panels; seller user room → inbox push
+    // (brand-new thread appears live, no refresh needed)
+    await broadcastToThread(thread.id, "chat:message", payload, sellerUserId ? [`user:${sellerUserId}`] : []);
+    await notifyUserInbox([sellerUserId], {
+      threadId: thread.id,
+      event: "chat:activity",
+      at: new Date().toISOString(),
+      preview: message.body,
+      senderType: "shopper",
     });
   }
 

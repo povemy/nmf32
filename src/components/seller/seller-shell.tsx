@@ -263,7 +263,7 @@ export default function SellerShell() {
             {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
-            {nav.view === "messages" && <SellerMessages onNavigate={navigate} />}
+            {nav.view === "messages" && <SellerMessages sellerId={sellerId} onNavigate={navigate} />}
             {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
             {nav.view === "builder" && (
               <PageBuilder
