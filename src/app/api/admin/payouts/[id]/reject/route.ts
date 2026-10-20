@@ -50,11 +50,21 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     await tx.payout.update({ where: { id }, data: { failReason: reason } });
   });
 
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route): stable
+  // `{event}.{channel}:{payoutId}` keys; rejection replays stay single-delivery.
   await notify({
     event: "payout.rejected",
     channel: "email",
     recipient: seller.email,
     subject: `Payout request ${payout.referenceNo} not approved`,
+    dedupKey: `payout.rejected.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.rejected",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout request ${payout.referenceNo} not approved`,
+    dedupKey: `payout.rejected.inapp:${payout.id}`,
   });
 
   await auditAdmin({

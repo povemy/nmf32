@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   apiGet,
   apiSend,
+  ageOf,
   runMutation,
   StoreMe,
   SellerNav,
@@ -39,12 +40,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   BadgeCheck,
   BadgePercent,
+  Bell,
   Blocks,
   Clock3,
   DatabaseZap,
@@ -271,6 +275,7 @@ export default function SellerShell() {
             <span className="hidden sm:inline">View storefront</span>
             <span className="sm:hidden">Store</span>
           </Button>
+          <SellerNotificationBell />
           <Button variant="ghost" size="icon" onClick={logout} aria-label="Sign out" className="text-muted-foreground">
             <LogOut className="h-4 w-4" />
           </Button>
@@ -310,6 +315,146 @@ export default function SellerShell() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- notifications
+
+// FIN-3-c — seller in-app notification bell. Feeds from the NotificationLog
+// rows (channel "inapp") the finance flows already write for the seller email:
+// order.paid (FIN-2-b) + payout requested/approved/paid/failed/rejected
+// (FIN-2-a/FIN-3-b). The shopper bell is a different subsystem (Notification
+// model via /api/me/notifications) and is intentionally untouched.
+
+type SellerNotificationRow = { id: string; subject: string; createdAt: string; event: string };
+
+type SellerNotificationsPayload = { notifications: SellerNotificationRow[]; recentCount: number };
+
+/** House scrollbar style (same treatment as the shopper bell panel). */
+const SELLER_BELL_SCROLL =
+  "max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent";
+
+/** 24h recency = client-side "new" heuristic: NotificationLog has no read /
+ *  seen column (adding fake read-tracking was out of scope), so "within the
+ *  last 24h" is the honest approximation of "unread". */
+const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function SellerNotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<SellerNotificationsPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await apiGet<SellerNotificationsPayload>("/api/store/notifications");
+      setData(d);
+      setErrored(false);
+    } catch (e) {
+      // Silent by design — a failed bell must never break the seller shell:
+      // keep the last data (no badge flicker), warn for debugging only.
+      setErrored(true);
+      console.warn("[seller-bell] notifications fetch failed", e instanceof Error ? e.message : e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Badge freshness without aggressive polling: fetch once on mount (dot only
+  // needs recentCount) and refetch whenever the popover opens.
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const onOpenChange = (v: boolean) => {
+    setOpen(v);
+    if (v) void load();
+  };
+
+  const recent = data?.recentCount ?? 0;
+  const rows = data?.notifications ?? null;
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative text-muted-foreground"
+          aria-label="Seller notifications"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+        >
+          <Bell className="h-4 w-4" aria-hidden="true" />
+          {recent > 0 ? (
+            <span
+              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+              aria-hidden="true"
+            />
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 rounded-2xl p-0 sm:w-96" role="dialog" aria-label="Seller notifications panel">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <h2 className="text-sm font-semibold">Notifications</h2>
+          {recent > 0 ? (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 tabular-nums">
+              {recent} new
+            </span>
+          ) : null}
+        </div>
+
+        {loading && !rows ? (
+          <div className="space-y-3 p-4" aria-label="Loading notifications">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-3/4" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !rows || rows.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 px-6 py-10 text-center" aria-label="No notifications">
+            <span className="rounded-full bg-muted p-4">
+              <Bell className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+            </span>
+            <p className="text-sm font-semibold">{errored && !data ? "Notifications unavailable" : "No notifications yet"}</p>
+            <p className="max-w-[16rem] text-xs text-muted-foreground">
+              {errored && !data
+                ? "Couldn't load right now — it will retry next time you open the bell."
+                : "Payout and order updates will appear here."}
+            </p>
+          </div>
+        ) : (
+          <ul className={cn("divide-y", SELLER_BELL_SCROLL)} aria-label="Notification list">
+            {rows.map((n) => {
+              const isNew = Date.now() - new Date(n.createdAt).getTime() < RECENT_WINDOW_MS;
+              return (
+                <li key={n.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium" title={n.subject}>
+                      {n.subject}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      <span title={new Date(n.createdAt).toLocaleString("en-MY")}>{ageOf(n.createdAt)}</span>
+                      <span aria-hidden="true"> · </span>
+                      <span className="lowercase">{n.event}</span>
+                    </p>
+                  </div>
+                  {isNew ? (
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" role="img" aria-label="Recent" />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -58,11 +58,22 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     return t;
   });
 
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route): stable
+  // `{event}.{channel}:{payoutId}` keys so webhook/ops replays converge on the
+  // first delivered copy. Inapp subject mirrors the email wording.
   await notify({
     event: "payout.paid",
     channel: "email",
     recipient: seller.email,
     subject: `Payout ${payout.referenceNo} on the way`,
+    dedupKey: `payout.paid.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.paid",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} on the way`,
+    dedupKey: `payout.paid.inapp:${payout.id}`,
   });
 
   await auditAdmin({

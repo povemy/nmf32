@@ -21,6 +21,9 @@ type Ctx = { params: Promise<{ id: string }> };
 // (requested → processing). updateMany is atomic at the row level: the loser
 // of the race re-evaluates the WHERE clause against the winner's committed
 // write, matches 0 rows, and is rejected before any ledger posting happens.
+// FIN-3c: that transaction now also takes the Wallet row lock FOR UPDATE as
+// its very first statement (see inline) so the balance re-verification reads
+// ledger truth serialized against refund/adjust flows.
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
   if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
@@ -66,6 +69,12 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   });
 
   const txn = await db.$transaction(async (tx) => {
+    // FIN-3c lock order: the Wallet row is locked FIRST inside this tx — the
+    // refund flow locks Order→Wallet and approve locks Wallet only (no cycle),
+    // so this serializes the balance re-verify below against an in-flight T5
+    // (previously the truth read could pass on pre-refund ledger state).
+    await tx.$queryRaw`SELECT id FROM "Wallet" WHERE id = ${payout.walletId} FOR UPDATE`;
+
     // 1) CLAIM — conditional update is the atomic race guard. If another
     // request already claimed (or the state moved on) this matches 0 rows.
     const claim = await tx.payout.updateMany({
@@ -113,11 +122,23 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     return txn;
   });
 
+  // FIN-3b (3b.1) — dedupKey pattern: each notification carries a stable
+  // `{event}.{channel}:{payoutId}` key; the FIN-1 unique index on
+  // (channel, dedupKey) makes any replayed delivery (retry, racing processor)
+  // a silent skip instead of a duplicate email/in-app row.
   await notify({
     event: "payout.approved",
     channel: "email",
     recipient: seller.email,
     subject: `Payout ${payout.referenceNo} approved — transfer on the way`,
+    dedupKey: `payout.approved.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.approved",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} approved`,
+    dedupKey: `payout.approved.inapp:${payout.id}`,
   });
 
   await auditAdmin({

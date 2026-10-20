@@ -59,17 +59,30 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     return t;
   });
 
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route). NOTE: this route has
+  // TWO email recipients (ops + seller); dedupKey uniqueness is (channel, dedupKey)
+  // so the ops copy carries a recipient-scoped key (`…:ops`, FIN-2-a convention) —
+  // reusing the seller's key here would silently suppress the seller email.
   await notify({
     event: "payout.failed",
     channel: "email",
     recipient: "ops@nomofee.io",
     subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.email:${payout.id}:ops`,
   });
   await notify({
     event: "payout.failed",
     channel: "email",
     recipient: seller.email,
     subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.failed",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.inapp:${payout.id}`,
   });
 
   await auditAdmin({

@@ -192,7 +192,15 @@ export function CommissionSettingsView() {
   );
   const exPercentPart = Math.round(exBase * Number(form.defaultPercent || "0")) / 100;
   const exCommission = Math.round(exPercentPart) + toMinor(form.fixedFee || "0");
-  const exNet = exBase + toMinor(exShipping || "0") - exCommission;
+  // FIN-3b (orchestrator carry-over a) — align the estimate with FIN-1's fixed
+  // math (computeOrderCommissions): seller net = customer-paid gross
+  // (price − discount + shipping) − commission. The old `exBase + shipping −
+  // commission` double-counted shipping whenever the commission base included
+  // it (exBase already contains shipping when appliesToShipping=true).
+  // lib/commission's reconcileSplits stays server-side (module imports db/Prisma,
+  // not client-safe) — this single-item estimate mirrors the same invariant:
+  // sellerNet + commission === subtotal − discount + shipping.
+  const exNet = toMinor(exPrice || "0") - toMinor(exDiscount || "0") + toMinor(exShipping || "0") - exCommission;
 
   return (
     <div className="space-y-4">

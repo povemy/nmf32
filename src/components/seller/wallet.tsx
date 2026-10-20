@@ -20,6 +20,7 @@ import {
   type SellerNav,
   type SellerWallet,
 } from "./ui-bits";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowLeft, ArrowRight, Banknote, Clock3, Coins, Landmark, PiggyBank, Plus, ReceiptText, ShieldCheck, Wallet2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type WalletData = {
   wallet: SellerWallet;
@@ -48,6 +50,7 @@ type WalletData = {
     status: string;
     method: string;
     paidAt: string | null;
+    failReason?: string | null; // seller-safe reason written by the fail/reject routes (see PayoutStatusChip note)
     createdAt: string;
   }[];
   minPayoutMinor?: number;
@@ -55,6 +58,44 @@ type WalletData = {
 };
 
 const BANKS = ["Maybank", "CIMB", "Public Bank", "Bank Rakyat", "Hong Leong"];
+
+// FIN-3b (3b.2) — seller-facing payout status labels. Display-only map: the
+// API keeps returning the raw status strings (requested/processing/paid/…);
+// every payout status on the wallet renders through PayoutStatusChip so the
+// wording is consistent between the payout table, the open-request banner and
+// the activity feed. "Paid" is only ever shown when the row's status is paid
+// (paidAt set server-side by the mark-paid/PSP-confirmed transition).
+const STATUS_LABELS: Record<string, string> = {
+  requested: "Awaiting approval",
+  processing: "Processing",
+  paid: "Paid",
+  failed: "Failed",
+  rejected: "Rejected",
+  returned: "Returned",
+  reversed: "Reversed",
+};
+
+// Same tones the shared seller StatusChip assigns to these statuses (amber in
+// progress, emerald paid, rose failed/rejected, muted for future/rare states).
+const PAYOUT_CHIP_CLASS: Record<string, string> = {
+  requested: "bg-amber-100 text-amber-800 border-amber-200",
+  processing: "bg-amber-100 text-amber-800 border-amber-200",
+  paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  failed: "bg-rose-100 text-rose-800 border-rose-200",
+  rejected: "bg-rose-100 text-rose-800 border-rose-200",
+};
+
+function PayoutStatusChip({ status, className }: { status: string; className?: string }) {
+  const s = (status ?? "").toLowerCase();
+  return (
+    <Badge
+      variant="outline"
+      className={cn("border font-medium", PAYOUT_CHIP_CLASS[s] ?? "bg-muted text-muted-foreground border-border", className)}
+    >
+      {STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
+    </Badge>
+  );
+}
 
 export default function SellerWallet({ focusActivityId, onNavigate }: { focusActivityId?: string; onNavigate?: (n: SellerNav) => void } = {}) {
   // Individual activity page (deep-linkable, same pattern as Orders detail)
@@ -110,7 +151,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
                 Requested {fmtDateTime(openRequest.createdAt)}. NOMOFEE finance reviews payout requests — the amount stays in your available balance until the transfer is initiated.
               </p>
             </div>
-            <StatusChip status="requested" />
+            <PayoutStatusChip status="requested" />
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
@@ -288,7 +329,18 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.referenceNo}</TableCell>
                       <TableCell className="capitalize">{p.method.replace(/_/g, " ")}</TableCell>
-                      <TableCell><StatusChip status={p.status} /></TableCell>
+                      <TableCell>
+                        <PayoutStatusChip status={p.status} />
+                        {/* Failed rows surface the fail/reject-route reason (admin-entered,
+                            seller-facing wording — e.g. "bank account closed"; the PSP path
+                            writes provider-reported reasons). No stack traces or internal
+                            error codes are ever written to this field, so it is safe to show. */}
+                        {p.status === "failed" && p.failReason ? (
+                          <p className="mt-1 max-w-48 truncate text-[11px] text-muted-foreground" title={p.failReason}>
+                            {p.failReason}
+                          </p>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{formatMinor(p.amountMinor)}</TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">{p.paidAt ? fmtDateTime(p.paidAt) : "—"}</TableCell>
                     </TableRow>
@@ -651,7 +703,7 @@ function LedgerActivityDetail({
                     {related.paidAt ? ` · paid ${fmtDateTime(related.paidAt)}` : ""}
                   </p>
                 </div>
-                <StatusChip status={related.status} />
+                <PayoutStatusChip status={related.status} />
               </div>
             ) : related.kind === "settlement" ? (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

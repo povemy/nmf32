@@ -31,7 +31,9 @@ import {
   ReasonDialog,
   StatusChip,
   TableSkeleton,
+  TONE_CLASS,
   fmtDT,
+  statusTone,
   timeAgo,
 } from "./ui-bits";
 
@@ -144,6 +146,33 @@ type RequestRow = {
 };
 
 type RequestsBody = { open: RequestRow[]; recent: RequestRow[] };
+
+/* ------------------------------------------------ payout status labels (FIN-3b) */
+
+/** FIN-3b (3b.3) — payout-status labels shared with the seller wallet
+ * (src/components/seller/wallet.tsx) so admin and seller render the SAME
+ * wording for a payout state; the admin view stays richer (method,
+ * referenceNo, failReason as before). Display-only: raw status strings still
+ * come from the API. Batch status chips stay on the generic StatusChip —
+ * batch statuses (running/completed/…) are a different vocabulary. */
+const PAYOUT_STATUS_LABELS: Record<string, string> = {
+  requested: "Awaiting approval",
+  processing: "Processing",
+  paid: "Paid",
+  failed: "Failed",
+  rejected: "Rejected",
+  returned: "Returned",
+  reversed: "Reversed",
+};
+
+function PayoutStatusChip({ status, className }: { status: string; className?: string }) {
+  const s = (status ?? "").toLowerCase();
+  return (
+    <Badge variant="outline" className={cn(TONE_CLASS[statusTone(s)], className)}>
+      {PAYOUT_STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
+    </Badge>
+  );
+}
 
 /* ------------------------------------------------------------ PayoutsView */
 
@@ -492,7 +521,7 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
                         <Money minor={r.amountMinor} />
                       </TableCell>
                       <TableCell>
-                        <StatusChip status={r.status} />
+                        <PayoutStatusChip status={r.status} />
                         {r.failReason ? (
                           <p className="max-w-48 truncate text-[11px] text-muted-foreground" title={r.failReason}>
                             {r.failReason}
@@ -779,7 +808,7 @@ export function PayoutDetailView({ nav, batchId }: { nav: AdminNav; batchId: str
                         </TableCell>
                         <TableCell className="text-right"><Money minor={p.amountMinor} bold /></TableCell>
                         <TableCell>
-                          <StatusChip status={p.status} />
+                          <PayoutStatusChip status={p.status} />
                           {p.failReason ? <p className="mt-1 max-w-[180px] truncate text-[11px] text-red-600 dark:text-red-400">{p.failReason}</p> : null}
                         </TableCell>
                         <TableCell className="hidden text-sm capitalize md:table-cell">{p.method?.replace(/_/g, " ") ?? "—"}</TableCell>
