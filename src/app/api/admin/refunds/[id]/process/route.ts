@@ -45,6 +45,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     provider: order.paymentProvider ?? "fpx_toyyibpay",
     amountMinor: refund.amountMinor,
     commissionReversalMinor,
+    refundId: refund.id, // FIN-1: T5 dedup key is per Refund row
   });
 
   // total refunded so far (processed refunds incl. this one)

@@ -169,10 +169,43 @@ export type CommissionOrderResult = {
 };
 
 /**
+ * INVARIANT (Option B mirror requirement — FIN-1):
+ *   sum(item.sellerNetMinor) + sum(item.commissionMinor) === order.totalMinor
+ * for EVERY order, where totalMinor = subtotalMinor − discountMinor +
+ * shippingMinor + taxMinor. The ledger T1 (postOrderPaid) debits the PSP
+ * gateway totalMinor and credits exactly sellerNet + commission, so any drift
+ * here would throw LEDGER_UNBALANCED at payment time. The customer-paid gross
+ * per item is (lineSubtotal − discount + shipping + tax allocations); seller
+ * net is that gross MINUS commission — never gross-plus-shipping again (the
+ * pre-FIN-1 formula double-counted shipping when appliesToShipping=true).
+ */
+export function reconcileSplits(
+  items: { sellerNetMinor: number; commissionMinor: number; lineSubtotalMinor: number }[],
+  totalMinor: number
+): { items: { sellerNetMinor: number; commissionMinor: number; lineSubtotalMinor: number }[]; driftMinor: number } {
+  const sumNet = items.reduce((s, r) => s + r.sellerNetMinor, 0);
+  const sumComm = items.reduce((s, r) => s + r.commissionMinor, 0);
+  const drift = totalMinor - (sumNet + sumComm);
+  if (drift === 0 || items.length === 0) return { items, driftMinor: 0 };
+  // Deterministic remainder handling: assign the whole drift to the LARGEST
+  // line (same tie-break family as allocateProportionally: value desc, then
+  // original order) so the split reconciles EXACTLY to the order total.
+  let maxIdx = 0;
+  for (let i = 1; i < items.length; i++) {
+    if (items[i].lineSubtotalMinor > items[maxIdx].lineSubtotalMinor) maxIdx = i;
+  }
+  const adjusted = items.map((r, i) => (i === maxIdx ? { ...r, sellerNetMinor: r.sellerNetMinor + drift } : r));
+  return { items: adjusted, driftMinor: drift };
+}
+
+/**
  * Compute per-item commission snapshots for an order (M09 BASE + MATH).
  * - orderDiscount allocated proportionally to line subtotals (remainder to highest-value line)
  * - shipping allocated proportionally (or 0 if not applicable per line config)
  * - commission = round_half_up(base * percent/100) + allocated fixed fee
+ * - sellerNet = (subtotal − discount + shipping + tax) − commission per item —
+ *   the Option B invariant sum(sellerNet)+sum(commission)===order total holds
+ *   in ALL paths, including appliesToShipping=true (see reconcileSplits doc).
  * - min_commission_minor floored per ORDER (skipped on fee holidays, flagged)
  */
 export async function computeOrderCommissions(input: {
@@ -180,6 +213,9 @@ export async function computeOrderCommissions(input: {
   items: CommissionItemInput[];
   orderDiscountMinor: number;
   shippingMinorTotal: number;
+  /** Order-level tax (currently always 0 in checkout pricing) — included in
+   *  the sellerNet reconciliation so the invariant survives tax going live. */
+  orderTaxMinor?: number;
   appliesShippingToItem?: boolean; // whether shipping counts toward commission base
   currency?: string;
   now?: Date;
@@ -190,6 +226,7 @@ export async function computeOrderCommissions(input: {
   const subtotals = input.items.map((it) => it.unitPriceMinor * it.qty);
   const discounts = allocateProportionally(Math.max(0, input.orderDiscountMinor), subtotals);
   const shippingAlloc = allocateProportionally(Math.max(0, input.shippingMinorTotal), subtotals);
+  const taxAlloc = allocateProportionally(Math.max(0, input.orderTaxMinor ?? 0), subtotals);
 
   // resolve rate per item (cache by productId/categoryId pair)
   const rates: RateResolution[] = [];
@@ -214,7 +251,12 @@ export async function computeOrderCommissions(input: {
     if (settings.appliesToShipping) base += shippingAlloc[i];
     const percentPart = commissionOf(base, rate.percent);
     const commission = percentPart + fixedAlloc[i];
-    const sellerNet = base + shippingAlloc[i] - commission;
+    // Customer-paid gross for this line = subtotal − discount + shipping + tax
+    // (allocation parts sum EXACTLY to the order-level inputs). sellerNet is
+    // the residual after commission — NOT base+shipping again, which counted
+    // shipping twice whenever the commission base included it (FIN-1 fix).
+    const grossMinor = lineSubtotal - discounts[i] + shippingAlloc[i] + taxAlloc[i];
+    const sellerNet = grossMinor - commission;
     return {
       title: it.title,
       variantLabel: it.variantLabel ?? null,
@@ -259,6 +301,22 @@ export async function computeOrderCommissions(input: {
     results[maxIdx].sellerNetMinor -= bump;
     results[maxIdx].breakdown.flags.push("min_commission_floor");
   }
+
+  // FINAL RECONCILIATION (Option B invariant): sellerNet + commission must
+  // equal the order total (subtotal − discount + shipping + tax) EXACTLY.
+  // Drift is structurally zero with the math above (allocation parts sum
+  // exactly); reconcileSplits stays as the deterministic safety net — any
+  // remainder lands on the largest line, never silently lost.
+  const expectedTotal =
+    subtotals.reduce((s, v) => s + v, 0) -
+    Math.max(0, input.orderDiscountMinor) +
+    Math.max(0, input.shippingMinorTotal) +
+    Math.max(0, input.orderTaxMinor ?? 0);
+  const reconciled = reconcileSplits(
+    results.map((r) => ({ sellerNetMinor: r.sellerNetMinor, commissionMinor: r.commissionMinor, lineSubtotalMinor: r.lineSubtotalMinor })),
+    expectedTotal
+  );
+  for (let i = 0; i < results.length; i++) results[i].sellerNetMinor = reconciled.items[i].sellerNetMinor;
 
   const holdDays = rates[0]?.holdDays ?? settings.payoutHoldDays;
   const orderCommission = results.reduce((s, r) => s + r.commissionMinor, 0);

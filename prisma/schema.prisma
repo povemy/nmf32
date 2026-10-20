@@ -670,6 +670,10 @@ model PaymentWebhookLog {
   processed      Boolean  @default(false)
   orderId        String?
   createdAt      DateTime @default(now())
+
+  // FIN-1: providerRef lookups (replay/sweep) + unprocessed-queue scans.
+  @@index([providerRef])
+  @@index([processed])
 }
 
 model Refund {
@@ -730,6 +734,14 @@ model LedgerTransaction {
   description String?
   occurredAt  DateTime     @default(now())
   lines       LedgerLine[]
+  // FIN-1 idempotency helper: caller-supplied or recipe-derived key. Nullable
+  // on purpose — Postgres unique indexes treat NULLs as distinct, so legacy
+  // rows and non-deduped postings (dedupKey=null) coexist legally. Backfilled
+  // once from (txnType,refType,refId) with "#2"-style suffixes on collisions;
+  // financial fields were never touched by that backfill.
+  dedupKey    String?      @unique
+
+  @@index([refType, refId])
 }
 
 model LedgerLine {
@@ -744,6 +756,15 @@ model LedgerLine {
   memo        String?
   createdAt   DateTime          @default(now())
   txn         LedgerTransaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
+  // FIN-1 denormalized ref (copied from the parent txn at post time; legacy
+  // rows backfilled once from their transaction) so ref-scoped line queries
+  // (e.g. all lines touching an order) don't need a join. Helper columns only.
+  refType     String?
+  refId       String?
+
+  @@index([accountCode])
+  @@index([txnId])
+  @@index([refType, refId])
 }
 
 model PayoutBatch {
@@ -1039,6 +1060,11 @@ model NotificationLog {
   status    String   @default("queued")
   error     String?
   createdAt DateTime @default(now())
+  // FIN-2-b will pass stable keys from webhook paths; NULL dedupKey rows are
+  // always legal (Postgres unique treats NULLs as distinct → no dedup).
+  dedupKey  String?
+
+  @@unique([channel, dedupKey])
 }
 
 model SupportTicket {
