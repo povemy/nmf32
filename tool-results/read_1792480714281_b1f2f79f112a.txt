@@ -1,0 +1,847 @@
+     1→"use client";
+     2→// Task 2-d — Seller surface shell: auth gate → status router → dashboard layout.
+     3→// Status machine: no session → auth screen; onboarding/rejected → wizard;
+     4→// pending_review → review screen (polls); active → full seller dashboard.
+     5→import { useCallback, useEffect, useState } from "react";
+     6→import { motion } from "framer-motion";
+     7→import { toast } from "sonner";
+     8→import { useApp } from "@/lib/app-store";
+     9→import { useChatUserRoom } from "@/lib/chat-presence";
+    10→import { setSessionToken } from "@/lib/session-client";
+    11→import { cn } from "@/lib/utils";
+    12→import {
+    13→  apiGet,
+    14→  apiSend,
+    15→  ageOf,
+    16→  runMutation,
+    17→  StoreMe,
+    18→  SellerNav,
+    19→  StatusChip,
+    20→  fmtDateTime,
+    21→} from "./ui-bits";
+    22→import OnboardingWizard from "./onboarding";
+    23→import SellerDashboard from "./dashboard";
+    24→import SellerProducts from "./products";
+    25→import SellerOrders from "./orders";
+    26→import SellerMessages from "./messages";
+    27→import SellerWallet from "./wallet";
+    28→import PageBuilder from "./builder";
+    29→import SellerDomains from "./domains";
+    30→import SellerCoupons from "./marketing";
+    31→import SellerVouchers from "./vouchers";
+    32→import SellerIntegrations from "./integrations";
+    33→import SellerSettings from "./settings";
+    34→import SellerImports from "./imports";
+    35→import SellerSeo from "./seo";
+    36→import SellerCardStyle from "./card-style";
+    37→import SellerCartSettings from "./cart-settings";
+    38→import { Toaster } from "@/components/ui/sonner";
+    39→import { Alert, AlertDescription } from "@/components/ui/alert";
+    40→import { Button } from "@/components/ui/button";
+    41→import { Input } from "@/components/ui/input";
+    42→import { Label } from "@/components/ui/label";
+    43→import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+    44→import { Skeleton } from "@/components/ui/skeleton";
+    45→import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+    46→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    47→import {
+    48→  ArrowLeft,
+    49→  BadgeCheck,
+    50→  BadgePercent,
+    51→  Bell,
+    52→  Blocks,
+    53→  Clock3,
+    54→  DatabaseZap,
+    55→  ExternalLink,
+    56→  Globe,
+    57→  LayoutDashboard,
+    58→  LayoutTemplate,
+    59→  Loader2,
+    60→  LogOut,
+    61→  Menu,
+    62→  MessagesSquare,
+    63→  Package,
+    64→  Search,
+    65→  Settings,
+    66→  ShieldAlert,
+    67→  ShoppingBag,
+    68→  ShoppingCart,
+    69→  Sparkles,
+    70→  TicketPercent,
+    71→  Type,
+    72→  Wallet,
+    73→} from "lucide-react";
+    74→
+    75→const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard }[] = [
+    76→  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    77→  { key: "imports", label: "Imports & Publish", icon: DatabaseZap },
+    78→  { key: "products", label: "Products", icon: Package },
+    79→  { key: "orders", label: "Orders", icon: ShoppingCart },
+    80→  { key: "messages", label: "Messages", icon: MessagesSquare },
+    81→  { key: "seo", label: "SEO", icon: Search },
+    82→  { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
+    83→  { key: "builder", label: "Page Builder", icon: LayoutTemplate },
+    84→  { key: "cardstyle", label: "Product Cards", icon: Type },
+    85→  { key: "cart", label: "Cart Experience", icon: ShoppingBag },
+    86→  { key: "domains", label: "Domains", icon: Globe },
+    87→  { key: "coupons", label: "Coupons", icon: TicketPercent },
+    88→  { key: "vouchers", label: "Vouchers", icon: BadgePercent },
+    89→  { key: "integrations", label: "Integrations", icon: Blocks },
+    90→  { key: "settings", label: "Store Settings", icon: Settings },
+    91→];
+    92→
+    93→export default function SellerShell() {
+    94→  const me = useApp((s) => s.me);
+    95→  const refreshMe = useApp((s) => s.refreshMe);
+    96→  const [nav, setNav] = useState<SellerNav>({ view: "dashboard" });
+    97→  const [storeMe, setStoreMe] = useState<StoreMe | null>(null);
+    98→  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    99→
+   100→  const seller = me.loaded && "seller" in me ? me.seller : null;
+   101→  const sellerId = seller?.id ?? null;
+   102→
+   103→  // ---- global inbox presence (ONE socket on every seller view) ---------------
+   104→  // Keeps the Messages nav badge instant (a push fires "nomofee:chat-sync",
+   105→  // which useSellerChatUnread already listens to) and toasts the shopper's
+   106→  // message with a jump-in action while the seller is on any other page.
+   107→  useChatUserRoom(sellerId, {
+   108→    onMessage: (msg) => {
+   109→      if (msg.senderType === "seller") return; // own echo / assistant paths
+   110→      window.dispatchEvent(new Event("nomofee:chat-sync"));
+   111→      if (nav.view !== "messages") {
+   112→        const preview = msg.body.length > 90 ? `${msg.body.slice(0, 90)}…` : msg.body;
+   113→        toast(`${msg.senderName} · New message`, {
+   114→          description: preview,
+   115→          action: { label: "Open messages", onClick: () => setNav({ view: "messages" }) },
+   116→        });
+   117→      }
+   118→    },
+   119→    onActivity: () => window.dispatchEvent(new Event("nomofee:chat-sync")),
+   120→  });
+   121→
+   122→  const refreshStoreMe = useCallback(async () => {
+   123→    try {
+   124→      const d = await apiGet<StoreMe>("/api/store/me");
+   125→      setStoreMe(d);
+   126→    } catch {
+   127→      /* status-gated endpoints may 403 during onboarding — non-fatal */
+   128→    }
+   129→  }, []);
+   130→
+   131→  useEffect(() => {
+   132→    if (sellerId) {
+   133→      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   134→      setNav({ view: "dashboard" });
+   135→      refreshStoreMe();
+   136→    } else {
+   137→      setStoreMe(null);
+   138→    }
+   139→  }, [sellerId, refreshStoreMe]);
+   140→
+   141→  const logout = useCallback(async () => {
+   142→    await useApp.getState().logout();
+   143→    toast.success("Signed out");
+   144→  }, []);
+   145→
+   146→  // ------------------------------------------------------------- render gates
+   147→
+   148→  if (!me.loaded) {
+   149→    return (
+   150→      <div className="flex-1 flex items-center justify-center">
+   151→        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+   152→      </div>
+   153→    );
+   154→  }
+   155→
+   156→  if (!seller) {
+   157→    return (
+   158→      <>
+   159→        <AuthScreen onAuthed={refreshMe} />
+   160→        <Toaster position="bottom-right" richColors closeButton />
+   161→      </>
+   162→    );
+   163→  }
+   164→
+   165→  const status = seller.status;
+   166→
+   167→  if (status === "suspended" || status === "terminated") {
+   168→    return (
+   169→      <div className="flex-1 flex items-center justify-center p-6">
+   170→        <div className="max-w-md w-full space-y-4 text-center rounded-2xl border bg-card p-8">
+   171→          <ShieldAlert className="mx-auto h-10 w-10 text-rose-500" />
+   172→          <h2 className="text-lg font-semibold capitalize">Store {status}</h2>
+   173→          <p className="text-sm text-muted-foreground">
+   174→            This store is not currently trading. Contact NOMOFEE support if you believe this is a mistake.
+   175→          </p>
+   176→          <Button variant="outline" onClick={logout} className="gap-2">
+   177→            <LogOut className="h-4 w-4" /> Sign out
+   178→          </Button>
+   179→        </div>
+   180→      </div>
+   181→    );
+   182→  }
+   183→
+   184→  if (status === "onboarding" || status === "rejected") {
+   185→    return (
+   186→      <>
+   187→        <OnboardingWizard onStatusChanged={refreshMe} />
+   188→        <Toaster position="bottom-right" richColors closeButton />
+   189→      </>
+   190→    );
+   191→  }
+   192→
+   193→  if (status === "pending_review") {
+   194→    return (
+   195→      <>
+   196→        <PendingReview onLogout={logout} />
+   197→        <Toaster position="bottom-right" richColors closeButton />
+   198→      </>
+   199→    );
+   200→  }
+   201→
+   202→  // ---------------------------------------------------------------- active
+   203→
+   204→  const storeName = storeMe?.store.name ?? seller.storeName ?? "My store";
+   205→  const storeSlug = storeMe?.store.slug ?? seller.storeSlug ?? "";
+   206→
+   207→  const openStorefront = () => {
+   208→    const app = useApp.getState();
+   209→    app.setActiveStoreSlug(storeSlug || null);
+   210→    app.setSurface("shopper");
+   211→  };
+   212→
+   213→  const navigate = (n: SellerNav) => {
+   214→    setNav(n);
+   215→    setMobileNavOpen(false);
+   216→  };
+   217→
+   218→  return (
+   219→    <div className="flex-1 flex min-h-0">
+   220→      <Toaster position="bottom-right" richColors closeButton />
+   221→      {/* desktop sidebar */}
+   222→      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-card/50 print:hidden">
+   223→        <div className="flex items-center gap-2.5 px-4 py-4 border-b">
+   224→          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+   225→            <ShoppingBag className="h-4.5 w-4.5" />
+   226→          </span>
+   227→          <div className="min-w-0">
+   228→            <p className="truncate text-sm font-semibold leading-tight">{storeName}</p>
+   229→            <p className="truncate text-xs text-muted-foreground">/{storeSlug}</p>
+   230→          </div>
+   231→        </div>
+   232→        <SideNav active={nav.view} onNavigate={navigate} className="flex-1 overflow-y-auto p-2" />
+   233→        <div className="border-t p-3 space-y-2">
+   234→          <div className="flex items-center justify-between text-xs text-muted-foreground">
+   235→            <span>Store status</span>
+   236→            <StatusChip status={storeMe?.store.status ?? "live"} />
+   237→          </div>
+   238→          <div className="flex items-center justify-between text-xs text-muted-foreground">
+   239→            <span>Plan</span>
+   240→            <span className="font-medium capitalize text-foreground">{storeMe?.seller.planCode ?? "free"}</span>
+   241→          </div>
+   242→        </div>
+   243→      </aside>
+   244→
+   245→      <div className="flex-1 flex flex-col min-w-0">
+   246→        {/* top bar */}
+   247→        <header className="flex items-center gap-3 border-b bg-background/95 px-4 py-3 print:hidden">
+   248→          {/* brand gradient strip */}
+   249→          <div className="fixed inset-x-0 top-0 z-50 h-1 bg-brand-gradient print:hidden" aria-hidden="true" />
+   250→          {/* mobile nav trigger */}
+   251→          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+   252→            <SheetTrigger asChild>
+   253→              <Button variant="outline" size="icon" className="md:hidden" aria-label="Open navigation">
+   254→                <Menu className="h-4 w-4" />
+   255→              </Button>
+   256→            </SheetTrigger>
+   257→            <SheetContent side="left" className="w-72 p-0">
+   258→              <SheetHeader className="border-b px-4 py-3">
+   259→                <SheetTitle className="text-left text-sm">{storeName}</SheetTitle>
+   260→              </SheetHeader>
+   261→              <SideNav active={nav.view} onNavigate={navigate} className="p-2" />
+   262→            </SheetContent>
+   263→          </Sheet>
+   264→
+   265→          <div className="min-w-0 flex-1">
+   266→            <h1 className="truncate text-sm font-semibold capitalize">
+   267→              {NAV.find((n) => n.key === nav.view)?.label ?? "Dashboard"}
+   268→            </h1>
+   269→            <p className="hidden sm:block text-xs text-muted-foreground">
+   270→              Seller portal · {seller.displayName} ({seller.email})
+   271→            </p>
+   272→          </div>
+   273→          <Button variant="outline" size="sm" onClick={openStorefront} className="gap-1.5">
+   274→            <ExternalLink className="h-3.5 w-3.5" />
+   275→            <span className="hidden sm:inline">View storefront</span>
+   276→            <span className="sm:hidden">Store</span>
+   277→          </Button>
+   278→          <SellerNotificationBell />
+   279→          <Button variant="ghost" size="icon" onClick={logout} aria-label="Sign out" className="text-muted-foreground">
+   280→            <LogOut className="h-4 w-4" />
+   281→          </Button>
+   282→        </header>
+   283→
+   284→        <main className="flex-1 min-h-0 overflow-y-auto">
+   285→          <motion.div
+   286→            key={nav.view + (nav.pageId ?? "") + (nav.orderId ?? "") + (nav.productId ?? "") + (nav.activityId ?? "")}
+   287→            initial={{ opacity: 0, y: 6 }}
+   288→            animate={{ opacity: 1, y: 0 }}
+   289→            transition={{ duration: 0.18 }}
+   290→            className="mx-auto w-full max-w-6xl p-4 sm:p-6"
+   291→          >
+   292→            {nav.view === "dashboard" && <SellerDashboard onNavigate={navigate} />}
+   293→            {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
+   294→            {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
+   295→            {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
+   296→            {nav.view === "messages" && <SellerMessages sellerId={sellerId} onNavigate={navigate} />}
+   297→            {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
+   298→            {nav.view === "builder" && (
+   299→              <PageBuilder
+   300→                pageId={nav.pageId}
+   301→                onNavigate={navigate}
+   302→                storeSlug={storeSlug}
+   303→                storeName={storeName}
+   304→              />
+   305→            )}
+   306→            {nav.view === "domains" && <SellerDomains storeSlug={storeSlug} />}
+   307→            {nav.view === "cardstyle" && <SellerCardStyle />}
+   308→            {nav.view === "cart" && <SellerCartSettings />}
+   309→            {nav.view === "coupons" && <SellerCoupons />}
+   310→            {nav.view === "vouchers" && <SellerVouchers />}
+   311→            {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}
+   312→            {nav.view === "integrations" && <SellerIntegrations />}
+   313→            {nav.view === "settings" && <SellerSettings onNavigate={navigate} storeMe={storeMe} refreshStoreMe={refreshStoreMe} />}
+   314→          </motion.div>
+   315→        </main>
+   316→      </div>
+   317→    </div>
+   318→  );
+   319→}
+   320→
+   321→// ---------------------------------------------------------------- notifications
+   322→
+   323→// FIN-3-c — seller in-app notification bell. Feeds from the NotificationLog
+   324→// rows (channel "inapp") the finance flows already write for the seller email:
+   325→// order.paid (FIN-2-b) + payout requested/approved/paid/failed/rejected
+   326→// (FIN-2-a/FIN-3-b). The shopper bell is a different subsystem (Notification
+   327→// model via /api/me/notifications) and is intentionally untouched.
+   328→
+   329→type SellerNotificationRow = { id: string; subject: string; createdAt: string; event: string };
+   330→
+   331→type SellerNotificationsPayload = { notifications: SellerNotificationRow[]; recentCount: number };
+   332→
+   333→/** House scrollbar style (same treatment as the shopper bell panel). */
+   334→const SELLER_BELL_SCROLL =
+   335→  "max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent";
+   336→
+   337→/** 24h recency = client-side "new" heuristic: NotificationLog has no read /
+   338→ *  seen column (adding fake read-tracking was out of scope), so "within the
+   339→ *  last 24h" is the honest approximation of "unread". */
+   340→const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+   341→
+   342→function SellerNotificationBell() {
+   343→  const [open, setOpen] = useState(false);
+   344→  const [data, setData] = useState<SellerNotificationsPayload | null>(null);
+   345→  const [loading, setLoading] = useState(false);
+   346→  const [errored, setErrored] = useState(false);
+   347→
+   348→  const load = useCallback(async () => {
+   349→    setLoading(true);
+   350→    try {
+   351→      const d = await apiGet<SellerNotificationsPayload>("/api/store/notifications");
+   352→      setData(d);
+   353→      setErrored(false);
+   354→    } catch (e) {
+   355→      // Silent by design — a failed bell must never break the seller shell:
+   356→      // keep the last data (no badge flicker), warn for debugging only.
+   357→      setErrored(true);
+   358→      console.warn("[seller-bell] notifications fetch failed", e instanceof Error ? e.message : e);
+   359→    } finally {
+   360→      setLoading(false);
+   361→    }
+   362→  }, []);
+   363→
+   364→  // Badge freshness without aggressive polling: fetch once on mount (dot only
+   365→  // needs recentCount) and refetch whenever the popover opens.
+   366→  useEffect(() => {
+   367→    void load();
+   368→  }, [load]);
+   369→
+   370→  const onOpenChange = (v: boolean) => {
+   371→    setOpen(v);
+   372→    if (v) void load();
+   373→  };
+   374→
+   375→  const recent = data?.recentCount ?? 0;
+   376→  const rows = data?.notifications ?? null;
+   377→
+   378→  return (
+   379→    <Popover open={open} onOpenChange={onOpenChange}>
+   380→      <PopoverTrigger asChild>
+   381→        <Button
+   382→          variant="ghost"
+   383→          size="icon"
+   384→          className="relative text-muted-foreground"
+   385→          aria-label="Seller notifications"
+   386→          aria-haspopup="dialog"
+   387→          aria-expanded={open}
+   388→        >
+   389→          <Bell className="h-4 w-4" aria-hidden="true" />
+   390→          {recent > 0 ? (
+   391→            <span
+   392→              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+   393→              aria-hidden="true"
+   394→            />
+   395→          ) : null}
+   396→        </Button>
+   397→      </PopoverTrigger>
+   398→      <PopoverContent align="end" className="w-80 rounded-2xl p-0 sm:w-96" role="dialog" aria-label="Seller notifications panel">
+   399→        <div className="flex items-center gap-2 border-b px-4 py-3">
+   400→          <h2 className="text-sm font-semibold">Notifications</h2>
+   401→          {recent > 0 ? (
+   402→            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 tabular-nums">
+   403→              {recent} new
+   404→            </span>
+   405→          ) : null}
+   406→        </div>
+   407→
+   408→        {loading && !rows ? (
+   409→          <div className="space-y-3 p-4" aria-label="Loading notifications">
+   410→            {Array.from({ length: 3 }).map((_, i) => (
+   411→              <div key={i} className="flex items-center gap-3">
+   412→                <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+   413→                <div className="flex-1 space-y-1.5">
+   414→                  <Skeleton className="h-3.5 w-3/4" />
+   415→                  <Skeleton className="h-3 w-1/3" />
+   416→                </div>
+   417→              </div>
+   418→            ))}
+   419→          </div>
+   420→        ) : !rows || rows.length === 0 ? (
+   421→          <div className="flex flex-col items-center gap-2 px-6 py-10 text-center" aria-label="No notifications">
+   422→            <span className="rounded-full bg-muted p-4">
+   423→              <Bell className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+   424→            </span>
+   425→            <p className="text-sm font-semibold">{errored && !data ? "Notifications unavailable" : "No notifications yet"}</p>
+   426→            <p className="max-w-[16rem] text-xs text-muted-foreground">
+   427→              {errored && !data
+   428→                ? "Couldn't load right now — it will retry next time you open the bell."
+   429→                : "Payout and order updates will appear here."}
+   430→            </p>
+   431→          </div>
+   432→        ) : (
+   433→          <ul className={cn("divide-y", SELLER_BELL_SCROLL)} aria-label="Notification list">
+   434→            {rows.map((n) => {
+   435→              const isNew = Date.now() - new Date(n.createdAt).getTime() < RECENT_WINDOW_MS;
+   436→              return (
+   437→                <li key={n.id} className="flex items-start gap-3 px-4 py-3">
+   438→                  <div className="min-w-0 flex-1">
+   439→                    <p className="truncate text-[13px] font-medium" title={n.subject}>
+   440→                      {n.subject}
+   441→                    </p>
+   442→                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+   443→                      <span title={new Date(n.createdAt).toLocaleString("en-MY")}>{ageOf(n.createdAt)}</span>
+   444→                      <span aria-hidden="true"> · </span>
+   445→                      <span className="lowercase">{n.event}</span>
+   446→                    </p>
+   447→                  </div>
+   448→                  {isNew ? (
+   449→                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" role="img" aria-label="Recent" />
+   450→                  ) : null}
+   451→                </li>
+   452→              );
+   453→            })}
+   454→          </ul>
+   455→        )}
+   456→      </PopoverContent>
+   457→    </Popover>
+   458→  );
+   459→}
+   460→
+   461→// ---------------------------------------------------------------- side nav
+   462→
+   463→/** Total unread shopper messages — powers the "Messages" nav badge. */
+   464→function useSellerChatUnread(active: SellerNav["view"]) {
+   465→  const [unread, setUnread] = useState(0);
+   466→  useEffect(() => {
+   467→    let alive = true;
+   468→    const load = () =>
+   469→      apiGet<{ total: number }>("/api/store/chat/unread")
+   470→        .then((d) => alive && setUnread(d.total ?? 0))
+   471→        .catch(() => {});
+   472→    load();
+   473→    const t = setInterval(load, 15000);
+   474→    return () => {
+   475→      alive = false;
+   476→      clearInterval(t);
+   477→    };
+   478→  }, [active]);
+   479→  // instant re-sync when a thread is read inside the messages view (the view
+   480→  // dispatches "nomofee:chat-sync" instead of prop-drilling a callback)
+   481→  useEffect(() => {
+   482→    const sync = () =>
+   483→      apiGet<{ total: number }>("/api/store/chat/unread")
+   484→        .then((d) => setUnread(d.total ?? 0))
+   485→        .catch(() => {});
+   486→    window.addEventListener("nomofee:chat-sync", sync);
+   487→    return () => window.removeEventListener("nomofee:chat-sync", sync);
+   488→  }, []);
+   489→  return unread;
+   490→}
+   491→
+   492→function SideNav({
+   493→  active,
+   494→  onNavigate,
+   495→  className,
+   496→}: {
+   497→  active: SellerNav["view"];
+   498→  onNavigate: (n: SellerNav) => void;
+   499→  className?: string;
+   500→}) {
+   501→  const unreadChats = useSellerChatUnread(active);
+   502→  return (
+   503→    <nav className={cn("flex flex-col gap-0.5", className)} aria-label="Seller navigation">
+   504→      {NAV.map(({ key, label, icon: Icon }) => (
+   505→        <button
+   506→          key={key}
+   507→          onClick={() => onNavigate({ view: key })}
+   508→          aria-current={active === key ? "page" : undefined}
+   509→          className={cn(
+   510→            "flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+   511→            active === key
+   512→              ? "bg-primary/10 text-primary"
+   513→              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+   514→          )}
+   515→        >
+   516→          <Icon className="h-4 w-4 shrink-0" />
+   517→          <span className="min-w-0 flex-1 text-left">{label}</span>
+   518→          {key === "messages" && unreadChats > 0 ? (
+   519→            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${unreadChats} unread messages`}>
+   520→              {unreadChats > 99 ? "99+" : unreadChats}
+   521→            </span>
+   522→          ) : null}
+   523→        </button>
+   524→      ))}
+   525→    </nav>
+   526→  );
+   527→}
+   528→
+   529→// ---------------------------------------------------------------- pending review
+   530→
+   531→function PendingReview({ onLogout }: { onLogout: () => void }) {
+   532→  const refreshMe = useApp((s) => s.refreshMe);
+   533→  const me = useApp((s) => s.me);
+   534→  const seller = me.loaded && "seller" in me ? me.seller : null;
+   535→  const setSurface = useApp((s) => s.setSurface);
+   536→  const setActiveStoreSlug = useApp((s) => s.setActiveStoreSlug);
+   537→  const [storeMe, setStoreMe] = useState<StoreMe | null>(null);
+   538→
+   539→  useEffect(() => {
+   540→    let alive = true;
+   541→    apiGet<StoreMe>("/api/store/me")
+   542→      .then((d) => alive && setStoreMe(d))
+   543→      .catch(() => {});
+   544→    const t = setInterval(async () => {
+   545→      try {
+   546→        const d = await apiGet<StoreMe>("/api/store/me");
+   547→        if (!alive) return;
+   548→        setStoreMe(d);
+   549→        if (d.seller.status !== "pending_review") await refreshMe();
+   550→      } catch {
+   551→        /* ignore */
+   552→      }
+   553→    }, 20000);
+   554→    return () => {
+   555→      alive = false;
+   556→      clearInterval(t);
+   557→    };
+   558→  }, [refreshMe]);
+   559→
+   560→  const checks = [
+   561→    { label: "Identity & KYC documents", done: storeMe?.onboarding.checklist.kyc ?? false },
+   562→    { label: "Bank account details", done: storeMe?.onboarding.checklist.bank ?? false },
+   563→    { label: "At least one product listed", done: storeMe?.onboarding.checklist.products ?? false },
+   564→  ];
+   565→
+   566→  return (
+   567→    <div className="flex-1 flex items-start justify-center p-4 sm:p-8">
+   568→      <div className="w-full max-w-lg space-y-4">
+   569→        <div className="rounded-2xl border bg-card p-6 sm:p-8 text-center space-y-3">
+   570→          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+   571→            <Clock3 className="h-7 w-7" />
+   572→          </span>
+   573→          <h2 className="text-xl font-semibold">Your store is under review</h2>
+   574→          <p className="text-sm text-muted-foreground">
+   575→            Thanks {seller?.displayName ?? "there"} — our team is verifying your details. This usually takes
+   576→            1–2 business days. We&apos;ll email you the moment your store is approved, no action needed.
+   577→          </p>
+   578→          {storeMe?.seller.submittedAt ? (
+   579→            <p className="text-xs text-muted-foreground">Submitted {fmtDateTime(storeMe.seller.submittedAt)}</p>
+   580→          ) : null}
+   581→          <div className="flex justify-center gap-2 pt-1">
+   582→            <StatusChip status="pending_review" />
+   583→            <StatusChip status={storeMe?.seller.kycStatus ?? "pending"} />
+   584→          </div>
+   585→        </div>
+   586→
+   587→        <div className="rounded-2xl border bg-card p-5">
+   588→          <p className="text-sm font-semibold">What we verify</p>
+   589→          <ul className="mt-3 space-y-2.5">
+   590→            {checks.map((c) => (
+   591→              <li key={c.label} className="flex items-center gap-2.5 text-sm">
+   592→                <span
+   593→                  className={cn(
+   594→                    "flex h-5 w-5 items-center justify-center rounded-full border",
+   595→                    c.done ? "border-emerald-300 bg-emerald-100 text-emerald-700" : "border-dashed text-muted-foreground"
+   596→                  )}
+   597→                >
+   598→                  {c.done ? <BadgeCheck className="h-3.5 w-3.5" /> : <Clock3 className="h-3 w-3" />}
+   599→                </span>
+   600→                <span className={c.done ? "" : "text-muted-foreground"}>{c.label}</span>
+   601→              </li>
+   602→            ))}
+   603→          </ul>
+   604→          <p className="mt-3 text-xs text-muted-foreground">
+   605→            While you wait you can keep editing products, pages and settings — everything goes live on approval.
+   606→          </p>
+   607→        </div>
+   608→
+   609→        <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+   610→          <Button
+   611→            variant="outline"
+   612→            onClick={() => {
+   613→              setActiveStoreSlug(seller?.storeSlug ?? null);
+   614→              setSurface("shopper");
+   615→            }}
+   616→            className="gap-2"
+   617→          >
+   618→            <ExternalLink className="h-4 w-4" /> Preview my storefront
+   619→          </Button>
+   620→          <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground">
+   621→            <LogOut className="h-4 w-4" /> Sign out
+   622→          </Button>
+   623→        </div>
+   624→        <p className="text-center text-xs text-muted-foreground">This page refreshes automatically every 20 seconds.</p>
+   625→      </div>
+   626→    </div>
+   627→  );
+   628→}
+   629→
+   630→// ---------------------------------------------------------------- auth screen
+   631→
+   632→function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
+   633→  const setSurface = useApp((s) => s.setSurface);
+   634→  const [loginEmail, setLoginEmail] = useState("");
+   635→  const [loginPassword, setLoginPassword] = useState("");
+   636→  const [busy, setBusy] = useState(false);
+   637→  const [reg, setReg] = useState({ fullName: "", displayName: "", email: "", password: "", phone: "", storeName: "" });
+   638→
+   639→  const goMarket = () => setSurface("shopper");
+   640→
+   641→  const login = async () => {
+   642→    if (!loginEmail || !loginPassword) {
+   643→      toast.error("Enter your email and password");
+   644→      return;
+   645→    }
+   646→    setBusy(true);
+   647→    const ok = await runMutation(async () => {
+   648→      const body = await apiSend<{ token?: string }>("POST", "/api/auth/login", {
+   649→        email: loginEmail,
+   650→        password: loginPassword,
+   651→        portal: "seller",
+   652→      });
+   653→      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
+   654→    }, "Welcome back!");
+   655→    setBusy(false);
+   656→    if (ok) await onAuthed();
+   657→  };
+   658→
+   659→  const register = async () => {
+   660→    if (!reg.fullName.trim() || !reg.email.includes("@") || reg.password.length < 8) {
+   661→      toast.error("Name, valid email and a password of at least 8 characters are required");
+   662→      return;
+   663→    }
+   664→    setBusy(true);
+   665→    const ok = await runMutation(async () => {
+   666→      const body = await apiSend<{ token?: string }>("POST", "/api/auth/register", reg);
+   667→      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
+   668→    }, "Store created — let's set it up!");
+   669→    setBusy(false);
+   670→    if (ok) await onAuthed();
+   671→  };
+   672→
+   673→  return (
+   674→    <div className="flex-1 flex flex-col min-h-0">
+   675→      {/* top chrome — the portal is reachable from the buyer hub (“Start Selling” /
+   676→          “Open store”), so there is always a visible way back to the marketplace */}
+   677→      <header className="border-b bg-background/95 backdrop-blur px-4 py-2.5">
+   678→        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+   679→          <button
+   680→            type="button"
+   681→            onClick={goMarket}
+   682→            className="flex min-h-[44px] items-center gap-2.5"
+   683→            aria-label="NOMOFEE — back to the marketplace"
+   684→          >
+   685→            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+   686→              <ShoppingBag className="h-4 w-4" />
+   687→            </span>
+   688→            <span className="text-lg font-extrabold tracking-tight">
+   689→              NOMO<span className="text-brand-gradient">FEE</span>{" "}
+   690→              <span className="text-sm font-semibold text-muted-foreground">Seller Portal</span>
+   691→            </span>
+   692→          </button>
+   693→          <Button variant="outline" size="sm" onClick={goMarket} className="ml-auto min-h-[40px] gap-1.5">
+   694→            <ArrowLeft className="h-4 w-4" />
+   695→            <span className="hidden sm:inline">Back to marketplace</span>
+   696→            <span className="sm:hidden">Back</span>
+   697→          </Button>
+   698→        </div>
+   699→      </header>
+   700→
+   701→      <div className="flex-1 grid lg:grid-cols-2 min-h-0">
+   702→      {/* brand panel */}
+   703→      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-primary text-primary-foreground">
+   704→        <div className="flex items-center gap-2.5">
+   705→          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/15">
+   706→            <ShoppingBag className="h-5 w-5" />
+   707→          </span>
+   708→          <span className="text-lg font-bold tracking-tight">NOMO<span className="text-primary-foreground/70">FEE</span></span>
+   709→        </div>
+   710→        <div className="max-w-md space-y-5">
+   711→          <h1 className="text-3xl font-bold leading-tight">
+   712→            Sell on your own storefront — and the marketplace.
+   713→          </h1>
+   714→          <p className="text-primary-foreground/80 text-sm leading-relaxed">
+   715→            Spin up a hosted store in minutes: page builder, orders, wallet with transparent commission,
+   716→            payouts, custom domains and webhooks. One portal for everything.
+   717→          </p>
+   718→          <ul className="space-y-2.5 text-sm">
+   719→            {[
+   720→              "Drag-and-drop page builder with 15 section types",
+   721→              "Ledger-true wallet: pending → available → payouts",
+   722→              "Flat 8% platform commission, no hidden fees",
+   723→            ].map((t) => (
+   724→              <li key={t} className="flex items-center gap-2.5">
+   725→                <BadgeCheck className="h-4 w-4 shrink-0" /> {t}
+   726→              </li>
+   727→            ))}
+   728→          </ul>
+   729→        </div>
+   730→        <p className="text-xs text-primary-foreground/60">Demo environment · data resets with the seed</p>
+   731→      </div>
+   732→
+   733→      {/* forms */}
+   734→      <div className="flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+   735→        <div className="w-full max-w-md space-y-5">
+   736→          <div className="lg:hidden flex items-center gap-2">
+   737→            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+   738→              <ShoppingBag className="h-4 w-4" />
+   739→            </span>
+   740→            <span className="font-bold">NOMO<span className="text-primary/70">FEE</span></span>
+   741→          </div>
+   742→
+   743→          <Tabs defaultValue="login">
+   744→            <TabsList className="grid w-full grid-cols-2">
+   745→              <TabsTrigger value="login">Log in</TabsTrigger>
+   746→              <TabsTrigger value="register">Create free store</TabsTrigger>
+   747→            </TabsList>
+   748→
+   749→            <TabsContent value="login" className="mt-4 space-y-4">
+   750→              <div className="space-y-1.5">
+   751→                <Label htmlFor="seller-login-email">Email</Label>
+   752→                <Input
+   753→                  id="seller-login-email"
+   754→                  type="email"
+   755→                  placeholder="you@store.com"
+   756→                  value={loginEmail}
+   757→                  onChange={(e) => setLoginEmail(e.target.value)}
+   758→                  onKeyDown={(e) => e.key === "Enter" && login()}
+   759→                />
+   760→              </div>
+   761→              <div className="space-y-1.5">
+   762→                <Label htmlFor="seller-login-password">Password</Label>
+   763→                <Input
+   764→                  id="seller-login-password"
+   765→                  type="password"
+   766→                  placeholder="••••••••"
+   767→                  value={loginPassword}
+   768→                  onChange={(e) => setLoginPassword(e.target.value)}
+   769→                  onKeyDown={(e) => e.key === "Enter" && login()}
+   770→                />
+   771→              </div>
+   772→              <Button className="w-full min-h-[44px]" onClick={login} disabled={busy}>
+   773→                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log in to seller portal"}
+   774→              </Button>
+   775→              <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs space-y-1.5">
+   776→                <p className="flex items-center gap-1.5 font-medium">
+   777→                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Demo accounts (password Seller123!)
+   778→                </p>
+   779→                <p className="text-muted-foreground">lumina@nomofee.io — active store, full dashboard</p>
+   780→                <p className="text-muted-foreground">trail@nomofee.io — onboarding wizard demo</p>
+   781→                <p className="text-muted-foreground">warung@nomofee.io — pending review screen</p>
+   782→                <Button
+   783→                  type="button"
+   784→                  variant="outline"
+   785→                  size="sm"
+   786→                  className="mt-1 h-8"
+   787→                  onClick={() => {
+   788→                    setLoginEmail("lumina@nomofee.io");
+   789→                    setLoginPassword("Seller123!");
+   790→                  }}
+   791→                >
+   792→                  Fill demo credentials
+   793→                </Button>
+   794→              </div>
+   795→            </TabsContent>
+   796→
+   797→            <TabsContent value="register" className="mt-4 space-y-3.5">
+   798→              <div className="grid gap-3.5 sm:grid-cols-2">
+   799→                <div className="space-y-1.5">
+   800→                  <Label htmlFor="reg-full">Full name *</Label>
+   801→                  <Input id="reg-full" value={reg.fullName} onChange={(e) => setReg({ ...reg, fullName: e.target.value })} placeholder="Sofia Lim" />
+   802→                </div>
+   803→                <div className="space-y-1.5">
+   804→                  <Label htmlFor="reg-disp">Display name</Label>
+   805→                  <Input id="reg-disp" value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })} placeholder="Sofia" />
+   806→                </div>
+   807→              </div>
+   808→              <div className="space-y-1.5">
+   809→                <Label htmlFor="reg-email">Email *</Label>
+   810→                <Input id="reg-email" type="email" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} placeholder="you@store.com" />
+   811→              </div>
+   812→              <div className="grid gap-3.5 sm:grid-cols-2">
+   813→                <div className="space-y-1.5">
+   814→                  <Label htmlFor="reg-pass">Password * (min 8)</Label>
+   815→                  <Input id="reg-pass" type="password" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
+   816→                </div>
+   817→                <div className="space-y-1.5">
+   818→                  <Label htmlFor="reg-phone">Phone</Label>
+   819→                  <Input id="reg-phone" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="60123456789" />
+   820→                </div>
+   821→              </div>
+   822→              <div className="space-y-1.5">
+   823→                <Label htmlFor="reg-store">Store name *</Label>
+   824→                <Input id="reg-store" value={reg.storeName} onChange={(e) => setReg({ ...reg, storeName: e.target.value })} placeholder="Lumina Living" />
+   825→              </div>
+   826→              <Button className="w-full min-h-[44px]" onClick={register} disabled={busy}>
+   827→                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create my free store"}
+   828→              </Button>
+   829→              <p className="text-center text-xs text-muted-foreground">
+   830→                Free forever plan · first 5 products go through a quick review
+   831→              </p>
+   832→            </TabsContent>
+   833→          </Tabs>
+   834→
+   835→          <Alert>
+   836→            <AlertDescription className="text-xs">
+   837→              By continuing you agree to the NOMOFEE seller terms: 8% platform commission on paid orders,
+   838→              payouts to a Malaysian bank account after a 7-day hold.
+   839→            </AlertDescription>
+   840→          </Alert>
+   841→        </div>
+   842→      </div>
+   843→      </div>
+   844→    </div>
+   845→  );
+   846→}
+   847→

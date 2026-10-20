@@ -1,0 +1,669 @@
+# MASTER ENGINEERING PROMPT: E-COMMERCE LOAD TESTING, REAL-TIME OBSERVABILITY & CAPACITY PLANNING
+
+## 1. YOUR ROLE
+
+Act as a senior performance engineer, site reliability engineer (SRE), backend architect, database performance specialist, infrastructure engineer, and automated testing engineer.
+
+Your responsibility is to inspect, design, implement, validate, and document a comprehensive performance testing and monitoring system for my EXISTING, IN-PROGRESS E-COMMERCE WEBAPP.
+
+Do not assume that the project is production-ready, that its features are fully implemented, or that its technology stack matches any particular framework. Discover the actual state of the repository before deciding what to do.
+
+## 2. PROJECT CONTEXT AND OBJECTIVE
+
+My webapp is a new e-commerce platform inspired by Shopify and Shopee. It may support many sellers, individual seller storefronts, product catalogues, product variants, search, shopping carts, checkout, payments, order management, inventory management, seller dashboards, and other marketplace functionality.
+
+One major business risk is a sudden traffic surge caused by an influencer promoting a product on our platform.
+
+Thousands or potentially tens of thousands of people could arrive within a short period, view the same product, attempt to purchase limited stock, and check out simultaneously.
+
+I need to know:
+
+1. How much traffic the CURRENT APPLICATION CODE can handle under the tested conditions.
+2. Which parts of the application are efficient, stable, and capable of handling significant traffic.
+3. Which routes, APIs, database operations, background jobs, or business processes become bottlenecks.
+4. How much load the current hardware and deployed infrastructure can sustain.
+5. At approximately what load performance begins to deteriorate, failures increase, or the system approaches resource exhaustion.
+6. What safe operating capacity I should target before a major campaign.
+7. What upgrades would provide the greatest performance improvement for the lowest reasonable cost.
+8. Whether the webapp can recover properly after a traffic spike.
+9. Whether monitoring is genuinely collecting live data or simply displaying placeholders, simulated numbers, or incorrectly calculated metrics.
+10. How we can repeat these tests whenever the system changes.
+
+The final result must be an operational engineering system, not merely a report, a mock dashboard, a collection of unverified scripts, or a theoretical capacity estimate.
+
+## 3. NON-NEGOTIABLE RULES
+
+### A. Inspect before modifying
+
+First investigate the existing repository, architecture, dependencies, environment configuration, routes, business logic, database, caching, queues, deployment configuration, logging, and current monitoring.
+
+Do not blindly install another framework, replace the architecture, redesign existing features, or duplicate an existing monitoring system.
+
+Reuse working components wherever sensible.
+
+### B. Work sequentially
+
+Follow the phases in this prompt in order.
+
+Complete each phase, document its results, and validate its output before proceeding to the next phase. Do not skip steps, run unrelated implementation tasks concurrently, or make broad architectural changes before understanding their consequences.
+
+Do not stop after producing a plan. Proceed with implementation and safe validation wherever the repository and available environment permit.
+
+If an important capability cannot be completed because credentials, infrastructure, or deployment access are unavailable, implement what can be completed safely and clearly document the remaining requirement.
+
+### C. Protect the system
+
+Perform initial tests only against an isolated local development environment or a designated staging environment that I control.
+
+Never run heavy load, stress, spike, or breaking-point tests against production by default.
+
+Do not use real customer accounts, real customer data, real payment transactions, real shipping bookings, or real email/SMS delivery during testing.
+
+Use dedicated test data, isolated databases, and payment-provider sandbox modes or test doubles.
+
+A production test must require explicit authorization, an approved target, defined traffic limits, a maintenance or monitoring plan, and an emergency stop procedure.
+
+### D. Never invent measurements
+
+Every displayed metric must have a real data source and a documented calculation.
+
+Do not fabricate request rates, traffic counts, CPU utilization, response times, successful orders, or capacity estimates.
+
+Clearly distinguish:
+- Measured results.
+- Derived calculations based on measured results.
+- Estimates based on stated assumptions.
+- Untested capacity.
+- Recommendations requiring further validation.
+
+If monitoring data is unavailable, display an unmistakable unavailable or disconnected state instead of a plausible-looking number.
+
+---
+
+# PHASE 1 — COMPLETE SYSTEM AUDIT
+
+Before implementing anything, inspect the repository thoroughly.
+
+Identify:
+
+- Frontend framework, backend framework, runtime, and programming languages.
+- Server-side rendering, client-side rendering, API routes, and middleware.
+- Authentication, sessions, authorization, and rate limiting.
+- Database technology, schema, indexes, connection pool settings, and transaction patterns.
+- Redis or other caches, if present.
+- Message queues, background workers, scheduled jobs, and event processing.
+- Object storage, CDN, image handling, and static asset delivery.
+- Payment-provider integration, webhooks, shipping integration, and other external services.
+- Current hosting provider, container configuration, instance sizing, and deployment topology, where accessible.
+- Existing error tracking, logging, metrics, tracing, and performance tools.
+- Tests, seed scripts, API documentation, and existing load-testing utilities.
+- Incomplete features, mocked responses, hardcoded data, disconnected features, and failing user journeys that could invalidate test results.
+
+Map the critical e-commerce request paths and their dependencies.
+
+For example:
+
+Customer → CDN or frontend → API/backend → authentication → business logic → database/cache → response.
+
+For checkout, trace the complete process from cart validation through stock validation, price calculation, discount validation, order creation, payment initiation, payment confirmation, and final order status.
+
+Include asynchronous processing and webhook handling where applicable.
+
+Produce an architecture inventory and dependency map before changing code.
+
+Identify any missing information that cannot be verified from the repository.
+
+## Required audit deliverables
+
+Create an appropriate documentation directory following existing project conventions. Include:
+
+- `performance/architecture-audit.md`
+- `performance/critical-user-journeys.md`
+- `performance/current-risks.md`
+
+Adapt the filenames if the repository already has a suitable documentation convention.
+
+Do not claim a function works simply because a route or frontend component exists. Verify its actual execution path and dependencies.
+
+If a critical journey is broken or incomplete, report it and distinguish functional failure from performance failure.
+
+# PHASE 2 — DESIGN THE LOAD-TESTING STRATEGY
+
+Design a reproducible test strategy based on the actual application.
+
+Prefer Grafana k6 for scalable HTTP/API load generation where it fits the stack. Use existing compatible tooling when it provides equivalent or better functionality.
+
+Use browser-based testing, such as Playwright or an appropriate browser-load-testing tool, for a smaller number of real user journeys where needed.
+
+Do not use a large fleet of full browser instances for every simulated visitor if protocol-level tests can model the backend workload more efficiently.
+
+Keep the load generator independent of the application server whenever possible. Measure the generator's CPU, memory, network, and other resource limits so its own saturation is not mistaken for application saturation.
+
+## Simulate genuine user behaviour
+
+Create realistic test scenarios based on existing routes and working features.
+
+Include relevant combinations of:
+
+1. Landing on the home page.
+2. Browsing seller storefronts.
+3. Opening product listing and detail pages.
+4. Searching products and applying filters or sorting.
+5. Viewing product variants, prices, availability, and inventory.
+6. Logging in using isolated test accounts where authentication is required.
+7. Adding and removing items from carts.
+8. Updating cart quantities.
+9. Applying valid and invalid discount codes.
+10. Calculating shipping options and totals.
+11. Proceeding through checkout.
+12. Creating orders and simulating payment outcomes.
+13. Handling payment webhooks and order status transitions.
+14. Loading customer order history.
+15. Loading seller dashboards and order-management pages.
+16. Processing concurrent purchases of the same product.
+17. Running relevant background tasks and asynchronous workflows.
+18. Other high-risk or computationally expensive user journeys discovered during the audit.
+
+Only implement scenarios supported by the real application. Document missing functionality rather than inventing endpoints.
+
+Model plausible user think time, session behaviour, request rates, cache conditions, and user journeys where relevant.
+
+Include both read-heavy workloads and write-heavy workloads.
+
+For important purchase flows, measure completed and valid transactions, not just HTTP responses.
+
+An endpoint returning HTTP 200 must not automatically count as a successful purchase.
+
+## Build these test profiles
+
+### Profile A: Functional smoke test
+
+Use a very small amount of traffic to confirm that the test environment, authentication, test data, routes, and business transactions work.
+
+### Profile B: Baseline test
+
+Measure normal performance under a small, stable workload.
+
+### Profile C: Gradual load test
+
+Increase virtual users or request arrival rate in controlled stages, with sufficient time at each stage to collect meaningful measurements.
+
+### Profile D: Influencer launch spike test
+
+Simulate a sudden increase in traffic to popular storefronts and products.
+
+Include simultaneous product views, repeated access to popular inventory, cart creation, checkout requests, and payment simulations.
+
+Model both a sudden arrival spike and a sustained elevated workload.
+
+### Profile E: Stress and safe capacity test
+
+Increase traffic beyond the expected normal peak in carefully controlled steps to identify the first signs of degradation and the upper sustainable operating range.
+
+Do not deliberately crash the system just to obtain a maximum number.
+
+Stop automatically when a defined safety threshold is reached.
+
+### Profile F: Soak test
+
+Maintain a representative workload over a longer period to detect memory leaks, resource accumulation, database connection leaks, queue backlogs, and gradual performance deterioration.
+
+### Profile G: Recovery test
+
+After reducing or stopping the load, measure how quickly the system returns to a healthy state.
+
+Check recovery of latency, error rates, resource utilization, queue processing, and database connections.
+
+Make durations, traffic levels, ramp rates, and thresholds configurable rather than hardcoding them throughout the scripts.
+
+Do not assume that any particular number of users represents the system's real capacity.
+
+# PHASE 3 — CREATE SAFE TEST DATA AND ENVIRONMENTS
+
+Create a dedicated and repeatable test-data setup.
+
+Requirements:
+
+- Use isolated test accounts, seller accounts, products, variants, carts, and inventory.
+- Give test records identifiable markers so they cannot be confused with real customer activity.
+- Provide deterministic test-data seeding.
+- Make tests repeatable without accumulating uncontrolled duplicate records.
+- Define safe cleanup procedures for test data.
+- Verify that cleanup is restricted to the designated test environment.
+- Use sandbox payment integrations or deterministic payment simulators.
+- Simulate payment success, payment failure, timeout, retry, duplicate webhook, and delayed confirmation where applicable.
+- Ensure shipping providers, notifications, and other paid external integrations cannot accidentally perform real-world actions.
+- Avoid bypassing security controls in a way that makes test results meaningless.
+- Use dedicated test configuration rather than weakening production security.
+
+If external services cannot be safely or affordably exercised at load, simulate their response times, errors, and timeouts in controlled tests.
+
+Report separately what was tested against the real application and what was simulated.
+
+Include concurrency and data-integrity checks. Confirm that concurrent purchases cannot silently create duplicate orders, double-charge transactions, corrupt inventory, or oversell stock beyond the intended business rules.
+
+# PHASE 4 — IMPLEMENT REAL PERFORMANCE MONITORING
+
+Implement a functioning observability system that measures both user-facing behaviour and the internal components responsible for delivering it.
+
+First reuse any suitable monitoring infrastructure already present.
+
+If a suitable system is absent, evaluate an appropriate stack such as:
+
+- OpenTelemetry for application instrumentation and distributed traces.
+- Prometheus or an equivalent metrics backend.
+- Grafana or an existing compatible dashboard.
+- Existing infrastructure or cloud-provider telemetry for host, container, database, and managed-service metrics.
+- A compatible alerting system.
+
+These are candidate technologies, not mandatory dependencies if the project already has a better-supported solution.
+
+Choose compatible versions, verify integration with the actual stack, document setup, and minimise unnecessary operating cost.
+
+## A. Application metrics
+
+Measure where applicable:
+
+- Total requests and requests per second.
+- Active and concurrent requests.
+- Request latency at p50, p90, p95, and p99.
+- HTTP error rate and status-code distribution.
+- Timeouts, retries, and rate-limit responses.
+- Per-route and per-operation performance.
+- Backend processing duration.
+- External-service duration.
+- Authentication failures and session-related errors.
+- Cache hits, cache misses, and cache latency.
+- Background job execution time and failure rate.
+
+Instrument the actual backend rather than counting browser visits or frontend page views as a substitute for server load.
+
+## B. Hardware and runtime metrics
+
+Collect actual measurements where the hosting environment exposes them:
+
+- CPU usage and saturation.
+- Memory consumption and available memory.
+- Memory growth over time.
+- Process or container restarts.
+- CPU throttling and container limits.
+- Network throughput, errors, and connection limits.
+- Disk usage and I/O saturation where relevant.
+- Runtime-specific indicators such as event-loop lag, garbage collection, and heap usage where supported.
+- Worker utilisation and process health.
+
+Separate application-server, database, cache, queue, monitoring, and load-generator resource measurements where they run on different machines or services.
+
+Do not treat a locally measured laptop benchmark as a measurement of an untested cloud deployment.
+
+## C. Database monitoring
+
+Implement or configure instrumentation for:
+
+- Query latency and slow queries.
+- Query throughput.
+- Active connections and connection-pool saturation.
+- Connection-pool waiting time.
+- Lock waits, deadlocks, and long-running transactions.
+- CPU and memory usage where available.
+- Index usage and suspected missing indexes.
+- Repeated queries and inefficient query patterns.
+- Transaction failures and rollback rates.
+- Database connection errors.
+- Read/write workload differences.
+
+Identify the actual SQL queries and application operations contributing to a bottleneck where tracing and database access allow it.
+
+Do not add speculative indexes or rewrite queries without evaluating the code, schema, query plan, and measured behaviour.
+
+## D. Cache, queue, and external dependencies
+
+Where applicable, monitor:
+
+- Cache hit ratio, latency, memory, and eviction rate.
+- Queue depth and oldest-message age.
+- Job processing latency, retry count, and failure count.
+- Consumer or worker utilisation.
+- Payment, shipping, storage, search, email, and other external service latency.
+- Timeouts, quota limits, and rate-limit responses.
+- Third-party dependencies that prevent checkout from completing.
+
+Clearly distinguish an external provider limitation from an internal application bottleneck.
+
+## E. Real-time monitoring dashboard
+
+Create a useful dashboard that allows an engineer or non-specialist operator to understand system health during a test.
+
+The dashboard should show:
+
+1. Current system health and active alerts.
+2. Incoming requests per second.
+3. Current virtual users and test phase, where test data is available.
+4. Latency percentiles.
+5. Errors and failed business transactions.
+6. Successful checkout and order-creation rates.
+7. CPU, memory, connection pools, and other resource utilisation.
+8. Database, cache, and queue health.
+9. The slowest or most error-prone routes.
+10. Bottleneck indicators and resource headroom.
+11. Load-generator health.
+12. Historical comparisons between test runs.
+
+Make charts filterable by test run, endpoint, service, and time range where practical.
+
+Use appropriately bounded metric labels. Never put passwords, access tokens, full customer details, or other sensitive information into telemetry.
+
+## F. Prove that monitoring actually works
+
+Create a verification procedure that:
+
+- Starts with a known healthy test environment.
+- Generates controlled traffic.
+- Confirms that the request counter and latency metrics change.
+- Confirms the correct service and database telemetry is visible.
+- Causes a safe, controlled test event that should activate a designated alert.
+- Verifies that the alert is actually detected and cleared.
+- Detects missing, stale, disconnected, or incomplete telemetry.
+
+A dashboard is not considered complete just because the charts render.
+
+Every metric must have a traceable source, a clear definition, and validation evidence.
+
+Document unavailable metrics and the permissions or infrastructure required to obtain them.
+
+# PHASE 5 — DEFINE PERFORMANCE TARGETS AND SAFETY GUARDRAILS
+
+Inspect current application behaviour first.
+
+If the business does not yet have formal service-level objectives (SLOs), propose sensible initial targets and label them as provisional. Make them configurable and explain why each target is suitable for its endpoint or user journey.
+
+Do not apply the same latency target indiscriminately to a cached product listing, a complex search, and a checkout transaction.
+
+At minimum, evaluate:
+
+- Request failure rate.
+- p95 and p99 latency.
+- Successful business transaction rate.
+- Resource exhaustion indicators.
+- Database connection saturation.
+- Increasing queue backlog.
+- Inventory and order correctness.
+- Recovery after elevated traffic.
+- Monitoring system health.
+
+Configure automatic test-abort guardrails.
+
+The test must stop or ramp down if agreed limits are crossed, including appropriate combinations of:
+
+- Excessive application errors.
+- Severe latency deterioration.
+- Critical resource exhaustion.
+- Database instability.
+- Queue growth beyond safe limits.
+- Repeated process restarts or health-check failures.
+- Test-generator saturation.
+- Unexpected activity outside the approved test target.
+- Excessive cost or resource consumption.
+
+Use a hard maximum for each test profile. Do not allow an automated stress test to increase load indefinitely.
+
+Provide a clearly documented manual emergency-stop procedure.
+
+A failed performance threshold must be distinguishable from a functional test failure, an external-service failure, a test-script defect, or a load-generator limitation.
+
+# PHASE 6 — RUN TESTS IN A CONTROLLED SEQUENCE
+
+Once critical user journeys and test isolation are verified, execute tests in this order:
+
+1. Validate the test environment, target, seed data, cleanup boundaries, and emergency stop.
+2. Run a small functional smoke test.
+3. Run a low-load baseline.
+4. Validate that all monitoring data is present and correctly attributed.
+5. Run gradual load tests.
+6. Identify the first measurable performance degradation.
+7. Run a bounded influencer-launch spike test.
+8. Conduct a safe stress/capacity-boundary test, subject to guardrails.
+9. Run soak testing where the environment permits.
+10. Run recovery tests.
+11. Repeat important tests after fixes to measure the actual improvement.
+
+Do not launch the next test automatically if the preceding test reveals a serious correctness issue, unexpected production dependency, unsafe resource consumption, or an unverified monitoring failure.
+
+Keep test configuration, scripts, commands, versions, environment details, and results under version control where appropriate.
+
+If you cannot execute a test because the necessary infrastructure is inaccessible, do not fabricate its results. Provide the exact prerequisites and a reproducible command for running it.
+
+# PHASE 7 — CALCULATE REALISTIC CAPACITY ESTIMATES
+
+This is a central deliverable.
+
+Do not report a single invented number called “maximum users.”
+
+Calculate and report several distinct capacity measures.
+
+## A. Maximum tested sustainable throughput
+
+Identify the highest measured workload that consistently meets the agreed performance and correctness criteria for the test duration.
+
+Report:
+
+- Requests per second.
+- Successful business transactions per second or minute.
+- Concurrent virtual users.
+- Latency percentiles.
+- Error rate.
+- Resource utilisation and remaining headroom.
+- Test duration.
+- Environment and infrastructure configuration.
+
+Keep virtual users, real concurrent human sessions, requests per second, and orders per minute separate. They are related, but not interchangeable.
+
+## B. Safe operating capacity
+
+Recommend a practical capacity below the measured performance cliff.
+
+Use measured resource headroom, latency trends, reliability criteria, expected traffic variability, and the consequences of a failure.
+
+As an initial planning approach, evaluate a meaningful operating margin below the highest stable tested load, such as reserving 20–30% headroom where appropriate. Do not treat this percentage as universally correct; justify or adjust it based on the actual system and its risks.
+
+## C. Capacity boundary and uncertainty range
+
+Report:
+
+- Highest load at which the system passed.
+- First load level at which an important threshold failed.
+- First observed bottleneck.
+- The interval between the highest passing test and the first failing test.
+- Whether the failure was reproducible.
+- Whether the exact boundary was measured or remains unknown.
+
+Where a test passes at one level and fails at a higher level, report the bracket between those levels rather than pretending that the exact limit is known.
+
+Stop safely before destructive failure. Do not deliberately crash the production application to determine its theoretical failure point.
+
+## D. Separate application and hardware limits
+
+Distinguish between:
+
+1. Application-code or runtime limitations.
+2. Database or cache limitations.
+3. Infrastructure and hardware limitations.
+4. External-provider limits.
+5. Configuration limits, such as connection pools, worker counts, or rate limits.
+6. Load-generator limitations.
+
+Where possible, use controlled benchmarks on equivalent infrastructure to determine whether a bottleneck comes from inefficient code or insufficient resources.
+
+Compare measured results before and after targeted improvements.
+
+If only a local development machine is available, explicitly label the results as local-development capacity. Do not automatically extrapolate them to cloud servers.
+
+If cloud instance sizes or hardware configurations are to be compared, benchmark the relevant configurations or clearly explain the assumptions and uncertainty of the projection.
+
+## E. Influencer-launch readiness estimate
+
+Produce conservative, evidence-based capacity estimates for campaign scenarios.
+
+For each scenario, estimate the traffic levels that can be supported under the tested assumptions and report:
+
+- Visitors or sessions only where a defensible conversion model exists.
+- Concurrent simulated users.
+- Peak requests per second.
+- Product views per second.
+- Checkout attempts per minute.
+- Successful orders per minute.
+- Resource headroom.
+- Expected degradation risks.
+- Confidence level and limitations.
+
+Use an explicitly documented model to convert between requests, sessions, and business transactions. Do not assume one user generates one request, or that one request equals one purchase.
+
+If sufficient data is unavailable to estimate real visitor counts, state what baseline traffic or behavioural data must first be collected.
+
+# PHASE 8 — TURN THE FINDINGS INTO ENGINEERING IMPROVEMENTS
+
+Use actual test results to identify the highest-impact bottlenecks.
+
+Potential findings might include:
+
+- Slow or repetitive database queries.
+- Missing or inefficient indexes.
+- Database connection-pool exhaustion.
+- Unnecessary sequential API requests.
+- Expensive product searches or filters.
+- Inefficient server-side rendering.
+- Excessive memory allocation or blocking operations.
+- Ineffective caching.
+- Cache stampedes when a popular item is requested simultaneously.
+- Unbounded request concurrency.
+- Poor rate-limit configuration.
+- Queue backlogs.
+- Long-running checkout transactions.
+- Race conditions in inventory or order creation.
+- Payment-webhook retries or duplicate event processing.
+- Insufficient worker capacity.
+- CDN or static-asset delivery issues.
+- A third-party dependency that cannot sustain the required request rate.
+
+These are potential investigation areas, not assumptions about the current code.
+
+For each confirmed issue, provide:
+
+1. Evidence and the test run that exposed it.
+2. The affected route, service, query, or operation.
+3. The underlying cause.
+4. The user or business impact.
+5. The recommended correction.
+6. Estimated implementation complexity.
+7. Expected benefit and confidence level.
+8. Possible side effects or trade-offs.
+9. A regression test or benchmark to verify the correction.
+
+Prioritise recommendations by impact, cost, risk, and urgency.
+
+Do not rewrite the entire system or introduce complex distributed infrastructure merely because the system is expected to grow.
+
+Prefer targeted, measurable improvements first.
+
+Implement safe, well-supported fixes sequentially, and rerun the relevant tests after each meaningful change.
+
+Preserve the existing application's business rules, security, and architectural conventions.
+
+# PHASE 9 — PRODUCE AN OPERATIONAL PERFORMANCE REPORT
+
+Generate a report after each completed test run and a consolidated report after the assessment.
+
+Include the following sections.
+
+### 1. Executive summary
+
+Explain in simple terms whether the tested system is ready for:
+
+- Small-scale traffic.
+- Normal expected traffic.
+- A major influencer campaign.
+- A sudden traffic spike.
+
+Use a clear readiness classification and explain the evidence behind it.
+
+### 2. Actual test environment
+
+Record the deployed or local environment, hardware and instance limits, database configuration, software versions, and relevant dependencies.
+
+Include anything unknown or unverified.
+
+### 3. Test configuration
+
+Record test profiles, duration, traffic stages, virtual users, arrival rate, thresholds, and scenario mix.
+
+### 4. Measured capacity
+
+Show sustainable tested throughput, recommended safe operating capacity, observed degradation boundaries, and uncertainty ranges.
+
+### 5. Bottleneck ranking
+
+Rank the most important confirmed performance issues and distinguish application, database, hardware, and external-service limitations.
+
+### 6. Strongest components
+
+Identify the routes and services that performed well under the tested workloads, with supporting measurements.
+
+### 7. Business correctness
+
+Report whether concurrent cart, inventory, checkout, order, and payment-simulation tests preserved the expected business rules.
+
+### 8. Monitoring status
+
+List working metrics, validated dashboards, working alerts, disconnected integrations, and unavailable signals.
+
+### 9. Recommended improvements
+
+Provide an ordered action plan that balances performance improvement, operational risk, implementation complexity, and cost.
+
+### 10. Remaining uncertainties
+
+Identify what has not yet been tested and what additional infrastructure, baseline data, or permissions are needed.
+
+### 11. Reproducibility
+
+Provide commands for starting monitoring, running each test profile, opening the dashboard, collecting results, and cleaning up test data safely.
+
+Store reports, test scripts, dashboard configuration, and supporting measurements in suitable project directories. Preserve historical results so future runs can be compared.
+
+Never include secrets, credentials, or sensitive production records in reports.
+
+# PHASE 10 — FINAL ACCEPTANCE CRITERIA
+
+The task is complete only when the applicable acceptance criteria have been demonstrated.
+
+- [ ] The existing architecture has been inspected and documented.
+- [ ] Critical user journeys have been mapped and their functional status checked.
+- [ ] A safe and repeatable traffic simulation has been implemented.
+- [ ] Smoke and baseline tests execute successfully where the environment permits.
+- [ ] Load scenarios cover relevant e-commerce read and write operations.
+- [ ] Influencer-launch spike testing has a defined, configurable load profile.
+- [ ] Test data and external service integrations are isolated from real transactions.
+- [ ] Concurrency and data-integrity checks cover critical purchasing operations.
+- [ ] Real application and infrastructure metrics are collected where supported.
+- [ ] The dashboard displays validated data rather than fabricated or placeholder numbers.
+- [ ] Alerts and test-abort guardrails have been verified.
+- [ ] Results distinguish throughput, virtual users, successful orders, and hardware utilisation.
+- [ ] Capacity estimates include uncertainty and the limits of the tested environment.
+- [ ] At least one end-to-end measurement links generated load to backend metrics and an analysis report.
+- [ ] Identified bottlenecks have evidence-backed recommendations.
+- [ ] Relevant fixes have been retested where implementation is safe and possible.
+- [ ] A future developer can reproduce the tests using the provided documentation.
+
+Do not mark an acceptance criterion complete without evidence.
+
+# YOUR FIRST ACTION
+
+Start with PHASE 1.
+
+Inspect the existing codebase and report the actual architecture, the critical e-commerce user journeys, the current monitoring and testing capabilities, and any risks that must be addressed first.
+
+Then create the implementation plan based on those findings and execute the phases sequentially.
+
+Adapt everything to the actual repository. Do not assume particular routes, database technology, infrastructure, available credentials, or completed functionality.
+
+The ultimate objective is to make this webapp measurably more resilient, give me a trustworthy understanding of its capacity, and help me determine what must be upgraded before a major influencer campaign puts the business under real traffic pressure.

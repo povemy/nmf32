@@ -1,0 +1,787 @@
+     1→"use client";
+     2→// Task 2-d — SD-06/07 Wallet & Payouts: balance cards (ledger truth), recent
+     3→// ledger lines, payout history, bank accounts with add dialog.
+     4→// Every recent-activity row is clickable and opens the individual activity
+     5→// page (txn context + related order/payout) — same pattern as Orders detail.
+     6→import { useState } from "react";
+     7→import {
+     8→  apiSend,
+     9→  EmptyState,
+    10→  MoneyInput,
+    11→  RowsSkeleton,
+    12→  StatCard,
+    13→  StatusChip,
+    14→  fmtDate,
+    15→  fmtDateTime,
+    16→  formatMinor,
+    17→  runMutation,
+    18→  useApi,
+    19→  type BankAccount,
+    20→  type SellerNav,
+    21→  type SellerWallet,
+    22→} from "./ui-bits";
+    23→import { Badge } from "@/components/ui/badge";
+    24→import { Button } from "@/components/ui/button";
+    25→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+    26→import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+    27→import { Input } from "@/components/ui/input";
+    28→import { Label } from "@/components/ui/label";
+    29→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    30→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    31→import { ArrowLeft, ArrowRight, Banknote, Clock3, Coins, Landmark, PiggyBank, Plus, ReceiptText, ShieldCheck, Wallet2 } from "lucide-react";
+    32→import { cn } from "@/lib/utils";
+    33→
+    34→type WalletData = {
+    35→  wallet: SellerWallet;
+    36→  recentLines: {
+    37→    id: string;
+    38→    txnId: string;
+    39→    direction: "credit" | "debit";
+    40→    amountMinor: number;
+    41→    availableAt: string | null;
+    42→    memo: string | null;
+    43→    createdAt: string;
+    44→    txn: { id: string; txnType: string; description: string | null; occurredAt: string };
+    45→  }[];
+    46→  payouts: {
+    47→    id: string;
+    48→    referenceNo: string;
+    49→    amountMinor: number;
+    50→    status: string;
+    51→    method: string;
+    52→    paidAt: string | null;
+    53→    failReason?: string | null; // seller-safe reason written by the fail/reject routes (see PayoutStatusChip note)
+    54→    createdAt: string;
+    55→  }[];
+    56→  minPayoutMinor?: number;
+    57→  openRequest?: { id: string; referenceNo: string; amountMinor: number; createdAt: string } | null;
+    58→};
+    59→
+    60→const BANKS = ["Maybank", "CIMB", "Public Bank", "Bank Rakyat", "Hong Leong"];
+    61→
+    62→// FIN-3b (3b.2) — seller-facing payout status labels. Display-only map: the
+    63→// API keeps returning the raw status strings (requested/processing/paid/…);
+    64→// every payout status on the wallet renders through PayoutStatusChip so the
+    65→// wording is consistent between the payout table, the open-request banner and
+    66→// the activity feed. "Paid" is only ever shown when the row's status is paid
+    67→// (paidAt set server-side by the mark-paid/PSP-confirmed transition).
+    68→const STATUS_LABELS: Record<string, string> = {
+    69→  requested: "Awaiting approval",
+    70→  processing: "Processing",
+    71→  paid: "Paid",
+    72→  failed: "Failed",
+    73→  rejected: "Rejected",
+    74→  returned: "Returned",
+    75→  reversed: "Reversed",
+    76→};
+    77→
+    78→// Same tones the shared seller StatusChip assigns to these statuses (amber in
+    79→// progress, emerald paid, rose failed/rejected, muted for future/rare states).
+    80→const PAYOUT_CHIP_CLASS: Record<string, string> = {
+    81→  requested: "bg-amber-100 text-amber-800 border-amber-200",
+    82→  processing: "bg-amber-100 text-amber-800 border-amber-200",
+    83→  paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    84→  failed: "bg-rose-100 text-rose-800 border-rose-200",
+    85→  rejected: "bg-rose-100 text-rose-800 border-rose-200",
+    86→};
+    87→
+    88→function PayoutStatusChip({ status, className }: { status: string; className?: string }) {
+    89→  const s = (status ?? "").toLowerCase();
+    90→  return (
+    91→    <Badge
+    92→      variant="outline"
+    93→      className={cn("border font-medium", PAYOUT_CHIP_CLASS[s] ?? "bg-muted text-muted-foreground border-border", className)}
+    94→    >
+    95→      {STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
+    96→    </Badge>
+    97→  );
+    98→}
+    99→
+   100→export default function SellerWallet({ focusActivityId, onNavigate }: { focusActivityId?: string; onNavigate?: (n: SellerNav) => void } = {}) {
+   101→  // Individual activity page (deep-linkable, same pattern as Orders detail)
+   102→  if (focusActivityId && onNavigate) {
+   103→    return <LedgerActivityDetail activityId={focusActivityId} onBack={() => onNavigate({ view: "wallet" })} onNavigate={onNavigate} />;
+   104→  }
+   105→
+   106→  return <WalletOverview onNavigate={onNavigate} />;
+   107→}
+   108→
+   109→function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void }) {
+   110→  const { data, loading, error, refetch } = useApi<WalletData>("/api/store/wallet");
+   111→  const { data: bankAccounts, refetch: refetchBanks } = useApi<BankAccount[]>("/api/store/bank-accounts");
+   112→  const [addOpen, setAddOpen] = useState(false);
+   113→  const [requestOpen, setRequestOpen] = useState(false);
+   114→
+   115→  const openActivity = (id: string) => onNavigate?.({ view: "wallet", activityId: id });
+   116→
+   117→  if (loading) {
+   118→    return (
+   119→      <div className="space-y-5">
+   120→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   121→          {Array.from({ length: 4 }).map((_, i) => (
+   122→            <RowsSkeleton key={i} rows={1} />
+   123→          ))}
+   124→        </div>
+   125→        <RowsSkeleton rows={5} />
+   126→      </div>
+   127→    );
+   128→  }
+   129→  if (error || !data) {
+   130→    return <Card><CardContent className="p-6 text-sm text-rose-600">Could not load wallet{error ? `: ${error}` : ""}</CardContent></Card>;
+   131→  }
+   132→
+   133→  const w = data.wallet;
+   134→  const minPayout = data.minPayoutMinor ?? 1000;
+   135→  const openRequest = data.openRequest ?? null;
+   136→
+   137→  return (
+   138→    <div className="space-y-6">
+   139→      {/* payout request CTA + pending banner */}
+   140→      <section aria-label="Payout request" className="rounded-xl border bg-card p-4">
+   141→        {openRequest ? (
+   142→          <div className="flex flex-wrap items-center gap-3">
+   143→            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+   144→              <Clock3 className="h-5 w-5" />
+   145→            </span>
+   146→            <div className="min-w-0 flex-1">
+   147→              <p className="text-sm font-semibold">
+   148→                Payout request {openRequest.referenceNo} · {formatMinor(openRequest.amountMinor)} — awaiting approval
+   149→              </p>
+   150→              <p className="text-xs text-muted-foreground">
+   151→                Requested {fmtDateTime(openRequest.createdAt)}. NOMOFEE finance reviews payout requests — the amount stays in your available balance until the transfer is initiated.
+   152→              </p>
+   153→            </div>
+   154→            <PayoutStatusChip status="requested" />
+   155→          </div>
+   156→        ) : (
+   157→          <div className="flex flex-wrap items-center gap-3">
+   158→            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+   159→              <Banknote className="h-5 w-5" />
+   160→            </span>
+   161→            <div className="min-w-0 flex-1">
+   162→              <p className="text-sm font-semibold">Ready to get paid?</p>
+   163→              <p className="text-xs text-muted-foreground">
+   164→                Request a payout of your available balance (min {formatMinor(minPayout)}). NOMOFEE reviews and transfers to your bank — usually within 1–3 working days.
+   165→              </p>
+   166→            </div>
+   167→            <Button
+   168→              className="min-h-[44px] gap-2"
+   169→              onClick={() => setRequestOpen(true)}
+   170→              disabled={w.availableMinor < minPayout || (bankAccounts ?? []).length === 0}
+   171→            >
+   172→              <Banknote className="h-4 w-4" />
+   173→              Request payout
+   174→            </Button>
+   175→          </div>
+   176→        )}
+   177→        {!openRequest && w.availableMinor < minPayout ? (
+   178→          <p className="mt-2 text-xs text-muted-foreground">
+   179→            Available balance is below the {formatMinor(minPayout)} minimum — keep selling and request once you clear it.
+   180→          </p>
+   181→        ) : null}
+   182→        {!openRequest && (bankAccounts ?? []).length === 0 ? (
+   183→          <p className="mt-2 text-xs text-muted-foreground">Add a bank account below to enable payout requests.</p>
+   184→        ) : null}
+   185→      </section>
+   186→
+   187→      {/* balance cards */}
+   188→      <section aria-label="Balances" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   189→        <StatCard
+   190→          label="Pending"
+   191→          value={formatMinor(w.pendingMinor)}
+   192→          sub="Available 7 days after payment (hold)"
+   193→          icon={<Clock3 className="h-4 w-4" />}
+   194→          tone="warn"
+   195→        />
+   196→        <StatCard
+   197→          label="Available"
+   198→          value={formatMinor(w.availableMinor)}
+   199→          sub={w.availableMinor < 0 ? "Negative — check for refunds/adjustments" : "Ready for the next payout batch"}
+   200→          icon={<Wallet2 className="h-4 w-4" />}
+   201→          tone={w.availableMinor < 0 ? "bad" : undefined}
+   202→        />
+   203→        <StatCard label="Lifetime earned" value={formatMinor(w.lifetimeEarnedMinor)} sub="Gross seller net, all time" icon={<PiggyBank className="h-4 w-4" />} />
+   204→        <StatCard label="Commission paid" value={formatMinor(w.lifetimeCommissionMinor)} sub="8% platform fee, all time" icon={<Coins className="h-4 w-4" />} />
+   205→      </section>
+   206→
+   207→      <div className="grid gap-6 lg:grid-cols-3">
+   208→        {/* ledger */}
+   209→        <Card className="lg:col-span-2">
+   210→          <CardHeader>
+   211→            <CardTitle className="flex items-center gap-2 text-sm">
+   212→              <ReceiptText className="h-4 w-4 text-primary" /> Recent ledger activity
+   213→            </CardTitle>
+   214→          </CardHeader>
+   215→          <CardContent>
+   216→            {data.recentLines.length === 0 ? (
+   217→              <EmptyState title="No wallet activity yet" hint="When orders are paid you'll see credits here after the clearing hold." />
+   218→            ) : (
+   219→              <div className="max-h-96 overflow-y-auto overflow-x-auto">
+   220→                <Table>
+   221→                  <TableHeader>
+   222→                    <TableRow>
+   223→                      <TableHead>When</TableHead>
+   224→                      <TableHead>Memo</TableHead>
+   225→                      <TableHead>Direction</TableHead>
+   226→                      <TableHead className="text-right">Amount</TableHead>
+   227→                      <TableHead aria-label="Open activity" />
+   228→                    </TableRow>
+   229→                  </TableHeader>
+   230→                  <TableBody>
+   231→                    {data.recentLines.map((l) => (
+   232→                      <TableRow
+   233→                        key={l.id}
+   234→                        className="cursor-pointer transition-colors hover:bg-muted/50"
+   235→                        onClick={() => openActivity(l.id)}
+   236→                        aria-label={`View activity: ${l.memo ?? l.txn.description ?? l.txn.txnType}`}
+   237→                      >
+   238→                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDateTime(l.createdAt)}</TableCell>
+   239→                        <TableCell className="max-w-64">
+   240→                          <p className="truncate text-sm font-medium group-hover:underline">{l.memo ?? l.txn.description ?? l.txn.txnType}</p>
+   241→                          {l.availableAt ? (
+   242→                            <p className="text-xs text-muted-foreground">Matures {fmtDate(l.availableAt)}</p>
+   243→                          ) : null}
+   244→                        </TableCell>
+   245→                        <TableCell>
+   246→                          <span
+   247→                            className={
+   248→                              "rounded-full px-2 py-0.5 text-xs font-medium capitalize " +
+   249→                              (l.direction === "credit" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")
+   250→                            }
+   251→                          >
+   252→                            {l.direction}
+   253→                          </span>
+   254→                        </TableCell>
+   255→                        <TableCell
+   256→                          className={
+   257→                            "text-right tabular-nums " + (l.direction === "credit" ? "text-emerald-600" : "text-rose-600")
+   258→                          }
+   259→                        >
+   260→                          {l.direction === "credit" ? "+" : "−"}
+   261→                          {formatMinor(l.amountMinor)}
+   262→                        </TableCell>
+   263→                        <TableCell className="w-8 text-right text-muted-foreground">
+   264→                          <ArrowRight className="h-4 w-4" aria-hidden />
+   265→                        </TableCell>
+   266→                      </TableRow>
+   267→                    ))}
+   268→                  </TableBody>
+   269→                </Table>
+   270→              </div>
+   271→            )}
+   272→            <p className="mt-3 text-xs text-muted-foreground">
+   273→              Double-entry ledger — every credit has a matching debit somewhere. Click any activity to see the full journal entry and the order, refund or payout behind it.
+   274→            </p>
+   275→          </CardContent>
+   276→        </Card>
+   277→
+   278→        {/* bank accounts */}
+   279→        <Card>
+   280→          <CardHeader className="flex-row items-center justify-between space-y-0">
+   281→            <CardTitle className="flex items-center gap-2 text-sm">
+   282→              <Landmark className="h-4 w-4 text-primary" /> Bank accounts
+   283→            </CardTitle>
+   284→            <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setAddOpen(true)}>
+   285→              <Plus className="h-3.5 w-3.5" /> Add
+   286→            </Button>
+   287→          </CardHeader>
+   288→          <CardContent className="space-y-2">
+   289→            {(bankAccounts ?? []).length === 0 ? (
+   290→              <p className="py-6 text-center text-sm text-muted-foreground">No bank account — add one to receive payouts.</p>
+   291→            ) : (
+   292→              (bankAccounts ?? []).map((a) => (
+   293→                <div key={a.id} className="rounded-xl border p-3">
+   294→                  <div className="flex items-center justify-between gap-2">
+   295→                    <p className="text-sm font-medium">{a.bankName}</p>
+   296→                    {a.verified ? <StatusChip status="verified" /> : <StatusChip status="pending" />}
+   297→                  </div>
+   298→                  <p className="text-xs text-muted-foreground">{a.holderName} · {a.accountNumberMasked}</p>
+   299→                  <p className="text-xs text-muted-foreground">Added {fmtDate(a.createdAt)}</p>
+   300→                </div>
+   301→              ))
+   302→            )}
+   303→          </CardContent>
+   304→        </Card>
+   305→      </div>
+   306→
+   307→      {/* payouts */}
+   308→      <Card>
+   309→        <CardHeader>
+   310→          <CardTitle className="text-sm">Payouts</CardTitle>
+   311→        </CardHeader>
+   312→        <CardContent>
+   313→          {data.payouts.length === 0 ? (
+   314→            <EmptyState title="No payouts yet" hint="Payout batches run when your available balance clears the minimum (RM 50)." />
+   315→          ) : (
+   316→            <div className="overflow-x-auto">
+   317→              <Table>
+   318→                <TableHeader>
+   319→                  <TableRow>
+   320→                    <TableHead>Reference</TableHead>
+   321→                    <TableHead>Method</TableHead>
+   322→                    <TableHead>Status</TableHead>
+   323→                    <TableHead className="text-right">Amount</TableHead>
+   324→                    <TableHead className="text-right">Paid at</TableHead>
+   325→                  </TableRow>
+   326→                </TableHeader>
+   327→                <TableBody>
+   328→                  {data.payouts.map((p) => (
+   329→                    <TableRow key={p.id}>
+   330→                      <TableCell className="font-medium">{p.referenceNo}</TableCell>
+   331→                      <TableCell className="capitalize">{p.method.replace(/_/g, " ")}</TableCell>
+   332→                      <TableCell>
+   333→                        <PayoutStatusChip status={p.status} />
+   334→                        {/* Failed rows surface the fail/reject-route reason (admin-entered,
+   335→                            seller-facing wording — e.g. "bank account closed"; the PSP path
+   336→                            writes provider-reported reasons). No stack traces or internal
+   337→                            error codes are ever written to this field, so it is safe to show. */}
+   338→                        {p.status === "failed" && p.failReason ? (
+   339→                          <p className="mt-1 max-w-48 truncate text-[11px] text-muted-foreground" title={p.failReason}>
+   340→                            {p.failReason}
+   341→                          </p>
+   342→                        ) : null}
+   343→                      </TableCell>
+   344→                      <TableCell className="text-right tabular-nums">{formatMinor(p.amountMinor)}</TableCell>
+   345→                      <TableCell className="text-right text-xs text-muted-foreground">{p.paidAt ? fmtDateTime(p.paidAt) : "—"}</TableCell>
+   346→                    </TableRow>
+   347→                  ))}
+   348→                </TableBody>
+   349→              </Table>
+   350→            </div>
+   351→          )}
+   352→        </CardContent>
+   353→      </Card>
+   354→
+   355→      <AddBankDialog
+   356→        open={addOpen}
+   357→        onOpenChange={setAddOpen}
+   358→        onDone={() => {
+   359→          refetchBanks();
+   360→          refetch();
+   361→        }}
+   362→      />
+   363→
+   364→      {requestOpen ? (
+   365→        <RequestPayoutDialog
+   366→          open={requestOpen}
+   367→          onOpenChange={setRequestOpen}
+   368→          availableMinor={w.availableMinor}
+   369→          minPayoutMinor={minPayout}
+   370→          bankAccounts={bankAccounts ?? []}
+   371→          onDone={refetch}
+   372→        />
+   373→      ) : null}
+   374→    </div>
+   375→  );
+   376→}
+   377→
+   378→// ---------------------------------------------------------------- request payout dialog
+   379→
+   380→function RequestPayoutDialog({
+   381→  open,
+   382→  onOpenChange,
+   383→  availableMinor,
+   384→  minPayoutMinor,
+   385→  bankAccounts,
+   386→  onDone,
+   387→}: {
+   388→  open: boolean;
+   389→  onOpenChange: (o: boolean) => void;
+   390→  availableMinor: number;
+   391→  minPayoutMinor: number;
+   392→  bankAccounts: BankAccount[];
+   393→  onDone: () => void;
+   394→}) {
+   395→  // Fresh mount on open (parent conditionally renders it) — defaults to the
+   396→  // full available balance without a setState-in-effect.
+   397→  const [amountMinor, setAmountMinor] = useState<number | null>(availableMinor);
+   398→  const [busy, setBusy] = useState(false);
+   399→
+   400→  const bank = bankAccounts.find((b) => b.verified) ?? bankAccounts[0] ?? null;
+   401→  const amount = amountMinor ?? 0;
+   402→  const valid = amount >= minPayoutMinor && amount <= availableMinor;
+   403→
+   404→  const submit = async () => {
+   405→    if (!valid) return;
+   406→    setBusy(true);
+   407→    const ok = await runMutation(
+   408→      () => apiSend("POST", "/api/store/payouts", { amountMinor: amount }),
+   409→      "Payout request submitted — NOMOFEE finance will review it"
+   410→    );
+   411→    setBusy(false);
+   412→    if (ok) {
+   413→      onOpenChange(false);
+   414→      onDone();
+   415→    }
+   416→  };
+   417→
+   418→  return (
+   419→    <Dialog open={open} onOpenChange={onOpenChange}>
+   420→      <DialogContent className="max-w-md">
+   421→        <DialogHeader>
+   422→          <DialogTitle>Request a payout</DialogTitle>
+   423→        </DialogHeader>
+   424→        <div className="space-y-3.5">
+   425→          <div className="space-y-1.5">
+   426→            <Label htmlFor="pr-amount">Amount *</Label>
+   427→            <MoneyInput id="pr-amount" valueMinor={amountMinor} onChangeMinor={setAmountMinor} placeholder="0.00" />
+   428→            <div className="flex items-center justify-between text-xs text-muted-foreground">
+   429→              <span>Min {formatMinor(minPayoutMinor)}</span>
+   430→              <button
+   431→                type="button"
+   432→                className="font-semibold text-teal-700 hover:underline"
+   433→                onClick={() => setAmountMinor(availableMinor)}
+   434→              >
+   435→                Use full balance ({formatMinor(availableMinor)})
+   436→              </button>
+   437→            </div>
+   438→          </div>
+   439→          <div className="rounded-xl border bg-muted/30 p-3 text-xs text-muted-foreground">
+   440→            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+   441→              <Landmark className="h-3.5 w-3.5" /> Paying to
+   442→            </p>
+   443→            {bank ? (
+   444→              <p className="mt-1">
+   445→                {bank.bankName} · {bank.holderName} · {bank.accountNumberMasked}
+   446→                {bank.verified ? " (verified)" : " (verification pending)"}
+   447→              </p>
+   448→            ) : (
+   449→              <p className="mt-1">No bank account on file — add one first.</p>
+   450→            )}
+   451→            <p className="mt-2">
+   452→              Your funds stay in the available balance while the request is reviewed. NOMOFEE transfers to this account once approved.
+   453→            </p>
+   454→          </div>
+   455→          <Button onClick={submit} disabled={busy || !valid || !bank} className="w-full min-h-[44px] gap-2">
+   456→            {busy ? <Wallet2 className="h-4 w-4 animate-pulse" /> : <Banknote className="h-4 w-4" />}
+   457→            Submit request
+   458→          </Button>
+   459→        </div>
+   460→      </DialogContent>
+   461→    </Dialog>
+   462→  );
+   463→}
+   464→
+   465→// ---------------------------------------------------------------- add bank dialog
+   466→
+   467→function AddBankDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
+   468→  const [holderName, setHolderName] = useState("");
+   469→  const [bankName, setBankName] = useState("");
+   470→  const [accountNumber, setAccountNumber] = useState("");
+   471→  const [busy, setBusy] = useState(false);
+   472→
+   473→  const submit = async () => {
+   474→    const digits = accountNumber.replace(/\s+/g, "");
+   475→    if (!holderName.trim() || !bankName || digits.length < 4) {
+   476→      return runMutation(() => Promise.reject(new Error("Holder, bank and account number (min 4 digits) are required")), "");
+   477→    }
+   478→    setBusy(true);
+   479→    const ok = await runMutation(
+   480→      () => apiSend("POST", "/api/store/bank-accounts", { holderName: holderName.trim(), bankName, accountNumber }),
+   481→      "Bank account added — verification by admin pending"
+   482→    );
+   483→    setBusy(false);
+   484→    if (ok) {
+   485→      setHolderName("");
+   486→      setBankName("");
+   487→      setAccountNumber("");
+   488→      onOpenChange(false);
+   489→      onDone();
+   490→    }
+   491→  };
+   492→
+   493→  return (
+   494→    <Dialog open={open} onOpenChange={onOpenChange}>
+   495→      <DialogContent className="max-w-md">
+   496→        <DialogHeader>
+   497→          <DialogTitle>Add bank account</DialogTitle>
+   498→        </DialogHeader>
+   499→        <div className="space-y-3.5">
+   500→          <div className="space-y-1.5">
+   501→            <Label htmlFor="wa-holder">Account holder name *</Label>
+   502→            <Input id="wa-holder" value={holderName} onChange={(e) => setHolderName(e.target.value)} placeholder="Lumina Living Sdn Bhd" />
+   503→          </div>
+   504→          <div className="space-y-1.5">
+   505→            <Label>Bank *</Label>
+   506→            <Select value={bankName} onValueChange={setBankName}>
+   507→              <SelectTrigger aria-label="Bank">
+   508→                <SelectValue placeholder="Select bank" />
+   509→              </SelectTrigger>
+   510→              <SelectContent>
+   511→                {BANKS.map((b) => (
+   512→                  <SelectItem key={b} value={b}>{b}</SelectItem>
+   513→                ))}
+   514→              </SelectContent>
+   515→            </Select>
+   516→          </div>
+   517→          <div className="space-y-1.5">
+   518→            <Label htmlFor="wa-acc">Account number *</Label>
+   519→            <Input
+   520→              id="wa-acc"
+   521→              inputMode="numeric"
+   522→              value={accountNumber}
+   523→              onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9\s]/g, ""))}
+   524→              placeholder="1622 3810 5543"
+   525→            />
+   526→          </div>
+   527→          <p className="text-xs text-muted-foreground">
+   528→            Only the last 4 digits are stored in clear text. Admins verify accounts before payouts run.
+   529→          </p>
+   530→          <Button onClick={submit} disabled={busy} className="w-full min-h-[44px] gap-2">
+   531→            {busy ? <Wallet2 className="h-4 w-4 animate-pulse" /> : <Plus className="h-4 w-4" />} Add account
+   532→          </Button>
+   533→        </div>
+   534→      </DialogContent>
+   535→    </Dialog>
+   536→  );
+   537→}
+   538→
+   539→// ---------------------------------------------------------------- individual activity page
+   540→
+   541→type ActivityDetail = {
+   542→  line: {
+   543→    id: string;
+   544→    accountCode: string;
+   545→    direction: "credit" | "debit";
+   546→    amountMinor: number;
+   547→    availableAt: string | null;
+   548→    memo: string | null;
+   549→    createdAt: string;
+   550→  };
+   551→  txn: {
+   552→    id: string;
+   553→    txnType: string;
+   554→    refType: string | null;
+   555→    refId: string | null;
+   556→    description: string | null;
+   557→    occurredAt: string;
+   558→  };
+   559→  walletAmountMinor: number;
+   560→  related:
+   561→    | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; paidAt: string | null; itemCount: number }
+   562→    | { kind: "payout"; payoutId: string; referenceNo: string; status: string; method: string; amountMinor: number; paidAt: string | null }
+   563→    | { kind: "settlement"; reference: string }
+   564→    | { kind: "wallet_adjustment"; reference: string }
+   565→    | null;
+   566→  journal: {
+   567→    id: string;
+   568→    accountCode: string;
+   569→    direction: "credit" | "debit";
+   570→    amountMinor: number;
+   571→    availableAt: string | null;
+   572→    memo: string | null;
+   573→    isMine: boolean;
+   574→  }[];
+   575→};
+   576→
+   577→const TXN_TYPE_LABEL: Record<string, string> = {
+   578→  order_paid: "Order payment received",
+   579→  gateway_settlement: "Gateway settlement",
+   580→  payout_initiated: "Payout initiated",
+   581→  payout_confirmed: "Payout confirmed",
+   582→  payout_failed: "Payout failed (reversed)",
+   583→  refund: "Refund issued",
+   584→  admin_adjustment: "Manual adjustment",
+   585→};
+   586→
+   587→function LedgerActivityDetail({
+   588→  activityId,
+   589→  onBack,
+   590→  onNavigate,
+   591→}: {
+   592→  activityId: string;
+   593→  onBack: () => void;
+   594→  onNavigate: (n: SellerNav) => void;
+   595→}) {
+   596→  const { data, loading, error } = useApi<ActivityDetail>(`/api/store/wallet/activity/${activityId}`);
+   597→
+   598→  if (loading) return <RowsSkeleton rows={6} />;
+   599→  if (error || !data) {
+   600→    return (
+   601→      <div className="space-y-3">
+   602→        <Button variant="ghost" onClick={onBack} className="gap-1.5">
+   603→          <ArrowLeft className="h-4 w-4" /> Back to wallet
+   604→        </Button>
+   605→        <Card><CardContent className="p-6 text-sm text-rose-600">Could not load activity{error ? `: ${error}` : ""}</CardContent></Card>
+   606→      </div>
+   607→    );
+   608→  }
+   609→
+   610→  const { line, txn, walletAmountMinor, related, journal } = data;
+   611→  const myDirection = walletAmountMinor >= 0 ? "credit" : "debit";
+   612→  const walletAmount = Math.abs(walletAmountMinor);
+   613→
+   614→  return (
+   615→    <div className="space-y-4">
+   616→      <div className="flex flex-wrap items-center gap-2">
+   617→        <Button variant="ghost" onClick={onBack} className="gap-1.5">
+   618→          <ArrowLeft className="h-4 w-4" /> Wallet
+   619→        </Button>
+   620→        <h2 className="text-lg font-semibold">{TXN_TYPE_LABEL[txn.txnType] ?? txn.txnType}</h2>
+   621→        <span
+   622→          className={
+   623→            "rounded-full px-2 py-0.5 text-xs font-medium capitalize " +
+   624→            (myDirection === "credit" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")
+   625→          }
+   626→        >
+   627→          {myDirection} {formatMinor(walletAmount)}
+   628→        </span>
+   629→        <span className="text-xs text-muted-foreground">{fmtDateTime(txn.occurredAt)}</span>
+   630→      </div>
+   631→
+   632→      {/* what is this activity about */}
+   633→      <Card>
+   634→        <CardHeader className="pb-2">
+   635→          <CardTitle className="flex items-center gap-2 text-sm">
+   636→            <ReceiptText className="h-4 w-4 text-primary" /> Activity summary
+   637→          </CardTitle>
+   638→        </CardHeader>
+   639→        <CardContent className="space-y-3">
+   640→          <p className="text-sm">{txn.description ?? line.memo ?? "—"}</p>
+   641→          <div className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+   642→            <div className="flex justify-between gap-4 sm:block">
+   643→              <span className="text-xs text-muted-foreground">Effect on your available balance</span>
+   644→              <p className={"font-semibold tabular-nums " + (myDirection === "credit" ? "text-emerald-600" : "text-rose-600")}>
+   645→                {myDirection === "credit" ? "+" : "−"}
+   646→                {formatMinor(walletAmount)}
+   647→              </p>
+   648→            </div>
+   649→            <div className="flex justify-between gap-4 sm:block">
+   650→              <span className="text-xs text-muted-foreground">Clearing hold</span>
+   651→              <p className="font-medium">
+   652→                {line.availableAt ? `Matures ${fmtDate(line.availableAt)}` : "No hold — immediately available"}
+   653→              </p>
+   654→            </div>
+   655→            <div className="flex justify-between gap-4 sm:block">
+   656→              <span className="text-xs text-muted-foreground">Recorded at</span>
+   657→              <p className="font-medium">{fmtDateTime(line.createdAt)}</p>
+   658→            </div>
+   659→            <div className="flex justify-between gap-4 sm:block">
+   660→              <span className="text-xs text-muted-foreground">Journal reference</span>
+   661→              <p className="font-mono text-xs">{txn.id.slice(-8).toUpperCase()}</p>
+   662→            </div>
+   663→          </div>
+   664→        </CardContent>
+   665→      </Card>
+   666→
+   667→      {/* related business object — the "why" behind this activity */}
+   668→      {related ? (
+   669→        <Card className="border-primary/30">
+   670→          <CardHeader className="pb-2">
+   671→            <CardTitle className="flex items-center gap-2 text-sm">
+   672→              <Banknote className="h-4 w-4 text-primary" /> What this activity belongs to
+   673→            </CardTitle>
+   674→          </CardHeader>
+   675→          <CardContent className="space-y-3">
+   676→            {related.kind === "order" ? (
+   677→              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+   678→                <div className="min-w-0">
+   679→                  <p className="text-sm font-semibold">
+   680→                    {txn.txnType === "refund" ? "Refund for order " : "Order "}
+   681→                    {related.orderNumber}
+   682→                  </p>
+   683→                  <p className="text-xs text-muted-foreground">
+   684→                    {related.itemCount} item{related.itemCount === 1 ? "" : "s"} · {formatMinor(related.totalMinor)} · placed {fmtDateTime(related.placedAt)}
+   685→                  </p>
+   686→                </div>
+   687→                <StatusChip status={related.status} />
+   688→                <Button
+   689→                  size="sm"
+   690→                  variant="outline"
+   691→                  className="ml-auto gap-1.5"
+   692→                  onClick={() => onNavigate({ view: "orders", orderId: related.orderId })}
+   693→                >
+   694→                  View order <ArrowRight className="h-3.5 w-3.5" />
+   695→                </Button>
+   696→              </div>
+   697→            ) : related.kind === "payout" ? (
+   698→              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+   699→                <div className="min-w-0">
+   700→                  <p className="text-sm font-semibold">Payout {related.referenceNo}</p>
+   701→                  <p className="text-xs text-muted-foreground">
+   702→                    {related.method.replace(/_/g, " ")} · {formatMinor(related.amountMinor)}
+   703→                    {related.paidAt ? ` · paid ${fmtDateTime(related.paidAt)}` : ""}
+   704→                  </p>
+   705→                </div>
+   706→                <PayoutStatusChip status={related.status} />
+   707→              </div>
+   708→            ) : related.kind === "settlement" ? (
+   709→              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+   710→                <div className="min-w-0">
+   711→                  <p className="text-sm font-semibold">Gateway settlement</p>
+   712→                  <p className="text-xs text-muted-foreground">Bank reference {related.reference} — money moved from the gateway to NOMOFEE's bank account.</p>
+   713→                </div>
+   714→              </div>
+   715→            ) : (
+   716→              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+   717→                <div className="min-w-0">
+   718→                  <p className="text-sm font-semibold">Manual wallet adjustment</p>
+   719→                  <p className="text-xs text-muted-foreground">Posted by a NOMOFEE admin against your wallet. See the journal below for the reason.</p>
+   720→                </div>
+   721→              </div>
+   722→            )}
+   723→            <p className="text-xs text-muted-foreground">
+   724→              {txn.txnType === "refund"
+   725→                ? "This debit reduced your balance because the order was refunded to the shopper."
+   726→                : txn.txnType === "order_paid"
+   727→                  ? "This credit is the seller net from the order after the 8% platform commission and any clearing hold."
+   728→                  : "Follow the journal entries below for the full money movement."}
+   729→            </p>
+   730→          </CardContent>
+   731→        </Card>
+   732→      ) : null}
+   733→
+   734→      {/* double-entry journal */}
+   735→      <Card>
+   736→        <CardHeader className="pb-2">
+   737→          <CardTitle className="flex items-center gap-2 text-sm">
+   738→            <ShieldCheck className="h-4 w-4 text-primary" /> Journal entries (double-entry)
+   739→          </CardTitle>
+   740→        </CardHeader>
+   741→        <CardContent className="overflow-x-auto">
+   742→          <Table>
+   743→            <TableHeader>
+   744→              <TableRow>
+   745→                <TableHead>Account</TableHead>
+   746→                <TableHead>Direction</TableHead>
+   747→                <TableHead className="text-right">Amount</TableHead>
+   748→                <TableHead>Memo</TableHead>
+   749→              </TableRow>
+   750→            </TableHeader>
+   751→            <TableBody>
+   752→              {journal.map((j) => (
+   753→                <TableRow key={j.id} className={j.isMine ? "bg-teal-50/60 dark:bg-teal-950/30" : undefined}>
+   754→                  <TableCell className="max-w-52">
+   755→                    <p className="truncate font-mono text-xs">{j.accountCode}</p>
+   756→                    {j.isMine ? <p className="text-[11px] font-medium text-teal-700 dark:text-teal-300">Your wallet</p> : null}
+   757→                  </TableCell>
+   758→                  <TableCell>
+   759→                    <span
+   760→                      className={
+   761→                        "rounded-full px-2 py-0.5 text-xs font-medium capitalize " +
+   762→                        (j.direction === "credit" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")
+   763→                      }
+   764→                    >
+   765→                      {j.direction}
+   766→                    </span>
+   767→                  </TableCell>
+   768→                  <TableCell className={"text-right tabular-nums " + (j.direction === "credit" ? "text-emerald-600" : "text-rose-600")}>
+   769→                    {j.direction === "credit" ? "+" : "−"}
+   770→                    {formatMinor(j.amountMinor)}
+   771→                  </TableCell>
+   772→                  <TableCell className="max-w-56 text-xs text-muted-foreground">
+   773→                    <span className="line-clamp-2">{j.memo ?? "—"}</span>
+   774→                  </TableCell>
+   775→                </TableRow>
+   776→              ))}
+   777→            </TableBody>
+   778→          </Table>
+   779→          <p className="mt-3 text-xs text-muted-foreground">
+   780→            Every transaction balances: total debits = total credits. Highlighted rows are the legs on your wallet.
+   781→          </p>
+   782→        </CardContent>
+   783→      </Card>
+   784→    </div>
+   785→  );
+   786→}
+   787→
