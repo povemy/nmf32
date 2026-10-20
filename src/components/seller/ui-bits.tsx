@@ -80,6 +80,7 @@ export type SellerViewName =
   | "orders"
   | "seo"
   | "wallet"
+  | "pending" // R2-UI — grace-period release schedule (SPA view, no new route)
   | "builder"
   | "domains"
   | "coupons"
@@ -236,15 +237,40 @@ export function StatCard({
   sub,
   icon,
   tone,
+  onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
   icon?: React.ReactNode;
   tone?: "default" | "warn" | "bad";
+  /** R2-UI — optional click target (e.g. Pending → release schedule). When
+   *  provided the card renders as an accessible button (keyboard Enter/Space,
+   *  focus ring); visuals stay identical when omitted. */
+  onClick?: () => void;
 }) {
+  const interactive = typeof onClick === "function";
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div
+      className={cn(
+        "rounded-xl border bg-card p-4",
+        interactive &&
+          "cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      )}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? onClick : undefined}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         {icon ? <span className="text-muted-foreground">{icon}</span> : null}

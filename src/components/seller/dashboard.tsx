@@ -15,10 +15,13 @@ import {
   ReceiptText,
   Timer,
   TrendingUp,
+  Wallet2,
 } from "lucide-react";
 
 type DashboardData = {
   cards: Record<"today" | "7d" | "30d", { orders: number; revenueMinor: number; commissionMinor: number; netMinor: number }>;
+  // R2-UI — ledger-truth wallet snapshot (refreshWalletCache + cached read).
+  wallet: { availableMinor: number; pendingMinor: number };
   lowStock: {
     id: string;
     name: string;
@@ -99,9 +102,9 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
       {/* period cards */}
       <section aria-label="Performance">
         <div className="grid gap-4 md:grid-cols-3">
-          {(["today", "7d", "30d"] as const).map((k) => {
+          {(["today", "7d"] as const).map((k) => {
             const c = data.cards[k];
-            const labels: Record<string, string> = { today: "Today", "7d": "Last 7 days", "30d": "Last 30 days" };
+            const labels: Record<string, string> = { today: "Today", "7d": "Last 7 days" };
             return (
               <Card key={k} className="gap-3">
                 <CardHeader className="pb-0">
@@ -133,6 +136,28 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
               </Card>
             );
           })}
+          {/* R2-UI — "Available e-wallet" replaces the "Last 30 days" card in the
+              grid (the API still returns 30d data; the UI simply stops showing it). */}
+          <button
+            type="button"
+            onClick={() => onNavigate({ view: "wallet" })}
+            aria-label="Available e-wallet — open wallet"
+            className="flex flex-col rounded-xl border bg-card text-left shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <div className="flex items-center gap-2 px-6 pt-6">
+              <Wallet2 className="h-4 w-4 text-emerald-600" />
+              <span className="text-sm font-semibold">Available e-wallet</span>
+              <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="flex flex-1 flex-col justify-center gap-1 p-6 pt-3">
+              <p className="text-2xl font-semibold tabular-nums text-emerald-600 sm:text-3xl">
+                {formatMinor(data.wallet?.availableMinor ?? 0)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatMinor(data.wallet?.pendingMinor ?? 0)} pending (held for grace period)
+              </p>
+            </div>
+          </button>
         </div>
       </section>
 

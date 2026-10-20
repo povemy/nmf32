@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import { refreshWalletCache } from "@/lib/ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +16,30 @@ function startOfToday(): Date {
 }
 
 // GET /api/store/dashboard — cards, low stock, latest orders, pending actions.
+
+/** R2-UI — ledger-truth wallet snapshot for the dashboard e-wallet card:
+ *  refresh the cached Wallet columns from the ledger (same pattern as
+ *  /api/store/wallet) then read them back; a seller without a wallet yet
+ *  degrades to zeros so the dashboard never breaks. */
+async function loadWalletSummary(sellerId: string): Promise<{ availableMinor: number; pendingMinor: number }> {
+  const wallet = await db.wallet.findUnique({ where: { sellerId } });
+  if (!wallet) return { availableMinor: 0, pendingMinor: 0 };
+  await refreshWalletCache(wallet.id);
+  const fresh = await db.wallet.findUnique({ where: { id: wallet.id } });
+  return { availableMinor: fresh?.availableMinor ?? 0, pendingMinor: fresh?.pendingMinor ?? 0 };
+}
+
 export const GET = handle(async () => {
-  const { store } = await requireActiveSellerStore();
+  const { me, store } = await requireActiveSellerStore();
   const now = new Date();
   const t0 = startOfToday();
   const d7 = new Date(now.getTime() - 7 * 86400000);
   const d30 = new Date(now.getTime() - 30 * 86400000);
 
   const paidOrders = await db.order.findMany({
-    where: { storeId: store.id, paidAt: { not: null }, paidAt: { gte: d30 } },
+    // TS1117 fix (R2-UI): the two `paidAt` keys were merged — Prisma ANDs the
+    // conditions, so this is behavior-identical to the previous duplicate key.
+    where: { storeId: store.id, paidAt: { not: null, gte: d30 } },
     include: { items: { select: { commissionMinor: true } } },
   });
 
@@ -46,7 +62,7 @@ export const GET = handle(async () => {
     }
   }
 
-  const [lowStock, latestOrders, unfulfilled, refundRequests, pendingProducts] = await Promise.all([
+  const [lowStock, latestOrders, unfulfilled, refundRequests, pendingProducts, wallet] = await Promise.all([
     db.productVariant.findMany({
       where: {
         isActive: true,
@@ -66,10 +82,13 @@ export const GET = handle(async () => {
     db.order.count({ where: { storeId: store.id, status: { in: ["paid", "processing"] } } }),
     db.refund.count({ where: { order: { is: { storeId: store.id } }, status: "requested" } }),
     db.product.count({ where: { storeId: store.id, status: "pending_review" } }),
+    loadWalletSummary(me.id),
   ]);
 
   return ok({
     cards,
+    // R2-UI — e-wallet snapshot (available + pending from ledger truth).
+    wallet,
     lowStock: lowStock
       .filter((v) => v.stock <= v.lowStockThreshold)
       .slice(0, 10)

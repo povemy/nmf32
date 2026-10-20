@@ -25,6 +25,7 @@ import SellerProducts from "./products";
 import SellerOrders from "./orders";
 import SellerMessages from "./messages";
 import SellerWallet from "./wallet";
+import SellerPendingReleases from "./pending-releases";
 import PageBuilder from "./builder";
 import SellerDomains from "./domains";
 import SellerCoupons from "./marketing";
@@ -54,6 +55,7 @@ import {
   DatabaseZap,
   ExternalLink,
   Globe,
+  Hourglass,
   LayoutDashboard,
   LayoutTemplate,
   Loader2,
@@ -80,6 +82,7 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "messages", label: "Messages", icon: MessagesSquare },
   { key: "seo", label: "SEO", icon: Search },
   { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
+  { key: "pending", label: "Pending releases", icon: Hourglass }, // R2-UI — grace-period schedule
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
   { key: "cardstyle", label: "Product Cards", icon: Type },
   { key: "cart", label: "Cart Experience", icon: ShoppingBag },
@@ -295,6 +298,7 @@ export default function SellerShell() {
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
             {nav.view === "messages" && <SellerMessages sellerId={sellerId} onNavigate={navigate} />}
             {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
+            {nav.view === "pending" && <SellerPendingReleases onNavigate={navigate} />}
             {nav.view === "builder" && (
               <PageBuilder
                 pageId={nav.pageId}

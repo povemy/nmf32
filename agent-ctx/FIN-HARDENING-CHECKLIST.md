@@ -129,3 +129,35 @@ Result: FIN-4 complete — NEW gate `bun run verify:finance` exit 0 (canonical r
 - Ledger recipes' public signatures (backward-compatible optional params only)
 - `Payout.providerRef/paidAt/failReason/statementJson`, `Wallet.reservedMinor` (dormant, documented — do not repurpose)
 - Mock PSP pipeline incl. `Idempotency-Key` requirement on checkout create
+
+---
+
+# ROUND 2 — P2 COMPLETION + SELLER WALLET UX + DATA RESET (approved by user)
+
+Status at round start: P0 ✅ (FIN-1..3) · P1 ✅ (FIN-2..5, 37/37 gate) · P2 ❌ open (PSP adapter only — external deps excluded) · Seller wallet UX ❌ · Clean reseed ❌.
+
+## STAGE R2-P2 — PSP PAYOUT ADAPTER SCAFFOLD (dormant) — Task ID: R2-P2
+- [ ] NEW `src/lib/psp-adapter.ts`: `PspPayoutAdapter` interface with `submit()` + `recover()`; two phase modes `transfer` (internal split/transfer) vs `bank_payout` (external bank transfer) read from Setting `psp.payouts.mode` (default **manual** = current human flow, behavior unchanged)
+- [ ] Stable outbound idempotency keys: `payout_transfer:{payoutId}` / `payout_bank:{payoutId}`
+- [ ] State recovery map: provider pending→processing, processed→paid, failed→failed; UNKNOWN → never auto-succeed (guard rule 5) — return finding
+- [ ] MockPspTransfer implementation (deterministic, sandbox-only)
+- [ ] ZERO wiring into routes/webhooks (dormant by design — production blocker list already documents PSP contract); NO schema changes; NO edits to verify scripts
+- [ ] Acceptance: lint clean; verify-ledger/verify:finance still pass; worklog appended
+
+## STAGE R2-UI — SELLER BACKEND WALLET UX — Task ID: R2-UI
+- [ ] Dashboard: REMOVE the "Last 30 days" card from the period grid; REPLACE with "Available e-wallet" card (current available balance from ledger truth, pending as sub-line, clickable → wallet view). API keeps returning 30d data (no deletion without replacement)
+- [ ] `/api/store/dashboard`: add lightweight `wallet: {availableMinor, pendingMinor}` block (refreshWalletCache + cached read)
+- [ ] NEW API `GET /api/store/pending-releases`: per-order pending seller-net credits (`SELLER:{wallet}:PAYABLE`, credit, availableAt > now) joined to orders → {orderId, orderNumber, amountMinor, paidAt, availableAt, holdDays, status}; summary {totalMinor, count, nextReleaseAt}; paginated (default 25) for scale
+- [ ] NEW seller view `pending` (SPA view, no new Next route): summary header + compact scrollable list; each row: order number, amount, paid at, release date+time (Asia/Kuala_Lumpur), days-left chip + mini progress timeline (paidAt→availableAt); row click → orders view focused on that order
+- [ ] Wallet page: "Pending" StatCard clickable → pending view
+- [ ] Acceptance: lint clean; mobile responsive; empty state; worklog appended
+
+## STAGE R2-REVIEW/GATES/DATA/E2E — owner: orchestrator (Task IDs R2-REVIEW, R2-GATES, R2-DATA, R2-E2E)
+- [ ] R2-REVIEW: git diff review of both agents (GLOBAL GUARD RULES #3), `bun run lint`
+- [ ] R2-GATES: `bun run verify:finance` + `bun run verify-commerce` + `bun run verify-ledger` + finance-preflight (mutating gates run BEFORE reseed)
+- [ ] R2-DATA: full mock-data reset via official seeds (`bun prisma/seed.ts` wipes first; aux seeds if compatible) → removes ALL FIN probe residue; read-only re-verify (verify-ledger + finance-preflight) on the fresh dataset
+- [ ] R2-E2E: browser E2E of the new seller flows + worklog close-out
+
+## ROUND-2 GUARDS (unchanged from GLOBAL GUARD RULES)
+- Protected: `Payout.providerRef/paidAt/failReason/statementJson`, `Wallet.reservedMinor`, mock PSP pipeline, all route response shapes consumed by existing UI, verify scripts.
+- ShopperWallet stays dormant. No new Next.js routes (SPA views only). Single route `/`.

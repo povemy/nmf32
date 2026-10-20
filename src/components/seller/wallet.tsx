@@ -182,6 +182,16 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
         {!openRequest && (bankAccounts ?? []).length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">Add a bank account below to enable payout requests.</p>
         ) : null}
+        {/* R2-UI — deep-link to the grace-period release schedule (pending view). */}
+        {onNavigate ? (
+          <button
+            type="button"
+            onClick={() => onNavigate({ view: "pending" })}
+            className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            View release schedule <ArrowRight className="h-3 w-3" />
+          </button>
+        ) : null}
       </section>
 
       {/* balance cards */}
@@ -192,6 +202,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
           sub="Available 7 days after payment (hold)"
           icon={<Clock3 className="h-4 w-4" />}
           tone="warn"
+          onClick={onNavigate ? () => onNavigate({ view: "pending" }) : undefined}
         />
         <StatCard
           label="Available"
