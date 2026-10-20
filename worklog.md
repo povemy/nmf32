@@ -1123,3 +1123,24 @@ Stage Summary:
 - The Me banner is cart-grade instant: prefetched the moment a session exists (login included), persisted per shopper, repainted from cache on every mount with skeleton-free background revalidation — the "loads after fetching" delay is gone (0 skeleton frames measured, name on first paint).
 - My Likes / Recently Viewed are badge-free in the desktop left menu.
 - "You May Also Like" pagination is deterministic end-to-end: disjoint boosted/fill pools, stable tiebroken ordering, id-deduped client merge — the duplicate-key React warning is gone and the Load more button retires itself when the feed is exhausted.
+
+---
+Task ID: ENV-RESTORE
+Agent: Z.ai Code (main)
+Task: Fetch latest project from https://github.com/povemy/nomofee and replace the entire local environment (which was backdated/SQLite mode).
+
+Work Log:
+- Killed running dev server; backed up stale .env (SQLite DATABASE_URL) to /tmp.
+- Cloned https://github.com/povemy/nomofee (commit da11b68 "first commit") to /tmp/nomofee-latest.
+- rsync -a --delete --exclude='upload/' replaced everything in /home/z/my-project (upload/ preserved — it is an ossfs mount point).
+- Repo's own .env adopted: Supabase Postgres via SUPABASE_DATABASE_URL (Supavisor session pooler, IPv4) + SUPABASE_URL/anon/service-role keys.
+- bun install: 871 packages installed.
+- prisma generate OK; prisma db push verified "database already in sync" against Supabase Postgres 17.
+- Restarted `bun run dev` (Next.js 16.1.3 Turbopack, port 3000, Ready in 838ms).
+- Agent Browser verified / renders: NOMOFEE homepage with Merdeka Mega Sale campaign banner, 8 categories, Featured picks with live Supabase product data (Pulse ANC Earbuds RM 199.00 etc.), header (Sign in / cart / categories / search).
+- Cleaned up /tmp clone and backup.
+
+Stage Summary:
+- Environment now runs the latest GitHub version of nomofee in Supabase/Postgres mode.
+- Dev server healthy on port 3000; / returns 200; APIs /api/auth/me, /api/campaigns/active, /api/cart, /api/market/home all 200 (401s only for unauthenticated chat/notification probes — expected).
+- No runtime errors in dev.log.
