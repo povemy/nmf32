@@ -1398,3 +1398,19 @@ Stage Summary:
 - FIN-4 closes the hardening project's verification loop: a re-runnable, non-destructive HTTP gate (bun run verify:finance, ~25s) now proves end-to-end that duplicate webhook deliveries are no-ops, the payout lifecycle is exactly-once under concurrency (1×200+1×409, T3/T4 ×1, notifications ×2, replay payoutConflict), refund guards block over-refund and insufficient-wallet paths with zero money movement, sync/sweep reconciliation is truthful and repeatable, rate limiting fires under burst, and all three standing gates (verify-ledger, verify-commerce, finance-preflight) pass — 33/33 checks green with zero src/ defects found.
 - docs/finance-audit-report.md delivers the §17 A–G report with evidence-linked file paths, the stage-by-stage gate history, the MY compliance gap register, and an honest production-readiness verdict (sandbox READY; production pilot BLOCKED on PSP contract, legal sign-off, psp.mock.enabled=false, PSP_WEBHOOK_SECRET, shared limiter, sweep scheduling).
 - For orchestrator double-check: (a) run 1's 3 failures were script baseline bugs (fixed), not product defects — recorded honestly in §D; (b) probe residue grew by 4 gate runs (all listed above, balanced, audited) — consider a demo-data note before the browser E2E in Stage 5; (c) Sofia's wallet is repeatedly topped to 116600 minor by the gate by design (available = target − in-flight commitments); (d) /simulate duplicate flag is only visible on the raw webhook route (UI response shape preserved) — if FIN-5 wants it surfaced, that's a src/ change outside FIN-4 scope.
+
+---
+Task ID: FIN-5
+Agent: Z.ai Code (main, orchestrator)
+Task: Final acceptance — diff review, gates, browser E2E, project close-out.
+
+Work Log:
+- Ran full gate suite independently: prisma validate OK, lint clean, verify-ledger ALL PASS, verify-commerce ALL PASS (E2E roundtrip), verify:finance 37/37 PASS.
+- Diff review across FIN-0..FIN-4 commits: zero deletions of pre-existing files; all removed lines were old→new implementation swaps; protected artifacts (verify-ledger.ts, verify-commerce.ts, test-oversell.ts, ledger.ts, psp.ts) intact.
+- Browser E2E via agent-browser: marketplace renders with live Supabase data; seller login (lumina) works; NEW seller notifications bell shows real payout lifecycle in-app rows ("Payout PO-100022 approved" → "on the way"); Wallet & Payouts page renders PENDING/AVAILABLE + audited activity feed; /api/store/payouts statuses correct (paid + paidAt).
+- dev.log scanned: no errors.
+- Checklist Stage 5 marked complete.
+
+Stage Summary:
+- PROJECT COMPLETE: 6 commits (041b63f→final). Financial system now: transactional+idempotent ledger (dedupKey/SAVEPOINT replay), atomic payout claims + explicit state machine, race-safe webhook processing (stale-window, timing-safe, sandbox-gated simulate, payout webhook events + payout-simulate evidence endpoint), refund guards (over-refund cap, wallet sufficiency FOR UPDATE, breakdown-based reversal), reconciliation (sync + sweep), notification dedup + seller bell, rate limiting, 37-check verification gate + audit report (docs/finance-audit-report.md A-G incl. MY compliance register).
+- Production pilot blockers documented (NOT fake-completed): PSP contract/adapter, PSP_WEBHOOK_SECRET, psp.mock.enabled=false, shared rate-limit store, sweep scheduler, legal/accounting sign-offs.

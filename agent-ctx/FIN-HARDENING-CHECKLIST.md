@@ -106,7 +106,11 @@ Allowed files: new `scripts/verify-finance-hardening.ts`, new `docs/finance-audi
 
 Result: FIN-4 complete — NEW gate `bun run verify:finance` exit 0 (canonical run 2026-10-20T05:33Z): A webhook idempotency 7/7 (duplicate:true, exactly one T1, byte-identical replay) · B payout lifecycle 9/9 (audited T6 top-up printed → PO-100020 → concurrent double-approve 200/409 → T3×1 → payout-simulate paid T4×1 notifications×2 → replay payoutConflict) · C refund guards 12/12 (T5 exactly once, approve/process replay 409s, over-refund 409 ×2 surfaces with no new rows, INSUFFICIENT_WALLET no T5 no flip) · D reconciliation 3/3 (sync {T3,T4,cacheMatches}=true; sweep ×2 idempotent, invariants PASS) · E rate limit 4× 429 under 12-burst · F verify-ledger + finance-preflight exit 0. Honest notes: /simulate does not surface the duplicate flag (UI shape preserved) — asserted on the raw webhook route; D3's stuck-set was empty this run (sweep idempotency rests on FIN-2-a's live alert-once proof + this run's subset assertions). Run 1 exposed 3 SCRIPT-side baseline bugs (fixed; no src/ defect ever surfaced — zero src/ edits). Residue documented row-by-row in the report §F + worklog. lint ✅ / package.json valid ✅ / dev.log clean ✅.
 
-## STAGE 5 — ORCHESTRATOR FINAL (FIN-5) — owner: orchestrator
+## STAGE 5 — ORCHESTRATOR FINAL (FIN-5) — owner: orchestrator ✅ DONE (4b7c252 + final)
+- ✅ Full git diff review stage by stage: ZERO files deleted since baseline (041b63f); all removals were old→new implementation swaps; protected artifacts intact
+- ✅ lint clean · prisma valid · Gate A verify-ledger ALL PASS · Gate B verify-commerce ALL PASS · Gate C verify:finance 37/37 PASS
+- ✅ Browser E2E: marketplace renders (Supabase live) · seller portal login · Seller notifications bell (real payout lifecycle rows: approved→on the way) · Wallet page PENDING/AVAILABLE + activity feed · payout API statuses correct with paidAt
+- ✅ dev.log error scan: clean
 - ☐ Full `git diff` review stage by stage vs checklist (nothing removed without replacement)
 - ☐ `bun run lint` + all 3 gates + `prisma validate`
 - ☐ Browser E2E: marketplace → checkout → simulate pay → seller wallet credit; seller payout request → admin approve → payout-simulate → paid + seller in-app notification
