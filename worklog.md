@@ -1144,3 +1144,18 @@ Stage Summary:
 - Environment now runs the latest GitHub version of nomofee in Supabase/Postgres mode.
 - Dev server healthy on port 3000; / returns 200; APIs /api/auth/me, /api/campaigns/active, /api/cart, /api/market/home all 200 (401s only for unauthenticated chat/notification probes — expected).
 - No runtime errors in dev.log.
+
+---
+Task ID: ENV-RESTORE
+Agent: Z.ai Code (main)
+Task: Save git to environment (persist latest fetched project's git state).
+
+Work Log:
+- Unshallowed the repo: full history restored (39 commits, no longer depth-1 shallow clone).
+- Verified working tree clean; all current state committed.
+- Harness auto-commit ce25169 ("4b7c1ef6-...") captured the worklog update; local main is ahead of origin/main by this 1 commit.
+- Attempted push to https://github.com/povemy/nomofee — blocked: no credentials in sandbox (no gh CLI, no .git-credentials/.netrc/token env). Remote sync relies on the environment's own auto-sync mechanism (UUID commits pattern on remote confirms it works).
+
+Stage Summary:
+- Git fully saved in environment: complete history + clean tree + latest commit ce25169 on main tracking origin/main.
+- GitHub push requires credentials not present here; if remote sync is needed, either the sandbox auto-sync will propagate, or push manually with auth.
