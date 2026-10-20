@@ -65,6 +65,28 @@ export function resolvePspProvider(id: string | null | undefined): PspProvider {
 }
 
 // ---------------------------------------------------------------------------
+// PAYOUT LIFECYCLE (FIN-2b) — how a payout moves and what mirrors it:
+//
+//   requested ──approve──▶ processing ──provider confirms──▶ paid
+//       │                                    │
+//       └─reject──▶ rejected                 └─provider reports failure──▶ failed
+//
+//   • Status transitions are owned by lib/payout-state.ts (FIN-2-a) — admin
+//     routes (approve/reject/mark-paid/fail) and the webhook processor share
+//     the same assertTransition guard.
+//   • Money: T3 posts at approve (seller payable → payout clearing), T4 at
+//     "paid" (clearing → bank), T4f at "failed" (clearing → back to seller).
+//   • Inbound PSP confirmation arrives as a SIGNED webhook event
+//     (payout.succeeded / payout.failed on /api/webhooks/payments/[provider],
+//     providerRef = Payout.referenceNo or Payout.providerRef). In the sandbox
+//     the mock PSP's completion evidence is emitted by
+//     POST /api/webhooks/payments/payout-simulate.
+//   • The admin sync/sweep endpoints (FIN-2-a) are the RECONCILIATION surface:
+//     read-only wallet-truth/statement verification + stuck-payout alerting —
+//     they never flip status or move money by themselves.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // SPLIT-SETTLEMENT SCAFFOLD (Task 17-③, dormant)
 // ---------------------------------------------------------------------------
 // When a production PSP is contracted, its adapter implements PspProvider and
@@ -96,3 +118,26 @@ export const PSP_SPLIT_SETTING_KEYS = {
   autoSettle: "psp.split.auto_settle",
   provider: "psp.split.provider",
 } as const;
+
+/** Setting that gates the SANDBOX mock-PSP endpoints (payment simulate + payout
+ *  simulate). FIN-2b contract: in production the simulate routes refuse (404)
+ *  UNLESS an operator explicitly set Setting `psp.mock.enabled` = true — the
+ *  default (absent setting) is TRUE so demo/preview deployments keep working,
+ *  while real production deployments disable the mock rails with one setting.
+ *  In production the simulate endpoint must be replaced by the provider's
+ *  hosted checkout redirect (see PRODUCTION PLUG-IN POINTS above). */
+export const PSP_MOCK_ENABLED_SETTING_KEY = "psp.mock.enabled";
+
+/** Whether the sandbox mock-PSP surface may run. Sandbox (NODE_ENV !==
+ *  "production"): always true. Production: only when Setting
+ *  psp.mock.enabled is explicitly true.
+ *  NOTE: db is imported lazily (inside the function) so this module stays
+ *  server-light and importable from client surfaces that only want the
+ *  provider registry — Prisma must never enter the client bundle. */
+export async function mockPspAllowed(): Promise<boolean> {
+  if (process.env.NODE_ENV !== "production") return true;
+  const { db } = await import("./db");
+  const { parseJson } = await import("./json");
+  const row = await db.setting.findUnique({ where: { key: PSP_MOCK_ENABLED_SETTING_KEY } });
+  return parseJson<boolean>(row?.valueJson, true) === true;
+}

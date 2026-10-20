@@ -797,6 +797,10 @@ model Payout {
   updatedAt     DateTime     @updatedAt
   bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
   batch         PayoutBatch? @relation(fields: [batchId], references: [id])
+
+  // FIN-2a: open-request checks (seller "one open request") + stuck-payout
+  // sweeps filter by (walletId, status) — keep that scan indexed.
+  @@index([walletId, status])
 }
 
 model BankAccount {

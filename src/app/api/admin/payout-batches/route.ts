@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
-import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
+import { Prisma, type Payout } from "@prisma/client";
+import { handle, ok, ApiError, auditAdmin, logActivity } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { refreshWalletCache, postPayoutInitiated, buildLedgerStatementFromLedger } from "@/lib/ledger";
+import { rateLimit } from "@/lib/ratelimit";
 import { parseMaybeJson, readBody, optBool, daysAgo } from "@/app/api/admin/_helpers";
 
 // GET /api/admin/payout-batches
@@ -34,7 +36,19 @@ export const GET = handle(async (req: NextRequest) => {
 });
 
 // POST /api/admin/payout-batches {dryRun?: boolean} — run a payout batch (RBAC payouts.manage)
+//
+// FIN-2a ATOMIC CLAIM PATTERN, per payout: each payout row is created in the
+// pre-claim state ("requested") and claimed to "processing" with a conditional
+// updateMany INSIDE its own Serializable $transaction that also re-verifies the
+// wallet balance and posts T3. Payouts that lose the claim or no longer have
+// sufficient balance are skipped + logged (activity row) — never half-processed.
+// Per-payout transactions (NOT one giant tx): one bad wallet can't abort the
+// whole batch, and the batch summary is recomputed AFTER the claims so
+// totalMinor/payoutCount only ever count payouts whose money actually moved.
 export const POST = handle(async (req: NextRequest) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
   const admin = await requireCap("payouts.manage");
   const body = await readBody(req).catch(() => ({}) as Record<string, never>);
   const dryRun = optBool(body as Record<string, unknown>, "dryRun") ?? false;
@@ -118,24 +132,19 @@ export const POST = handle(async (req: NextRequest) => {
     );
   }
 
-  // create batch + payouts (processing) + T3 per wallet
+  // create batch (summary recomputed after the per-payout claims)
   const batch = await db.payoutBatch.create({
     data: { runType: "manual", status: "running", currency: "MYR", totalMinor: 0, payoutCount: 0 },
   });
 
-  const createdPayouts = [];
+  const createdPayouts: Payout[] = [];
   for (const w of eligible) {
     const bank = w.seller.bankAccounts.find((b) => b.verified) ?? w.seller.bankAccounts[0] ?? null;
-    const counter = await db.counter.upsert({
-      where: { key: "payout_number" },
-      create: { key: "payout_number", value: 100002 },
-      update: { value: { increment: 1 } },
-    });
-    const referenceNo = `PO-${counter.value}`;
 
     // Statement period: since the seller's previous PAID payout (fallback:
     // wallet creation). Every number is aggregated from ledger lines in that
     // window — INTEGRITY RULE: statements never contain decorated numbers.
+    // Built OUTSIDE the per-payout tx (ledger aggregate reads, derived snapshot).
     const prevPaid = await db.payout.findFirst({
       where: { walletId: w.id, status: "paid" },
       orderBy: { paidAt: "desc" },
@@ -159,24 +168,95 @@ export const POST = handle(async (req: NextRequest) => {
       periodTo,
     });
 
-    const payout = await db.payout.create({
-      data: {
-        batchId: batch.id,
-        sellerId: w.seller.id,
-        walletId: w.id,
-        referenceNo,
-        amountMinor: w.truth.availableMinor,
-        status: "processing",
-        method: mode,
-        bankAccountId: bank?.id ?? null,
-        statementJson,
-      },
-    });
+    // Per-payout Serializable transaction with bounded retry (P2034).
+    let created: Payout | null = null;
+    let skipReason: string | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        created = await db.$transaction(
+          async (tx) => {
+            const counter = await tx.counter.upsert({
+              where: { key: "payout_number" },
+              create: { key: "payout_number", value: 100002 },
+              update: { value: { increment: 1 } },
+            });
+            const referenceNo = `PO-${counter.value}`;
 
-    await postPayoutInitiated({ walletId: w.id, payoutId: payout.id, referenceNo, amountMinor: payout.amountMinor });
-    createdPayouts.push(payout);
+            // Born in the pre-claim state — claimed to processing below.
+            const row = await tx.payout.create({
+              data: {
+                batchId: batch.id,
+                sellerId: w.seller.id,
+                walletId: w.id,
+                referenceNo,
+                amountMinor: w.truth.availableMinor,
+                status: "requested",
+                method: mode,
+                bankAccountId: bank?.id ?? null,
+                statementJson,
+              },
+            });
+
+            // CLAIM — conditional update is the atomic race guard (same pattern
+            // as the approve route). If anything concurrently transitioned this
+            // row, the claim matches 0 rows and the payout is skipped.
+            const claim = await tx.payout.updateMany({
+              where: { id: row.id, status: "requested" },
+              data: { status: "processing" },
+            });
+            if (claim.count === 0) {
+              throw new ApiError(409, "CONFLICT", "Payout claim lost — another process transitioned it");
+            }
+
+            // Balance re-verify INSIDE the tx (Serializable snapshot): a
+            // concurrent batch/refund may have moved the balance since preview.
+            const truth = await refreshWalletCache(w.id, tx);
+            if (truth.availableMinor < row.amountMinor) {
+              throw new ApiError(
+                409,
+                "INSUFFICIENT_BALANCE",
+                `Available balance (${(truth.availableMinor / 100).toFixed(2)} MYR) no longer covers the payout (${(row.amountMinor / 100).toFixed(2)} MYR) — wallet skipped`
+              );
+            }
+
+            await postPayoutInitiated({
+              walletId: w.id,
+              payoutId: row.id,
+              referenceNo,
+              amountMinor: row.amountMinor,
+              tx,
+            });
+            return row;
+          },
+          { isolationLevel: "Serializable" }
+        );
+        break;
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+          if (attempt < 3) continue; // concurrent writer — bounded retry
+          skipReason = "Serialization conflict after 3 attempts — wallet skipped";
+          break;
+        }
+        skipReason = e instanceof ApiError ? e.message : `Unexpected error: ${e instanceof Error ? e.message : String(e)}`;
+        break;
+      }
+    }
+
+    if (!created) {
+      // SKIP + LOG — the wallet keeps its balance; nothing half-processed.
+      await logActivity({
+        actorType: "system",
+        action: "payout.batch.skip",
+        entityType: "wallet",
+        entityId: w.id,
+        meta: { walletId: w.id, sellerId: w.seller.id, batchId: batch.id, reason: skipReason },
+      });
+      continue;
+    }
+    createdPayouts.push(created);
   }
 
+  // Summary math recomputed AFTER the claims — only claimed payouts count.
   const totalMinor = createdPayouts.reduce((s, p) => s + p.amountMinor, 0);
   const finished = await db.payoutBatch.update({
     where: { id: batch.id },

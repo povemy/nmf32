@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
@@ -26,6 +27,14 @@ export const GET = handle(async () => {
 // NO ledger movement yet: T3 (money leaves the available balance) posts when
 // an admin APPROVES the request, T4/T4f when the transfer confirms/fails —
 // the exact same pipeline a platform payout batch uses.
+//
+// FIN-2a RACE-SAFE "ONE OPEN REQUEST": the old findFirst-then-create had a
+// TOCTOU window — two concurrent submits both saw no open request and both
+// created one. Now the open-request check, the balance re-check, the counter
+// upsert and the create all run inside ONE Serializable interactive
+// transaction (Postgres serializes the snapshot → the loser retries on P2034,
+// bounded at 3 attempts). Prisma cannot express a partial unique index, so
+// this bounded Serializable tx IS the enforcement mechanism.
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
 
@@ -40,23 +49,13 @@ export const POST = handle(async (req: Request) => {
   const wallet = await db.wallet.findUnique({ where: { sellerId: me.id } });
   if (!wallet) throw new ApiError(404, "NOT_FOUND", "Wallet not found");
 
-  // One open request at a time — keeps the admin queue and the wallet math simple.
-  const openRequest = await db.payout.findFirst({ where: { walletId: wallet.id, status: "requested" } });
-  if (openRequest) {
-    throw new ApiError(409, "REQUEST_PENDING", `You already have payout request ${openRequest.referenceNo} awaiting approval`);
-  }
-
-  // Ledger truth (not the cache) decides what can be requested.
-  const truth = await refreshWalletCache(wallet.id);
-
+  // Amount-vs-setting and bank-account checks don't race — keep them outside
+  // the Serializable tx so the critical section stays as short as possible.
   const minSetting = await db.setting.findUnique({ where: { key: "payout.min_minor" } });
   const minMinor = parseMaybeJson<number>(minSetting?.valueJson, 1000);
 
   if (amountMinor < minMinor) {
     throw new ApiError(400, "BELOW_MINIMUM", `Minimum payout is ${(minMinor / 100).toFixed(2)} MYR`);
-  }
-  if (amountMinor > truth.availableMinor) {
-    throw new ApiError(400, "INSUFFICIENT_BALANCE", `Available balance is ${(truth.availableMinor / 100).toFixed(2)} MYR`);
   }
 
   // Payouts need somewhere to land — any bank account on file (verified preferred).
@@ -68,41 +67,88 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(400, "NO_BANK_ACCOUNT", "Add a bank account in Wallet & Payouts before requesting a payout");
   }
 
-  const counter = await db.counter.upsert({
-    where: { key: "payout_number" },
-    create: { key: "payout_number", value: 100002 },
-    update: { value: { increment: 1 } },
-  });
-  const referenceNo = `PO-${counter.value}`;
-
-  const payout = await db.payout.create({
-    data: {
-      sellerId: me.id,
-      walletId: wallet.id,
-      referenceNo,
-      amountMinor,
-      status: "requested",
-      method: "seller_request",
-      bankAccountId: bank.id,
-    },
-  });
+  // Serializable create with bounded retry (P2034 = serialization conflict).
+  const MAX_ATTEMPTS = 3;
+  let payout: Awaited<ReturnType<typeof createPayoutRequestTx>> | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      payout = await createPayoutRequestTx({ walletId: wallet.id, sellerId: me.id, bankId: bank.id, amountMinor });
+      break;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+        if (attempt < MAX_ATTEMPTS) continue; // concurrent writer — retry bounded
+        throw new ApiError(409, "CONFLICT", "Payout request could not be created due to concurrent activity — try again");
+      }
+      throw e;
+    }
+  }
+  if (!payout) {
+    throw new ApiError(409, "CONFLICT", "Payout request could not be created due to concurrent activity — try again");
+  }
 
   await notify({
     event: "payout.requested",
     channel: "email",
     recipient: "ops@nomofee.io",
-    subject: `Seller payout request ${referenceNo} — ${(amountMinor / 100).toFixed(2)} MYR`,
+    subject: `Seller payout request ${payout.referenceNo} — ${(amountMinor / 100).toFixed(2)} MYR`,
+    // FIN-2b notify dedupKey: stable per-payout key so retries can't multiply
+    // this email. Recipient-scoped — a shared key would dedup ACROSS
+    // recipients via the (channel, dedupKey) unique and silence the seller copy.
+    dedupKey: `payout.requested:${payout.id}:ops`,
   });
   await notify({
     event: "payout.requested",
     channel: "email",
     recipient: me.email,
-    subject: `Payout request ${referenceNo} received`,
+    subject: `Payout request ${payout.referenceNo} received`,
+    dedupKey: `payout.requested:${payout.id}:seller`,
   });
 
   return ok({
     payout,
-    message: `Request ${referenceNo} submitted — funds stay in your available balance until NOMOFEE approves and transfers.`,
+    message: `Request ${payout.referenceNo} submitted — funds stay in your available balance until NOMOFEE approves and transfers.`,
     storeName: store.name,
   });
 });
+
+/** The Serializable critical section: open-request check → balance truth →
+ *  counter → create. Everything the race could corrupt lives in here. */
+async function createPayoutRequestTx(input: { walletId: string; sellerId: string; bankId: string; amountMinor: number }) {
+  return db.$transaction(
+    async (tx) => {
+      // One open request at a time — keeps the admin queue and the wallet math
+      // simple. Serializable isolation makes this check-then-create atomic.
+      const openRequest = await tx.payout.findFirst({ where: { walletId: input.walletId, status: "requested" } });
+      if (openRequest) {
+        throw new ApiError(409, "REQUEST_PENDING", `You already have payout request ${openRequest.referenceNo} awaiting approval`);
+      }
+
+      // Ledger truth (not the cache) decides what can be requested — read and
+      // cache-refreshed inside the same tx for a consistent snapshot.
+      const truth = await refreshWalletCache(input.walletId, tx);
+      if (input.amountMinor > truth.availableMinor) {
+        throw new ApiError(400, "INSUFFICIENT_BALANCE", `Available balance is ${(truth.availableMinor / 100).toFixed(2)} MYR`);
+      }
+
+      const counter = await tx.counter.upsert({
+        where: { key: "payout_number" },
+        create: { key: "payout_number", value: 100002 },
+        update: { value: { increment: 1 } },
+      });
+      const referenceNo = `PO-${counter.value}`;
+
+      return tx.payout.create({
+        data: {
+          sellerId: input.sellerId,
+          walletId: input.walletId,
+          referenceNo,
+          amountMinor: input.amountMinor,
+          status: "requested",
+          method: "seller_request",
+          bankAccountId: input.bankId,
+        },
+      });
+    },
+    { isolationLevel: "Serializable" }
+  );
+}

@@ -3,6 +3,8 @@ import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { postPayoutInitiated, buildLedgerStatementFromLedger, refreshWalletCache } from "@/lib/ledger";
+import { assertTransition } from "@/lib/payout-state";
+import { rateLimit } from "@/lib/ratelimit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,15 +12,26 @@ type Ctx = { params: Promise<{ id: string }> };
 // Posts T3 (DR SELLER:PAYABLE | CR PAYOUT_CLEARING) so the requested amount
 // leaves the seller's available balance the moment finance approves — the
 // same money movement a platform payout batch performs at initiation.
+//
+// FIN-2a ATOMIC CLAIM PATTERN (fixes double-spend TOCTOU):
+// The old flow was read status → post ledger → unconditional update. Two
+// concurrent approvals BOTH passed the status check and BOTH posted T3,
+// double-spending the wallet. Now the money-critical steps run in ONE
+// transaction whose FIRST statement is a conditional updateMany claim
+// (requested → processing). updateMany is atomic at the row level: the loser
+// of the race re-evaluates the WHERE clause against the winner's committed
+// write, matches 0 rows, and is rejected before any ledger posting happens.
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
   const admin = await requireCap("payouts.manage");
   const { id } = await ctx.params;
 
   const payout = await db.payout.findUnique({ where: { id } });
   if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
-  if (payout.status !== "requested") {
-    throw new ApiError(409, "CONFLICT", `Payout is ${payout.status}, only requested payouts can be approved`);
-  }
+  // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
+  assertTransition(payout.status, "processing");
 
   const seller = await db.seller.findUnique({
     where: { id: payout.sellerId },
@@ -26,19 +39,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
-  // Re-verify available balance covers the request (refunds may have landed
-  // between request and approval).
-  const truth = await refreshWalletCache(payout.walletId);
-  if (truth.availableMinor < payout.amountMinor) {
-    throw new ApiError(
-      409,
-      "INSUFFICIENT_BALANCE",
-      `Seller available balance (${(truth.availableMinor / 100).toFixed(2)} MYR) no longer covers this request (${(payout.amountMinor / 100).toFixed(2)} MYR) — reject it instead`
-    );
-  }
-
   // Statement period: since the seller's previous PAID payout (fallback:
   // wallet creation). Ledger-derived numbers only — INTEGRITY RULE.
+  // Built OUTSIDE the tx on purpose: buildLedgerStatementFromLedger reads
+  // period aggregates via the plain db client (no tx param) and the statement
+  // is a derived snapshot — it does not need to be transactional with the claim.
   const prevPaid = await db.payout.findFirst({
     where: { walletId: payout.walletId, status: "paid" },
     orderBy: { paidAt: "desc" },
@@ -60,16 +65,52 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     periodTo,
   });
 
-  const txn = await postPayoutInitiated({
-    walletId: payout.walletId,
-    payoutId: payout.id,
-    referenceNo: payout.referenceNo,
-    amountMinor: payout.amountMinor,
-  });
+  const txn = await db.$transaction(async (tx) => {
+    // 1) CLAIM — conditional update is the atomic race guard. If another
+    // request already claimed (or the state moved on) this matches 0 rows.
+    const claim = await tx.payout.updateMany({
+      where: { id, status: "requested" },
+      data: { status: "processing" },
+    });
+    if (claim.count === 0) {
+      throw new ApiError(409, "CONFLICT", "Payout is not in requested state (or already claimed)");
+    }
 
-  const updated = await db.payout.update({
-    where: { id },
-    data: { status: "processing", statementJson },
+    // 2) Re-verify seller + balance inside the tx against ledger truth
+    // (refunds/adjustments may have landed between request and approval).
+    const sellerNow = await tx.seller.findUnique({ where: { id: payout.sellerId }, select: { id: true } });
+    if (!sellerNow) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+    const truth = await refreshWalletCache(payout.walletId, tx);
+    if (truth.availableMinor < payout.amountMinor) {
+      // Defensive revert of the claim inside the same tx before failing. The
+      // throw below aborts the transaction, which rolls the claim back anyway —
+      // this explicit revert documents intent and keeps the invariant intact
+      // even if the claim is ever moved outside the tx.
+      await tx.payout.updateMany({
+        where: { id, status: "processing" },
+        data: { status: "requested" },
+      });
+      throw new ApiError(
+        409,
+        "INSUFFICIENT_BALANCE",
+        `Seller available balance (${(truth.availableMinor / 100).toFixed(2)} MYR) no longer covers this request (${(payout.amountMinor / 100).toFixed(2)} MYR) — reject it instead`
+      );
+    }
+
+    // 3) Money movement — T3 with FIN-1 dedupKey (`payout_initiated:payout:{id}`)
+    // inside the same tx; a replay converges on the original posting.
+    const txn = await postPayoutInitiated({
+      walletId: payout.walletId,
+      payoutId: payout.id,
+      referenceNo: payout.referenceNo,
+      amountMinor: payout.amountMinor,
+      tx,
+    });
+
+    // 4) Derived fields last: the statement snapshot commits atomically with
+    // the claim + T3, so a committed "processing" payout always has its statement.
+    await tx.payout.update({ where: { id }, data: { statementJson } });
+    return txn;
   });
 
   await notify({
@@ -89,5 +130,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "processing", txnId: txn.id },
   });
 
+  const updated = await db.payout.findUnique({ where: { id } });
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
   return ok(updated);
 });

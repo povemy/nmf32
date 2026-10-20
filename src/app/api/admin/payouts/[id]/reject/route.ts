@@ -3,6 +3,8 @@ import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { refreshWalletCache } from "@/lib/ledger";
+import { assertTransition } from "@/lib/payout-state";
+import { rateLimit } from "@/lib/ratelimit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -10,7 +12,14 @@ type Ctx = { params: Promise<{ id: string }> };
 // POST /api/admin/payouts/[id]/reject {reason} — seller payout request → rejected.
 // No ledger movement: a request never moved money (T3 posts at approve time),
 // so rejection simply releases the request and the balance stays available.
+//
+// FIN-2a ATOMIC CLAIM PATTERN: the conditional updateMany (requested → rejected)
+// is the concurrency guard — a losing concurrent reject/approve matches 0 rows
+// and gets a 409 instead of double-transitioning the payout.
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
   const admin = await requireCap("payouts.manage");
   const { id } = await ctx.params;
   const body = await readBody(req);
@@ -18,9 +27,8 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const payout = await db.payout.findUnique({ where: { id } });
   if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
-  if (payout.status !== "requested") {
-    throw new ApiError(409, "CONFLICT", `Payout is ${payout.status}, only requested payouts can be rejected`);
-  }
+  // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
+  assertTransition(payout.status, "rejected");
 
   const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
@@ -28,9 +36,18 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   // Keep ledger truth fresh so the wallet page immediately shows the released balance.
   await refreshWalletCache(payout.walletId);
 
-  const updated = await db.payout.update({
-    where: { id },
-    data: { status: "rejected", failReason: reason },
+  await db.$transaction(async (tx) => {
+    // CLAIM — atomic guard (no money moves here, but the transition itself must
+    // stay exactly-once even under concurrent approve/reject).
+    const claim = await tx.payout.updateMany({
+      where: { id, status: "requested" },
+      data: { status: "rejected" },
+    });
+    if (claim.count === 0) {
+      throw new ApiError(409, "CONFLICT", "Payout is not in requested state (or already claimed)");
+    }
+    // Remaining fields — same tx so reason and status commit together.
+    await tx.payout.update({ where: { id }, data: { failReason: reason } });
   });
 
   await notify({
@@ -50,5 +67,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "rejected", reason },
   });
 
+  const updated = await db.payout.findUnique({ where: { id } });
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
   return ok(updated);
 });

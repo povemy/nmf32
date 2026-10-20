@@ -2,6 +2,7 @@
 // Envelope: single => {data}; list => {data:[], meta:{page,size,total}}.
 // Errors:   {error:{code, message, details}}.
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 
 export class ApiError extends Error {
@@ -109,18 +110,40 @@ export async function logActivity(input: {
   });
 }
 
-/** Fire notification log rows (M14 — template-driven; worker renders in prod, we log inline). */
-export async function notify(input: { event: string; channel: "email" | "whatsapp" | "inapp"; recipient: string; subject?: string; status?: "queued" | "sent" | "failed"; error?: string }) {
-  await db.notificationLog.create({
-    data: {
-      event: input.event,
-      channel: input.channel,
-      recipient: input.recipient,
-      subject: input.subject ?? null,
-      status: input.status ?? "sent",
-      error: input.error ?? null,
-    },
-  });
+/** Fire notification log rows (M14 — template-driven; worker renders in prod, we log inline).
+ *
+ *  FIN-2b (2b.7) — optional `dedupKey`: when provided, the row is written with
+ *  a stable per-event key and the (channel, dedupKey) unique constraint (FIN-1
+ *  schema) turns duplicate deliveries into a P2002, which we answer with a
+ *  SILENT skip (`{ skipped: true }`) instead of inserting a second copy —
+ *  webhook retries / racing processors can no longer multiply seller emails.
+ *  Without a dedupKey the legacy always-insert behavior is untouched (Postgres
+ *  unique treats NULLs as distinct). Callers never consumed the return value
+ *  (verified: all call-sites plain `await notify(...)`), so the richer return
+ *  shape is backward-compatible. */
+export async function notify(input: { event: string; channel: "email" | "whatsapp" | "inapp"; recipient: string; subject?: string; status?: "queued" | "sent" | "failed"; error?: string; dedupKey?: string }): Promise<{ skipped: boolean }> {
+  try {
+    await db.notificationLog.create({
+      data: {
+        event: input.event,
+        channel: input.channel,
+        recipient: input.recipient,
+        subject: input.subject ?? null,
+        status: input.status ?? "sent",
+        error: input.error ?? null,
+        dedupKey: input.dedupKey ?? null,
+      },
+    });
+  } catch (e) {
+    // Silent dedup: only when a dedupKey was supplied — the unique violation
+    // on (channel, dedupKey) means the FIRST delivery already logged this
+    // exact notification, so a retry converges instead of erroring the flow.
+    if (input.dedupKey && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { skipped: true };
+    }
+    throw e;
+  }
+  return { skipped: false };
 }
 
 /** Simulated outbound webhook fan-out (M13): enqueue deliveries for store endpoints. */
@@ -143,21 +166,28 @@ export async function dispatchStoreWebhooks(input: { storeId: string; event: str
   }
 }
 
-/** Advance order status with history + side-effects */
+/** Advance order status with history + side-effects.
+ *
+ *  FIN-2b (2b.3) — optional `tx`: when the caller is mid-transaction (webhook
+ *  success path groups the status flip + ledger posting + history atomically)
+ *  the read, the order update and the history insert ALL run on that client;
+ *  without it the legacy sequential db behavior is byte-identical. */
 export async function transitionOrder(input: {
   orderId: string;
   toStatus: string;
   actor?: string;
   note?: string;
   timestamps?: Partial<Record<"paidAt" | "fulfilledAt" | "shippedAt" | "deliveredAt" | "completedAt" | "cancelledAt", Date>>;
+  tx?: Prisma.TransactionClient;
 }) {
-  const order = await db.order.findUnique({ where: { id: input.orderId } });
+  const client = input.tx ?? db;
+  const order = await client.order.findUnique({ where: { id: input.orderId } });
   if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found");
-  await db.order.update({
+  await client.order.update({
     where: { id: order.id },
     data: { status: input.toStatus, ...input.timestamps },
   });
-  await db.orderStatusHistory.create({
+  await client.orderStatusHistory.create({
     data: {
       orderId: order.id,
       fromStatus: order.status,
