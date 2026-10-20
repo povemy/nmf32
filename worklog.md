@@ -1159,3 +1159,66 @@ Work Log:
 Stage Summary:
 - Git fully saved in environment: complete history + clean tree + latest commit ce25169 on main tracking origin/main.
 - GitHub push requires credentials not present here; if remote sync is needed, either the sandbox auto-sync will propagate, or push manually with auth.
+
+---
+Task ID: AUDIT-B
+Agent: Explore (webhooks/jobs/security audit)
+Task: Read-only audit of webhook safety, reconciliation, refunds, tests & security surface
+
+Work Log:
+- WEBHOOKS: HMAC-SHA256 over "providerRef.eventType.amountMinor.ts" (process.ts:28-30); secret HARDCODED `WEBHOOK_SECRET="sm_webhook_secret_demo"` (process.ts:26, not env); sig via X-SM-Signature header OR body.sig, compared with `===` NOT timing-safe (process.ts:61-63); no ts-freshness/replay window; raw body read (route.ts:12) but MAC covers concatenated fields, raw body stored in PaymentWebhookLog.payloadJson.
+- DEDUP/RACE: PaymentWebhookLog (schema.prisma:663-673) has NO unique on (provider,providerRef,eventType); dedup is status-only (group.status==="succeeded" process.ts:98 / intent.status process.ts:216). Two concurrent identical deliveries both read pre-success state → BOTH post T1 (postOrderPaid ledger.ts:154) + double notifications; LedgerTransaction has no refId unique (schema.prisma:725-733); NO $transaction anywhere in webhook path (grep: only checkout/create, claim/bind, addresses, register).
+- PAYOUT WEBHOOKS: none inbound — only payment.succeeded/failed handled (process.ts:112,127); payout.paid/failed exist only as outbound notify subjects (payouts mark-paid:37, fail:38).
+- SIMULATE: POST /api/checkout/payments/[ref]/simulate is PUBLIC, unauthenticated, not gated to sandbox (simulate/route.ts:15-49); server signs payload itself so HMAC gives zero protection; psp.ts sandboxOnly flag never enforced. Client status never trusted directly (GET [ref]/route.ts reports computed status only) — simulate is the forge path.
+- PSP CALLS: zero external PSP HTTP calls; psp.ts is a scaffold (mock only, stripe/curlec/ipay88 comments, psp.ts:50-92); payouts 100% manual (admin mark-paid with human bank ref). Outbound idempotency mechanism: none (not needed yet); INBOUND checkout idempotency solid: Idempotency-Key required + PaymentGroup.idemKey @unique (create/route.ts:33-75, schema.prisma:651).
+- JOBS: no cron/worker/scheduler at all (package.json scripts dev/build/start/lint/db only; no server setInterval; .zscripts=build/dev/start helpers). No admin sync-with-PSP; webhook-deliveries replay FAKES success (replay/route.ts:16-19). runLedgerInvariants (ledger.ts:303-320) only invoked manually via scripts/verify-ledger.ts. "Payouts stuck in processing" detection exists only in upload/ spec docs.
+- REFUNDS: seller request (store/orders/[id]/refund-request: cap vs prior refunds) → admin approve (status flip only) → process posts T5. postRefund (ledger.ts:246-268) debits seller payable with NO balance check → seller paid out first ⇒ availableMinor goes NEGATIVE (walletTruth:130 permits). Payout side is guarded (approve re-check balance:31-38; seller request:58-60; batch filter:85) but refunds can over-refund (process route doesn't check totalRefunded ≤ order.totalMinor) and can run requested→processed skipping approve (only processed/rejected blocked, process:27-28).
+- DISPUTES/CANCEL: no chargeback model anywhere (grep=0). Dispute model (schema.prisma:690-701) = shopper return/refund sink (me/orders/[orderNumber]/return-request) + admin PATCH. NO order cancellation route exists at all — no cancel→ledger path defined.
+- SECURITY: requireCap("payouts.manage") = roles [superadmin,finance] (auth.ts:130) and requireAdmin rejects seller sessions — sellers cannot reach payout mutations (verified on approve/mark-paid/fail/reject/wallet-adjust/batch). Payout READ routes only requireAdmin. Rate limiting: NONE on webhook/simulate/financial endpoints (no middleware.ts; only coins day-gate + shipping tick throttle). No PSP secrets client-reachable (src/lib/supabase.ts uses service key but imported nowhere). accountNumberEnc is a PLACEHOLDER `enc:${last4}` — NOT encrypted (store/bank-accounts/route.ts:40); AES-256-GCM secretbox exists but used only for marketplace tokens; masked number properly surfaced everywhere. auditAdmin writes AdminAuditLog(before/after)+ActivityLog (api.ts:57-88) on every financial mutation; seller/system transitions via logActivity.
+- NOTIFY: notify() = INSERT into NotificationLog only (api.ts:113-124), status "sent", no transport, NO dedup — webhook retry/race duplicates seller+buyer emails; shopper createNotification dedups promo-type only (notify-shopper.ts:50-64).
+- TESTS: NO vitest/jest config, no test script, no *.test.* files; "fin-tests 56 / fin-reconcile 25" DO NOT EXIST in repo. tests/ = 3 build-runtime shell scripts. Finance gates are manual scripts: verify-ledger.ts (all txns balanced + wallet cache==truth) and verify-commerce.ts (login→checkout(Idempotency-Key)→simulate webhook→paid→T1→invariants) run via `bun scripts/...`.
+
+Stage Summary:
+- Webhook pipeline is HMAC-verified and amount-checked but has a hardcoded demo secret, non-timing-safe compare, no replay window, no event-level unique constraint and no transaction — concurrent duplicate deliveries double-post ledger T1 and duplicate all notifications.
+- /simulate is an unauthenticated "payment succeeded" switch (server self-signs); acceptable only as sandbox, and nothing enforces sandbox-only.
+- Payouts are 100% manual (bank transfer + mark-paid); there are NO inbound payout webhooks, NO scheduled jobs, NO PSP sync/reconciliation automation, and NO test framework — only two manual gate scripts (verify-ledger.ts, verify-commerce.ts).
+- Refunds post T5 without wallet sufficiency checks → negative seller balances are possible after payout; payout/request paths DO re-verify balance, refunds don't. No chargeback model, no order cancellation path.
+- RBAC is correct where it matters (payouts.manage = superadmin|finance on all money mutations), audit logging is thorough (AdminAuditLog+ActivityLog), but there is no rate limiting and accountNumberEnc is a fake-encryption placeholder (only last4 stored).
+- notify() is a log-only stub without dedup, so any retry/race multiplies emails; cart clearing + status dedup are the only real idempotency defenses on the webhook path.
+
+---
+Task ID: AUDIT-A
+Agent: Explore (ledger/wallet audit)
+Task: Read-only audit of ledger & wallet integrity for financial-system gap analysis
+
+Work Log:
+- Ledger core (src/lib/ledger.ts, full read): app-level double-entry balance check (debit==credit!=0, throws LEDGER_UNBALANCED) but NOT db-enforced; postTransaction does NOT use db.$transaction — per-line ensureAccount upserts + one nested-create, then separate refreshWalletCache; recipes are sequential awaited calls.
+- ZERO idempotency at ledger level: LedgerTransaction has no @@unique on (txnType,refType,refId); webhook dedup is read-then-act on group/intent status → concurrent payment.succeeded can post T1 twice. No update/delete calls on ledger tables anywhere in src (immutability by convention only; LedgerLine has onDelete:Cascade).
+- ACCOUNTS: BANK_MAIN, PAYOUT_CLEARING, REVENUE_COMMISSION, REVENUE_ADJUST, GATEWAY:{p}, SELLER:{w}:PAYABLE. No shipping-allocation/buyer-custody/chargeback accounts. postGatewaySettlement (T2) defined but never called → GATEWAY:* never clears to BANK_MAIN. postRefund supports partials but NEVER clamps to available balance — seller wallet can go negative. Chargeback: nothing; Dispute model is metadata-only, never posts ledger.
+- refreshWalletCache/walletTruth: fully ledger-derived; available = credits with availableAt<=now − all debits (debits not gated by availableAt). Latent T1 imbalance if CommissionSetting.appliesToShipping=true (sellerNet+commission ≠ totalMinor when shipping>0 → LEDGER_UNBALANCED throw at payment time).
+- Schema: Wallet(id,sellerId@unique,currency,pendingMinor,availableMinor,reservedMinor-dormant,lifetimeEarnedMinor,lifetimeCommissionMinor); no WalletEntry model; NO @@index/@@unique on LedgerTransaction/LedgerLine (walletTruth full-scans); all money Int minor; Floats are rates only (commissionPercent etc.). Payout.referenceNo @unique.
+- Payout concurrency: approve/mark-paid/fail/reject all do JS status check → post ledger → UNCONDITIONAL payout.update where:{id}; no $transaction, no FOR UPDATE, no conditional update, no unique guard → double-approve double-spends T3 (negative seller balance); batch run same TOCTOU. Seller "one open request" (findFirst) raceable. Counter upsert (Prisma 6 native ON CONFLICT + increment) race-safe; referenceNo unique backstops.
+- Payout statuses used: requested/processing/paid/failed/rejected only; transition guards are JS-only; no PSP-transfer vs bank-payout stage split (confirmed absent); Order.taxMinor never commissioned (always 0 today).
+- Rounding: integer sen throughout; divHalfUp + allocateProportionally (remainder to largest weight); commission snapshots persisted per OrderItem at checkout, never recomputed; refund reversal uses amount×percent (ignores fixed-fee allocation) — minor asymmetry vs original commission.
+- Fail-safe: /api/checkout/payments/[ref]/simulate is PUBLIC (no auth) and self-signs+processes payment.succeeded for any ref; webhook HMAC secret hardcoded "sm_webhook_secret_demo" in source; admin mark-paid records manual referenceNo with no provider evidence (RBAC+audit only). Only webhook process.ts and mark-paid write succeeded/paid (grep-verified).
+
+Stage Summary:
+- Ledger is double-entry correct in app code but has NO db-level balance/idempotency constraints and NO $transaction wrapping — duplicate posting and torn writes are possible under concurrency.
+- Payout approval is a TOCTOU chain (check→post→unconditional update); two concurrent approvals both pass and double-spend T3.
+- Seller wallets can go negative via refunds (no clamp) and debits ignore availableAt; GATEWAY:* accounts never settle (T2 dead code).
+- Schema money math is clean (Int minor everywhere, Floats only for rates) but ledger tables have zero indexes/unique constraints.
+- Biggest production blockers: public self-signing simulate endpoint + hardcoded webhook secret = anyone can mint paid orders/T1 credits.
+- Verified scripts/verify-ledger.ts runs runLedgerInvariants (balance + cache drift) as a post-migration gate; no chargeback/dispute-ledger linkage exists.
+
+---
+Task ID: AUDIT-C/D
+Agent: Z.ai Code (main)
+Task: Synthesize uploaded 14-phase financial audit prompt vs actual codebase (AUDIT-A/B findings) into gap analysis + MY e-money regulatory assessment for user decision.
+
+Work Log:
+- Read upload/Pasted Content_1792465207420.txt (623 lines, 14 phases: audit → ledger → balances → PSP stages → webhooks → reconciliation → refunds → approval → UX → PSP config → security → MY compliance → testing → rules).
+- AUDIT-A (ledger/wallet): double-entry app-enforced but NOT transactional/idempotent; no @@unique on LedgerTransaction/PaymentWebhookLog; payout approve TOCTOU double-spend possible; refunds can drive wallet negative; no chargeback ledger semantics; T1 unbalanced if commission.appliesToShipping=true; T2 postGatewaySettlement has zero callers; no ledger indexes; integer-sen money math CORRECT (money.ts divHalfUp + allocateProportionally).
+- AUDIT-B (webhooks/ops/security): /simulate PUBLIC unauth self-signing (money-printer in prod); WEBHOOK_SECRET hardcoded; webhook dedup status-only → concurrent double-T1 race; no payout webhooks; no cron/jobs/reconciliation; no admin PSP sync; refunds skip sufficiency check; Dispute model metadata-only; no cancel route; RBAC good (payouts.manage=[superadmin,finance]); accountNumberEnc stores last-4 only (not encryption); notify() no dedup; NO automated test framework (only scripts/verify-ledger.ts + verify-commerce.ts gates; fin-tests/fin-reconcile suites absent from repo).
+
+Stage Summary:
+- Delivered to user: phase-by-phase gap matrix, P0/P1/P2 prioritized plan, MY e-money/PDPA/AML/SST register, execution offer. Awaiting user go-ahead before implementing.

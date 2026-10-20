@@ -1,0 +1,624 @@
+     1→# MASTER IDE INSTRUCTION: E-COMMERCE PAYMENT, SELLER PAYOUT & FINANCIAL SYSTEM AUDIT AND UPGRADE
+     2→
+     3→## 1. OBJECTIVE
+     4→
+     5→Perform a comprehensive audit of the existing webapp's payment, seller payout, financial ledger, webhook, reconciliation, refund, security and financial-control systems.
+     6→
+     7→The objective is to ensure that the current implementation follows sound modern e-commerce marketplace payment architecture, robust financial-accounting practices, reliable payment-provider integration patterns and appropriate security controls.
+     8→
+     9→Do not assume that the existing system is correct simply because a feature or database field already exists. Verify its actual implementation, how the components interact, whether the business logic is correct, and whether the entire flow works end-to-end.
+    10→
+    11→**Your responsibilities are to:**
+    12→1. Inspect and understand the existing codebase before making changes.
+    13→2. Identify what is already implemented correctly and what is missing, incomplete, unsafe, disconnected or incorrectly implemented.
+    14→3. Apply the necessary improvements directly to the existing system.
+    15→4. Integrate every affected component so there are no disconnected routes, unused features, hardcoded financial outcomes or incomplete workflows.
+    16→5. Test the implementation and verify that the affected financial flows work correctly.
+    17→
+    18→This is an audit-and-improve task, not a request to rewrite the entire application.
+    19→
+    20→Preserve working architecture, existing business rules, established conventions and unrelated functionality wherever possible.
+    21→
+    22→---
+    23→
+    24→## 2. PHASE ONE — INSPECT THE EXISTING CODEBASE
+    25→
+    26→Before modifying any files, investigate the actual implementation.
+    27→
+    28→Pay particular attention to the following known components, if they still exist in the current codebase:
+    29→
+    30→- `src/lib/psp.ts`
+    31→- `Payout` database model and associated schema
+    32→- `PaymentWebhookLog`
+    33→- `/api/webhooks/payments/[provider]`
+    34→- Existing payment processing logic, including `process.ts`
+    35→- `postPayoutConfirmed` and `postPayoutFailed`
+    36→- Existing T4 payout ledger logic and related financial posting functions
+    37→- Admin payout approval and manual "Mark paid" functionality
+    38→- Seller payout history, balance summaries and notifications
+    39→- Existing buyer-payment webhook implementation
+    40→- PSP configuration and `PSP_SPLIT_CANDIDATES`, including `stripe_my`, `curlec` and `ipay88`, where still present
+    41→- Order payment, refund, cancellation and dispute workflows
+    42→- Commission calculations, shipping allocations, fee handling and rounding logic
+    43→- Database transactions, constraints, indexes and migrations
+    44→- Scheduled jobs, background workers and retry mechanisms
+    45→- Existing automated tests, mock PSP, audit logs and financial reports
+    46→
+    47→These are investigation targets, not assumptions. Discover the actual project structure and current implementation before deciding what to modify.
+    48→
+    49→Trace the complete financial flow from the buyer's payment through order processing, seller balance calculation, payout eligibility, admin approval, PSP execution, webhook processing, ledger posting, seller notification and financial reconciliation.
+    50→
+    51→Also trace failure paths, including duplicate events, network timeouts, concurrent payout requests, partial refunds, chargebacks and payout reversals.
+    52→
+    53→### Required output from this phase
+    54→
+    55→Create a concise audit report identifying:
+    56→
+    57→- What is correctly implemented.
+    58→- What is only partially implemented.
+    59→- What is missing.
+    60→- What is hardcoded or relies on manual work.
+    61→- What is duplicated or inconsistent.
+    62→- What could cause incorrect balances, duplicate transfers, incorrect payout statuses or financial loss.
+    63→- What requires confirmation from the selected PSP or a qualified Malaysian compliance adviser.
+    64→
+    65→Produce a prioritized implementation plan based on actual findings.
+    66→
+    67→After the audit, continue with implementation. Do not stop after producing the report.
+    68→
+    69→---
+    70→
+    71→## 3. PHASE TWO — ESTABLISH A RELIABLE FINANCIAL LEDGER
+    72→
+    73→Inspect the existing financial accounting architecture and strengthen it where necessary.
+    74→
+    75→### 3.1 Ledger integrity
+    76→
+    77→Verify that financial transactions are recorded consistently and can be reconciled with orders, payments, commissions, refunds, seller liabilities and payouts.
+    78→
+    79→Where appropriate, use a proper double-entry ledger with balanced debit and credit entries. Preserve immutable financial records and use correction or reversal entries rather than silently editing or deleting posted transactions.
+    80→
+    81→Ensure every ledger entry has sufficient references to trace it back to the originating payment, order, refund, payout or provider event.
+    82→
+    83→Prevent a single financial event from posting the same accounting movement more than once.
+    84→
+    85→Verify that the accounting model correctly distinguishes between:
+    86→
+    87→- Buyer payments collected.
+    88→- Platform revenue and commissions.
+    89→- Shipping amounts collected and their intended allocation.
+    90→- Seller liabilities.
+    91→- Pending seller earnings.
+    92→- Available seller balances.
+    93→- Reserved payout amounts.
+    94→- Completed seller payouts.
+    95→- Refunds, chargebacks, losses, fees and reversals.
+    96→
+    97→Do not treat an order's status as a substitute for its financial accounting record.
+    98→
+    99→### 3.2 Monetary precision and rounding
+   100→
+   101→Audit every financial calculation, including commission fees, percentage-based charges, fee holidays, discounts, shipping allocations, refunds, payouts, taxes where applicable and residual rounding differences.
+   102→
+   103→Use integer sen for Malaysian ringgit amounts where suitable, or another consistent, appropriate fixed-precision monetary representation. Avoid binary floating-point arithmetic for financial calculations.
+   104→
+   105→Ensure rounding rules are explicitly defined, deterministic and applied consistently.
+   106→
+   107→Where calculated splits produce a rounding remainder, allocate it according to a documented rule so the total debits, credits and allocations reconcile exactly.
+   108→
+   109→Do not silently change existing financial calculations. First identify the intended business rules, compare them with the implementation and preserve compatibility where possible.
+   110→
+   111→### 3.3 Transaction integrity
+   112→
+   113→Use appropriate database transactions, constraints and concurrency controls so related financial operations cannot leave partially updated records.
+   114→
+   115→Verify that important operations remain correct when two requests execute at the same time, a process crashes or a database transaction fails.
+   116→
+   117→---
+   118→
+   119→## 4. PHASE THREE — PROTECT SELLER BALANCES AND PAYOUT ELIGIBILITY
+   120→
+   121→Ensure the webapp cannot approve or execute payouts that exceed the seller's genuinely available balance.
+   122→
+   123→### 4.1 Clear balance states
+   124→
+   125→Where the existing design requires it, distinguish:
+   126→
+   127→- Pending earnings.
+   128→- Available earnings.
+   129→- Reserved payout amounts.
+   130→- Paid amounts.
+   131→- Amounts held because of refunds, disputes, compliance checks or other restrictions.
+   132→
+   133→Avoid counting the same money in more than one spendable balance.
+   134→
+   135→### 4.2 Atomic payout reservation
+   136→
+   137→When a payout is approved and prepared for execution, reserve the amount atomically in the internal ledger or equivalent financial accounting system.
+   138→
+   139→The reservation must prevent another concurrent payout from spending the same funds.
+   140→
+   141→Ensure that:
+   142→
+   143→- A payout cannot exceed the available balance.
+   144→- A retry cannot reserve the same funds twice.
+   145→- A failed payout follows an explicit release or recovery process.
+   146→- A successful payout cannot have its funds made available again accidentally.
+   147→- Refunds and chargebacks follow defined accounting rules.
+   148→- Provider processing delays do not cause funds to be deducted or released incorrectly.
+   149→- Admin actions cannot bypass balance validation.
+   150→
+   151→Use database-level protections where necessary rather than relying exclusively on frontend validation.
+   152→
+   153→### 4.3 Payout eligibility
+   154→
+   155→Audit payout eligibility rules against the actual application requirements.
+   156→
+   157→Where relevant, consider order completion, the configured seller settlement period, pending refunds, disputes, seller account verification, payout-account status, account restrictions and risk controls.
+   158→
+   159→Do not invent new business rules or settlement periods without inspecting the existing design.
+   160→
+   161→Make rules configurable only where this benefits the existing architecture.
+   162→
+   163→---
+   164→
+   165→## 5. PHASE FOUR — SEPARATE PSP TRANSFERS FROM BANK PAYOUTS
+   166→
+   167→Audit the payout state model and ensure it accurately represents the money movement supported by the chosen provider.
+   168→
+   169→Some marketplace PSPs distinguish between transferring funds to a seller's connected payment account and paying those funds out to the seller's bank account.
+   170→
+   171→Do not assume all PSPs implement identical money-movement steps.
+   172→
+   173→Design the internal model and provider adapter to represent the actual provider-specific workflow.
+   174→
+   175→Where the provider supports separate stages, record them separately. For example:
+   176→
+   177→1. Internal payout requested.
+   178→2. Seller balance reserved.
+   179→3. Admin approval completed.
+   180→4. PSP transfer or payout request submitted.
+   181→5. PSP acknowledges or accepts the request.
+   182→6. Transfer to a connected account completed, where applicable.
+   183→7. Bank payout initiated, where applicable.
+   184→8. Bank payout confirmed as paid, or reported as failed, returned, canceled or reversed.
+   185→9. Internal accounting updated and seller notified.
+   186→
+   187→Do not report that a seller has received money in their bank account merely because the PSP accepted an API request or a preceding transfer succeeded.
+   188→
+   189→Use `Payout.providerRef`, `paidAt`, `failReason`, `statementJson` and existing fields where appropriate. Add or change fields only when the audit demonstrates a genuine need.
+   190→
+   191→Make status transitions explicit and validated. Prevent invalid transitions, stale status updates and regressions caused by out-of-order events.
+   192→
+   193→Keep provider-specific behavior inside an appropriate integration layer instead of scattering provider-specific logic throughout the application's business logic.
+   194→
+   195→---
+   196→
+   197→## 6. PHASE FIVE — MAKE WEBHOOK PROCESSING SAFE AND IDEMPOTENT
+   198→
+   199→Inspect the existing buyer-payment webhook implementation and reuse its proven patterns for payout processing wherever appropriate.
+   200→
+   201→Do not create a second, inconsistent webhook architecture unnecessarily.
+   202→
+   203→### 6.1 Webhook verification
+   204→
+   205→Verify that the system:
+   206→
+   207→- Validates webhook authenticity using the selected provider's documented verification mechanism.
+   208→- Rejects invalid signatures.
+   209→- Handles the provider's exact payload format and event types.
+   210→- Uses secure credential management.
+   211→- Does not trust a client request or admin-submitted status as proof of a real PSP payment.
+   212→- Does not expose secrets, sensitive provider payloads or unnecessary personal information in logs.
+   213→
+   214→Follow the provider's official integration documentation.
+   215→
+   216→### 6.2 Event-level idempotency
+   217→
+   218→Inspect `PaymentWebhookLog` and its associated database constraints.
+   219→
+   220→Provide reliable deduplication for individual provider events. Use a unique provider event ID, together with provider identity and the appropriate account or environment scope if necessary.
+   221→
+   222→If a provider does not supply a suitable unique event identifier, design an explicitly justified alternative.
+   223→
+   224→Do not deduplicate solely on `Payout.providerRef`. Multiple legitimate events can refer to the same payout while reporting different status changes.
+   225→
+   226→Process event persistence and related internal state transitions safely. Avoid race conditions in which two identical webhook deliveries simultaneously create duplicate ledger entries.
+   227→
+   228→Handle retries, duplicate events and out-of-order events without losing legitimate updates.
+   229→
+   230→### 6.3 Payout execution idempotency
+   231→
+   232→Protect outgoing PSP requests with an idempotency key where supported.
+   233→
+   234→A retry after a timeout must not create a second real transfer or payout.
+   235→
+   236→Persist sufficient information to recover from uncertain API outcomes. Before resubmitting an operation whose result is unknown, follow the provider's documented idempotency and status-retrieval procedures.
+   237→
+   238→If a provider does not support the required mechanism, implement a provider-appropriate recovery strategy and document its limitations.
+   239→
+   240→### 6.4 Ledger functions
+   241→
+   242→Ensure verified payout events call the appropriate existing functions, including `postPayoutConfirmed` and `postPayoutFailed`, or their current equivalents.
+   243→
+   244→Each accounting effect must be applied exactly once at the application level, even when delivery is repeated or processing is retried.
+   245→
+   246→Where a payout's later status requires a correction, reversal or recovery entry, record it explicitly. Do not overwrite previously posted accounting history.
+   247→
+   248→---
+   249→
+   250→## 7. PHASE SIX — IMPLEMENT RECONCILIATION AND FAILURE RECOVERY
+   251→
+   252→Do not depend on webhook delivery alone.
+   253→
+   254→Inspect whether the existing system has a reliable way to recover when a webhook is delayed, lost, rejected or processed incorrectly.
+   255→
+   256→### 7.1 Admin reconciliation
+   257→
+   258→Where missing, implement a protected admin action such as "Sync with PSP" for an individual payout.
+   259→
+   260→The operation should:
+   261→
+   262→1. Verify the admin's permission.
+   263→2. Retrieve the payout's actual status using the provider's supported API.
+   264→3. Validate that the provider response corresponds to the expected payout and account.
+   265→4. Reconcile the information with the internal payout state and ledger.
+   266→5. Apply only valid, idempotent state transitions.
+   267→6. Record the action and its result in the audit log.
+   268→7. Explain failures without exposing sensitive information.
+   269→
+   270→Do not allow the action to blindly overwrite internal status or issue an additional money movement.
+   271→
+   272→### 7.2 Scheduled reconciliation
+   273→
+   274→If suitable job infrastructure exists, implement or extend a scheduled reconciliation process.
+   275→
+   276→It should identify and investigate:
+   277→
+   278→- Payouts stuck in processing beyond a configurable threshold.
+   279→- Unknown or ambiguous PSP request outcomes.
+   280→- Missing webhook events.
+   281→- Provider and internal status mismatches.
+   282→- Amount or currency discrepancies.
+   283→- Failed, returned, canceled or reversed payouts where supported.
+   284→- Ledger entries that do not reconcile with their related financial operations.
+   285→
+   286→Make the job safe to run repeatedly.
+   287→
+   288→Use bounded retries, sensible backoff, error logging and alerts for cases requiring human intervention.
+   289→
+   290→Avoid uncontrolled polling, unlimited retries or automatically initiating another payout simply because the first request appears stuck.
+   291→
+   292→### 7.3 Failure and reversal accounting
+   293→
+   294→Define and test the financial consequences of each supported failure state.
+   295→
+   296→A failed or returned payout must not permanently lock or deduct seller funds incorrectly, and it must not make already-paid funds spendable again incorrectly.
+   297→
+   298→A payout that was previously marked paid must be handled correctly if the PSP later reports a return, reversal or other financial correction.
+   299→
+   300→Use the provider's documented lifecycle and the existing accounting model to determine the appropriate entry, reversal, reservation adjustment or manual review.
+   301→
+   302→---
+   303→
+   304→## 8. PHASE SEVEN — REFUNDS, DISPUTES AND CHARGEBACKS
+   305→
+   306→Audit how order refunds, payment disputes, chargebacks and cancellations affect seller earnings, platform revenue and payouts.
+   307→
+   308→Ensure the system handles at least the following cases where applicable:
+   309→
+   310→- Full refunds.
+   311→- Partial refunds.
+   312→- Refunds before seller payout approval.
+   313→- Refunds after a payout has already been initiated.
+   314→- Chargebacks and payment disputes after seller earnings were calculated.
+   315→- Seller balances that become negative or insufficient to cover a reversal.
+   316→- PSP fees that are not refunded.
+   317→- Failed or reversed seller payouts.
+   318→
+   319→Maintain an auditable relationship between the original payment, the refund or dispute, the related seller-balance adjustments and any resulting payout impact.
+   320→
+   321→Never assume that a seller's original balance is still available simply because an order previously reached a completed status.
+   322→
+   323→Define safe recovery and review procedures for cases where the platform cannot automatically recover funds already disbursed to a seller.
+   324→
+   325→Do not silently deduct money from unrelated sellers or manipulate historical ledger entries to force the numbers to match.
+   326→
+   327→---
+   328→
+   329→## 9. PHASE EIGHT — ADMIN APPROVAL AND FUTURE AUTOMATION
+   330→
+   331→Preserve manual admin payout approval as the default unless the existing business requirements explicitly state otherwise.
+   332→
+   333→Separate approval from actual PSP execution and payout confirmation.
+   334→
+   335→The intended model should be:
+   336→
+   337→- Admin approval authorizes the payout under the applicable business rules.
+   338→- The backend validates eligibility and reserves the funds.
+   339→- The integration layer initiates the supported PSP operation.
+   340→- Verified provider evidence establishes subsequent payment outcomes.
+   341→- The ledger records the appropriate financial effects.
+   342→- Notifications communicate the result to the seller.
+   343→
+   344→Ensure admin permissions, approval records, timestamps, actor identity, reason codes where applicable and audit trails are enforced.
+   345→
+   346→Design the architecture so future automatic approval can be supported without rewriting the payout engine.
+   347→
+   348→If appropriate, introduce configurable risk-based rules for eligibility, limits, verification requirements and mandatory manual review.
+   349→
+   350→However, keep automatic approval disabled by default unless the existing system already has a clearly authorized policy. Do not introduce automatic payouts or change financial risk policies without an explicit business requirement.
+   351→
+   352→---
+   353→
+   354→## 10. PHASE NINE — SELLER NOTIFICATIONS AND USER EXPERIENCE
+   355→
+   356→Audit payout status presentation across the admin dashboard, seller dashboard, order history, payout history and notifications.
+   357→
+   358→Ensure the same financial event does not display contradictory statuses across different parts of the application.
+   359→
+   360→Provide clear seller-facing status explanations appropriate to the verified stage, for example:
+   361→
+   362→- Awaiting approval.
+   363→- Approved.
+   364→- Processing.
+   365→- Transferred to the connected payment account, where applicable.
+   366→- Awaiting bank payout.
+   367→- Paid.
+   368→- Failed.
+   369→- Returned or reversed, where supported.
+   370→- Action required.
+   371→
+   372→Do not expose internal technical errors or claim the seller has received money when that has not been established.
+   373→
+   374→Add in-app notifications for important payout outcomes if missing. Reuse the existing notification system and email patterns where possible.
+   375→
+   376→Notifications must not be sent repeatedly because of webhook retries or reconciliation runs.
+   377→
+   378→Ensure appropriate notification preferences and existing authorization rules continue to work.
+   379→
+   380→---
+   381→
+   382→## 11. PHASE TEN — PSP INTEGRATION READINESS AND CONFIGURATION
+   383→
+   384→Audit the PSP abstraction and all current provider candidates.
+   385→
+   386→Do not assume that `stripe_my`, `curlec`, `ipay88` or any other configured provider supports every required marketplace feature.
+   387→
+   388→Before implementing provider-specific functionality, verify the relevant official documentation and the actual account arrangement, including support for:
+   389→
+   390→- Marketplace or connected-seller onboarding.
+   391→- Seller verification and payout-account requirements.
+   392→- Split payments and the supported flow of funds.
+   393→- Platform fees and seller settlement.
+   394→- Transfer and bank-payout lifecycle events.
+   395→- Webhook signatures and event identifiers.
+   396→- API idempotency and request recovery.
+   397→- Refunds, disputes and reversals.
+   398→- Reconciliation APIs and reporting.
+   399→- Settlement timing, currency and applicable fees.
+   400→- Relevant availability and account eligibility in Malaysia.
+   401→
+   402→Where official documentation or account approval is unavailable, record the uncertainty rather than inventing support.
+   403→
+   404→Keep secrets in appropriate server-side environment variables or the project's existing secret-management solution. Never expose PSP secret keys in frontend code or commit credentials to source control.
+   405→
+   406→Use the existing mock PSP for development and testing. A missing production credential must not be replaced by fabricated success responses or an unsafe fallback that marks real transactions as paid.
+   407→
+   408→Do not send real money or contact live production financial APIs during testing unless the project explicitly provides an authorized, safe procedure and environment for doing so.
+   409→
+   410→Keep provider onboarding, approval and compliance prerequisites clearly documented.
+   411→
+   412→---
+   413→
+   414→## 12. PHASE ELEVEN — SECURITY, AUDITABILITY AND DATA PROTECTION
+   415→
+   416→Audit the complete financial system for authorization and security weaknesses.
+   417→
+   418→Verify that:
+   419→
+   420→- Only authorized administrators can approve or manage payouts.
+   421→- Sellers can access only their own protected financial information.
+   422→- Financial amounts and statuses are recalculated and validated by the backend.
+   423→- Clients cannot directly mark real payments as paid.
+   424→- Webhook endpoints authenticate provider messages correctly.
+   425→- Admin actions and material financial transitions have traceable audit records.
+   426→- Provider credentials are not exposed in browser code, responses, logs or error pages.
+   427→- Sensitive personal and payment information is not unnecessarily stored or logged.
+   428→- Financial API endpoints enforce appropriate authentication, authorization, validation, rate limiting and input checks.
+   429→- All relevant operations follow the application's established security conventions.
+   430→
+   431→Where payment-card handling exists, minimize direct handling of card data and prefer the provider's appropriate hosted or tokenized payment components.
+   432→
+   433→Identify the actual PCI DSS scope implications of the implementation for the business to verify with the chosen PSP or acquirer. Do not assume that using a third-party provider automatically removes every compliance obligation.
+   434→
+   435→---
+   436→
+   437→## 13. PHASE TWELVE — MALAYSIAN COMPLIANCE GAP REVIEW
+   438→
+   439→Review the current architecture for features and operational decisions that may have Malaysian regulatory, legal, tax, privacy or payment-provider implications.
+   440→
+   441→Consider, as applicable:
+   442→
+   443→- The platform's role in collecting, holding, transferring or distributing customer money.
+   444→- The chosen PSP's merchant and marketplace terms.
+   445→- Seller identity and business verification.
+   446→- Merchant-acquiring or payment-service regulatory requirements that may apply.
+   447→- Personal data handling and retention.
+   448→- Financial transaction records and auditability.
+   449→- Refund, cancellation, dispute and seller-payout policies.
+   450→- Tax reporting and applicable fee or transaction disclosures.
+   451→
+   452→Use authoritative and current sources when checking requirements. Clearly distinguish confirmed technical facts from legal interpretations.
+   453→
+   454→Do not claim that the application is legally compliant merely because the technical recommendations are implemented.
+   455→
+   456→Produce a compliance gap register with:
+   457→
+   458→- The relevant area.
+   459→- The current implementation.
+   460→- The requirement or question needing verification.
+   461→- The evidence and authoritative source, where available.
+   462→- Whether it is a technical change, a PSP confirmation, an operational requirement or a legal/accounting decision.
+   463→- The recommended next action.
+   464→
+   465→Implement clearly justified technical improvements that fall within the existing business requirements.
+   466→
+   467→Flag requirements that need approval from the business owner, the selected PSP, a qualified Malaysian legal adviser or a qualified accounting professional.
+   468→
+   469→Do not invent legal obligations, claim regulatory approval, or change the platform's funds-handling model without authorization.
+   470→
+   471→---
+   472→
+   473→## 14. PHASE THIRTEEN — TESTING AND VERIFICATION
+   474→
+   475→After implementation, run the project's relevant tests, type checks, linting, builds, schema validation and migrations according to the existing development workflow.
+   476→
+   477→Add missing tests where necessary.
+   478→
+   479→Do not treat a successful build alone as proof that the financial system is correct.
+   480→
+   481→At minimum, verify the following scenarios using the mock PSP or an appropriate non-production environment:
+   482→
+   483→### Payment and payout processing
+   484→- Buyer payment success and failure.
+   485→- Payout approval with sufficient funds.
+   486→- Payout rejection when funds are insufficient.
+   487→- Payout initiation followed by a valid provider confirmation.
+   488→- Correct distinction between transfer completion and bank-payout completion when both stages exist.
+   489→- Accurate seller and platform accounting.
+   490→
+   491→### Duplicate and concurrent operations
+   492→- Duplicate webhook deliveries.
+   493→- Two deliveries of the same event arriving simultaneously.
+   494→- Different legitimate events for the same payout.
+   495→- Out-of-order webhook events.
+   496→- Concurrent payout requests competing for the same available balance.
+   497→- API timeout after the provider may already have accepted the payout.
+   498→- Safe retry using the same supported idempotency key.
+   499→- Repeated admin reconciliation.
+   500→- Repeated scheduled reconciliation.
+   501→
+   502→### Failure and recovery
+   503→- Invalid webhook signatures.
+   504→- Missing webhooks.
+   505→- Payouts stuck in processing.
+   506→- Provider and internal status mismatches.
+   507→- Failed, canceled, returned or reversed payouts where supported.
+   508→- Partial and full refunds.
+   509→- Chargebacks and disputes.
+   510→- Refunds after seller payout initiation or completion.
+   511→- Seller balance insufficiency during reversal recovery.
+   512→- Database failure during financial posting.
+   513→- Notification failure without duplicate financial processing.
+   514→
+   515→### Financial correctness
+   516→- Commission and fee calculations.
+   517→- Fee-holiday and partial-rate behavior, if supported by the current system.
+   518→- Integer-sen or fixed-precision arithmetic.
+   519→- Rounding and split-payment reconciliation.
+   520→- Correct treatment of platform fees, shipping allocations and PSP fees.
+   521→- Balanced ledger postings.
+   522→- No duplicate debit or credit entries.
+   523→- No negative or spendable balance created by an invalid transition.
+   524→
+   525→For every discovered issue, demonstrate the relevant test or verification evidence. Clearly distinguish verified fixes from remaining limitations.
+   526→
+   527→Never run destructive production migrations, issue real payouts or modify real customer balances as part of automated testing.
+   528→
+   529→---
+   530→
+   531→## 15. PHASE FOURTEEN — IMPLEMENTATION RULES
+   532→
+   533→Follow these rules throughout the task.
+   534→
+   535→1. **Inspect first.** Do not modify the codebase before understanding the relevant implementation and its dependencies.
+   536→
+   537→2. **Work sequentially.** Complete the audit, document the implementation plan, then execute changes in a controlled sequence. Do not skip prerequisites or perform conflicting financial migrations in parallel.
+   538→
+   539→3. **Preserve existing functionality.** Prefer targeted improvements over unnecessary rewrites.
+   540→
+   541→4. **Use existing patterns.** Reuse the existing database layer, PSP abstraction, authentication system, audit logs, notifications, ledger functions and testing conventions wherever appropriate.
+   542→
+   543→5. **No superficial fixes.** Do not solve a backend financial issue solely by changing frontend text or status labels.
+   544→
+   545→6. **No fake completeness.** Do not add buttons, routes, status fields or settings that appear functional but are not connected to the actual backend behavior.
+   546→
+   547→7. **No unsafe defaults.** Never mark an unknown transaction as successful, silently release reserved funds, bypass approval rules or retry an uncertain payout as a new transaction.
+   548→
+   549→8. **Safe migrations.** Make schema changes using the project's migration system. Preserve existing data and consider backward compatibility, deployment sequencing and recovery procedures.
+   550→
+   551→9. **Protect existing financial records.** Never delete or rewrite historical ledger entries merely to make balances match. Use explicit corrections or reversal entries.
+   552→
+   553→10. **No invented provider features.** Use verified provider documentation and implement the actual supported API behavior.
+   554→
+   555→11. **No unsupported compliance claims.** Clearly identify what was verified, what was implemented and what still requires external confirmation.
+   556→
+   557→12. **Complete the implementation.** After the audit, continue through the necessary code changes, migrations, integration work and tests. Do not stop at recommendations unless a genuine blocker requires authorization or external credentials.
+   558→
+   559→13. **Report blockers honestly.** If an improvement cannot be completed safely because a provider account, credential, legal decision or business rule is missing, implement any safe preparatory work and document exactly what remains blocked.
+   560→
+   561→---
+   562→
+   563→## 16. FINAL ACCEPTANCE CRITERIA
+   564→
+   565→The task is complete only when the implementation has been inspected, the necessary changes have been applied and the following outcomes have been verified to the extent possible in the available development environment.
+   566→
+   567→- Seller balances and financial ledger entries remain consistent.
+   568→- Concurrent payout operations cannot spend the same available funds twice.
+   569→- Duplicate webhook deliveries cannot duplicate financial postings.
+   570→- Provider event identity is distinct from payout identity.
+   571→- Outgoing payout requests are protected against duplicate execution using the provider's supported mechanisms.
+   572→- Transfer, bank-payout and final financial statuses are represented accurately for the selected provider.
+   573→- Payout confirmation depends on verified provider evidence rather than an admin action alone.
+   574→- Failures, reversals, refunds and disputes follow explicit accounting and recovery procedures.
+   575→- Stuck payouts can be reconciled using an authorized admin action and scheduled processing where infrastructure supports it.
+   576→- Seller notifications reflect verified outcomes and do not duplicate unnecessarily.
+   577→- PSP integrations use documented capabilities and safe credential handling.
+   578→- Financial calculations, rounding and relevant fee rules are consistent and tested.
+   579→- Admin and seller permissions are enforced across all relevant endpoints.
+   580→- Existing unrelated functionality continues to work.
+   581→- Relevant automated tests, schema checks, type checks and builds pass, or failures are explicitly documented.
+   582→- Remaining PSP, compliance, legal, accounting and operational decisions are listed without being misrepresented as completed work.
+   583→
+   584→## 17. REQUIRED FINAL REPORT
+   585→
+   586→When finished, provide a clear report containing:
+   587→
+   588→**A. Initial audit findings**
+   589→
+   590→What was correct, incomplete, missing, disconnected or risky in the original system.
+   591→
+   592→**B. Changes implemented**
+   593→
+   594→List the important files, database changes, APIs, services, jobs, UI changes and financial rules updated.
+   595→
+   596→**C. Financial safeguards**
+   597→
+   598→Explain how ledger integrity, balance reservation, idempotency, webhook processing, reconciliation and reversal handling now work.
+   599→
+   600→**D. Test results**
+   601→
+   602→List the tests executed, their results, important scenarios verified and any tests that could not be run.
+   603→
+   604→**E. Remaining external requirements**
+   605→
+   606→List the exact items requiring PSP account access, provider confirmation, authorized credentials, business decisions or qualified Malaysian legal/accounting review.
+   607→
+   608→**F. Known limitations**
+   609→
+   610→Identify every meaningful unresolved issue. Do not describe a partially implemented feature as complete.
+   611→
+   612→**G. Production-readiness assessment**
+   613→
+   614→Give a reasoned assessment of whether the payment and payout system is ready for local testing, staging, controlled pilot usage or production. Explain the remaining blockers for the next stage.
+   615→
+   616→Do not certify the webapp as legally compliant or financially production-ready without sufficient evidence.
+   617→
+   618→### FINAL DIRECTIVE
+   619→
+   620→Begin by inspecting the real codebase and tracing the complete payment-to-payout lifecycle. Produce the audit and implementation plan, then carry out the necessary improvements methodically.
+   621→
+   622→The goal is not to add every possible payment feature. The goal is to make the existing webapp's financial system correct, connected, secure, auditable, recoverable and ready for the actual PSP and marketplace business model it will use.
+   623→
+   624→Preserve everything that works, fix what is necessary, test the actual outcomes, and clearly disclose anything that remains unresolved.
