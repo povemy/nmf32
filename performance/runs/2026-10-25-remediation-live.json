@@ -1,0 +1,128 @@
+{
+  "runId": "mvnvasgl",
+  "startedAt": "2026-10-25T13:32:36.117Z",
+  "tests": [
+    {
+      "name": "F1-pre: 15 checkouts created",
+      "ok": true,
+      "detail": "15/15"
+    },
+    {
+      "name": "F1-a: ≥13/15 unique confirmations succeed first-try (was 0/15 pre-fix)",
+      "ok": true,
+      "detail": "15/15 ok, 0 raw-5xx"
+    },
+    {
+      "name": "F1-b: exactly-once money movement (one T1 per succeeded confirmation)",
+      "ok": true,
+      "detail": "postings=15 successes=15"
+    },
+    {
+      "name": "F1-c: 15 concurrent duplicates all graceful (200 ok), zero new postings",
+      "ok": true,
+      "detail": "15/15 dup-ok, postings 283→283"
+    },
+    {
+      "name": "F1-d: wallet cache == ledger truth after the storm (post-commit refresh)",
+      "ok": true,
+      "detail": "cache=42958/3195142 truth=42958/3195142"
+    },
+    {
+      "name": "F2-a: ZERO raw 5xx under a 40-wide rush (was 17/40 raw 500s pre-fix)",
+      "ok": true,
+      "detail": "201=25 409=12 503busy=3 raw5xx=0 (6408ms)"
+    },
+    {
+      "name": "F2-b: every 503 carries Retry-After",
+      "ok": true,
+      "detail": "3/3"
+    },
+    {
+      "name": "F2-c: every 201 carries queue-time telemetry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F2-d: stock bound respected (201s ≤ stock; no oversell)",
+      "ok": true,
+      "detail": "201=25 stock=25"
+    },
+    {
+      "name": "F2-e: stock == 25 − successes (503/409 consumed nothing)",
+      "ok": true,
+      "detail": "stock=0"
+    },
+    {
+      "name": "F2-f: retry after 503, SAME Idempotency-Key → clean outcome (never 5xx)",
+      "ok": true,
+      "detail": "409"
+    },
+    {
+      "name": "F3-drain: pre-existing eligible backlog fully processed",
+      "ok": true,
+      "detail": "pre=0 drained=0 rounds=1 270ms (0/min) failures=0"
+    },
+    {
+      "name": "F3-E1: group expired, order payment_expired, stock restored +1, InventoryLog written",
+      "ok": true,
+      "detail": "stock 4→5 logs=1"
+    },
+    {
+      "name": "F3-E2: repeated sweep restocks nothing (stock stable, still one log)",
+      "ok": true,
+      "detail": "stock=5 logs=1"
+    },
+    {
+      "name": "F3-E3: overlapping sweeps → exactly one restock",
+      "ok": true,
+      "detail": "stock=5 logs=1"
+    },
+    {
+      "name": "F3-E4: paid group not expired by sweep; order stays paid; stock NOT restored",
+      "ok": true,
+      "detail": "group=succeeded order=paid stock 4→4"
+    },
+    {
+      "name": "F3-E5-pre: sweep actually claimed g5 before the late webhook",
+      "ok": true,
+      "detail": "expired=1"
+    },
+    {
+      "name": "F3-E5: late payment after release → 409 GROUP_EXPIRED, NO T1, order stays expired, stock stays released",
+      "ok": true,
+      "detail": "409 GROUP_EXPIRED postings 284→284 stock=4"
+    },
+    {
+      "name": "F3-E6a: DB fault mid-sweep → whole group tx rolled back (group unpaid, order pending, stock unchanged)",
+      "ok": true,
+      "detail": "group=requires_payment order=payment_pending stock=3"
+    },
+    {
+      "name": "F3-E6b: recovery sweep converges exactly-once (order expired, stock restored once)",
+      "ok": true,
+      "detail": "stock 3→4 logs=1"
+    },
+    {
+      "name": "F3-E7: GET sweep telemetry returns backlog + durable lastRun",
+      "ok": true,
+      "detail": "backlog=0 lastRun.at=2026-10-25T13:33:46.763Z"
+    },
+    {
+      "name": "W4-a: webhook still succeeds (cache refresh failure caught post-commit)",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "W4-b: money moved exactly once despite the cache-write fault",
+      "ok": true,
+      "detail": "postings 284→285 order=paid"
+    },
+    {
+      "name": "W4-c: cache recovers to == truth after the fault clears",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "finishedAt": "2026-10-25T13:41:01.042Z",
+  "failures": 0
+}

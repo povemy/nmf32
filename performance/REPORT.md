@@ -314,3 +314,185 @@ safety unaffected: payout request/approve/batch authorization recomputes `wallet
   the staging re-run completed before any capacity claim; (3) the sandbox cannot
   run a production build, so all evidence remains dev-mode/combined-environment.
 - No claim of 100k-user or influencer-launch readiness is made or implied.
+
+---
+
+# §O. FINAL OPERATIONAL & PAYMENT-RECOVERY GAPS (2026-10-25, third session)
+
+> Mission: *Close Final Operational and Payment-Recovery Gaps* — the three §R.5
+> conditions. Phase 0 verified §R.1–R.6 against the tree BEFORE any change (git
+> `main @ 67bcfcc`, clean worktree; every §R.2 fix present in code; all §R.3
+> suites re-run green after this mission's changes). New evidence:
+> `performance/runs/2026-10-25-{scheduler-e2e,late-payment-refund}.json` +
+> post-change re-runs of `load-{baseline,ramp,rush,webstorm}` +
+> `performance/production-topology.md` + `docs/late-payment-refund-runbook.md`.
+> Same boundaries as every number above: **dev mode, combined environment,
+> remote Supabase** — not production capacity.
+
+## O.1 Phase 0 — verification + two environment incidents [Measured]
+
+- All §R.2 fixes confirmed on disk and re-validated by re-running the §R.3
+  suites after this mission's changes (finance-regression: ALL PASS, 0 failures;
+  remediation-live-tests: ALL PASS). No regression from the new work.
+- **Schema-drift incident (found & resolved):** `bun run db:push` for the two
+  new models below dropped orphaned `dedupKey` columns from the `ActivityLog`
+  and `Notification` tables (27+27 stale values, left by an earlier FIN
+  iteration that changed the schema without re-pushing). Runtime code only uses
+  `dedupKey` on `LedgerLine` and `NotificationLog` — both intact
+  (grep-verified); zero runtime impact, confirmed by the green re-runs.
+- **Dev-server outage (found & resolved):** the running server died during
+  Prisma client regeneration under it (restarted). The NEW scheduler's
+  `TICK_UNREACHABLE` + `OVERDUE_SWEEP` alerts fired during the outage — the
+  first live proof of the Phase 1 alerting requirement, before it was even
+  being tested.
+
+## O.2 Phase 1 — expiry scheduler operationalized [Measured]
+
+- **`src/lib/cron-auth.ts`** (new, shared): production + missing `CRON_SECRET`
+  → **fail closed** (503 `CRON_NOT_CONFIGURED` — never publicly callable);
+  secret present → timing-safe compare (sha256-digest + `timingSafeEqual`, no
+  length leak); the secret is never logged or echoed. Applied to
+  `expiry-sweep` POST+GET and `refund-reconcile` POST+GET. Verified E2E with
+  real server restarts: 403 (no header) / 403 (wrong) / 200 (correct) / GET
+  guarded; 503 fail-closed under `CRON_REQUIRE_SECRET=1`; env restored after.
+- **`mini-services/expiry-scheduler`** (new, port 3005, RUNNING in this
+  deployment): ticks BOTH `/api/cron/expiry-sweep` and
+  `/api/cron/refund-reconcile` every 30 s; durable `state.json`; boot catch-up
+  on missed intervals; throttled alert ring (`TICK_FAILED`, `TICK_UNREACHABLE`,
+  `OVERDUE_SWEEP`, `MISSED_INTERVAL`, `BACKLOG_HIGH`, `REFUND_STUCK`), all
+  visible on `GET :3005/`. Live evidence: autonomously swept a 50-group
+  pre-existing backlog on startup (20.3 s, one batch), processed refund cases
+  between test runs, and caught the O.1 outage with alerts.
+- **`scripts/readiness/scheduler-e2e.ts` — 17/17 PASS** [Measured]:
+  - Release latency vs documented objective (interval 30 s; objective =
+    interval + one bounded pass): **18.7 s and 20.9 s** across two full runs
+    (asserted ≤ 120 s; checklist target ≤ 5 min).
+  - Paid group + ledger invariants held across live sweeps; no restock of paid
+    orders; exactly +1 legitimate txn.
+  - Overlap safety: 3 concurrent manual sweeps racing a live scheduler tick →
+    exactly one restock (claim-first + 1.5 s throttle).
+  - Restart + missed interval: 35 s downtime → nothing swept while down;
+    restart → catch-up tick in **1.4 s** + `MISSED_INTERVAL` alert + durable
+    state recovered.
+  - Auth matrix: unit (mode selection × timing-safe compare) + the E2E
+    restart matrix above; the secret never appears in any response.
+
+## O.3 Phase 2 — late-payment refund/reconciliation [Measured]
+
+**Step 1 audit (verified in code, not inferred):** the only provider is the
+sandbox `mock` (sandboxOnly; production candidates are unregistered scaffolds).
+Under Option B a REAL PSP (Stripe MY destination charges, Curlec, iPay88)
+captures the buyer's funds when `payment.succeeded` is emitted — the 409
+`GROUP_EXPIRED` refusal protects the order/inventory transition but returns
+nothing. No provider refund API existed (the order-level `Refund` model is a
+different, seller-approval workflow). Webhook verification itself was already
+sound (HMAC timing-safe, ±10 min window, log-then-verify, claim-first).
+
+**Step 2 policy:** automatic re-reservation is deliberately NOT supported
+(released stock may be re-sold; fulfilling a stale capture without buyer
+re-consent is not legitimate) → refuse + durable refund obligation. The
+obligation records the **verified webhook amount** (= captured funds that must
+be returned), currency, provider payment id when present, group ref, reason
+`late_payment_after_expiry`, and the state machine; divergence from the group
+total is flagged for operator verification.
+
+**Step 3 implementation:** `PaymentReconciliation` + `PspRefundRecord` models;
+obligation recorded at BOTH `GROUP_EXPIRED` sites in `process.ts` (idempotent
+upsert on `(provider, providerRef)`; never regressed by redelivery; DB failure
+→ webhook 500 → PSP redelivery converges); `src/lib/psp-refund.ts` adapter
+surface + mock adapter with **provider idempotency-key semantics**
+(`recon:{caseId}` — same key can never refund twice); `/api/cron/refund-reconcile`
+tick (batch 25, backoff 15 s, max 8 attempts, durable intent written BEFORE
+the provider call, provider calls OUTSIDE any transaction, completion read
+ONLY from the provider-authoritative record — never from "a request was
+sent"); admin visibility (`/api/admin/payment-reconciliation` list/stats —
+401 unauthenticated — + system-health counts); runbook
+`docs/late-payment-refund-runbook.md`.
+
+**Step 4 tests — `scripts/readiness/late-payment-refund.ts`, 10/10 scenarios,
+16/16 checks ALL PASS** [Measured]:
+
+| # | Scenario | Result |
+| --- | --- | --- |
+| 1 | Payment before expiry | 200, order paid, 1 T1, ZERO cases |
+| 2 | Expiry wins before payment-success | 409 `GROUP_EXPIRED`; order stays `payment_expired`; stock stays released; no T1 |
+| 3 | Valid late payment after release | durable case: provider/ref/amount(=captured)/currency/reason/status `requested`; webhook log processed |
+| 4 | Duplicate late-payment webhooks | 409 ×2; EXACTLY one case; status/attempts untouched |
+| 5 | Refund times out (unknown) | case `unknown` + provider record `pending`; backoff gate verified; provider completes → `succeeded` read from its record |
+| 6 | Refund succeeds, worker crashes before saving | provider record `succeeded` + case unsaved → recovery tick converges via the SAME key: 1 refund, attempts 2 |
+| 7 | Provider rejects refund | case `failed` + visible error + operator note; later ticks never re-execute |
+| 8 | Retry with same idempotency key | every case maps to ≤ 1 provider refund |
+| 9 | DB failure while recording the obligation | real trigger fault → webhook 500, no row, log unprocessed; redelivery → exactly ONE case |
+| 10 | Inventory unfulfillable + payment per policy | no resurrection, exactly one restock, no T1, refund `succeeded`, ledger +1 legit txn only, invariants balanced |
+
+**Honest separation:** all of the above is **mock-PSP behavior, tested**. Real
+providers have **no adapter** — their cases stay `requested`, surfaced as
+`awaitingOperator`, and the runbook's manual procedure applies. No successful
+refund was ever simulated for a provider without a real execution path.
+
+## O.4 Phase 3 — topology & connection budget [Measured/Derived]
+
+`performance/production-topology.md`: intended launch topology **1 app instance
+× 1 process × pool 10** + 1 scheduler process (HTTP ticks, 0 persistent DB
+connections); measured Supavisor session ceiling **15 clients/user**
+(`EMAXCONNSESSION` at client 16); rush peaks 21 client sessions / ≤7 active vs
+`max_connections=60`; session pooling kept (transaction-mode probe passed but
+addresses none of the measured bottlenecks — no evidence justifies a switch);
+checkout gate is process-local → **horizontal scaling forbidden** until a
+cross-instance strategy (advisory-lock gate recommended) + per-instance budget
++ staging re-runs exist; required production env (`CRON_SECRET`,
+`PSP_WEBHOOK_SECRET`, pool URL) documented.
+
+## O.5 Phase 4 — post-change validation (dev-mode, combined env) [Measured]
+
+- **Regressions:** finance-regression ALL PASS (0 failures); remediation-live-tests
+  ALL PASS (all 27 checks incl. F1 storm 15/15 first-try, F2 rush 0 raw 5xx,
+  F3 sweep races).
+- **Load re-runs (post final-gaps changes):**
+
+| Scenario | Result |
+| --- | --- |
+| baseline (20 sequential) | 20/20 × 201, p50 ≈ 1.28 s |
+| ramp c=40 | 34×201 / 6×503 `CHECKOUT_BUSY` / **0 raw 5xx**; p50 4.75 s, p95 6.74 s, p99 7.04 s; 341 checkouts/min |
+| rush (100 buyers, stock 60) | 32×201 / 68×503 `CHECKOUT_BUSY` / **0 raw 5xx**; p50 1.92 s, p95 7.03 s, p99 7.70 s; 245 orders/min; **0 oversell**; peak 21 sessions / 7 active / 6 idle-in-tx |
+| webstorm (15 unique + 15 dup) | unique 14×200 + 1×500 (P2034 retry-exhausted after the bounded ≤2 retries — exactly-once held: 15/15 T1); duplicates 15×200; p50 5.67 s |
+
+  Note on webstorm variance: 14/15 first-delivery here vs 15/15 in the
+  remediation-live run minutes earlier — same-seller confirmation storms remain
+  high-but-not-100% first-try under the bounded retry; the correctness
+  invariant (exactly-once, no partial state) held in **every** run, and the
+  PSP redelivery contract converges the remainder.
+- **Browser golden path re-verified** [Measured]: sign-in → product → cart →
+  checkout → mock PSP pay → order **NM-103495 paid**, group succeeded, exactly
+  1 balanced T1, **0 reconciliation cases** (normal path never creates one),
+  cart cleared, no console errors; 390 px + 1280 px layouts verified.
+
+## O.6 Remaining deployment actions (ops — not code)
+
+1. Production env: `CRON_SECRET` (mandatory — endpoints fail closed without
+   it) + `PSP_WEBHOOK_SECRET`; platform cron or the scheduler service for BOTH
+   ticks (interval recommendation 60 s; the ≤ 5 min release objective holds).
+2. Real PSP refund adapter before processing real late payments (until then
+   the runbook's manual procedure is the policy).
+3. Staging deployment of the production build + external load generator before
+   any capacity claim (boundary unchanged: this sandbox cannot run one).
+
+## O.7 Final verdict (this mission)
+
+**CONDITIONALLY READY — the three §R.5 conditions are closed to the maximum
+extent this environment permits:**
+
+1. Expiry scheduling: **CLOSED in this deployment** — a real recurring
+   invocation is running with measured release latency, restart/missed-interval
+   recovery, alerts, and fail-closed auth. The production equivalent is a
+   configuration action (platform cron + `CRON_SECRET`), not outstanding code.
+2. Topology + connection budget: **DOCUMENTED with measured evidence and an
+   explicit scaling gate**; staging validation remains a required pre-launch
+   step (unchanged boundary).
+3. Late-payment handling: **safe, durable, idempotent and fully tested on the
+   mock rails**; the real-PSP adapter and its tests remain before launch, with
+   a documented manual runbook covering the interim.
+
+Every claim above is dev-mode/combined-environment evidence. Production build,
+staging, external generator, and a real PSP remain **NOT TESTED** — no
+production or influencer-launch readiness is claimed.

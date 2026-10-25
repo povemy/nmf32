@@ -1,0 +1,96 @@
+{
+  "service": "expiry-scheduler",
+  "startedAt": "2026-10-25T13:29:13.643Z",
+  "intervalMs": 30000,
+  "endpoints": {
+    "expiry": {
+      "lastTickAt": "2026-10-25T13:52:14.346Z",
+      "lastSuccessAt": "2026-10-25T13:52:14.573Z",
+      "lastOutcome": {
+        "examined": 0,
+        "expired": 0,
+        "ordersExpired": 0,
+        "itemsRestocked": 0,
+        "skippedConcurrent": 0,
+        "anomalies": 0,
+        "failures": 0,
+        "remainingBacklog": 0,
+        "durationMs": 112,
+        "at": "2026-10-25T13:52:14.514Z",
+        "batchLimit": 50,
+        "auth": "dev-open"
+      },
+      "consecutiveFailures": 0,
+      "lastError": null,
+      "ticks": 86
+    },
+    "refund": {
+      "lastTickAt": "2026-10-25T13:52:14.346Z",
+      "lastSuccessAt": "2026-10-25T13:52:14.524Z",
+      "lastOutcome": {
+        "examined": 0,
+        "attempted": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "unknown": 0,
+        "skippedNoAdapter": 0,
+        "skippedSandboxDisabled": 0,
+        "skippedBackoff": 0,
+        "skippedExhausted": 0,
+        "transientErrors": 0,
+        "faultsApplied": 0,
+        "at": "2026-10-25T13:52:14.483Z",
+        "durationMs": 75,
+        "backoffMs": 15000,
+        "maxAttempts": 8,
+        "batchLimit": 25,
+        "auth": "dev-open"
+      },
+      "consecutiveFailures": 0,
+      "lastError": null,
+      "ticks": 86
+    }
+  },
+  "alerts": [
+    {
+      "at": "2026-10-25T13:08:16.526Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-25T13:09:16.526Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: never succeeded (3 consecutive failures)"
+    },
+    {
+      "at": "2026-10-25T13:16:24.017Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~67s (last success 2026-10-25T13:15:16.756Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-25T13:19:36.807Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~72s (last success 2026-10-25T13:18:24.411Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-25T13:23:24.608Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~47s (last success 2026-10-25T13:22:37.459Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-25T13:24:25.692Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-25T13:24:55.691Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 90s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-25T13:29:13.643Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~48s (last success 2026-10-25T13:28:25.835Z) — catch-up tick starting now"
+    }
+  ]
+}

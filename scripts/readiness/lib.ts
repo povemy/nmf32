@@ -131,3 +131,74 @@ export async function cleanupCarts(emails: string[]) {
     await db.cart.deleteMany({ where: { id: { in: carts.map((c) => c.id) } } });
   }
 }
+
+// ─── Scheduler service control (mission: final operational gaps, Phase 1) ───
+// The expiry-scheduler mini-service owns port 3005. Process control goes BY
+// PORT (both mini-services share the "bun run dev" cmdline, so pkill -f would
+// hit the chat service too).
+import { execSync } from "node:child_process";
+
+export const SCHEDULER_DIR = "/home/z/my-project/mini-services/expiry-scheduler";
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function pidOnPort(port: number): number | null {
+  try {
+    const out = execSync(`ss -tlnp 2>/dev/null | grep ':${port} ' || true`).toString();
+    const m = out.match(/pid=(\d+)/);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function schedulerPid(): number | null {
+  return pidOnPort(3005);
+}
+
+export async function stopScheduler(): Promise<boolean> {
+  const pid = schedulerPid();
+  if (!pid) return true;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {}
+  for (let i = 0; i < 24; i++) {
+    if (!schedulerPid()) return true;
+    await sleep(250);
+  }
+  return !schedulerPid();
+}
+
+export async function startScheduler(): Promise<boolean> {
+  if (schedulerPid()) return true;
+  try {
+    execSync(`cd ${SCHEDULER_DIR} && nohup bun run dev >> scheduler.log 2>&1 &`, { shell: "/bin/bash", stdio: "ignore" });
+  } catch {}
+  for (let i = 0; i < 40; i++) {
+    if (schedulerPid()) return true;
+    await sleep(250);
+  }
+  return Boolean(schedulerPid());
+}
+
+export async function schedulerState(): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await fetch("http://127.0.0.1:3005/");
+    const j = (await r.json()) as { data?: Record<string, unknown> };
+    return j.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write a test-control Setting (null deletes). */
+export async function setSetting(key: string, value: unknown) {
+  if (value == null) {
+    await db.setting.deleteMany({ where: { key } });
+    return;
+  }
+  await db.setting.upsert({
+    where: { key },
+    create: { key, valueJson: JSON.stringify(value), description: "[LT] readiness-test control" },
+    update: { valueJson: JSON.stringify(value) },
+  });
+}

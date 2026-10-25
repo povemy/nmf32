@@ -182,3 +182,44 @@ Remaining conditions before READY:
    clients/user measured) committed; staging re-run with a production build and an
    external generator.
 3. Late-payment refund runbook for the real PSP (expired groups answer 409 GROUP_EXPIRED).
+
+---
+
+# ADDENDUM #2 — 2026-10-25 (final operational & payment-recovery gaps mission)
+
+Supersedes the conditions above where they conflict. Evidence:
+`performance/runs/2026-10-25-{scheduler-e2e,late-payment-refund,load-baseline,load-ramp,load-rush,load-webstorm}.json`,
+`performance/production-topology.md`, `docs/late-payment-refund-runbook.md`,
+REPORT.md §O. Environment unchanged (dev mode, combined env, remote Supabase).
+
+| Item | Old | New verdict | Evidence |
+| --- | --- | --- | --- |
+| B2 Scheduler executed in deployment | CONDITIONAL (tick verified, scheduling pending) | **PASS (this deployment)** — mini-services/expiry-scheduler (port 3005) is a REAL recurring invocation: live release latency 18.7–20.9 s vs 30 s interval (objective ≤ 5 min); restart + missed-interval catch-up 1.4 s; alerts fire. Production equivalent = platform cron + CRON_SECRET (config action) | scheduler-e2e B/E; live scheduler state |
+| B2a Scheduler auth fail-closed + timing-safe | — (was optional `!==` compare) | **PASS** — cron-auth lib: production without CRON_SECRET → 503 CRON_NOT_CONFIGURED on POST+GET; secret present → 403/200 matrix timing-safe; secret never echoed. E2E via real server restarts | scheduler-e2e A/F |
+| B5 Alerts for failed/overdue sweeps | PASS (observability only) | **PASS (upgraded)** — alert ring (TICK_FAILED/TICK_UNREACHABLE/OVERDUE_SWEEP/MISSED_INTERVAL/BACKLOG_HIGH/REFUND_STUCK), throttled, durable across restarts; fired live during an actual app outage | scheduler state; O.1 |
+| B6 Late payment after release | PASS (409 refusal only) | **PASS (upgraded)** — 409 refusal + DURABLE refund obligation (PaymentReconciliation) with provider idempotency, tested across all 10 race scenarios incl. crash-after-provider, timeout-unknown, provider rejection, DB fault on obligation write, duplicate webhooks | late-payment-refund S1–S10 (16/16) |
+| D1 Intended instance/worker count established | FAIL — undocumented | **PASS (documented decision)** — 1×1 + scheduler process, pool 10, Supavisor ceiling 15 measured, scaling gate + advisory-lock strategy, env knobs | production-topology.md |
+| D5 Horizontal scaling | FAIL — must not scale | **FAIL (deliberate, unchanged)** — gate is process-local; scaling forbidden until cross-instance admission control + budget exist | production-topology.md §4 |
+| E1/E2 Production build / staging / external generator | NOT TESTED | **NOT TESTED (unchanged boundary)** — sandbox cannot run a production build; all evidence stays dev-mode/combined-env | REPORT §O.5 |
+| E3 Latency/error mix post-changes | PASS (dev-mode) | **PASS (re-measured)** — rush: p50 1.92 s / p95 7.03 s / p99 7.70 s, 0 raw 5xx (68× clean 503), 0 oversell; ramp c=40: 0 raw 5xx; webstorm: 14/15 + 1×500 (P2034 retry-exhausted; exactly-once held 15/15 T1) | load-{ramp,rush,webstorm}.json |
+| E6 Expiry backlog drain | PASS (manual sweeps) | **PASS (autonomous)** — scheduler drained a 50-group backlog unprompted at startup (20.3 s); backlog observability on GET | scheduler state; O.2 |
+| — Real-PSP refund execution | — | **NOT TESTED — no adapter exists** (mock rails tested; real providers stay `requested` + awaitingOperator + manual runbook; nothing simulated) | REPORT §O.3 |
+| — Regression of prior fixes | — | **PASS** — finance-regression ALL PASS; remediation-live ALL PASS; browser golden path re-verified (NM-103495) | §O.5 |
+
+## VERDICT (addendum #2)
+
+## 🟡 CONDITIONALLY READY (conditions narrowed to deployment/ops)
+
+The three conditions from the previous verdict are closed to the maximum extent this
+environment permits: (1) expiry scheduling is running in THIS deployment with measured
+release latency, recovery and alerts — the production equivalent is configuration, not
+code; (2) the topology/connection-budget document exists with measured evidence and an
+explicit scaling gate; (3) late-payment handling is durable, idempotent, operator-visible
+and fully tested on mock rails, with an honest NOT TESTED on real-PSP execution and a
+manual runbook for the interim.
+
+Remaining before READY (all ops/staging, none are sandbox code):
+1. Production build + staging re-run with an external load generator (hard boundary).
+2. Production env: CRON_SECRET + PSP_WEBHOOK_SECRET + platform cron (or the scheduler
+   service) at ~60 s interval.
+3. Real PSP integration + its refund adapter + provider-specific tests.

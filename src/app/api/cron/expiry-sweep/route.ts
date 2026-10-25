@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { toJson } from "@/lib/json";
+import { assertCronAuth } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,28 +34,28 @@ export const dynamic = "force-dynamic";
 // redelivery can only arrive for a group expired ≥ 20 min — the refusal is
 // the expected steady-state, not an anomaly.
 //
-// SCHEDULING (durable): this route is the worker TICK, not the scheduler —
-// sandbox has no cron daemon. Deployment must call POST /api/cron/expiry-sweep
-// on an interval (external cron / uptime pinger / platform scheduler). Every
-// run records its outcome in Setting `cron.expiry_sweep.last` (survives
+// SCHEDULING (durable): this route is the worker TICK, not the scheduler. The
+// recurring invocation lives in mini-services/expiry-scheduler (port 3005,
+// interval + durable state + alerts — see its README), which POSTs this
+// endpoint; a platform cron / uptime pinger is the production equivalent.
+// Every run records its outcome in Setting `cron.expiry_sweep.last` (survives
 // restarts) so ops can observe backlog, failures and last-success age.
-// Unauthenticated like /api/shipping/tick (it only enforces an already-expired
-// business deadline, idempotent + throttled); set CRON_SECRET to require the
-// `x-cron-secret` header in production.
+// AUTH (mission: final operational gaps): assertCronAuth (lib/cron-auth.ts) —
+// in production a MISSING CRON_SECRET fails CLOSED (503, never publicly
+// callable); when set, the `x-cron-secret` header is compared timing-safely.
+// Dev without a secret stays open for direct sandbox testing.
 // ============================================================================
 
 const SWEEP_THROTTLE_MS = 1_500;
 const BATCH = 50;
 
 export const POST = handle(async (req: Request) => {
-  if (process.env.CRON_SECRET && req.headers.get("x-cron-secret") !== process.env.CRON_SECRET) {
-    return ok({ skipped: true, reason: "CRON_SECRET mismatch" }, { status: 403 });
-  }
+  const auth = assertCronAuth(req);
   const g = globalThis as Record<string, unknown>;
   const last = typeof g.__expirySweepAt === "number" ? (g.__expirySweepAt as number) : 0;
   const now = Date.now();
   if (now - last < SWEEP_THROTTLE_MS) {
-    return ok({ throttled: true, expired: 0 });
+    return ok({ throttled: true, expired: 0, auth: auth.mode });
   }
   g.__expirySweepAt = now;
 
@@ -136,7 +137,7 @@ export const POST = handle(async (req: Request) => {
   }
 
   const remaining = await db.paymentGroup.count({ where: { status: "requires_payment", expiresAt: { lt: new Date() } } });
-  const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), batchLimit: BATCH };
+  const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), batchLimit: BATCH, auth: auth.mode };
 
   // Durable observability — survives restarts, queryable by ops/admin.
   await db.setting.upsert({
@@ -149,7 +150,10 @@ export const POST = handle(async (req: Request) => {
 });
 
 // GET — backlog + last-run observability without triggering a sweep.
-export const GET = handle(async () => {
+// Same auth posture as POST (scheduler/ops surface: fail-closed in production
+// without a secret; timing-safe header check when configured).
+export const GET = handle(async (req: Request) => {
+  const auth = assertCronAuth(req);
   const [backlog, oldest, lastSetting] = await Promise.all([
     db.paymentGroup.count({ where: { status: "requires_payment", expiresAt: { lt: new Date() } } }),
     db.paymentGroup.findFirst({
@@ -163,6 +167,7 @@ export const GET = handle(async () => {
     backlog,
     oldestExpiredAt: oldest?.expiresAt?.toISOString() ?? null,
     lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
-    schedulingNote: "POST this endpoint on an interval (external cron / uptime pinger); it is the tick, not the scheduler",
+    auth: auth.mode,
+    schedulingNote: "Recurring invocation: mini-services/expiry-scheduler (this deployment) or a platform cron in production; this endpoint is the tick, not the scheduler",
   });
 });

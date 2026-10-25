@@ -1,7 +1,7 @@
 {
   "scenario": "baseline",
-  "runId": "mvnoncf2",
-  "startedAt": "2026-10-25T10:26:24.542Z",
+  "runId": "mvnvls42",
+  "startedAt": "2026-10-25T13:41:08.882Z",
   "env": {
     "mode": "next-dev(turbopack)",
     "generator": "same-box",
@@ -10,24 +10,24 @@
   "results": {
     "latency": {
       "n": 20,
-      "min": 1297,
-      "p50": 1306,
-      "p95": 1339,
-      "p99": 1345,
-      "max": 1345,
-      "mean": 1311
+      "min": 1269,
+      "p50": 1277,
+      "p95": 1326,
+      "p99": 1329,
+      "max": 1329,
+      "mean": 1284
     },
     "statuses": {
       "201": 20
     },
-    "wallMs": 26216,
-    "checkoutsPerMin": 46,
+    "wallMs": 25686,
+    "checkoutsPerMin": 47,
     "connections": {
-      "maxServerSessions": 0,
-      "maxActiveQueries": 0,
-      "maxIdleInTx": 0,
-      "samples": 49
+      "maxServerSessions": 17,
+      "maxActiveQueries": 1,
+      "maxIdleInTx": 1,
+      "samples": 48
     }
   },
-  "finishedAt": "2026-10-25T10:26:57.848Z"
+  "finishedAt": "2026-10-25T13:41:41.674Z"
 }

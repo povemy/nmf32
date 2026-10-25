@@ -691,6 +691,73 @@ model Refund {
   order                   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+// LATE-PAYMENT RECONCILIATION (mission: final operational gaps, Phase 2).
+// A payment.succeeded webhook that arrives AFTER the expiry sweep released the
+// group's stock is refused with 409 GROUP_EXPIRED (money never enters the
+// ledger). For a REAL PSP the buyer's funds are already captured at the
+// provider — this table is the durable, traceable REFUND OBLIGATION for those
+// funds: who must be refunded, how much (the webhook amount = captured funds),
+// and where the provider interaction stands. It is an obligation tracker, NOT
+// a ledger posting — ledger postings remain exclusively under claim-first
+// payment success. Duplicate webhooks converge on ONE row per (provider, ref)
+// via the unique key; retries can never duplicate the obligation.
+model PaymentReconciliation {
+  id                String    @id @default(cuid())
+  provider          String
+  // PaymentGroup.ref — the PSP checkout session the late payment belongs to.
+  providerRef       String
+  // PSP's own payment object id when the event carries one (real adapters
+  // MUST send it; the mock rails identify by providerRef).
+  providerPaymentId String?
+  // Amount captured at the provider per the verified webhook (this is what
+  // must be RETURNED — not the group total when they diverge; divergence is
+  // recorded in resolutionNote for operator verification).
+  amountMinor       Int
+  currency          String    @default("MYR")
+  reason            String    @default("late_payment_after_expiry")
+  // requested   — obligation recorded, no successful provider attempt yet
+  // processing   — attempt in flight (durable intent written pre-call)
+  // succeeded    — refund confirmed FROM the provider's authoritative record
+  // failed       — provider REJECTED the refund (permanent; operator item)
+  // unknown      — provider outcome pending/timed out (re-checked next tick)
+  status            String    @default("requested")
+  providerRefundId  String?
+  attempts          Int       @default(0)
+  lastAttemptAt     DateTime?
+  lastError         String?
+  resolutionNote    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([provider, providerRef])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+// MOCK PSP REFUND EXECUTION LEDGER (sandbox rails only — the provider side of
+// the refund flow). For real providers this state lives AT the PSP; the
+// production adapter queries it (getRefundStatus) instead of this table. It
+// exists so completion is always confirmed from a durable provider-authoritative
+// record — NEVER inferred from "an HTTP request was sent" — and so provider
+// idempotency-key semantics are exercised: one row per idempotencyKey, and a
+// retry with the same key returns the existing outcome instead of refunding twice.
+model PspRefundRecord {
+  id             String   @id @default(cuid())
+  provider       String
+  idempotencyKey String   @unique
+  providerRef    String
+  refundId       String   @unique
+  amountMinor    Int
+  currency       String   @default("MYR")
+  // pending | succeeded | failed — the provider's authoritative state.
+  status         String
+  detailJson     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([providerRef])
+}
+
 model Dispute {
   id         String    @id @default(cuid())
   orderId    String

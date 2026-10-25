@@ -1,7 +1,7 @@
 {
   "scenario": "webstorm",
-  "runId": "mvnouq7p",
-  "startedAt": "2026-10-25T10:32:09.013Z",
+  "runId": "mvnvnq6m",
+  "startedAt": "2026-10-25T13:42:39.694Z",
   "env": {
     "mode": "next-dev(turbopack)",
     "generator": "same-box",
@@ -10,42 +10,42 @@
   "results": {
     "latencyUnique": {
       "n": 15,
-      "min": 3319,
-      "p50": 6662,
-      "p95": 8337,
-      "p99": 8337,
-      "max": 8337,
-      "mean": 6333
+      "min": 4491,
+      "p50": 5666,
+      "p95": 5992,
+      "p99": 5992,
+      "max": 5992,
+      "mean": 5360
     },
     "latencyDuplicates": {
       "n": 15,
-      "min": 3945,
-      "p50": 4744,
-      "p95": 9665,
-      "p99": 9665,
-      "max": 9665,
-      "mean": 5296
+      "min": 4271,
+      "p50": 5092,
+      "p95": 6127,
+      "p99": 6127,
+      "max": 6127,
+      "mean": 5163
     },
     "statusesUnique": {
-      "500": 15
+      "200": 14,
+      "500": 1
     },
     "statusesDuplicates": {
-      "200": 1,
-      "500": 14
+      "200": 15
     },
-    "wallMs": 9666,
-    "webhooksPerMin": 186,
+    "wallMs": 6128,
+    "webhooksPerMin": 294,
     "correctness": {
-      "newT1Postings": 1,
+      "newT1Postings": 15,
       "expectedT1Postings": 15,
-      "exactlyOnce": false
+      "exactlyOnce": true
     },
     "connections": {
-      "maxServerSessions": 18,
-      "maxActiveQueries": 11,
+      "maxServerSessions": 21,
+      "maxActiveQueries": 2,
       "maxIdleInTx": 10,
-      "samples": 33
+      "samples": 21
     }
   },
-  "finishedAt": "2026-10-25T10:32:44.206Z"
+  "finishedAt": "2026-10-25T13:43:05.376Z"
 }

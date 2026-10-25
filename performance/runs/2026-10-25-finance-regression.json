@@ -1,6 +1,6 @@
 {
-  "runId": "mvnsx0u7",
-  "startedAt": "2026-10-25T12:25:54.559Z",
+  "runId": "mvnva1eo",
+  "startedAt": "2026-10-25T13:32:01.056Z",
   "tests": [
     {
       "name": "1a: matured T1 → available reflects net",
@@ -188,6 +188,6 @@
       "detail": ""
     }
   ],
-  "finishedAt": "2026-10-25T12:26:23.584Z",
+  "finishedAt": "2026-10-25T13:32:29.148Z",
   "failures": 0
 }

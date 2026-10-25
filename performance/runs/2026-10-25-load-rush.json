@@ -1,7 +1,7 @@
 {
   "scenario": "rush",
-  "runId": "mvnoq908",
-  "startedAt": "2026-10-25T10:28:40.088Z",
+  "runId": "mvnvnbfx",
+  "startedAt": "2026-10-25T13:42:20.589Z",
   "env": {
     "mode": "next-dev(turbopack)",
     "generator": "same-box",
@@ -10,40 +10,40 @@
   "results": {
     "latency": {
       "n": 100,
-      "min": 8726,
-      "p50": 15542,
-      "p95": 18654,
-      "p99": 19607,
-      "max": 19819,
-      "mean": 15110
+      "min": 1687,
+      "p50": 1922,
+      "p95": 7034,
+      "p99": 7698,
+      "max": 7840,
+      "mean": 3322
     },
     "statuses": {
-      "201": 38,
-      "500": 62
+      "201": 32,
+      "503": 68
     },
     "errorCodes": {
-      "INTERNAL": 62
+      "CHECKOUT_BUSY": 68
     },
-    "wallMs": 19822,
-    "attemptsPerSec": 5,
-    "completedOrders": 39,
-    "ordersPerMin": 118,
+    "wallMs": 7843,
+    "attemptsPerSec": 12.8,
+    "completedOrders": 32,
+    "ordersPerMin": 245,
     "correctness": {
       "stockBefore": 60,
-      "stockAfter": 21,
+      "stockAfter": 28,
       "stockNeverNegative": true,
       "stockEqualsZeroAfterSellout": false,
-      "ordersCreated": 39,
-      "inventoryLogs": 39,
-      "orderItemQtySum": 39,
+      "ordersCreated": 32,
+      "inventoryLogs": 32,
+      "orderItemQtySum": 32,
       "oversell": false
     },
     "connections": {
-      "maxServerSessions": 18,
-      "maxActiveQueries": 8,
-      "maxIdleInTx": 9,
-      "samples": 67
+      "maxServerSessions": 21,
+      "maxActiveQueries": 7,
+      "maxIdleInTx": 6,
+      "samples": 27
     }
   },
-  "finishedAt": "2026-10-25T10:29:10.585Z"
+  "finishedAt": "2026-10-25T13:42:39.608Z"
 }

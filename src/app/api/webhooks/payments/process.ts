@@ -38,6 +38,7 @@ import { getCommissionSettings } from "@/lib/commission";
 import { postOrderPaid, postGatewaySettlement, postPayoutConfirmed, postPayoutFailed, refreshWalletCache, AUTO_SETTLE_SETTING_KEY } from "@/lib/ledger";
 import { assertTransition } from "@/lib/payout-state";
 import { resolvePspProvider } from "@/lib/psp";
+import { recordLatePaymentObligation } from "@/lib/psp-refund";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
 import { toJson } from "@/lib/json";
 import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
@@ -105,7 +106,7 @@ async function autoSettleEnabled(): Promise<boolean> {
  */
 export async function processPaymentWebhook(input: {
   provider: string;
-  body: { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string; reason?: string };
+  body: { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string; reason?: string; paymentId?: string };
   rawBody: string;
   headerSignature?: string | null;
 }): Promise<ProcessResult> {
@@ -184,7 +185,24 @@ export async function processPaymentWebhook(input: {
     // The ONLY safe response is a definitive refusal: no money moves, no order
     // is resurrected, the PSP sees a permanent failure (mock PSP surfaces it
     // to the buyer as an expired payment window). Never silently fulfill.
+    //
+    // DURABLE REFUND OBLIGATION (mission: final operational gaps): a REAL PSP
+    // has already CAPTURED the buyer's funds when this verified event arrives —
+    // the 409 below protects the order/inventory transition, it does not return
+    // those funds. Record the obligation BEFORE refusing so a crash between the
+    // two leaves at worst "case exists, webhook answered 5xx" → PSP redelivery
+    // converges on the unique (provider, providerRef) row. Re-reservation is
+    // deliberately NOT attempted (business rule: released stock may be re-sold;
+    // fulfilling a stale payment without buyer re-consent is not legitimate).
     if (eventType === "payment.succeeded" && group.status === "expired") {
+      await recordLatePaymentObligation({
+        provider: input.provider,
+        providerRef,
+        providerPaymentId: input.body.paymentId ?? null,
+        amountMinor,
+        groupTotalMinor: group.totalMinor,
+        currency: group.currency,
+      });
       await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
       throw new ApiError(409, "GROUP_EXPIRED", `Payment group ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
     }
@@ -352,6 +370,16 @@ export async function processPaymentWebhook(input: {
       const nowStatus = (await db.paymentGroup.findUnique({ where: { id: group.id }, select: { status: true } }))?.status;
       await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
       if (nowStatus === "expired") {
+        // The sweep won the claim while this delivery was in flight — same
+        // late-payment policy as above, including the durable refund obligation.
+        await recordLatePaymentObligation({
+          provider: input.provider,
+          providerRef,
+          providerPaymentId: input.body.paymentId ?? null,
+          amountMinor,
+          groupTotalMinor: group.totalMinor,
+          currency: group.currency,
+        });
         throw new ApiError(409, "GROUP_EXPIRED", `Payment group ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
       }
       return {
