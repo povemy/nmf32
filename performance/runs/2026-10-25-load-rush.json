@@ -1,0 +1,49 @@
+{
+  "scenario": "rush",
+  "runId": "mvnoq908",
+  "startedAt": "2026-10-25T10:28:40.088Z",
+  "env": {
+    "mode": "next-dev(turbopack)",
+    "generator": "same-box",
+    "db": "supabase-session-pooler"
+  },
+  "results": {
+    "latency": {
+      "n": 100,
+      "min": 8726,
+      "p50": 15542,
+      "p95": 18654,
+      "p99": 19607,
+      "max": 19819,
+      "mean": 15110
+    },
+    "statuses": {
+      "201": 38,
+      "500": 62
+    },
+    "errorCodes": {
+      "INTERNAL": 62
+    },
+    "wallMs": 19822,
+    "attemptsPerSec": 5,
+    "completedOrders": 39,
+    "ordersPerMin": 118,
+    "correctness": {
+      "stockBefore": 60,
+      "stockAfter": 21,
+      "stockNeverNegative": true,
+      "stockEqualsZeroAfterSellout": false,
+      "ordersCreated": 39,
+      "inventoryLogs": 39,
+      "orderItemQtySum": 39,
+      "oversell": false
+    },
+    "connections": {
+      "maxServerSessions": 18,
+      "maxActiveQueries": 8,
+      "maxIdleInTx": 9,
+      "samples": 67
+    }
+  },
+  "finishedAt": "2026-10-25T10:29:10.585Z"
+}

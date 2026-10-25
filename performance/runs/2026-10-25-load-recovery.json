@@ -1,0 +1,30 @@
+{
+  "scenario": "recovery",
+  "runId": "mvnovwm8",
+  "startedAt": "2026-10-25T10:33:03.968Z",
+  "env": {
+    "mode": "next-dev(turbopack)",
+    "generator": "same-box",
+    "db": "supabase-session-pooler"
+  },
+  "results": {
+    "burstLatencyP95": 9344,
+    "burstStatuses": {
+      "201": 25,
+      "500": 15
+    },
+    "cooldownMs": 3752,
+    "lastProbe": {
+      "ms": 1252,
+      "status": 201,
+      "code": null
+    },
+    "connections": {
+      "maxServerSessions": 17,
+      "maxActiveQueries": 1,
+      "maxIdleInTx": 1,
+      "samples": 7
+    }
+  },
+  "finishedAt": "2026-10-25T10:33:27.155Z"
+}

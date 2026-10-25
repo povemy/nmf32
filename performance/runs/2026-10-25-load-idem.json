@@ -1,0 +1,43 @@
+{
+  "scenario": "idem",
+  "runId": "mvnovs5p",
+  "startedAt": "2026-10-25T10:32:58.189Z",
+  "env": {
+    "mode": "next-dev(turbopack)",
+    "generator": "same-box",
+    "db": "supabase-session-pooler"
+  },
+  "results": {
+    "statuses": {
+      "201": 1,
+      "500": 11
+    },
+    "errorCodes": {
+      "INTERNAL": 11,
+      "null": 1
+    },
+    "latency": {
+      "n": 12,
+      "min": 2318,
+      "p50": 2919,
+      "p95": 3598,
+      "p99": 3598,
+      "max": 3598,
+      "mean": 2993
+    },
+    "correctness": {
+      "ordersCreated": 1,
+      "paymentGroupsCreated": 1,
+      "stockAfter": 99,
+      "expectedOrders": 1,
+      "noDuplicates": true
+    },
+    "connections": {
+      "maxServerSessions": 17,
+      "maxActiveQueries": 10,
+      "maxIdleInTx": 9,
+      "samples": 12
+    }
+  },
+  "finishedAt": "2026-10-25T10:33:03.890Z"
+}

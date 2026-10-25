@@ -1,0 +1,88 @@
+{
+  "scenario": "ramp",
+  "runId": "mvnoo5oo",
+  "startedAt": "2026-10-25T10:27:02.472Z",
+  "env": {
+    "mode": "next-dev(turbopack)",
+    "generator": "same-box",
+    "db": "supabase-session-pooler"
+  },
+  "levels": [
+    {
+      "concurrency": 5,
+      "latency": {
+        "n": 5,
+        "min": 1302,
+        "p50": 1903,
+        "p95": 2488,
+        "p99": 2488,
+        "max": 2488,
+        "mean": 1875
+      },
+      "statuses": {
+        "201": 5
+      },
+      "wallMs": 2489,
+      "checkoutsPerMin": 121
+    },
+    {
+      "concurrency": 10,
+      "latency": {
+        "n": 10,
+        "min": 1257,
+        "p50": 1966,
+        "p95": 3237,
+        "p99": 3237,
+        "max": 3237,
+        "mean": 2238
+      },
+      "statuses": {
+        "201": 10
+      },
+      "wallMs": 3237,
+      "checkoutsPerMin": 185
+    },
+    {
+      "concurrency": 20,
+      "latency": {
+        "n": 20,
+        "min": 4065,
+        "p50": 4205,
+        "p95": 4931,
+        "p99": 5068,
+        "max": 5068,
+        "mean": 4332
+      },
+      "statuses": {
+        "201": 20
+      },
+      "wallMs": 5069,
+      "checkoutsPerMin": 237
+    },
+    {
+      "concurrency": 40,
+      "latency": {
+        "n": 40,
+        "min": 4749,
+        "p50": 7765,
+        "p95": 8360,
+        "p99": 8696,
+        "max": 8696,
+        "mean": 7175
+      },
+      "statuses": {
+        "201": 23,
+        "500": 17
+      },
+      "wallMs": 8696,
+      "checkoutsPerMin": 276
+    }
+  ],
+  "connections": {
+    "maxServerSessions": 0,
+    "maxActiveQueries": 0,
+    "maxIdleInTx": 0,
+    "samples": 58
+  },
+  "finishedAt": "2026-10-25T10:27:43.683Z"
+}

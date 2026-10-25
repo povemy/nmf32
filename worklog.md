@@ -1489,3 +1489,23 @@ Work Log:
 
 Stage Summary:
 - ROUND 2 COMPLETE: P2's only code-implementable item shipped as a dormant, zero-wired PSP payout adapter scaffold (src/lib/psp-adapter.ts: transfer/bank_payout phases, stable outbound idempotency keys, provider→payout status map that never auto-succeeds unknown states, sandbox-only mock, runPayoutViaAdapter hook point). Seller backend UX shipped: dashboard e-wallet card (replaces Last 30 days), clickable Pending card + nav item + "View release schedule", new /api/store/pending-releases API (paginated, ledger-truth), and the Pending releases page (grace-period schedule with per-order release datetime, days-left timeline, order deep-links). All gates green; mock data reset to pristine seeded state reflecting the current schema.
+
+---
+Task ID: RX-PRV
+Agent: Z.ai Code (main)
+Task: Production Readiness Validation — F1/F2/F3 and Checkout Capacity (5-phase mission: verify state, close test gaps, topology/connection capacity, production-like validation, launch decision)
+
+Work Log:
+- Phase 1: Verified claimed F1/F2/F3 fixes, performance/ dir, CHECKOUT_BUSY gate, loadtest harness — NONE exist on disk (0 code matches, no commits, no archives). Claimed "~13s median" had no archived evidence.
+- ENV INCIDENT: .env had been reset to stale 50-byte sqlite-only file → SUPABASE_DATABASE_URL missing → Prisma P1012, app down. Restored from /tmp/my-project/.env snapshot (Supavisor session pooler, connection_limit=10). Connectivity re-verified.
+- Built readiness suite scripts/readiness/: lib.ts, fault-rollback.ts, webhook-resilience.ts, expiry-gap-probe.ts, load-scenarios.ts (baseline|ramp|rush|webstorm|idem|recovery + pg_stat_activity sampler), txpool-probe.ts.
+- Phase 2 executed: fault-injected rollback (inventory + ledger boundaries via DB trigger) 15/15 PASS; webhook redelivery/concurrent-duplicate exactly-once PASS but 7/8 losers get raw 500 (P2034, no retry wrapper — F1 re-measured); transient DB fault = 120.7s hang (server statement_timeout=2min is the only bound); expiry gap CONFIRMED by 75s observation (stock leaked past expiresAt, no scheduler); CHECKOUT_BUSY = NOT TESTED (absent).
+- Phase 3 measured: max_connections=60, statement_timeout=2min, lock_timeout=0, idle_in_tx_timeout=0; rush peak 18 client sessions vs 60 (server has headroom; 10-conn client pool is the throttle, held idle-in-transaction); connection_limit NOT changed; transaction-pooler (:6543 pgbouncer=true) compatibility probe ALL PASS at probe level (tx, SAVEPOINT, Serializable claim 1-winner/5-dup/0-err, repeated queries) — NOT applied to app.
+- Phase 4 executed (dev-mode, combined-environment, labeled): baseline p50 1.31s (20/20 × 201); ramp c=5→40: p50 1.9→7.8s, c=40 = 23×201/17×500 (P2028 ×19, P2034 ×14, P2024 ×4); 100-buyer rush ×2: p50 15.5–17.6s, p95 18.7–20.0s, 38–39×201 / 61–62×500, ZERO oversell, orders==logs==Σqty, ~117 orders/min; idem storm: 12 same-key concurrent = 1 order exactly but 1×201/11×500 (P2002 replay race); webstorm: 15 concurrent confirmations → 0/15 paid (P2034 epicenter = refreshWalletCache wallet.update hot row inside Serializable tx); recovery: 1.25s cooldown post-burst.
+- Phase 5: performance/REPORT.md fully rewritten with measured results + provenance warning; performance/readiness-checklist.md created (PASS/FAIL/NOT TESTED + evidence links + proposed latency/availability targets for review).
+
+Stage Summary:
+- VERDICT: NOT READY. Correctness (oversell/idempotency/ledger) held in EVERY executed fault + load test; availability/overload behaviour is launch-fatal (61-62% raw 500s at 100 concurrent; 0/15 payment confirmations under same-seller concurrency; no admission control; no expiry sweep; 120s lock stalls).
+- Key ranked bottlenecks: (1) no checkout admission control; (2) wallet-cache SSI hot row in claim tx; (3) serial ~15-query checkout chain over remote RTT; (4) idempotency replay race P2002 500s; (5) F3 expiry absent; (6) no app-level tx deadline in payment path.
+- New artifacts: performance/REPORT.md, performance/readiness-checklist.md, performance/runs/2026-10-25-*(12 files), scripts/readiness/*(7 files), agent-ctx/RX-CHECKLIST.md. No production code was modified (mission forbids checkout redesign; fixes are recommended, not applied).
+- .env restored from /tmp/my-project/.env — treat sandbox .env as ephemeral.

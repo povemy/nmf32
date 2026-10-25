@@ -1,0 +1,51 @@
+{
+  "scenario": "webstorm",
+  "runId": "mvnouq7p",
+  "startedAt": "2026-10-25T10:32:09.013Z",
+  "env": {
+    "mode": "next-dev(turbopack)",
+    "generator": "same-box",
+    "db": "supabase-session-pooler"
+  },
+  "results": {
+    "latencyUnique": {
+      "n": 15,
+      "min": 3319,
+      "p50": 6662,
+      "p95": 8337,
+      "p99": 8337,
+      "max": 8337,
+      "mean": 6333
+    },
+    "latencyDuplicates": {
+      "n": 15,
+      "min": 3945,
+      "p50": 4744,
+      "p95": 9665,
+      "p99": 9665,
+      "max": 9665,
+      "mean": 5296
+    },
+    "statusesUnique": {
+      "500": 15
+    },
+    "statusesDuplicates": {
+      "200": 1,
+      "500": 14
+    },
+    "wallMs": 9666,
+    "webhooksPerMin": 186,
+    "correctness": {
+      "newT1Postings": 1,
+      "expectedT1Postings": 15,
+      "exactlyOnce": false
+    },
+    "connections": {
+      "maxServerSessions": 18,
+      "maxActiveQueries": 11,
+      "maxIdleInTx": 10,
+      "samples": 33
+    }
+  },
+  "finishedAt": "2026-10-25T10:32:44.206Z"
+}
