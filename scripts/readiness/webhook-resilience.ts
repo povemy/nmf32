@@ -63,12 +63,16 @@ const t1TxnB = await db.ledgerTransaction.findFirst({ where: { dedupKey: `order_
 const creditSumB = (t1TxnB?.lines ?? []).filter((l) => l.direction === "credit").reduce((s, l) => s + l.amountMinor, 0);
 const orderB = await db.order.findUnique({ where: { id: order2.id } });
 const tB = [
-  check("B1: exactly ONE delivery claims the payment", raceOk === 1, `ok=${raceOk} 5xx=${race5xx}`),
+  // F1 REMEDIATED CONTRACT (updated 2026-10-25): all concurrent duplicates get
+  // graceful 200s (one claims, the rest answer duplicate:true) — the OLD
+  // expectation here encoded the pre-fix failure mode (1×200 + 7×500).
+  check("B1: all concurrent duplicates answered gracefully (200, no raw 5xx)", raceOk === 8 && race5xx === 0, `ok=${raceOk} 5xx=${race5xx}`),
+  check("B1-b: exactly ONE delivery claims (7× duplicate:true)", raceDupTrue === 7, `dup=${raceDupTrue}`),
   check("B2: money movement EXACTLY-ONCE under concurrent delivery (no double credit)", t1B === 1 && creditSumB === grp2!.totalMinor && orderB?.status === "paid", `t1=${t1B} credits=${creditSumB} status=${orderB?.status}`),
-  // MEASURED F1 FINDING (documented, not a pass/fail of exactly-once):
-  console.log(`   FINDING F1-MEASURED: concurrent duplicate deliveries → ${raceOk}×200 / ${race5xx}×500 ` +
-    `(SSI serialization conflicts surface as raw 500 INTERNAL; no P2034 retry wrapper exists). ` +
-    `Exactly-once preserved; PSP sees gateway failure and will redeliver; /simulate shows the error to the buyer.`),
+  // F1 REMEDIATED (was FINDING F1-MEASURED): retry wrapper + post-commit
+  // fan-out eliminated the mass-abort storm — see remediation-live-tests.ts
+  // F1-a (15/15 first-try successes) and REPORT.md §R.
+  console.log(`   F1-REMEDIATED: concurrent duplicates → ${raceOk}×200 / ${race5xx}×500 (one claimer, ${raceDupTrue} graceful duplicates)`),
 ];
 results.tests.push({ test: "B_concurrent_duplicate_deliveries", checks: tB, statuses: race.map((r) => r.status) });
 

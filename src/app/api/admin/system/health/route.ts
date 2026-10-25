@@ -22,7 +22,18 @@ export const GET = handle(async (req: NextRequest) => {
     status: ledger.ok ? "healthy" : "degraded",
     db: "up",
     counts: { sellers, stores, products, orders },
-    ledger: { ok: ledger.ok, problems: ledger.problems, txnCount: ledger.txnCount, walletCount: ledger.walletCount },
+    ledger: {
+      ok: ledger.ok,
+      problems: ledger.problems,
+      txnCount: ledger.txnCount,
+      walletCount: ledger.walletCount,
+      // Classification-aware drift report (mission: wallet-ledger drift):
+      // hardDrift needs investigation; timeMaturityStale is benign display
+      // staleness (totals equal, self-heals) — visible here WITH wallet ids
+      // (authenticated surface) for targeted refresh/repair.
+      hardDrift: ledger.hardDrift,
+      timeMaturityStale: ledger.timeMaturityStale,
+    },
     recentAudit,
   });
 });

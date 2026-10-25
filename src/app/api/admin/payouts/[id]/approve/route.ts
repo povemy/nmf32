@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { postPayoutInitiated, buildLedgerStatementFromLedger, refreshWalletCache } from "@/lib/ledger";
+import { postPayoutInitiated, buildLedgerStatementFromLedger, walletTruth, refreshWalletCache } from "@/lib/ledger";
 import { assertTransition } from "@/lib/payout-state";
 import { rateLimit } from "@/lib/ratelimit";
 
@@ -87,9 +87,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
     // 2) Re-verify seller + balance inside the tx against ledger truth
     // (refunds/adjustments may have landed between request and approval).
+    // F1: the truth READ stays transactional; the cache WRITE is deferred to
+    // post-commit so the wallet row stays out of this Serializable tx.
     const sellerNow = await tx.seller.findUnique({ where: { id: payout.sellerId }, select: { id: true } });
     if (!sellerNow) throw new ApiError(404, "NOT_FOUND", "Seller not found");
-    const truth = await refreshWalletCache(payout.walletId, tx);
+    const truth = await walletTruth(payout.walletId, tx);
     if (truth.availableMinor < payout.amountMinor) {
       // Defensive revert of the claim inside the same tx before failing. The
       // throw below aborts the transaction, which rolls the claim back anyway —
@@ -114,6 +116,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       referenceNo: payout.referenceNo,
       amountMinor: payout.amountMinor,
       tx,
+      refreshCache: false, // post-commit below (F1)
     });
 
     // 4) Derived fields last: the statement snapshot commits atomically with
@@ -121,6 +124,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     await tx.payout.update({ where: { id }, data: { statementJson } });
     return txn;
   });
+
+  // F1 — post-commit wallet-cache refresh (best-effort; a failure leaves
+  // benign staleness classified by the ledger invariant, healed on next event/read).
+  try {
+    await refreshWalletCache(payout.walletId);
+  } catch (e) {
+    console.error(`[wallet-cache] post-commit refresh failed for ${payout.walletId} (benign, self-heals):`, e instanceof Error ? e.message : e);
+  }
 
   // FIN-3b (3b.1) — dedupKey pattern: each notification carries a stable
   // `{event}.{channel}:{payoutId}` key; the FIN-1 unique index on

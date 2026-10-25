@@ -7,6 +7,7 @@ import { randomToken } from "@/lib/password";
 import { toJson } from "@/lib/json";
 import { findCartForShopper } from "../../cart/cart";
 import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
+import { withCheckoutAdmission } from "@/lib/checkout-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,17 @@ export const POST = handle(async (req: Request) => {
       duplicate: true,
     });
   }
+
+  // F2 REMEDIATION — bounded admission control. Everything below (pricing
+  // reads + the create transaction) runs under a process-level semaphore:
+  // excess arrivals WAIT (bounded FIFO, queue time measured separately) and,
+  // when the wait budget is exhausted, receive a CLEAN retryable
+  // `503 CHECKOUT_BUSY` + `Retry-After` instead of a raw 500. The gate sits
+  // AFTER the idempotency replays (key replays never consume admission
+  // slots) and BEFORE any write (a busy rejection leaves the cart untouched).
+  // The buyer retries with the SAME Idempotency-Key, so a post-busy retry
+  // converges on this checkout instead of duplicating it.
+  const runCheckout = async () => {
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -340,7 +352,7 @@ export const POST = handle(async (req: Request) => {
     }
 
     return paymentGroup;
-  });
+  }, { timeout: 15_000 }); // bounded >5s default: measured P2028 under rush (dev.log)
 
   // Notifications + audit (one per seller order, plus admin roll-up).
   const orders = await db.order.findMany({ where: { paymentGroupId: group.id }, include: { store: true } });
@@ -390,4 +402,14 @@ export const POST = handle(async (req: Request) => {
     },
     { status: 201 }
   );
+  }; // end runCheckout (under admission control)
+
+  const { result, queueMs } = await withCheckoutAdmission(runCheckout);
+  // Queue-time telemetry, separate from processing time (F2/C4).
+  try {
+    result.headers.set("X-Checkout-Queue-Ms", String(queueMs));
+  } catch {
+    /* header surface only */
+  }
+  return result;
 });

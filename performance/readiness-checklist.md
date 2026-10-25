@@ -138,3 +138,47 @@ load test**, but:
 
 No support for "100,000 concurrent users" or general influencer-launch readiness
 is claimed, measured, or implied by this document.
+
+---
+
+# ADDENDUM 2026-10-25 (remediation mission) — updated verdicts
+
+Supersedes the rows below where they conflict. Evidence: `performance/runs/2026-10-25-{finance-regression,remediation-live,wallet-audit-final,wallet-drift-deep}.json`,
+`performance/wallet-ledger-drift-audit.md`, `performance/current-state-verification.md`, REPORT.md §R.
+
+| Item | Old | New verdict | Evidence |
+|---|---|---|---|
+| A7 Webhook concurrent duplicates graceful | FAIL (7/8 raw 500) | **PASS** — 8×200/0×500, one claimer; 15-way storm 15/15 first-try (was 0/15) | remediation-live F1-a/c; webhook-resilience B1 (updated contract) |
+| A8 Transient DB fault bounded in time | FAIL (120.7 s stall) | **PASS** — 10 s session statement_timeout inside money txs; measured 10.7 s; redelivery converges exactly-once | webhook-resilience C1 |
+| B1 Expiry enforced / stock released | FAIL — absent | **PASS** (code + executed tests) — claim-first sweep, atomic restore, no double-restock | remediation-live F3-E1/E2/E3/E6 |
+| B2 Scheduler executed in deployment | NOT TESTED | **CONDITIONAL** — tick endpoint verified; external cron scheduling still required (ops) | REPORT §R.5-1 |
+| B3 Repeated/overlapping sweeps | NOT TESTED | **PASS** | remediation-live F3-E2/E3 |
+| B4 Sweep DB-failure recovery | NOT TESTED | **PASS** — mid-sweep fault rolls back whole group; recovery converges exactly-once | remediation-live F3-E6a/b |
+| B5 Expiry backlog observability | NOT TESTED | **PASS** — durable Setting + GET backlog; measured drain 182 groups / 60 s | remediation-live F3-drain/E7 |
+| B6 Expiry racing payment + late payment | NOT TESTED | **PASS** — paid order never restocked; late success → 409 GROUP_EXPIRED, no T1, no resurrection | remediation-live F3-E4/E5 |
+| C1 503 CHECKOUT_BUSY + Retry-After E2E | NOT TESTED | **PASS** — 40-wide rush: 201×25/409×7/503×8, Retry-After 8/8, **raw 5xx = 0** | remediation-live F2-a/b |
+| C2 Cart preservation | NOT TESTED | **PASS** — gate runs before any write; same-key retry converges cleanly | remediation-live F2-f |
+| C3 Bounded retries / no retry storms | NOT TESTED | **PASS** (structural + measured: overload sheds with bounded queue instead of 500-invited retries) | F2-a/c/f |
+| C4 Queue time measured separately | NOT TESTED | **PASS** — `X-Checkout-Queue-Ms` on every 201 | remediation-live F2-c |
+| C5 Multi-instance gate coordination | NOT TESTED | **NOT TESTED — documented single-process**; topology is 1×1; horizontal scaling still forbidden until cross-instance control exists | checkout-gate.ts header; REPORT §R.5-2 |
+| F-1 "F1 fixed" | FAIL — absent | **PASS (implemented + executed tests)** — post-commit cache refresh + fan-out, P2034 bounded retry, account hot-row removal, 15 s tx timeout, 10 s statement bound | REPORT §R.2-3, §R.3 |
+| F-2 "F2 fixed" | FAIL — absent | **PASS (implemented + executed tests)** — admission gate + telemetry + clean overload | REPORT §R.2-4, §R.3 |
+| F-3 "F3 fixed" | FAIL — absent | **PASS (implemented + executed tests)** — expiry sweep + late-payment policy; **operational status pending external cron** | REPORT §R.2-5, §R.5-1 |
+| — Wallet drift false alarm (this mission's primary defect) | — | **RESOLVED** — invariant classification + TTL health check + self-heal demonstrated live (6/6 wallets MATCH, no manual write) | wallet-ledger-drift-audit.md; wallet-audit-final.json |
+
+Unchanged from the main checklist: E1/E2 (no production build/staging/external generator),
+D1 (topology undocumented), D5 (no horizontal scaling), and the dev-mode/combined-environment
+boundaries on every number.
+
+## VERDICT (updated)
+
+## 🟡 CONDITIONALLY READY
+
+Correctness is now validated under every executed fault and load test, and the four
+mission defects (wallet-drift false alarm, F1, F2, F3) are fixed with executed evidence.
+Remaining conditions before READY:
+1. External cron calling `POST /api/cron/expiry-sweep` demonstrated in the target deployment.
+2. Production topology document (instances × workers) + connection budget (≤15 Supavisor
+   clients/user measured) committed; staging re-run with a production build and an
+   external generator.
+3. Late-payment refund runbook for the real PSP (expired groups answer 409 GROUP_EXPIRED).

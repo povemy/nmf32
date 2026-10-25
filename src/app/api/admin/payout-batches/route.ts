@@ -3,7 +3,7 @@ import { Prisma, type Payout } from "@prisma/client";
 import { handle, ok, ApiError, auditAdmin, logActivity } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { refreshWalletCache, postPayoutInitiated, buildLedgerStatementFromLedger } from "@/lib/ledger";
+import { refreshWalletCache, postPayoutInitiated, buildLedgerStatementFromLedger, walletTruth } from "@/lib/ledger";
 import { rateLimit } from "@/lib/ratelimit";
 import { parseMaybeJson, readBody, optBool, daysAgo } from "@/app/api/admin/_helpers";
 
@@ -210,7 +210,8 @@ export const POST = handle(async (req: NextRequest) => {
 
             // Balance re-verify INSIDE the tx (Serializable snapshot): a
             // concurrent batch/refund may have moved the balance since preview.
-            const truth = await refreshWalletCache(w.id, tx);
+            // F1: truth READ transactional; cache WRITE deferred to post-commit.
+            const truth = await walletTruth(w.id, tx);
             if (truth.availableMinor < row.amountMinor) {
               throw new ApiError(
                 409,
@@ -225,6 +226,7 @@ export const POST = handle(async (req: NextRequest) => {
               referenceNo,
               amountMinor: row.amountMinor,
               tx,
+              refreshCache: false, // post-commit below (F1)
             });
             return row;
           },
@@ -252,6 +254,12 @@ export const POST = handle(async (req: NextRequest) => {
         meta: { walletId: w.id, sellerId: w.seller.id, batchId: batch.id, reason: skipReason },
       });
       continue;
+    }
+    // F1 — post-commit wallet-cache refresh (best-effort, display-only value).
+    try {
+      await refreshWalletCache(w.id);
+    } catch (e) {
+      console.error(`[wallet-cache] post-commit refresh failed for ${w.id} (benign, self-heals):`, e instanceof Error ? e.message : e);
     }
     createdPayouts.push(created);
   }

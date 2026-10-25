@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
-import { refreshWalletCache, parseStatement } from "@/lib/ledger";
+import { walletTruth, refreshWalletCache, parseStatement } from "@/lib/ledger";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +86,14 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(409, "CONFLICT", "Payout request could not be created due to concurrent activity — try again");
   }
 
+  // F1 — post-commit wallet-cache refresh (best-effort, display-only value;
+  // a failure leaves benign staleness that the next wallet event/read heals).
+  try {
+    await refreshWalletCache(wallet.id);
+  } catch (e) {
+    console.error(`[wallet-cache] post-commit refresh failed for ${wallet.id} (benign, self-heals):`, e instanceof Error ? e.message : e);
+  }
+
   await notify({
     event: "payout.requested",
     channel: "email",
@@ -123,9 +131,14 @@ async function createPayoutRequestTx(input: { walletId: string; sellerId: string
         throw new ApiError(409, "REQUEST_PENDING", `You already have payout request ${openRequest.referenceNo} awaiting approval`);
       }
 
-      // Ledger truth (not the cache) decides what can be requested — read and
-      // cache-refreshed inside the same tx for a consistent snapshot.
-      const truth = await refreshWalletCache(input.walletId, tx);
+      // Ledger truth (not the cache) decides what can be requested — read
+      // transactionally for a consistent Serializable snapshot. The CACHE
+      // WRITE is deferred to post-commit (F1): keeping the wallet-row UPDATE
+      // out of this Serializable critical section removes it from the
+      // conflict domain (measured hot-row epicenter in payment storms),
+      // while authorization stays exact — it uses the freshly computed truth,
+      // never the cache.
+      const truth = await walletTruth(input.walletId, tx);
       if (input.amountMinor > truth.availableMinor) {
         throw new ApiError(400, "INSUFFICIENT_BALANCE", `Available balance is ${(truth.availableMinor / 100).toFixed(2)} MYR`);
       }

@@ -9,11 +9,14 @@ export class ApiError extends Error {
   status: number;
   code: string;
   details?: unknown;
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  /** Optional response headers (e.g. Retry-After on 503 CHECKOUT_BUSY). */
+  headers?: Record<string, string>;
+  constructor(status: number, code: string, message: string, details?: unknown, headers?: Record<string, string>) {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details;
+    this.headers = headers;
   }
 }
 
@@ -27,8 +30,8 @@ export function okPaged<T>(data: T, meta: { page: number; size: number; total: n
   return NextResponse.json({ data, meta });
 }
 
-export function fail(status: number, code: string, message: string, details?: unknown): NextResponse {
-  return NextResponse.json({ error: { code, message, details } }, { status });
+export function fail(status: number, code: string, message: string, details?: unknown, headers?: Record<string, string>): NextResponse {
+  return NextResponse.json({ error: { code, message, details } }, { status, headers });
 }
 
 /** Wrap a route handler: converts thrown ApiErrors into envelope responses. */
@@ -40,7 +43,7 @@ export function handle<Args extends unknown[]>(
       return await fn(...args);
     } catch (e) {
       if (e instanceof ApiError) {
-        return fail(e.status, e.code, e.message, e.details);
+        return fail(e.status, e.code, e.message, e.details, e.headers);
       }
       console.error("[api]", e);
       const message = e instanceof Error ? e.message : "Internal error";

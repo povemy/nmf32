@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
-import { refreshWalletCache } from "@/lib/ledger";
+import { safeRefreshWalletCache } from "@/lib/ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +24,9 @@ function startOfToday(): Date {
 async function loadWalletSummary(sellerId: string): Promise<{ availableMinor: number; pendingMinor: number }> {
   const wallet = await db.wallet.findUnique({ where: { sellerId } });
   if (!wallet) return { availableMinor: 0, pendingMinor: 0 };
-  await refreshWalletCache(wallet.id);
-  const fresh = await db.wallet.findUnique({ where: { id: wallet.id } });
+  // safeRefresh — dashboard never breaks on a contended wallet row.
+  const r = await safeRefreshWalletCache(wallet.id);
+  const fresh = r.refreshed ? await db.wallet.findUnique({ where: { id: wallet.id } }) : r.cached;
   return { availableMinor: fresh?.availableMinor ?? 0, pendingMinor: fresh?.pendingMinor ?? 0 };
 }
 

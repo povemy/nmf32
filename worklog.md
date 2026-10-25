@@ -1509,3 +1509,26 @@ Stage Summary:
 - Key ranked bottlenecks: (1) no checkout admission control; (2) wallet-cache SSI hot row in claim tx; (3) serial ~15-query checkout chain over remote RTT; (4) idempotency replay race P2002 500s; (5) F3 expiry absent; (6) no app-level tx deadline in payment path.
 - New artifacts: performance/REPORT.md, performance/readiness-checklist.md, performance/runs/2026-10-25-*(12 files), scripts/readiness/*(7 files), agent-ctx/RX-CHECKLIST.md. No production code was modified (mission forbids checkout redesign; fixes are recommended, not applied).
 - .env restored from /tmp/my-project/.env — treat sandbox .env as ephemeral.
+
+---
+
+Task ID: WLT-DRIFT-REMEDIATION
+Agent: orchestrator (Z.ai Code)
+Task: Fix Wallet Ledger Invariant Drift and Complete Evidence-Based Production Readiness Remediation (Phases 0–6)
+
+Work Log:
+- Phase 0: recorded repo state (main @ cb2938e9, clean worktree); verified REPORT.md/readiness-checklist claims against the tree; classified each prior fix (F1 absent in payment path, F2 absent, F3 absent-but-expiresAt display-read (report wording stale), refreshWalletCache-in-tx confirmed). Created performance/current-state-verification.md.
+- Phase 1: built read-only reconciliation utility (scripts/readiness/wallet-reconcile.ts; independent SQL-truth + as-of replay + guarded apply). Reproduced the reported drift EXACTLY (cached {0,95292} vs truth {10764,84528}); proved STALE_TIME_MATURITY (cache == truth as-of its own write; 10764 hold matured 2026-10-24T14:12Z with no refresh); fleet audit 6 wallets/1 stale/totals equal; ledger 190/190 balanced. Created performance/wallet-ledger-drift-audit.md + evidence JSONs.
+- Phase 2: re-specified runLedgerInvariants (hard drift vs benign time-maturity); health route TTL(60s)+classification+no-sensitive-data; safeRefreshWalletCache for wallet/dashboard/admin-wallets display surfaces; no production reconciliation write (rule 7).
+- Phase 3/5: finance-regression.ts (34 checks ALL PASS: drift shape, repair dry-run/apply/idempotency, concurrent reconcile, corrupt-cache hard drift, payout lifecycle, refund dedup, 5-way same-wallet concurrency, cache-write fault→posting survives+retry converges, transient-fault retry, ledger fingerprint unchanged) + remediation-live-tests.ts (27 checks ALL PASS).
+- Phase 4 (evidence-justified implementations): F1 — wallet refresh + notify/audit fan-out moved post-commit (measured P2024 connection-starvation: in-tx global-client notifies), account-upsert hot-row removed (read-first+memo), P2034 bounded retry, 15s tx timeout + 10s session statement_timeout (lock-stall 120.7s→10.7s). F2 — checkout admission gate (8/32/5s, 503 CHECKOUT_BUSY + Retry-After + X-Checkout-Queue-Ms). F3 — /api/cron/expiry-sweep (claim-first, atomic restock, 409 GROUP_EXPIRED late-payment policy, durable telemetry).
+- Regression: fault-rollback 15/15, webhook-resilience 14/14 (B1 expectation updated to remediated contract), oversell ALL PASS.
+- Live verification: measured Supavisor session ceiling (EMAXCONNSESSION pool_size 15); seller wallet self-heal demonstrated via real read path (6/6 wallets MATCH, zero manual writes); browser golden path (order NM-103274 paid, 1 balanced T1, cart cleared, no console errors); footer/responsive verified 390px+1280px.
+- Phase 6: REPORT.md §R + readiness-checklist addendum → CONDITIONALLY READY (conditions: external cron scheduling, topology doc + staging re-run, PSP refund runbook).
+
+Stage Summary:
+- Root cause (proven, not assumed): time-maturity vs event-only cache refresh — display-only drift; payout auth always used transactional truth.
+- Storm fixed: 0/15 → 15/15 first-try confirmations, 0 raw 5xx; exactly-once preserved everywhere.
+- Overload fixed: 40-wide rush → zero raw 5xx (201/409/503 + Retry-After), no oversell.
+- Expiry enforced: 182-group backlog drained (60s measured); late payment safely refused.
+- Ops still required: cron tick for expiry sweep, topology document, staging re-run.

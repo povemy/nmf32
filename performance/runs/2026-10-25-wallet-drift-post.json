@@ -1,0 +1,286 @@
+{
+  "generatedAt": "2026-10-25T12:32:15.689Z",
+  "mode": "DEEP-AUDIT",
+  "database": "aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
+  "summary": {
+    "walletsExamined": 1,
+    "matching": 0,
+    "mismatched": 1,
+    "byClass": {
+      "STALE_TIME_MATURITY": 1
+    },
+    "sumAvailDrift": -10764,
+    "sumPendDrift": 10764,
+    "sumTotalDrift": 0,
+    "unbalancedTxns": 0
+  },
+  "repairs": [],
+  "wallets": [
+    {
+      "walletId": "cmvizi0ms000zq7niql6b3csg",
+      "sellerId": "cmvizi0i9000vq7niwoii0hbt",
+      "sellerName": "Sofia",
+      "storeName": "Lumina Living",
+      "currency": "MYR",
+      "cached": {
+        "available": 0,
+        "pending": 95292,
+        "lifetimeEarned": 138104,
+        "lifetimeCommission": 12848,
+        "updatedAt": "2026-10-23T08:33:53.546Z"
+      },
+      "appTruth": {
+        "available": 10764,
+        "pending": 84528,
+        "lifetimeEarned": 138104,
+        "lifetimeCommission": 12848
+      },
+      "sqlTruth": {
+        "available": 10764,
+        "pending": 84528,
+        "credits": 150952,
+        "debits": 55660,
+        "matured": 66424,
+        "lines": 11
+      },
+      "crossValidation": {
+        "formulaAgrees": true,
+        "currencies": 1,
+        "walletIdsOnAccount": 1
+      },
+      "drift": {
+        "available": -10764,
+        "pending": 10764,
+        "totalCacheMinusTruth": 0
+      },
+      "classification": "STALE_TIME_MATURITY",
+      "stalenessEvidence": {
+        "holdsMaturedAfterLastWrite": 1,
+        "holdsMaturedAfterLastWriteSum": 10764,
+        "truthAsOfUpdatedAt": {
+          "available": 0,
+          "pending": 95292,
+          "total": 95292
+        },
+        "explainedByUpdatedAt": true
+      },
+      "auditMs": 463,
+      "eventReplay": [
+        {
+          "txnId": "cmvizi9wk0096q7niwjrtuhip",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-01T12:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizi8v9008pq7nidiuszup1",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 20884,
+              "availableAt": "2026-10-08T12:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 20884,
+            "total": 20884
+          }
+        },
+        {
+          "txnId": "cmvizic4o009tq7nim1hubwje",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-04T09:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizibeu009eq7nik10ikcdz",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 11868,
+              "availableAt": "2026-10-11T09:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 32752,
+            "total": 32752
+          }
+        },
+        {
+          "txnId": "cmvizieg700agq7nid31nvnsi",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-13T12:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizido300a1q7niwvv1vixc",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 22908,
+              "availableAt": "2026-10-20T12:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 32752,
+            "pending": 22908,
+            "total": 55660
+          }
+        },
+        {
+          "txnId": "cmvizifsu00awq7niygob7zvm",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-17T14:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizif5f00alq7nif95p37fk",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 10764,
+              "availableAt": "2026-10-24T14:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 32752,
+            "pending": 33672,
+            "total": 66424
+          }
+        },
+        {
+          "txnId": "cmvizihhl00bcq7ni2luxjflm",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-19T12:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizigrr00b1q7nilgelwnm9",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 9936,
+              "availableAt": "2026-10-26T12:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 32752,
+            "pending": 43608,
+            "total": 76360
+          }
+        },
+        {
+          "txnId": "cmviziit200boq7ni959suyfa",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-21T10:12:00.000Z",
+          "refType": "order",
+          "refId": "cmvizii7u00bhq7ni7h7e5e6t",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 7240,
+              "availableAt": "2026-10-28T10:12:00.000Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 55660,
+            "pending": 27940,
+            "total": 83600
+          }
+        },
+        {
+          "txnId": "cmvizivhs00fcq7nixgy61mws",
+          "txnType": "payout_initiated",
+          "occurredAt": "2026-10-22T03:32:00.880Z",
+          "refType": "payout",
+          "refId": "cmviziv4p00fbq7ni7wce17n9",
+          "lines": [
+            {
+              "direction": "debit",
+              "amountMinor": 55660,
+              "availableAt": null
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 27940,
+            "total": 27940
+          }
+        },
+        {
+          "txnId": "cmvj590d90014q7aro0mzxthq",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-22T06:12:15.329Z",
+          "refType": "order",
+          "refId": "cmvj58kwa000fq7ar2qe4bu64",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 8988,
+              "availableAt": "2026-10-29T06:12:15.329Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 36928,
+            "total": 36928
+          }
+        },
+        {
+          "txnId": "cmvj7w3g6001qq7ion9o38srk",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-22T07:26:11.780Z",
+          "refType": "order",
+          "refId": "cmvj7vlwx0011q7iomftc5tf6",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 8988,
+              "availableAt": "2026-10-29T07:26:11.780Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 45916,
+            "total": 45916
+          }
+        },
+        {
+          "txnId": "cmvjcemkf003bq7iochbmpadk",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-22T09:32:34.744Z",
+          "refType": "order",
+          "refId": "cmvjcdsqn002mq7io68hbmt9x",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 8988,
+              "availableAt": "2026-10-29T09:32:34.744Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 54904,
+            "total": 54904
+          }
+        },
+        {
+          "txnId": "cmvjmp7b2002tq7isws284zji",
+          "txnType": "order_paid",
+          "occurredAt": "2026-10-22T14:20:46.285Z",
+          "refType": "order",
+          "refId": "cmvjmocdv001hq7isduifbu2f",
+          "lines": [
+            {
+              "direction": "credit",
+              "amountMinor": 40388,
+              "availableAt": "2026-10-29T14:20:46.285Z"
+            }
+          ],
+          "walletStateAsOfThisEvent": {
+            "available": 0,
+            "pending": 95292,
+            "total": 95292
+          }
+        }
+      ],
+      "deep": {
+        "cacheEqualsTruthAsOfUpdatedAt": true,
+        "lastRefreshAt": "2026-10-23T08:33:53.546Z",
+        "note": "Cache equals ledger truth recomputed as-of the cache's last write → the cache was CORRECT when written; the mismatch is purely holds maturing by clock afterwards."
+      }
+    }
+  ]
+}

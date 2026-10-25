@@ -198,3 +198,119 @@ server `statement_timeout`).
 See `performance/readiness-checklist.md` — **verdict: NOT READY**, with
 evidence and required remediation. No claim of influencer-launch readiness or
 100k-user support is made or supported.
+
+---
+
+# §R. REMEDIATION MISSION — Wallet Ledger Drift + F1/F2/F3 (2026-10-25, later session)
+
+> Mission: *Fix Wallet Ledger Invariant Drift and Complete Evidence-Based Production
+> Readiness Remediation*. Verified start state: §1–§7 above (all of it reproduced
+> against the tree before any change — see `performance/current-state-verification.md`).
+> Same environment boundaries as above: **dev mode, combined environment, remote
+> Supabase** — none of the numbers below are production capacity.
+
+## R.1 The reported wallet invariant failure — root cause [Measured]
+
+Reported: wallet `cmvizi0ms000zq7niql6b3csg` (Sofia/Lumina Living) cached {avail 0,
+pend 95292} vs ledger truth {avail 10764, pend 84528}, totals equal at 95292.
+
+**Reproduced exactly** from the live DB (read-only) — `2026-10-25-wallet-drift-deep.json`.
+
+**Root cause [Measured + code-verified]:** time-based hold maturity with an
+event-driven-only cache refresh. T1 credits carry `availableAt = paidAt + holdDays`
+(7 d measured). A hold matures **by the clock**; nothing triggers a cache refresh at
+maturity; the cache (last written 2026-10-23T08:33Z) was proven **correct as-of its own
+write** (truth recomputed as-of `wallet.updatedAt` matches it exactly). At
+2026-10-24T14:12Z the 10,764 hold matured with no intervening write → classification
+drift only (totals equal). **Not** a writer bug: exactly ONE `wallet.update` call site
+exists (grep-verified); the ledger itself is balanced (190/190 txns); app formula
+cross-validated against independent raw-SQL aggregation; no currency or cross-wallet
+contamination. Fleet audit: 6 wallets, 5 match, 1 stale (±10764, combined-total drift 0).
+
+**Impact [Derived]:** display-cache staleness + invariant telemetry false-alarm. Money
+safety unaffected: payout request/approve/batch authorization recomputes `walletTruth`
+**transactionally** and never reads the cache (call-graph verified).
+
+## R.2 Fixes applied (all diffable in worktree; files in `current-state-verification.md` §4)
+
+1. **Invariant re-specified** (`lib/ledger.ts`): unbalanced txns and totals-differ /
+   unexplained drift are HARD (flip `ok=false`); explained time-maturity staleness is
+   reported separately (benign, self-healing) — detection of real drift preserved.
+2. **Health check** (`/api/health`): 60 s TTL (`?fresh=1` bypass; was a full-ledger scan
+   per poll, measured 1237 ms), classification-aware, magnitudes only (no wallet ids
+   publicly; admin surface exposes ids behind auth), read-only by construction.
+3. **F1 — payment confirmation** (measured epicenter): wallet-cache refresh moved OUT of
+   both Serializable success txs (post-commit, best-effort — authorization uses truth);
+   **notification/audit fan-out moved post-commit** (they ran on the global client
+   INSIDE the tx window — measured P2024 connection-starvation: 15 webhooks × ≥2
+   connections vs pool of 10); account-upsert hot rows eliminated (read-first +
+   per-process memo); bounded P2034 retry (≤2, jittered); **10 s session-scoped
+   `statement_timeout`** inside money txs (measured lock-stall bound: 120.7 s → 10.7 s);
+   15 s interactive-tx timeout (measured P2028 at the 5 s default).
+4. **F2 — checkout admission gate** (`lib/checkout-gate.ts`): in-process bounded
+   semaphore (8 inflight / 32 waiting / 5 s budget, env-tunable) AFTER idempotency
+   replay, BEFORE any write; clean `503 CHECKOUT_BUSY` + `Retry-After`;
+   `X-Checkout-Queue-Ms` telemetry. Single-process scope documented (1×1 topology).
+5. **F3 — expiry enforcement** (`/api/cron/expiry-sweep`): claim-first per-group tx
+   (`requires_payment→expired` + per-order guard + atomic stock restore + InventoryLog +
+   floor-guarded salesCount); repeated/overlapping sweeps cannot double-restock; paid
+   orders never restocked; **late payment after release → definitive 409 GROUP_EXPIRED**
+   (no money moves, no order resurrection); durable observability in Setting
+   `cron.expiry_sweep.last` + GET backlog endpoint; `CRON_SECRET` optional. Scheduling is
+   an external tick (deployment requirement, §R.5).
+6. **Display resilience**: wallet/dashboard/admin-wallet reads use
+   `safeRefreshWalletCache` (a contended wallet row can no longer 500 the money views).
+7. **Reconciliation utility** (`scripts/readiness/wallet-reconcile.ts`): read-only by
+   default; guarded `--apply` (requires `--confirm`, refuses on unbalanced ledger or
+   unexplained staleness, writes only derived truth, idempotent); tested on [LT]
+   fixtures only — **no reconciliation write was applied to live wallets** (rule 7).
+
+## R.3 Remediation test results — all executed, all PASS [Measured]
+
+| Suite | Result | Evidence |
+| --- | --- | --- |
+| `finance-regression.ts` — 34 checks: cache==truth, drift-shape reproduction + classification, dry-run/apply/idempotency, concurrent reconciliation, corrupt-cache hard-drift + repair, payout lifecycle, refund + dedup replay, 5-way same-wallet concurrency, cache-write fault (posting survives, retry converges via dedupKey), transient-fault retry, ledger fingerprint unchanged by repair | **ALL PASS** | `2026-10-25-finance-regression.json` |
+| `remediation-live-tests.ts` — 27 checks: **F1** 15-way same-seller webhook storm **15/15 first-try (was 0/15), 0 raw-5xx, exactly-once, 15/15 graceful duplicates, cache==truth after storm**; **F2** 40-wide rush on stock 25 → 201×25 / 409×7 / 503busy×8 / **raw5xx=0**, Retry-After 8/8, queue telemetry on all 201s, no oversell, same-key retry converges; **F3** backlog drain (182 groups, 4 sweeps, 60 s), expiry enforced + stock restored + log, repeated/overlapping sweeps no double-restock, paid order never restocked, **late payment → 409 GROUP_EXPIRED with no T1**, mid-sweep DB fault → full rollback → recovery converges exactly-once, GET telemetry; **W4** cache-write fault on the real webhook path → webhook still 200, money exactly-once, cache recovers | **ALL PASS** | `2026-10-25-remediation-live.json` |
+| Prior suites re-run on the remediated tree: `fault-rollback.ts` (15/15), `webhook-resilience.ts` (14/14 — B1 expectation updated to the remediated contract: 8×200/0×500, one claimer), `test-oversell.ts` (ALL PASS) | **ALL PASS** | dev-run logs; B1 was the pre-fix failure mode encoded as an expectation |
+| Measured bound on the C-case lock stall | **120,608 ms → 10,727 ms** (app-level, verified) | webhook-resilience C1 |
+| Measured connection-budget fact | Supavisor session pooler rejects client №16: `EMAXCONNSESSION pool_size: 15` — combined client demand across processes must stay ≤15 | finance-regression run 1 |
+
+## R.4 Live-verification of the reported wallet [Measured]
+
+- Seller (Sofia) logged into the real app and opened her Wallet page → the
+  application's own refresh-on-read updated the cache to **{10764, 84528}** =
+  ledger truth. Post-read fleet audit: **6/6 wallets MATCH, zero drift**,
+  ledger balanced (`2026-10-25-wallet-audit-final.json`). No manual financial
+  write was used at any point.
+- Browser golden path through the new gate: sign-in → product → cart →
+  checkout → mock PSP pay → order NM-103274 **paid**, group **succeeded**,
+  exactly 1 balanced T1, cart cleared, no console errors; footer layout
+  verified at 390 px and 1280 px.
+
+## R.5 Deployment requirements that REMAIN (not code — ops)
+
+1. **Expiry scheduling**: call `POST /api/cron/expiry-sweep` on an interval
+   (external cron / uptime pinger). Until that exists, expiry enforcement is
+   demonstrated but **not operational**.
+2. **Production topology decision** (instances × workers) + connection budget:
+   measured Supavisor session ceiling is **15 clients/user**; app pool ≤10 leaves
+   ~5 for ops/scripts. Do not scale horizontally before a cross-instance
+   admission control exists (the gate is single-process by design).
+3. Staging + production build + external load generator (hard boundaries above).
+4. Late-payment refunds for real PSPs: expired groups refuse `payment.succeeded`
+   with 409 GROUP_EXPIRED — the PSP must refund per its own cadence; ops runbook
+   should state this.
+
+## R.6 Updated verdict
+
+**CONDITIONALLY READY** — for the explicitly tested workloads on this stack:
+
+- Financial integrity: every executed fault/concurrency test passes (oversell 0,
+  exactly-once payments, balanced ledger, cache==truth after repair/self-heal).
+- The three F1/F2/F3 defects and the wallet-drift false-alarm are fixed and
+  regression-tested.
+- Conditions: (1) expiry cron scheduling must be demonstrated in the target
+  deployment; (2) production topology + connection budget must be documented and
+  the staging re-run completed before any capacity claim; (3) the sandbox cannot
+  run a production build, so all evidence remains dev-mode/combined-environment.
+- No claim of 100k-user or influencer-launch readiness is made or implied.

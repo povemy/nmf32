@@ -35,17 +35,42 @@ export async function ensureAccount(code: string, walletId?: string | null) {
   await ensureAccountTx(code, walletId, db);
 }
 
+// F1 [Measured]: under concurrent same-seller confirmations, the unconditional
+// `ledgerAccount.upsert` on the SHARED SELLER/GATEWAY/COMMISSION account rows
+// was itself a hot-row write inside every Serializable tx (write-write SSI
+// conflicts + extra roundtrips). Accounts are effectively immutable once
+// created, so: read-first + per-process memo. The common case becomes a
+// read (no write, no conflict domain growth) and 1 roundtrip instead of an
+// upsert; first-creation still upserts (P2002-safe).
+const ensuredAccounts = new Set<string>();
+
 /** Same upsert, runnable on an explicit transaction client (FIN-1 atomicity). */
 async function ensureAccountTx(code: string, walletId: string | null | undefined, tx: Prisma.TransactionClient) {
+  if (ensuredAccounts.has(code)) return;
   const meta = ACCOUNT_META[code] ?? {
     name: code.startsWith("GATEWAY:") ? `Gateway ${code.slice(8)}` : code.startsWith("SELLER:") ? "Seller Payable" : code,
     type: code.startsWith("SELLER:") ? "liability" : code.startsWith("GATEWAY:") ? "asset" : "asset",
   };
-  await tx.ledgerAccount.upsert({
-    where: { code },
-    create: { code, name: meta.name, type: meta.type, walletId: walletId ?? null },
-    update: {},
-  });
+  const existing = await tx.ledgerAccount.findUnique({ where: { code }, select: { code: true } });
+  if (existing) {
+    ensuredAccounts.add(code);
+    return;
+  }
+  try {
+    await tx.ledgerAccount.upsert({
+      where: { code },
+      create: { code, name: meta.name, type: meta.type, walletId: walletId ?? null },
+      update: {},
+    });
+    ensuredAccounts.add(code);
+  } catch (e) {
+    // Raced creation from another tx — the row exists now; treat as ensured.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      ensuredAccounts.add(code);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function ensureWalletAccounts(walletId: string) {
@@ -219,6 +244,14 @@ export async function walletTruth(walletId: string, tx?: Prisma.TransactionClien
  * Refresh cached wallet columns from ledger truth (nightly invariant in prod;
  * on-write here). Pass the recipe's `tx` so the refresh reads uncommitted
  * lines and commits atomically with the posting itself.
+ *
+ * CONTENTION NOTE (measured): inside a Serializable tx this UPDATE on the
+ * wallet row is the hot-row epicenter of same-seller payment-confirmation
+ * storms (performance/REPORT.md §5.4 — 0/15 succeeded). Hot paths (webhook
+ * confirmation) now pass no `tx` and run this AFTER the money tx commits —
+ * the cache is a derived display value and payout authorization recomputes
+ * truth independently, so a failed/late post-commit refresh is safe (the
+ * invariant classifier reports time-maturity staleness as benign).
  */
 export async function refreshWalletCache(walletId: string, tx?: Prisma.TransactionClient) {
   const truth = await walletTruth(walletId, tx);
@@ -233,6 +266,27 @@ export async function refreshWalletCache(walletId: string, tx?: Prisma.Transacti
     },
   });
   return truth;
+}
+
+/**
+ * Best-effort cache refresh for display surfaces: never throws — on failure
+ * returns the last-known cache and the error, so a wallet PAGE never 500s
+ * because a concurrent payment tx briefly holds the wallet row. Money
+ * decisions never use this helper (they recompute truth transactionally).
+ */
+export async function safeRefreshWalletCache(walletId: string) {
+  try {
+    const truth = await refreshWalletCache(walletId);
+    return { refreshed: true as const, truth, error: null };
+  } catch (e) {
+    const cached = await db.wallet.findUnique({ where: { id: walletId } });
+    return {
+      refreshed: false as const,
+      truth: null,
+      error: e instanceof Error ? e.message : String(e),
+      cached,
+    };
+  }
 }
 
 // ------------------------------------------------------------- JOURNAL RECIPES
@@ -255,6 +309,10 @@ export async function postOrderPaid(input: {
   currency?: string;
   occurredAt?: Date;
   tx?: Prisma.TransactionClient;
+  /** Set false on hot paths (payment confirmation) that refresh the cache
+   *  AFTER the money tx commits instead of inside it (see refreshWalletCache
+   *  contention note). Default true preserves every other caller. */
+  refreshCache?: boolean;
 }) {
   const t = await postTransaction({
     txnType: "order_paid",
@@ -270,7 +328,7 @@ export async function postOrderPaid(input: {
     occurredAt: input.occurredAt,
     tx: input.tx,
   });
-  await refreshWalletCache(input.walletId, input.tx);
+  if (input.refreshCache !== false) await refreshWalletCache(input.walletId, input.tx);
   return t;
 }
 
@@ -313,7 +371,7 @@ export async function postGatewaySettlement(input: { provider: string; amountMin
 }
 
 /** T3 — payout initiated: DR SELLER:PAYABLE | CR PAYOUT_CLEARING */
-export async function postPayoutInitiated(input: { walletId: string; payoutId: string; referenceNo: string; amountMinor: number; tx?: Prisma.TransactionClient }) {
+export async function postPayoutInitiated(input: { walletId: string; payoutId: string; referenceNo: string; amountMinor: number; tx?: Prisma.TransactionClient; refreshCache?: boolean }) {
   const t = await postTransaction({
     txnType: "payout_initiated",
     refType: "payout",
@@ -326,7 +384,7 @@ export async function postPayoutInitiated(input: { walletId: string; payoutId: s
     ],
     tx: input.tx,
   });
-  await refreshWalletCache(input.walletId, input.tx);
+  if (input.refreshCache !== false) await refreshWalletCache(input.walletId, input.tx);
   return t;
 }
 
@@ -437,8 +495,53 @@ export async function postAdminAdjustment(input: {
 
 // ------------------------------------------------------------- INVARIANTS
 
-/** Nightly invariant (ICCO): every txn balanced; wallet cache == ledger truth. */
-export async function runLedgerInvariants() {
+export type WalletCacheDrift = {
+  walletId: string;
+  cachedAvailable: number;
+  cachedPending: number;
+  truthAvailable: number;
+  truthPending: number;
+  /** available cache − truth, pending cache − truth (signed). */
+  availableDelta: number;
+  pendingDelta: number;
+  /** Sum of holds whose availableAt matured after the cache's last write —
+   *  the full explanation when classification is TIME_MATURITY. */
+  maturedSinceLastWrite: number;
+  lastCacheWriteAt: Date;
+};
+
+export type LedgerInvariantResult = {
+  ok: boolean;
+  /** HARD problems only: unbalanced transactions + hard cache drift. */
+  problems: string[];
+  /** CACHE_VALUE_DRIFT / unexplained staleness — totals differ or the
+   *  staleness is NOT explained by holds maturing after the last write.
+   *  Always investigated; never auto-dismissed. */
+  hardDrift: WalletCacheDrift[];
+  /** Benign, self-healing staleness: totals equal AND the cache equals
+   *  ledger truth recomputed as-of its own last write — holds matured by
+   *  clock afterwards. Money correctness is NOT affected (payout
+   *  authorization recomputes truth transactionally). */
+  timeMaturityStale: WalletCacheDrift[];
+  txnCount: number;
+  walletCount: number;
+};
+
+/**
+ * Ledger invariants, classification-aware (mission: wallet-ledger drift).
+ *
+ * Wallet caches are event-driven derived values; hold credits mature by the
+ * CLOCK (availableAt <= now) with no triggering write, so a cache frozen
+ * since before a maturity is EXPECTED to disagree with truth-now while its
+ * TOTAL stays correct. The invariant therefore separates:
+ *   • unbalanced transactions            → hard, money correctness
+ *   • totals-differ / unexplained drift  → hard (CACHE_VALUE_DRIFT)
+ *   • explained time-maturity staleness  → benign, reported for visibility
+ * (Health checks must distinguish these — a stale display cache is not a
+ * lost-money event, and a nightly full-ledger scan on every poll is itself a
+ * hazard; see /api/health for the TTL-wrapped consumption.)
+ */
+export async function runLedgerInvariants(): Promise<LedgerInvariantResult> {
   const problems: string[] = [];
   const txns = await db.ledgerTransaction.findMany({ include: { lines: true } });
   for (const t of txns) {
@@ -446,15 +549,77 @@ export async function runLedgerInvariants() {
     const credit = t.lines.filter((l) => l.direction === "credit").reduce((s, l) => s + l.amountMinor, 0);
     if (debit !== credit) problems.push(`txn ${t.id} (${t.txnType}) unbalanced: D${debit} C${credit}`);
   }
+
   const wallets = await db.wallet.findMany();
+  const payableCodes = wallets.map((w) => ACCOUNTS.sellerPayable(w.id));
+  const lines = payableCodes.length
+    ? await db.ledgerLine.findMany({
+        where: { accountCode: { in: payableCodes } },
+        select: { accountCode: true, direction: true, amountMinor: true, availableAt: true },
+      })
+    : [];
+  const byWallet = new Map<string, { direction: string; amountMinor: number; availableAt: Date | null }[]>();
+  for (const l of lines) {
+    // accountCode embeds the walletId: SELLER:{walletId}:PAYABLE
+    const wid = l.accountCode.slice("SELLER:".length, -":PAYABLE".length);
+    const arr = byWallet.get(wid) ?? [];
+    arr.push({ direction: l.direction, amountMinor: l.amountMinor, availableAt: l.availableAt });
+    byWallet.set(wid, arr);
+  }
+
+  const hardDrift: WalletCacheDrift[] = [];
+  const timeMaturityStale: WalletCacheDrift[] = [];
+  const now = new Date();
   for (const w of wallets) {
-    const truth = await walletTruth(w.id);
-    if (truth.availableMinor !== w.availableMinor || truth.pendingMinor !== w.pendingMinor) {
-      problems.push(`wallet ${w.id} cache drift: available cache=${w.availableMinor} truth=${truth.availableMinor}, pending cache=${w.pendingMinor} truth=${truth.pendingMinor}`);
+    const wLines = byWallet.get(w.id) ?? [];
+    let totalCredits = 0,
+      maturedNow = 0,
+      totalDebits = 0,
+      maturedAtWrite = 0,
+      maturedSinceWrite = 0;
+    const writeAt = w.updatedAt;
+    for (const l of wLines) {
+      if (l.direction === "credit") {
+        totalCredits += l.amountMinor;
+        const matured = !l.availableAt || l.availableAt <= now;
+        if (matured) maturedNow += l.amountMinor;
+        if (!l.availableAt || l.availableAt <= writeAt) maturedAtWrite += l.amountMinor;
+        else if (l.availableAt <= now) maturedSinceWrite += l.amountMinor;
+      } else {
+        totalDebits += l.amountMinor;
+      }
+    }
+    // Truth as-of NOW and as-of the cache's last write. Debits apply in both
+    // views (they are event-driven, not clock-driven).
+    const truthNowAvail = maturedNow - totalDebits;
+    const truthNowPend = totalCredits - maturedNow;
+    const truthAtWriteAvail = maturedAtWrite - totalDebits;
+    const truthAtWritePend = totalCredits - maturedAtWrite;
+
+    if (truthNowAvail === w.availableMinor && truthNowPend === w.pendingMinor) continue; // MATCH
+
+    const base: WalletCacheDrift = {
+      walletId: w.id,
+      cachedAvailable: w.availableMinor,
+      cachedPending: w.pendingMinor,
+      truthAvailable: truthNowAvail,
+      truthPending: truthNowPend,
+      availableDelta: w.availableMinor - truthNowAvail,
+      pendingDelta: w.pendingMinor - truthNowPend,
+      maturedSinceLastWrite: maturedSinceWrite,
+      lastCacheWriteAt: writeAt,
+    };
+    const totalsEqual = w.availableMinor + w.pendingMinor === truthNowAvail + truthNowPend;
+    if (totalsEqual && truthAtWriteAvail === w.availableMinor && truthAtWritePend === w.pendingMinor) {
+      timeMaturityStale.push(base); // benign, clock-driven, self-heals on next event/read
+    } else {
+      hardDrift.push(base);
+      problems.push(
+        `wallet ${w.id} cache drift (${totalsEqual ? "UNEXPLAINED staleness" : "CACHE_VALUE_DRIFT — totals differ"}): available cache=${w.availableMinor} truth=${truthNowAvail}, pending cache=${w.pendingMinor} truth=${truthNowPend}`
+      );
     }
   }
-  // clearing + gateway accounts must net to zero-ish (settlements outstand-ing)
-  return { ok: problems.length === 0, problems, txnCount: txns.length, walletCount: wallets.length };
+  return { ok: problems.length === 0, problems, hardDrift, timeMaturityStale, txnCount: txns.length, walletCount: wallets.length };
 }
 
 /** Payout statement snapshot builder (sales, commission, refunds, adjustments since last payout). */
