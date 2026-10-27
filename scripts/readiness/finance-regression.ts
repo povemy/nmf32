@@ -289,5 +289,5 @@ try {
 
 results.finishedAt = new Date().toISOString();
 results.failures = failures;
-writeFileSync(`performance/runs/2026-10-25-finance-regression.json`, JSON.stringify(results, null, 2));
+writeFileSync(`performance/runs/${new Date().toISOString().slice(0, 10)}-finance-regression.json`, JSON.stringify(results, null, 2)); // never clobber archived runs
 process.exit(exitCode());

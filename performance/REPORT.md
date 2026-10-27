@@ -539,3 +539,69 @@ production or influencer-launch readiness is claimed.
   §O.6's three: real-PSP refund adapter, production build + staging + external
   generator, production env (`CRON_SECRET` + `PSP_WEBHOOK_SECRET` + cron). No
   production or influencer-launch readiness is claimed.
+
+# §Q. PRODUCTION DEPLOYMENT / STAGING CAPACITY / PSP READINESS (2026-10-27, fourth session)
+
+> Mission trace 1a17b2c008441ac9. Phases 0–8 executed within sandbox limits;
+> every remote/infrastructure action honestly labeled. Labels: PASS (verified
+> by current evidence) · FAIL (tested, missed criterion) · NOT TESTED (no
+> reliable execution evidence) · BLOCKED (requires access/credentials/decisions
+> unavailable here). Deliverables: `performance/deployment-preflight.md`,
+> `performance/environment-matrix.md`, `performance/scheduler-deployment.md`,
+> `performance/production-topology.md` (§7 addendum),
+> `performance/staging-capacity-report.md`, `performance/psp-readiness/preflight.md`,
+> `docs/psp-readiness/` (14-file review package), k6 kit `scripts/loadtest-k6/`.
+
+## Q.1 Requirement classification
+
+| Phase | Requirement | Label | Evidence |
+|---|---|---|---|
+| 0 | Repo/deployment-target verification + preflight docs | PASS | deployment-preflight.md (all items re-measured 2026-10-27); psp-readiness/preflight.md |
+| 0 | Hosting provider identified | **BLOCKED** | no deployment CLI/credentials/manifests; remote repo holds only the initial commit (D-1/D-2) |
+| 1 | Environment separation defined + matrix | PASS | environment-matrix.md |
+| 1 | Isolated staging Supabase project + staging deployment | **BLOCKED** | dashboard access required; exact steps in matrix §3 |
+| 1 | Load-test fail-closed target confirmation | PASS | target-guard 7/7 decision matrix (runs/2026-10-27-target-guard.json); k6 mirror guard syntax-validated |
+| 1 | [LT] test-data ownership + safe cleanup | PASS | cleanup ownership-guarded; verified live (k6 self-test cycle) |
+| 2 | Production build executed | **NOT TESTED** | sandbox policy forbids `bun run build` here (D-8); CI/staging commands documented |
+| 2 | Lint / Prisma generate / boot env validation | PASS | lint 0 errors; db:generate clean; boot guards re-proven by today's restart |
+| 2 | TypeScript gate | PARTIAL-PASS | tsc: 60 pre-existing errors (~20 files) — D-3; mission-added files clean |
+| 2 | Deployment smoke script + results | PASS (dev-mode) | deployment-smoke 22/22 ALL PASS (runs/2026-10-27-deployment-smoke.json); staging re-run required once provisioned |
+| 2 | Reverse proxy / TLS / domain | **BLOCKED** | no host; requirements checklist in preflight Phase-2 addendum |
+| 3 | Durable production scheduler installed | **BLOCKED** (design + reference impl verified) | scheduler-deployment.md; platform cron/supervised service steps exact |
+| 3 | Scheduler auth (fail-closed, timing-safe, GET+POST, rotation) | PASS | scheduler-e2e re-run 17/17 incl. 403/503 matrices + no-echo (runs/2026-10-27-scheduler-e2e.json) |
+| 3 | End-to-end scheduler operation proof | PASS (dev-mode) | release 11.3 s; paid-not-restocked; overlap exactly-once; restart+catch-up 1.3 s; fault recovery; alerts; observability |
+| 3 | CRON_SECRET configured in a secret manager | **BLOCKED** | sandbox dev-open by design; staging/prod must set via platform secret store |
+| 4 | Webhook audit (signature-before-trust, replay, duplicates) | PASS | code audit (preflight §8; docs/psp-readiness/05); live: unsigned→400 BAD_SIGNATURE, stale→400 STALE_EVENT, duplicate→200 duplicate:true, T1 1→1 (smoke C5–C7) |
+| 4 | PSP_WEBHOOK_SECRET configured | **BLOCKED** | not set here (public fallback active, dev-only); provider-specific scheme to supersede |
+| 4 | Provider-neutral integration contract + provider checklist | PASS | docs/psp-readiness/11 + 12 |
+| 4 | PSP review package | PASS | docs/psp-readiness/ (14 files, honest mock-only boundary) |
+| 5 | Full connection budget documented | PASS | production-topology.md §7 (per-process accounting, spike/deploy/ops windows) |
+| 5 | Pool changes evidence-based (no blind increases) | PASS | unchanged session pooler, pool 10; §3 decision preserved |
+| 6 | External load generator provisioned | **BLOCKED** | no external machine; sandbox disqualified by rule |
+| 6 | k6 ladder profiles A–G prepared | PASS (prepared) | scripts/loadtest-k6/ 8/8 syntax-validated; fixture lifecycle live-verified; metric definitions in staging-capacity-report.md §2 |
+| 6 | Capacity measured / operating range derived | **NOT TESTED** | requires staging + generator; draft thresholds flagged for stakeholder review |
+| 7 | Production-like deployment validation (12 items) | 8 dev-VERIFIED / 4 BLOCKED-remote | staging-capacity-report.md §5 table |
+| 8 | Final report + honest verdict | PASS | this section |
+
+## Q.2 Readiness levels (explicitly separated)
+
+1. **Code-level readiness: YES (mock rails)** — payment lifecycle, idempotency, late-payment refunds, scheduler, ledger integrity all regression-verified on current code (2026-10-27 re-runs: finance-regression 0 failures, scheduler-e2e 17/17, late-payment-refund S1–S10, deployment-smoke 22/22, verify-ledger ALL PASS 330 txns).
+2. **Staging deployment readiness: NO — BLOCKED** on Supabase project provisioning + hosting choice/credentials + production build execution (outside this sandbox). All staging verification tooling is prepared and dev-verified.
+3. **Load-tested capacity: NONE CLAIMED.** All numbers remain dev-mode/combined-environment (§5 caveats); the external ladder is prepared but not executed.
+4. **Provider-specific PSP integration readiness: NOT STARTED — BLOCKED on provider selection + sandbox credentials.** No real PSP refund adapter, no provider webhook verification, no split-settlement confirmation. Mock-PSP results are internal evidence, NOT provider certification.
+5. **Production operational readiness: NOT READY.** Requires: hosting + domain + TLS; production build via CI; CRON_SECRET + PSP_WEBHOOK_SECRET in a secret manager; installed platform scheduler; migration baseline (D-4); code pushed to origin (D-1); staging ladder evidence + rollback rehearsal.
+
+## Q.3 What a PSP can test today, and what remains
+
+- **Today (mock rails, sandbox or a provisioned staging):** full buyer journey incl. signed-webhook verification, duplicate/replay handling, exactly-once ledger posting, expiry release, late-payment 409 + durable refund obligations with provider-idempotent execution, payout lifecycle, reconciliation observability — demo guide: `docs/psp-readiness/13-staging-demo-guide.md`.
+- **Remaining before real-provider work:** choose provider → obtain sandbox credentials + current official docs → map the 12-provider-checklist answers → implement `PspProvider` + provider `RefundAdapter` + provider-specific webhook verification → provider sandbox end-to-end tests → split-settlement decision. Nothing in this repo may be represented as certified, approved, or integrated with a real provider until those exist.
+
+## Q.4 Verdict
+
+**CONDITIONALLY READY (unchanged in substance, now with complete deployment tooling):** the code and its evidence base are ready for a provider technical review on mock rails; every remaining gap is an operational/provisioning action with exact steps documented (environment-matrix §3, scheduler-deployment §5, staging-capacity §6, preflight §5). Production and influencer-launch readiness are **NOT claimed**.
+
+## Q.5 Session artifacts & hygiene
+
+- New evidence: `runs/2026-10-27-{target-guard,deployment-smoke,scheduler-e2e,late-payment-refund,finance-regression,k6-integrity-k6selftest2}.json` (date-stamped scripts patched to never clobber archives; original 2026-10-25 files restored from git after one clobber incident, root-caused and fixed).
+- Code changes (mission-scoped, defaults unchanged): `/api/health` `deployment` block (nodeEnv + non-sensitive DB fingerprint; failure-never-cached); webhook + simulate rate limits now env-tunable (`WEBHOOK_RATE_LIMIT_PER_MIN`, `SIMULATE_RATE_LIMIT_PER_MIN`; defaults 60/10); load runner target-guarded; new test tooling only otherwise.
+- Incidents this session: dev-server restart hiccup (process died during first heavy compile; recovered via `setsid` detach — noted for ops runbook); archived-evidence clobber by hardcoded date paths (fixed across 4 scripts).

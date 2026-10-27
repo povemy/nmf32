@@ -1,6 +1,8 @@
 # Production Topology & Connection Budget
 
 > Mission: *Close Final Operational and Payment-Recovery Gaps*, Phase 3.
+> **Phase 5 addendum (2026-10-27, current mission): §7 full per-process
+> connection budget + re-measured server values.**
 > Every number is labelled **[Measured]** (this environment), **[Derived]**
 > (computed from measured inputs) or **[Assumed]**. Environment of all
 > measurements: sandbox dev-mode, combined environment (app + generator on one
@@ -114,3 +116,39 @@ staging env, co-located generator). Before any production capacity claim:
 staging deployment of the production build + external load generator + the
 §4 re-runs at target topology. Every number in this document stays labelled
 dev-mode/combined-environment until then.
+
+## 7. Full per-process connection budget (Phase 5 addendum, 2026-10-27)
+
+Re-measured today: PostgreSQL 17.11, `max_connections = 60` [Measured
+2026-10-27]; at-rest client sessions 11 idle + 1 active (app pool + this
+verification script) [Measured]. All prior §2 measurements unchanged.
+
+| Process | Client sessions (ceiling) | Typical concurrent use | Notes |
+| --- | --- | --- | --- |
+| **App instance (1 × 1 process)** | 10 (URL `connection_limit=10`) | 1–7 active; up to 6 idle-in-tx at measured peaks | The deliberate throttle; overflow → 503 `CHECKOUT_BUSY` via admission gate |
+| **Scheduler service** (`expiry-scheduler`) | 0 persistent | 0 | HTTP-only ticks; each tick runs inside ONE app request (borrows from the app's pool); holds no DB connection of its own |
+| **Request-triggered workers** (payout sweep, shipping tick) | 0 extra | 0 | Run inside app requests (FIN-2-a design) |
+| **Each ops/readiness script** | its OWN Prisma client (URL ceiling 10) + optional 1 pg fault-injection session | 1–3 concurrent observed | e.g. `finance-regression`, `verify-ledger`, `late-payment-refund`. One script at a time in production windows; never a wide fan-out alongside load |
+| **Migrations** (`prisma migrate deploy`, future) | 1–2 | 1–2 during the window | Run in a maintenance window WITHOUT concurrent load test; budget ≤2 |
+| **Monitoring** | 0 extra | 0 | `/api/health` + cron GET observability ride the app pool (TTL-cached aggregates) |
+
+**Demand accounting:**
+- **Traffic spike (measured worst):** 21 client sessions total, ≤7 active,
+  6 idle-in-tx [rush 2026-10-25] — ≪ 60 with ~14 internal server sessions
+  ⇒ ≥3× server headroom [Derived].
+- **Deploy window:** app pool (≤10, drains during rolling restart) + migrate
+  client (≤2) ⇒ ≤12 — inside the measured Supavisor session ceiling of 15
+  [Derived, single-instance].
+- **Ops window (no load test):** app (≤10) + ONE script (≤10 ceiling, typical
+  1–3) — can touch the 15-client Supavisor ceiling if a script's own pool is
+  driven hard; rule: scripts run serially, never alongside load tests, and
+  their measured concurrent use stays ≤3.
+- **Server-side floor:** ~14 internal sessions (postgres/pgbouncer/
+  supabase_admin/authenticator/background) + peak 21 client ⇒ 35/60 —
+  headroom maintained even at measured peaks [Derived from §2 measurements].
+
+**Treat as observations for THIS Supabase tier, not universal limits:**
+`max_connections=60`, Supavisor session ceiling 15, pool 10. A different plan
+or provider changes them — re-measure in staging before re-deriving budgets.
+Scaling constraints of §4 remain binding (1×1 until advisory-lock gate +
+per-instance budget proof).

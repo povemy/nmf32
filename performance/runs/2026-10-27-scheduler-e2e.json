@@ -1,0 +1,127 @@
+{
+  "suite": "scheduler-e2e",
+  "at": "2026-10-27T02:50:33.528Z",
+  "environment": "dev-mode, combined env, remote Supabase",
+  "measurements": {
+    "releaseLatencyMs": 11346,
+    "catchUpMs": 1348,
+    "scheduler": {
+      "ticks": {
+        "expiry": {
+          "ticks": 263,
+          "consecutiveFailures": 0
+        },
+        "refund": {
+          "ticks": 263,
+          "consecutiveFailures": 0
+        }
+      },
+      "alerts": [
+        {
+          "at": "2026-10-25T13:08:16.526Z",
+          "type": "TICK_UNREACHABLE",
+          "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+        },
+        {
+          "at": "2026-10-25T13:09:16.526Z",
+          "type": "OVERDUE_SWEEP",
+          "detail": "expiry: never succeeded (3 consecutive failures)"
+        },
+        {
+          "at": "2026-10-25T13:16:24.017Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~67s (last success 2026-10-25T13:15:16.756Z) — catch-up tick starting now"
+        },
+        {
+          "at": "2026-10-25T13:19:36.807Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~72s (last success 2026-10-25T13:18:24.411Z) — catch-up tick starting now"
+        },
+        {
+          "at": "2026-10-25T13:23:24.608Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~47s (last success 2026-10-25T13:22:37.459Z) — catch-up tick starting now"
+        },
+        {
+          "at": "2026-10-25T13:24:25.692Z",
+          "type": "TICK_UNREACHABLE",
+          "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+        },
+        {
+          "at": "2026-10-25T13:24:55.691Z",
+          "type": "OVERDUE_SWEEP",
+          "detail": "expiry: no successful tick for 90s (> 3× interval)"
+        },
+        {
+          "at": "2026-10-25T13:29:13.643Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~48s (last success 2026-10-25T13:28:25.835Z) — catch-up tick starting now"
+        },
+        {
+          "at": "2026-10-27T01:35:31.495Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~127877s (last success 2026-10-25T14:04:14.528Z) — catch-up tick starting now"
+        },
+        {
+          "at": "2026-10-27T02:40:48.888Z",
+          "type": "TICK_UNREACHABLE",
+          "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+        },
+        {
+          "at": "2026-10-27T02:41:48.887Z",
+          "type": "OVERDUE_SWEEP",
+          "detail": "expiry: no successful tick for 120s (> 3× interval)"
+        },
+        {
+          "at": "2026-10-27T02:52:05.907Z",
+          "type": "MISSED_INTERVAL",
+          "detail": "scheduler was down ~46s (last success 2026-10-27T02:51:19.437Z) — catch-up tick starting now"
+        }
+      ],
+      "intervalMs": 30000,
+      "secretConfigured": false
+    }
+  },
+  "scenarios": [
+    {
+      "name": "A",
+      "detail": "matrix PASS; live 200 dev-open",
+      "at": "2026-10-27T02:50:33.691Z"
+    },
+    {
+      "name": "B",
+      "detail": "expiresAt→released = 11346 ms (interval 30 s)",
+      "at": "2026-10-27T02:50:50.343Z"
+    },
+    {
+      "name": "C",
+      "detail": "paid group survived live ticks; no restock; +1 legit txn only",
+      "at": "2026-10-27T02:51:25.740Z"
+    },
+    {
+      "name": "D",
+      "detail": "3 manual sweeps + live tick → single restock",
+      "at": "2026-10-27T02:51:29.390Z"
+    },
+    {
+      "name": "E",
+      "detail": "down 35 s; catch-up 1348 ms; alerts=TICK_UNREACHABLE,OVERDUE_SWEEP,MISSED_INTERVAL,MISSED_INTERVAL,MISSED_INTERVAL,TICK_UNREACHABLE,OVERDUE_SWEEP,MISSED_INTERVAL,MISSED_INTERVAL,TICK_UNREACHABLE,OVERDUE_SWEEP,MISSED_INTERVAL",
+      "at": "2026-10-27T02:52:07.226Z"
+    },
+    {
+      "name": "F1",
+      "detail": "403/403/200/403 (secret configured)",
+      "at": "2026-10-27T02:52:11.559Z"
+    },
+    {
+      "name": "F2",
+      "detail": "503 CRON_NOT_CONFIGURED on both methods",
+      "at": "2026-10-27T02:52:15.615Z"
+    },
+    {
+      "name": "F3",
+      "detail": "restored dev-open",
+      "at": "2026-10-27T02:52:20.016Z"
+    }
+  ]
+}

@@ -287,8 +287,9 @@ try {
     const ok = await startScheduler();
     console.log(`scheduler restored: ${ok}`);
   }
-  writeFileSync("performance/runs/2026-10-25-late-payment-refund.json", JSON.stringify(evidence, null, 2));
-  console.log("evidence → performance/runs/2026-10-25-late-payment-refund.json");
+  const STAMP = new Date().toISOString().slice(0, 10); // never clobber archived runs
+  writeFileSync(`performance/runs/${STAMP}-late-payment-refund.json`, JSON.stringify(evidence, null, 2));
+  console.log(`evidence → performance/runs/${STAMP}-late-payment-refund.json`);
 }
 async function restoreSafe() {
   try { await db.productVariant.update({ where: { id: variant.variantId }, data: { stock: 20 } }); } catch {}

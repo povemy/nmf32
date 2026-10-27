@@ -23,7 +23,9 @@ export const dynamic = "force-dynamic";
 // means the HMAC proves nothing here — the gate IS the security control.
 // FIN-2b (2b.6): rate-limited to 10 req/min per IP+route.
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ ref: string }> }) => {
-  const rl = rateLimit(req, { limit: 10, windowMs: 60_000 });
+  // SIMULATE_RATE_LIMIT_PER_MIN: staging load-test knob (external single-IP
+  // generator); default 10/min/IP unchanged for every other environment.
+  const rl = rateLimit(req, { limit: Number(process.env.SIMULATE_RATE_LIMIT_PER_MIN ?? 10), windowMs: 60_000 });
   if (!rl.ok) {
     throw new ApiError(429, "RATE_LIMITED", "Too many simulate requests", { retryAfterSec: rl.retryAfterSec });
   }

@@ -1,0 +1,51 @@
+{
+  "suite": "late-payment-refund",
+  "at": "2026-10-27T03:13:25.691Z",
+  "scenarios": [
+    {
+      "name": "S1",
+      "detail": "status=200 group=succeeded order=paid cases=0 ledgerTxns=330",
+      "at": "2026-10-27T03:13:33.966Z"
+    },
+    {
+      "name": "S2/S3",
+      "detail": "409 GROUP_EXPIRED; case requested amount=1800; order payment_expired; stock stable 19",
+      "at": "2026-10-27T03:13:37.501Z"
+    },
+    {
+      "name": "S4",
+      "detail": "duplicate=409 cases=1 processedWebhookRows=2",
+      "at": "2026-10-27T03:13:38.319Z"
+    },
+    {
+      "name": "S5",
+      "detail": "unknown(pending)→succeeded via provider record; refundId=rfnd_mock_mvq42ibp_cu0dbw17",
+      "at": "2026-10-27T03:13:56.079Z"
+    },
+    {
+      "name": "S6",
+      "detail": "crash simulated; converged to succeeded with 1 provider refund (idempotency key recon:cmvq42z17001qqkc1sghapk7y)",
+      "at": "2026-10-27T03:14:18.176Z"
+    },
+    {
+      "name": "S7",
+      "detail": "rejected → failed (permanent, operator-visible); attempts stayed 1",
+      "at": "2026-10-27T03:14:21.815Z"
+    },
+    {
+      "name": "S8",
+      "detail": "cases=3; all idempotencyKeys ≤ 1 refund",
+      "at": "2026-10-27T03:14:22.147Z"
+    },
+    {
+      "name": "S9",
+      "detail": "fault-injected obligation write 500 → redelivery converged on one case",
+      "at": "2026-10-27T03:14:26.664Z"
+    },
+    {
+      "name": "S10",
+      "detail": "order=payment_expired case=succeeded refundId=rfnd_mock_mvq42ibp_cu0dbw17 ledger +1 (S1 only)",
+      "at": "2026-10-27T03:14:27.753Z"
+    }
+  ]
+}

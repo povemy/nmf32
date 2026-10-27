@@ -1,0 +1,71 @@
+{
+  "suite": "target-guard-matrix",
+  "at": "2026-10-27T02:46:07.865Z",
+  "appFingerprint": "aa338c2b6272e14c",
+  "cases": [
+    {
+      "id": "T1",
+      "desc": "confirm unset",
+      "expect": "REFUSE",
+      "observed": "REFUSE",
+      "pass": true,
+      "detail": "[target-guard] REFUSED — LOADTEST_TARGET_CONFIRM is not set",
+      "exitCode": 78
+    },
+    {
+      "id": "T2",
+      "desc": "confirm=production",
+      "expect": "REFUSE",
+      "observed": "REFUSE",
+      "pass": true,
+      "detail": "[target-guard] REFUSED — LOADTEST_TARGET_CONFIRM \"production\" is not one of: dev-sandbox-local, staging",
+      "exitCode": 78
+    },
+    {
+      "id": "T3",
+      "desc": "confirm=dev-sandbox-local",
+      "expect": "CONFIRM",
+      "observed": "CONFIRM",
+      "pass": true,
+      "detail": "[target-guard] CONFIRMED target=dev-sandbox-local base=http://127.0.0.1:3000 nodeEnv=development dbFingerprint=aa338c2b6272e14c",
+      "exitCode": 0
+    },
+    {
+      "id": "T4",
+      "desc": "staging without pinned fingerprint",
+      "expect": "REFUSE",
+      "observed": "REFUSE",
+      "pass": true,
+      "detail": "[target-guard] REFUSED — staging runs require LOADTEST_DB_FINGERPRINT (16-hex from the staging app's /api/health deployment.dbFingerprint)",
+      "exitCode": 78
+    },
+    {
+      "id": "T5",
+      "desc": "staging + WRONG pinned fingerprint",
+      "expect": "REFUSE",
+      "observed": "REFUSE",
+      "pass": true,
+      "detail": "[target-guard] REFUSED — database mismatch — pinned LOADTEST_DB_FINGERPRINT 0000000000000000 ≠ app aa338c2b6272e14c",
+      "exitCode": 78
+    },
+    {
+      "id": "T6",
+      "desc": "staging + correct pinned fingerprint",
+      "expect": "CONFIRM",
+      "observed": "CONFIRM",
+      "pass": true,
+      "detail": "[target-guard] CONFIRMED target=staging base=http://127.0.0.1:3000 nodeEnv=development dbFingerprint=aa338c2b6272e14c",
+      "exitCode": 0
+    },
+    {
+      "id": "T7",
+      "desc": "unreachable target base",
+      "expect": "REFUSE",
+      "observed": "REFUSE",
+      "pass": true,
+      "detail": "[target-guard] REFUSED — cannot identify target at http://127.0.0.1:3999 — Unable to connect. Is the computer able to access the url? (unreachable, unhealthy, or missing deployment fingerprint)",
+      "exitCode": 78
+    }
+  ],
+  "failures": 0
+}

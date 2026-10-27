@@ -315,6 +315,6 @@ try {
 
 results.finishedAt = new Date().toISOString();
 results.failures = failures;
-writeFileSync("performance/runs/2026-10-25-remediation-live.json", JSON.stringify(results, null, 2));
+writeFileSync(`performance/runs/${new Date().toISOString().slice(0, 10)}-remediation-live.json`, JSON.stringify(results, null, 2)); // never clobber archived runs
 console.log(failures === 0 ? "\nREMEDIATION-LIVE: ALL PASS" : `\nREMEDIATION-LIVE: ${failures} FAILURES`);
 process.exit(exitCode());

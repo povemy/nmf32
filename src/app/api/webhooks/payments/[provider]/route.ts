@@ -13,7 +13,13 @@ export const dynamic = "force-dynamic";
 // storm can neither reach the processor nor burn DB reads. 60 req/min per
 // client IP+route is far above any legitimate provider retry cadence.
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ provider: string }> }) => {
-  const rl = rateLimit(req, { limit: 60, windowMs: 60_000 });
+  // Flood control BEFORE any body parsing/processing — a webhook storm can
+  // neither reach the processor nor burn DB reads. Default 60 req/min per
+  // client IP+route is far above any legitimate provider retry cadence.
+  // WEBHOOK_RATE_LIMIT_PER_MIN is a STAGING LOAD-TEST knob only (external
+  // single-IP generator driving payment-path stress); production keeps the
+  // default unless an operator deliberately raises it for a known provider.
+  const rl = rateLimit(req, { limit: Number(process.env.WEBHOOK_RATE_LIMIT_PER_MIN ?? 60), windowMs: 60_000 });
   if (!rl.ok) {
     throw new ApiError(429, "RATE_LIMITED", "Too many webhook requests", { retryAfterSec: rl.retryAfterSec });
   }

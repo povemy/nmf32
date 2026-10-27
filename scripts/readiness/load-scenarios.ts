@@ -2,9 +2,16 @@
 // Scenarios: baseline | ramp | rush | webstorm | idem | recovery
 // Every number is client-observed from the same box the app runs on
 // (COMBINED ENVIRONMENT — see REPORT.md §5 caveats). Data tagged [LT].
+//
+// TARGET GUARD (mission: env separation Phase 1 §1.2): the runner REFUSES to
+// start unless LOADTEST_TARGET_CONFIRM=dev-sandbox-local|staging is set AND
+// /api/health positively identifies the target as non-production with a DB
+// fingerprint equal to this runner's own connection. Staging runs additionally
+// require LOADTEST_DB_FINGERPRINT to be pinned. Fail-closed, nothing executes.
 // @ts-nocheck
 import { db } from "../../src/lib/db";
 import { BASE, LT, makeLtVariant, ltShopperCookie, checkout, sendWebhook, restoreVariant, cleanupCarts, pgClient, percentile } from "./lib";
+import { assertTestTarget } from "./target-guard";
 import { writeFileSync } from "node:fs";
 
 const scenario = process.argv[2] ?? "baseline";
@@ -93,6 +100,12 @@ async function fireCheckout(cookie: string, variantId: string, idemKey: string, 
 }
 
 const out: any = { scenario, runId, startedAt: new Date().toISOString(), env: { mode: "next-dev(turbopack)", generator: "same-box", db: "supabase-session-pooler" } };
+
+// [target-guard] MUST be the first thing this runner does — no DB writes, no
+// HTTP traffic, no fixtures before the environment is positively identified.
+const target = await assertTestTarget();
+out.env.mode = `next-dev(turbopack) nodeEnv=${target.nodeEnv}`;
+out.targetGuard = { confirmed: target.confirmed, base: target.base, nodeEnv: target.nodeEnv, dbFingerprint: target.dbFingerprint, expectedByEnv: target.expectedByEnv, confirmedAt: target.confirmedAt };
 
 // ═══ baseline ═════════════════════════════════════════════════════════════
 if (scenario === "baseline") {
@@ -271,7 +284,8 @@ if (scenario === "recovery") {
   await restoreVariant(v.variantId, 1000); await cleanupCarts([buyerEmail(0), ...cookies.map((_, i) => buyerEmail(i))]);
 }
 
+const RUN_STAMP = new Date().toISOString().slice(0, 10); // never clobber archived runs from earlier dates
 out.finishedAt = new Date().toISOString();
-writeFileSync(`performance/runs/2026-10-25-load-${scenario}.json`, JSON.stringify(out, null, 2));
-console.log(`\nsaved performance/runs/2026-10-25-load-${scenario}.json`);
+writeFileSync(`performance/runs/${RUN_STAMP}-load-${scenario}.json`, JSON.stringify(out, null, 2));
+console.log(`\nsaved performance/runs/${RUN_STAMP}-load-${scenario}.json`);
 process.exit(0);

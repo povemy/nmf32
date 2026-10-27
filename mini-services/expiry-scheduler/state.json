@@ -1,11 +1,11 @@
 {
   "service": "expiry-scheduler",
-  "startedAt": "2026-10-27T01:35:31.494Z",
+  "startedAt": "2026-10-27T03:14:28.021Z",
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-27T01:44:18.884Z",
-      "lastSuccessAt": "2026-10-27T01:44:19.178Z",
+      "lastTickAt": "2026-10-27T03:32:28.530Z",
+      "lastSuccessAt": "2026-10-27T03:32:28.708Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 193,
-        "at": "2026-10-27T01:44:19.084Z",
+        "durationMs": 128,
+        "at": "2026-10-27T03:32:28.664Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 128
+      "ticks": 342
     },
     "refund": {
-      "lastTickAt": "2026-10-27T01:44:18.884Z",
-      "lastSuccessAt": "2026-10-27T01:44:19.071Z",
+      "lastTickAt": "2026-10-27T03:32:28.530Z",
+      "lastSuccessAt": "2026-10-27T03:32:28.627Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-27T01:44:18.979Z",
-        "durationMs": 85,
+        "at": "2026-10-27T03:32:28.582Z",
+        "durationMs": 42,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,7 +48,7 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 128
+      "ticks": 342
     }
   },
   "alerts": [
@@ -96,6 +96,26 @@
       "at": "2026-10-27T01:35:31.495Z",
       "type": "MISSED_INTERVAL",
       "detail": "scheduler was down ~127877s (last success 2026-10-25T14:04:14.528Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-27T02:40:48.888Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-27T02:41:48.887Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 120s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T02:52:05.907Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~46s (last success 2026-10-27T02:51:19.437Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-27T03:14:28.021Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~81s (last success 2026-10-27T03:13:06.898Z) — catch-up tick starting now"
     }
   ]
 }

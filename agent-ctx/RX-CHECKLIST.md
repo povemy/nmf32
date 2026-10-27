@@ -110,3 +110,32 @@ changes permitted for doc-sync purposes.
 - [x] Docs corrected: gate "16 inflight"→8 (never was 16); current-state-verification.md rewritten (baseline preserved as HISTORICAL §5); REPORT §P added.
 - [x] Hygiene: .env untracked from git; new-style Supabase keys (sb_publishable/sb_secret) installed + REST-validated; legacy anon JWT 401 resolved.
 - [x] Verdict unchanged: CONDITIONALLY READY; outstanding = real-PSP refund adapter, production build/staging/external generator, production env (CRON_SECRET, PSP_WEBHOOK_SECRET, cron).
+
+---
+
+# ADDENDUM #4 — 2026-10-27 (production deployment / staging capacity / PSP readiness)
+
+Mission (trace 1a17b2c008441ac9): prepare for PSP technical review + eventual production
+launch. 8 phases. Deliverables: deployment-preflight.md, environment-matrix.md,
+scheduler-deployment.md, production-topology.md (update), staging-capacity-report.md,
+psp-readiness/preflight.md, docs/psp-readiness/ package.
+
+## Ground rules (binding; inherited + additions)
+- Sandbox CANNOT run `bun run build` (env policy) → production build = NOT TESTED here; provide exact CI/staging steps. Never claim build success from dev server.
+- No external hosting credentials, no Supabase dashboard access → remote deployment/secret-manager/platform-cron items = BLOCKED with exact remaining steps.
+- External load generator required for capacity claims; sandbox is 2-vCPU shared → capacity ladder execution BLOCKED; prepare profiles + harness adaptation only.
+- No real PSP selected → provider-specific integration stays out of scope; no fabricated provider secrets/claims.
+- Do not modify business logic for documentation purposes. If a real defect is found in verification, fix it separately with regression tests.
+- Production/prod-like traffic tests in this sandbox limited to safe, non-destructive checks against the local deployment only.
+- PASS/FAIL/NOT TESTED/BLOCKED labels only with evidence; archived under performance/runs/.
+
+## Phase checklist
+- [x] P0: repo/deployment-target verification → performance/deployment-preflight.md + performance/psp-readiness/preflight.md (git 78ee258, versions, scripts, no Docker/CI/platform manifests, Caddyfile=sandbox-only, hosting BLOCKED, scheduler+webhooks+pool verified in code, REPORT↔code cross-checked, D-1..D-8 findings)
+- [x] P1: environment-matrix.md (dev/staging/prod; staging BLOCKED-on-dashboard w/ exact steps; target-guard fail-closed VERIFIED 7/7 incl. load-runner integration refusal)
+- [x] P2: build-config inspection + lint(0 err) + tsc(60 pre-existing, mine clean) + db:generate + boot guards re-proven + deployment-smoke.ts 22/22 ALL PASS (dev-mode labeled; production build NOT TESTED per sandbox policy; proxy/TLS checklist documented)
+- [x] P3: scheduler-deployment.md + scheduler-e2e re-run 17/17 (release 11.3s, catch-up 1.3s, 403/503 auth matrices, no-echo) + late-payment-refund S1–S10 re-run PASS + CRON_SECRET rotation procedure + platform-cron steps BLOCKED
+- [x] P4: webhook audit (signature-before-trust, replay, duplicates — all verified live) + PSP_WEBHOOK_SECRET guidance + docs/psp-readiness/ 14-file package (subagent 4-a; honest mock-only boundary) + provider-neutral contract + provider checklist
+- [x] P5: production-topology.md §7 full per-process connection budget (app/scheduler/scripts/migrations/monitoring + spike/deploy/ops windows + re-measured server values)
+- [x] P6: staging-capacity-report.md (execution BLOCKED; k6 kit prepared: 7 ladder profiles + lib 8/8 syntax-validated; fixture lifecycle live-verified; metric definitions §2; draft thresholds flagged; rate-limit staging knobs added w/ unchanged defaults)
+- [x] P7: 12-item deployment-validation checklist — 8 dev-verified / 4 BLOCKED-remote (staging-capacity-report.md §5)
+- [x] P8: REPORT.md §Q final verdict (Q.1 classification table, Q.2 five readiness levels, Q.3 PSP-review scope, Q.4 CONDITIONALLY READY); worklog appended; lint clean; browser verified
