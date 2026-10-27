@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-27T04:21:17.079Z",
-      "lastSuccessAt": "2026-10-27T04:18:54.983Z",
+      "lastTickAt": "2026-10-27T05:33:17.080Z",
+      "lastSuccessAt": "2026-10-27T05:33:17.258Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 635,
-        "at": "2026-10-27T04:18:54.875Z",
+        "durationMs": 125,
+        "at": "2026-10-27T05:33:17.217Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
-      "consecutiveFailures": 5,
-      "lastError": "Unable to connect. Is the computer able to access the url?",
-      "ticks": 439
+      "consecutiveFailures": 0,
+      "lastError": null,
+      "ticks": 583
     },
     "refund": {
-      "lastTickAt": "2026-10-27T04:21:17.079Z",
-      "lastSuccessAt": "2026-10-27T04:18:55.142Z",
+      "lastTickAt": "2026-10-27T05:33:17.080Z",
+      "lastSuccessAt": "2026-10-27T05:33:17.219Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,16 +39,16 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-27T04:18:55.058Z",
-        "durationMs": 744,
+        "at": "2026-10-27T05:33:17.177Z",
+        "durationMs": 79,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
         "auth": "dev-open"
       },
-      "consecutiveFailures": 5,
-      "lastError": "Unable to connect. Is the computer able to access the url?",
-      "ticks": 439
+      "consecutiveFailures": 0,
+      "lastError": null,
+      "ticks": 583
     }
   },
   "alerts": [
@@ -126,6 +126,66 @@
       "at": "2026-10-27T04:14:17.079Z",
       "type": "OVERDUE_SWEEP",
       "detail": "expiry: no successful tick for 120s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T04:23:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×9 consecutive"
+    },
+    {
+      "at": "2026-10-27T04:24:17.079Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 322s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T04:33:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×29 consecutive"
+    },
+    {
+      "at": "2026-10-27T04:34:17.080Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 922s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T04:43:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×49 consecutive"
+    },
+    {
+      "at": "2026-10-27T04:44:17.080Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 1522s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T04:54:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-27T04:55:17.080Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 119s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T05:04:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×22 consecutive"
+    },
+    {
+      "at": "2026-10-27T05:05:17.080Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 719s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-27T05:14:17.080Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×42 consecutive"
+    },
+    {
+      "at": "2026-10-27T05:15:17.080Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 1319s (> 3× interval)"
     }
   ]
 }

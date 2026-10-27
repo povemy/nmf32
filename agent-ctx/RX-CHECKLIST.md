@@ -139,3 +139,27 @@ psp-readiness/preflight.md, docs/psp-readiness/ package.
 - [x] P6: staging-capacity-report.md (execution BLOCKED; k6 kit prepared: 7 ladder profiles + lib 8/8 syntax-validated; fixture lifecycle live-verified; metric definitions §2; draft thresholds flagged; rate-limit staging knobs added w/ unchanged defaults)
 - [x] P7: 12-item deployment-validation checklist — 8 dev-verified / 4 BLOCKED-remote (staging-capacity-report.md §5)
 - [x] P8: REPORT.md §Q final verdict (Q.1 classification table, Q.2 five readiness levels, Q.3 PSP-review scope, Q.4 CONDITIONALLY READY); worklog appended; lint clean; browser verified
+
+---
+
+# ADDENDUM #5 — 2026-10-27 (PSP provider selection & fit-gap assessment)
+
+Mission (trace 1a17bb292e7048a9): evaluate the payment/ledger/commission/refund/payout
+architecture against real Malaysian marketplace PSP requirements. Deliverable:
+docs/psp-readiness/provider-fit-gap.md (+ 12-case sandbox acceptance suite).
+
+## Ground rules (binding)
+- ASSESSMENT ONLY — no provider implementation, no financial business-logic changes.
+- Provider capabilities: only what is verifiable from OFFICIAL documentation fetched
+  today (record URL + HTTP status + date). Anything not established in public docs =
+  "NEEDS WRITTEN CONFIRMATION" — never inferred from product-name similarity.
+- No invented pricing, eligibility, approval status, API behavior, or settlement timing.
+- Web research = read-only curl to official domains; record fetch date 2026-10-27.
+- Shipping (RM8) is a pass-through: do NOT count it as platform profit; allocation must
+  be traced to code (commission engine) and documented honestly.
+- Two research subagents (psp-fitgap-3-a global platforms / 3-b MY local) run in
+  parallel; both append to worklog.md; main agent audits code + writes the doc.
+- Pending from interrupted session: regression re-runs (deployment-smoke +
+  finance-regression) after TS fixes — MUST complete before doc writing.
+- Completion = doc is evidence-backed, identifies exact decisions/access needed
+  before implementation. NOMOFEE must NOT be described as PSP-integrated.

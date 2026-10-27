@@ -34,7 +34,10 @@
    the boundary above in mind).
 4. Integration scope: `11` (provider-neutral integration contract — the key document),
    `12` (information the provider must supply before implementation starts).
-5. Demonstration: `13` (staging demo guide, once a staging environment exists —
+5. Provider selection: `provider-fit-gap.md` (decision document — capability
+   matrix from official docs fetched 2026-10-27, conditional recommendation,
+   written-confirmation question list, 12-case sandbox acceptance suite).
+6. Demonstration: `13` (staging demo guide, once a staging environment exists —
    currently BLOCKED, see `09`).
 
 ## Index
@@ -54,6 +57,7 @@
 | 11 | `11-provider-integration-contract.md` | Provider-neutral integration contract (interface requirements) |
 | 12 | `12-provider-checklist.md` | Exact information required from the chosen provider before implementation |
 | 13 | `13-staging-demo-guide.md` | Staging demonstration script for a PSP reviewer (no secrets disclosed) |
+| 14 | `provider-fit-gap.md` | Provider selection & fit-gap decision document (researched 2026-10-27; capability matrix, conditional recommendation, acceptance suite) |
 
 ## Conventions
 
