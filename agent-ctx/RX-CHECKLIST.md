@@ -163,3 +163,31 @@ docs/psp-readiness/provider-fit-gap.md (+ 12-case sandbox acceptance suite).
   finance-regression) after TS fixes — MUST complete before doc writing.
 - Completion = doc is evidence-backed, identifies exact decisions/access needed
   before implementation. NOMOFEE must NOT be described as PSP-integrated.
+
+---
+
+# ADDENDUM #6 — trace 1a17c3aee75615d1 (Admin Settings UX + Activity Log purge)
+
+Mission (user request, 3 parts): (1) rebuild Admin→Settings from raw-JSON table into a
+friendly form UI (toggles/selects/numbers; remove the duplicate/dead footer toggle
+situation); (2) add a permanent "Clear All Activity Log" function gated by an admin
+password re-prompt; (3) advise what to check/do next on the platform.
+
+## Ground rules (binding; inherited + additions)
+- ASSESS-DISCIPLINE: a Setting key must not be presented as functional UI unless it is
+  actually consumed by running code — unwired keys get an explicit "Not wired" badge.
+- DISCOVERED CONTAMINATION: all seeded Setting rows currently hold valueJson `"claimed"`
+  (load-test artifact) — code falls back to defaults, so runtime behavior is unaffected,
+  but the values MUST be restored to seed truth, not left corrupted.
+- `ui.footer_visible` is the ONLY footer setting in the system and is currently DEAD
+  (nothing consumes it). There is no second duplicate; the fix = wire this one to the
+  global shopper footer (single working toggle), not to add another.
+- Purge is PERMANENT and must be: superadmin-only (new `logs.purge` cap), password-
+  re-verified server-side (scrypt verify, never logged), audited (AdminAuditLog survives
+  + one fresh ActivityLog row marks the reset), batched (bounded delete loops).
+- Scope of purge = the ActivityLog table across ALL actor types (admin/seller/shopper/
+  system). AdminAuditLog (compliance trail), NotificationLog, PaymentWebhookLog are
+  separate tables and are NOT touched.
+- Test-control keys (recon.fault, lt.seed.state) stay hidden from the friendly UI.
+- Regression: finance-regression + deployment-smoke must stay green afterwards; PASS/
+  FAIL only for executed checks; browser-verify the golden paths before reporting done.

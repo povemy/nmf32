@@ -1710,3 +1710,25 @@ Stage Summary:
 - Central finding: architecture (Option B no-custody split model) maps cleanly onto split-capable PSPs; the single biggest gaps = PSP fee model absent in code, FPX refund rails unverified everywhere, custody implications of gateway-style providers need legal sign-off.
 - Environment hardening byproduct: dev-server durability root-caused and fixed (nohup-nested launch + supervisor); canary evidence documented.
 - Zero business-logic changes this mission (assessment + docs + dev-only supervisor script). Regression state: all suites green on current code.
+
+---
+Task ID: admin-ux-purge (trace 1a17c3aee75615d1)
+Agent: Z.ai Code (main)
+Task: (1) Admin→Settings from raw-JSON table to friendly form UI (toggles/selects/numbers) + footer-toggle dedup; (2) permanent Clear-All-Activity-Log with admin password re-prompt; (3) platform next-step advice.
+
+Work Log:
+- DISCOVERED & FIXED data contamination: all seeded Setting rows held valueJson `"claimed"` (load-test artifact). Runtime unaffected (parse-fallback to defaults) but values restored to seed truth via scripts/repair-settings.ts (one-off, removed); dead `home.featured_stores` row deleted; `ui.footer_visible=true` created; prisma/seed.ts now seeds it.
+- Footer dedup resolved: exactly ONE footer setting existed (`ui.footer_visible`) and it was DEAD (nothing consumed it; no second duplicate anywhere). Wired it for real: new public GET /api/sf/app-config returns {footerVisible}; ShopperShell useFooterVisible() hook (60s module cache) gates the global footer (showChrome && footerVisible). Single working toggle now.
+- NEW src/lib/settings-registry.ts: pure-data registry (client-safe) — groups (Storefront/Payouts/Moderation/Payments& PSP/Ranking/System/Advanced), per-key field kinds (boolean/integer(+major RM)/enum/weights/string_list/readonly/json), wired flag + wiredNote, danger + hidden flags, defaultJsonValue, validateSettingValue (server + client share).
+- /api/admin/settings GET: merges DB rows with registry (absent keys surfaced with defaults e.g. psp.mock.enabled; hidden test keys lt.seed.state/recon.fault excluded; unknown keys → Advanced/raw). PUT: type-validates against registry (e.g. boolean key rejects "claimed" with 400 VALIDATION); readonly keys refused; auditAdmin unchanged.
+- SettingsView (src/components/admin/system.tsx) rewritten: grouped cards with icons; inline Switch for booleans; Select for enums; NumberInput (local-text-state, commit-on-blur, clamped) incl. RM major-unit editor for payout.min_minor; 4-field weights grid with sum hint; provider chips (string_list); readonly <pre> for cron.*.last; raw-JSON editor only for unknown/Advanced keys; per-group dirty tracking + Undo/Discard/Save; inline validation errors; superadmin-only editing (amber read-only banner for other roles); Active/Not-wired-yet/Careful badges keep unwired keys honest.
+- NEW cap `logs.purge` = [superadmin] in src/lib/auth.ts.
+- NEW /api/admin/activity-logs/purge: GET = {total, byActor} for the dialog; POST {password} — scrypt verifyPassword against CURRENT admin (never logged), 401 INVALID_PASSWORD on miss (+400ms delay + activity_logs.purge_denied audit), batched delete (2000/batch, ≤250 batches) across ALL actor types, then auditAdmin(activity_logs.purge) → AdminAuditLog row survives + exactly one fresh ActivityLog row marks the reset. AdminAuditLog/NotificationLog/PaymentWebhookLog deliberately untouched.
+- ActivityView: destructive "Clear All" button (superadmin-only render) + password dialog (by-actor count chips, kept-logs note, inline error on wrong password, confirm disabled until password + stats load and total>0).
+- Verification: lint 0 errors / tsc 0 errors; finance-regression 37 PASS 0 FAIL; deployment-smoke ALL PASS (re-archived runs/2026-10-27-*.json); API-level: settings merge+validation+PUT cycle, app-config flip, purge wrong-password 401 → correct-password deleted 5299/remaining 0 → log = 1 fresh row; browser (agent-browser): settings groups render (desktop+390px), footer toggle OFF → shopper footer absent (DOM+screenshot) → ON → footer back (bodyH 2327, bottom 2326.5 — natural push), Clear-All dialog (per-actor chips), wrong password inline error, purge → 1 record page 1, Audit Log keeps purge+denied rows with correct DiffViewer before/after; zero console errors; /api/health healthy; ledger invariants ok.
+
+Stage Summary:
+- Settings is now operator-friendly with zero dishonesty: every control is either wired (Active badge) or explicitly marked "Not wired yet" (maintenance.mode, payout.schedule.day, payments.providers, ranking.weights).
+- The only footer control in the system is ui.footer_visible and it now actually toggles the shopper footer; there was never a second duplicate to remove.
+- Clear All Activity Log: superadmin + password re-verified server-side, permanent, batched, audited (compliance trail preserved; log restarts with one reset record).
+- 8 files changed/created: settings-registry.ts (new), settings/route.ts, activity-logs/purge/route.ts (new), sf/app-config/route.ts (new), auth.ts, system.tsx, shopper-shell.tsx, prisma/seed.ts; regression suites green.

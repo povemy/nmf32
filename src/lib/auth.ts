@@ -133,6 +133,8 @@ export const ADMIN_CAPS: Record<string, string[]> = {
   "settings.manage": ["superadmin"],
   "impersonate": ["superadmin"],
   "logs.view": ["superadmin", "ops", "finance"],
+  /** Permanent ActivityLog wipe — superadmin only, password re-verified. */
+  "logs.purge": ["superadmin"],
   "campaigns.manage": ["superadmin", "ops"],
 };
 

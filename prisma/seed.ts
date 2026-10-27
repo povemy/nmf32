@@ -401,6 +401,7 @@ async function main() {
     { key: "payments.providers", valueJson: '["fpx_toyyibpay","tng","grabpay","card_stripe"]', description: "Enabled payment providers" },
     { key: "ranking.weights", valueJson: '{"recency":0.4,"sales":0.3,"rating":0.2,"ctr":0.1}', description: "Marketplace ranking weights" },
     { key: "maintenance.mode", valueJson: "false", description: "Storefront maintenance mode" },
+    { key: "ui.footer_visible", valueJson: "true", description: "Show the global footer on the shopper web app" },
   ]) {
     await db.setting.create({ data: s });
   }

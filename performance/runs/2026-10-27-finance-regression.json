@@ -1,6 +1,6 @@
 {
-  "runId": "mvq8qamw",
-  "startedAt": "2026-10-27T05:24:06.872Z",
+  "runId": "mvqdtb6d",
+  "startedAt": "2026-10-27T07:46:25.621Z",
   "tests": [
     {
       "name": "1a: matured T1 → available reflects net",
@@ -65,7 +65,7 @@
     {
       "name": "14a: ledger history unchanged by repair (count + checksum)",
       "ok": true,
-      "detail": "2→2 cksum -681781448→-681781448"
+      "detail": "2→2 cksum -1863862456→-1863862456"
     },
     {
       "name": "13d: re-apply idempotent (same cache values, exit clean)",
@@ -188,6 +188,6 @@
       "detail": ""
     }
   ],
-  "finishedAt": "2026-10-27T05:24:38.172Z",
+  "finishedAt": "2026-10-27T07:46:56.268Z",
   "failures": 0
 }

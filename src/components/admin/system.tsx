@@ -5,13 +5,25 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity as ActivityIcon,
+  Banknote,
+  Check,
   CheckCircle2,
+  CreditCard,
   Flag,
   HeartPulse,
+  Loader2,
   Mail,
   MessageCircle,
+  Plus,
   RefreshCw,
   ScrollText,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
+  Trash2,
+  TriangleAlert,
+  Wrench,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,14 +37,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { apiSend, useApi } from "./use-api";
+import { useApp } from "@/lib/app-store";
+import {
+  SETTING_GROUPS,
+  settingMetaFor,
+  validateSettingValue,
+  type SettingGroup,
+  type SettingMeta,
+} from "@/lib/settings-registry";
+import { apiSend, apiGet, useApi } from "./use-api";
 import { qs } from "./nav";
 import {
+  CardsSkeleton,
   DiffViewer,
   EmptyState,
   ErrorState,
@@ -48,129 +70,493 @@ import {
 
 /* ------------------------------------------------------------- SettingsView */
 
-type SettingRow = { key: string; valueJson: string; description?: string | null; updatedAt?: string };
+type SettingRow = {
+  key: string;
+  valueJson: string;
+  description?: string | null;
+  updatedAt?: string | null;
+  meta: SettingMeta;
+};
 
-function prettyValue(raw: string): string {
+function parseVal<T>(raw: string | undefined, fallback: T): T {
+  if (raw === undefined || raw === null || raw === "") return fallback;
   try {
-    return JSON.stringify(JSON.parse(raw), null, 0);
+    const v = JSON.parse(raw) as T;
+    return (v === null || v === undefined ? fallback : v) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
   } catch {
     return raw;
   }
 }
 
+const GROUP_ICON: Record<SettingGroup["icon"], LucideIcon> = {
+  store: Store,
+  banknote: Banknote,
+  shield: ShieldCheck,
+  "credit-card": CreditCard,
+  sliders: SlidersHorizontal,
+  activity: ActivityIcon,
+  wrench: Wrench,
+};
+
+function WiredBadge({ wired }: { wired: boolean }) {
+  return wired ? (
+    <Badge
+      variant="outline"
+      className="border-emerald-200 bg-emerald-50 text-[10px] font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300"
+    >
+      Active
+    </Badge>
+  ) : (
+    <Badge
+      variant="outline"
+      className="border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+    >
+      Not wired yet
+    </Badge>
+  );
+}
+
+function DangerBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="border-red-200 bg-red-50 text-[10px] font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300"
+    >
+      Careful
+    </Badge>
+  );
+}
+
+/** Numeric input with local text state so typing stays smooth; commits a
+ *  clamped number on blur or Enter. `decimals` controls echo formatting. */
+function NumberInput({
+  value,
+  min,
+  max,
+  step = 1,
+  decimals = 0,
+  prefix,
+  disabled,
+  onCommit,
+  className,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  decimals?: number;
+  prefix?: string;
+  disabled?: boolean;
+  onCommit: (n: number) => void;
+  className?: string;
+}) {
+  const fmt = (n: number) => n.toFixed(decimals);
+  const [text, setText] = useState(fmt(value));
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- resync when the stored value changes externally (save/refetch)
+  useEffect(() => setText(fmt(value)), [value]);
+  const commit = (t: string) => {
+    const n = parseFloat(t);
+    if (!Number.isFinite(n)) {
+      setText(fmt(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, n));
+    onCommit(clamped);
+    setText(fmt(clamped));
+  };
+  return (
+    <div className={cn("relative", className)}>
+      {prefix ? (
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">{prefix}</span>
+      ) : null}
+      <Input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={min}
+        max={max}
+        value={text}
+        disabled={disabled}
+        aria-label="Setting value"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            commit((e.target as HTMLInputElement).value);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className={cn("min-h-[44px] sm:min-h-[36px]", prefix && "pl-8")}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ row bits */
+
+function SettingHead({ meta }: { meta: SettingMeta }) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-medium leading-tight">{meta.label}</p>
+        <WiredBadge wired={meta.wired} />
+        {meta.danger ? <DangerBadge /> : null}
+      </div>
+      <p className="mt-0.5 max-w-prose text-xs leading-relaxed text-muted-foreground">{meta.description}</p>
+      {meta.wiredNote ? <p className="mt-1 text-[11px] italic text-muted-foreground/80">{meta.wiredNote}</p> : null}
+      <p className="mt-1 font-mono text-[10px] text-muted-foreground/60">{meta.key}</p>
+    </div>
+  );
+}
+
+function UpdatedNote({ updatedAt }: { updatedAt?: string | null }) {
+  if (!updatedAt) return null;
+  return <span className="shrink-0 text-[10px] text-muted-foreground/70">saved {timeAgo(updatedAt)}</span>;
+}
+
+/* -------------------------------------------------------------- SettingsView */
+
 export function SettingsView() {
+  const me = useApp((s) => s.me);
+  const canEdit = Boolean(me.loaded && me.admin?.role === "superadmin");
+
   const { data, error, loading, refetch } = useApi<SettingRow[]>("/api/admin/settings");
   const rows = data ?? [];
 
-  const [editing, setEditing] = useState<SettingRow | null>(null);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
+  // drafts[key] holds the edited valueJson — only present while a row is dirty.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingKeys, setSavingKeys] = useState<string[]>([]);
 
-  const openEdit = (r: SettingRow) => {
-    setEditing(r);
-    setDraft(r.valueJson ?? "");
+  const current = (r: SettingRow) => drafts[r.key] ?? r.valueJson;
+  const isDirty = (r: SettingRow) => drafts[r.key] !== undefined && drafts[r.key] !== r.valueJson;
+  const draftError = (r: SettingRow): string | null => {
+    if (!isDirty(r)) return null;
+    if (r.meta.field.kind === "readonly") return "Read-only — written by the system.";
+    const res = validateSettingValue(r.key, current(r));
+    return res.ok ? null : res.error;
   };
 
-  const save = async () => {
-    if (!editing) return;
+  const setValue = (r: SettingRow, valueJson: string) =>
+    setDrafts((d) => ({ ...d, [r.key]: valueJson }));
+  const resetRow = (key: string) =>
+    setDrafts((d) => {
+      const next = { ...d };
+      delete next[key];
+      return next;
+    });
+
+  const saveKeys = async (groupRows: SettingRow[]) => {
+    const keys = groupRows.filter(isDirty).map((r) => r.key);
+    if (!canEdit || keys.length === 0) return;
+    setSavingKeys((s) => [...new Set([...s, ...keys])]);
     try {
-      JSON.parse(draft);
-    } catch {
-      toast.error("Invalid JSON", {
-        description: "Use quoted strings, numbers, booleans or objects — e.g. \"friday\" or 1000.",
+      await apiSend("/api/admin/settings", "PUT", {
+        settings: keys.map((key) => ({ key, valueJson: drafts[key] })),
       });
-      return;
-    }
-    setSaving(true);
-    try {
-      await apiSend("/api/admin/settings", "PUT", { settings: [{ key: editing.key, valueJson: draft }] });
-      toast.success("Setting saved", { description: editing.key });
-      setEditing(null);
+      toast.success(keys.length === 1 ? "Setting saved" : `${keys.length} settings saved`, { description: keys.join(", ") });
+      setDrafts((d) => {
+        const next = { ...d };
+        for (const k of keys) delete next[k];
+        return next;
+      });
       void refetch();
     } catch (e) {
       toast.error("Save failed", { description: e instanceof Error ? e.message : String(e) });
     } finally {
-      setSaving(false);
+      setSavingKeys((s) => s.filter((k) => !keys.includes(k)));
     }
   };
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, SettingRow[]>();
+    for (const r of rows) {
+      const g = r.meta?.group ?? "advanced";
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(r);
+    }
+    return map;
+  }, [rows]);
+  const groupsWithRows = SETTING_GROUPS.filter((g) => (grouped.get(g.id) ?? []).length > 0);
+
+  /* ---- individual control renderers ------------------------------------- */
+
+  const renderControl = (r: SettingRow) => {
+    const field = r.meta.field;
+    const disabled = !canEdit || !r.meta.wired || savingKeys.includes(r.key);
+    const valueJson = current(r);
+
+    switch (field.kind) {
+      case "boolean": {
+        const on = parseVal<boolean>(valueJson, field.default);
+        return (
+          <Switch
+            checked={on}
+            disabled={disabled}
+            onCheckedChange={(v) => setValue(r, JSON.stringify(v))}
+            aria-label={r.meta.label}
+          />
+        );
+      }
+      case "integer": {
+        const n = parseVal<number>(valueJson, field.default);
+        if (field.major) {
+          const f = field.major.factor;
+          return (
+            <NumberInput
+              value={n / f}
+              min={field.min / f}
+              max={field.max / f}
+              step={1}
+              decimals={field.major.decimals}
+              prefix={field.major.label}
+              disabled={disabled}
+              onCommit={(v) => setValue(r, JSON.stringify(Math.round(v * f)))}
+              className="w-32"
+            />
+          );
+        }
+        return (
+          <NumberInput
+            value={n}
+            min={field.min}
+            max={field.max}
+            step={1}
+            decimals={0}
+            disabled={disabled}
+            onCommit={(v) => setValue(r, JSON.stringify(Math.round(v)))}
+            className="w-24"
+          />
+        );
+      }
+      case "enum": {
+        const v = parseVal<string>(valueJson, field.default);
+        return (
+          <Select value={v} disabled={disabled} onValueChange={(val) => setValue(r, JSON.stringify(val))}>
+            <SelectTrigger className="min-h-[44px] w-full sm:w-56 sm:min-h-[36px]" aria-label={r.meta.label}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      }
+      case "weights": {
+        const w = parseVal<Record<string, number>>(valueJson, field.default);
+        const sum = field.keys.reduce((acc, k) => acc + (Number(w[k.key]) || 0), 0);
+        return (
+          <div className="w-full space-y-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {field.keys.map((k) => (
+                <div key={k.key} className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">{k.label}</Label>
+                  <NumberInput
+                    value={Number(w[k.key]) || 0}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    decimals={2}
+                    disabled={disabled}
+                    onCommit={(v) => setValue(r, JSON.stringify({ ...w, [k.key]: v }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className={cn("text-[11px]", Math.abs(sum - 1) < 0.001 ? "text-muted-foreground" : "font-medium text-amber-700 dark:text-amber-400")}>
+              Weights sum to {sum.toFixed(2)} — 1.00 is the usual setup.
+            </p>
+          </div>
+        );
+      }
+      case "string_list": {
+        const list = parseVal<string[]>(valueJson, field.default);
+        const toggle = (v: string) =>
+          setValue(r, JSON.stringify(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]));
+        return (
+          <div className="flex w-full flex-wrap gap-2">
+            {field.options.map((o) => {
+              const active = list.includes(o.value);
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={active}
+                  onClick={() => toggle(o.value)}
+                  className={cn(
+                    "inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    active
+                      ? "border-teal-600 bg-teal-50 text-teal-900 dark:border-teal-500 dark:bg-teal-950/60 dark:text-teal-200"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {active ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        );
+      }
+      case "readonly": {
+        return (
+          <pre className="max-h-32 w-full overflow-auto rounded-lg bg-muted p-3 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]">
+            {prettyJson(valueJson)}
+          </pre>
+        );
+      }
+      case "json":
+      default: {
+        return (
+          <div className="w-full space-y-1.5">
+            <Textarea
+              value={valueJson}
+              onChange={(e) => setValue(r, e.target.value)}
+              rows={3}
+              className="resize-y font-mono text-xs"
+              aria-label={`${r.key} (JSON)`}
+              placeholder='e.g. "friday" or 1000 or {"weights":{}}'
+              disabled={!canEdit || savingKeys.includes(r.key)}
+            />
+            <p className="text-[11px] text-muted-foreground">Raw JSON — strings need quotes, numbers/booleans stay bare.</p>
+          </div>
+        );
+      }
+    }
+  };
+
+  const renderRow = (r: SettingRow) => {
+    const err = draftError(r);
+    const wide = ["weights", "string_list", "readonly", "json"].includes(r.meta.field.kind);
+    const busy = savingKeys.includes(r.key);
+    return (
+      <div key={r.key} className={cn("flex flex-col gap-3 px-4 py-4 sm:px-6", wide ? "sm:flex-col" : "sm:flex-row sm:items-center")}>
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <SettingHead meta={r.meta} />
+          <div className="hidden shrink-0 flex-col items-end sm:flex">
+            <UpdatedNote updatedAt={r.updatedAt} />
+          </div>
+        </div>
+        <div className={cn("flex items-center gap-2", wide ? "w-full flex-col items-stretch sm:flex-row sm:items-start" : "shrink-0")}>
+          {renderControl(r)}
+          {isDirty(r) ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-[44px] shrink-0 text-muted-foreground sm:min-h-[36px]"
+              onClick={() => resetRow(r.key)}
+              disabled={busy}
+            >
+              Undo
+            </Button>
+          ) : null}
+          <div className="sm:hidden">
+            <UpdatedNote updatedAt={r.updatedAt} />
+          </div>
+        </div>
+        {err ? (
+          <p className="text-xs font-medium text-red-600 dark:text-red-400" role="alert">
+            {err}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
+
+  /* ---- view -------------------------------------------------------------- */
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Platform configuration — JSON values consumed across commission, payouts, moderation and payments."
+        description="Platform configuration — payouts, moderation, payments and storefront chrome. Changes are audited."
       />
 
-      <Card className="py-0">
-        <CardContent className="p-4">
-          <div className="overflow-x-auto">
-            {error ? (
-              <ErrorState message={error} onRetry={() => void refetch()} />
-            ) : loading ? (
-              <TableSkeleton rows={6} cols={3} />
-            ) : rows.length === 0 ? (
-              <EmptyState title="No settings" />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead className="hidden md:table-cell">Description</TableHead>
-                    <TableHead className="hidden text-right lg:table-cell">Updated</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r) => (
-                    <TableRow key={r.key}>
-                      <TableCell className="font-mono text-xs font-semibold">{r.key}</TableCell>
-                      <TableCell>
-                        <code className="block max-w-[240px] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs" title={prettyValue(r.valueJson)}>
-                          {prettyValue(r.valueJson)}
-                        </code>
-                      </TableCell>
-                      <TableCell className="hidden max-w-[280px] text-sm text-muted-foreground md:table-cell">{r.description ?? "—"}</TableCell>
-                      <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{timeAgo(r.updatedAt)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" onClick={() => openEdit(r)}>
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      {!canEdit ? (
+        <Card className="py-0 border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30">
+          <CardContent className="flex items-start gap-2 p-4 text-sm text-amber-900 dark:text-amber-200">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              You are viewing settings as <strong className="capitalize">{me.loaded && me.admin ? me.admin.role : "guest"}</strong>. Only superadmins can
+              change values.
+            </span>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-mono text-sm">{editing?.key}</DialogTitle>
-            <DialogDescription>{editing?.description ?? "Edit the JSON value for this setting."}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={5}
-              className="resize-none font-mono text-xs"
-              aria-label="Setting value (JSON)"
-              placeholder='e.g. "friday" or 1000 or {"weights":{}}'
-            />
-            <p className="text-[11px] text-muted-foreground">Must be valid JSON — strings need quotes, numbers/booleans stay bare.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving} className="min-h-[44px] sm:min-h-0">Cancel</Button>
-            <Button onClick={() => void save()} disabled={saving} className="min-h-[44px] sm:min-h-0">
-              {saving ? "Saving…" : "Save setting"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {error ? (
+        <Card className="py-0">
+          <CardContent className="p-4">
+            <ErrorState message={error} onRetry={() => void refetch()} />
+          </CardContent>
+        </Card>
+      ) : loading ? (
+        <CardsSkeleton n={4} />
+      ) : rows.length === 0 ? (
+        <Card className="py-0">
+          <CardContent className="p-4">
+            <EmptyState title="No settings" hint="Nothing is configured yet." />
+          </CardContent>
+        </Card>
+      ) : (
+        groupsWithRows.map((group) => {
+          const groupRows = grouped.get(group.id)!;
+          const dirty = groupRows.filter(isDirty);
+          const hasError = dirty.some((r) => draftError(r) !== null);
+          const Icon = GROUP_ICON[group.icon] ?? Wrench;
+          return (
+            <Card key={group.id} className="py-0">
+              <CardHeader className="px-4 pb-0 pt-4 sm:px-6 sm:pt-5">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Icon className="h-4 w-4 text-teal-600 dark:text-teal-400" /> {group.label}
+                </CardTitle>
+                <CardDescription>{group.description}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y">{groupRows.map(renderRow)}</div>
+                {dirty.length > 0 ? (
+                  <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <p className="text-xs text-muted-foreground">
+                      {dirty.length} unsaved {dirty.length === 1 ? "change" : "changes"}
+                      {hasError ? " · fix the highlighted error first" : ""}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-[44px] sm:min-h-0"
+                        onClick={() => groupRows.forEach((r) => isDirty(r) && resetRow(r.key))}
+                      >
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="min-h-[44px] sm:min-h-0"
+                        disabled={!canEdit || hasError}
+                        onClick={() => void saveKeys(groupRows)}
+                      >
+                        {savingKeys.some((k) => dirty.some((d) => d.key === k)) ? "Saving…" : `Save ${dirty.length > 1 ? `all ${dirty.length}` : ""}`}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -419,12 +805,61 @@ type ActivityRow = {
 
 const ACTOR_TYPES = ["all", "admin", "seller", "customer", "system"];
 
+type PurgeStats = { total: number; byActor: { actorType: string; count: number }[] };
+
 export function ActivityView() {
+  const me = useApp((s) => s.me);
+  const isSuper = Boolean(me.loaded && me.admin?.role === "superadmin");
+
   const [actorType, setActorType] = useState("all");
   const [page, setPage] = useState(1);
   const url = useMemo(() => `/api/admin/activity-logs${qs({ actorType: actorType === "all" ? "" : actorType, page, size: 25 })}`, [actorType, page]);
   const { data, meta, error, loading, refetch } = useApi<ActivityRow[]>(url);
   const rows = data ?? [];
+
+  // ---- Clear All (permanent purge, superadmin + password re-check) ----------
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeStats, setPurgeStats] = useState<PurgeStats | null>(null);
+  const [purgeLoading, setPurgeLoading] = useState(false);
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  const [purgePassword, setPurgePassword] = useState("");
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+
+  const openPurge = async () => {
+    setPurgeOpen(true);
+    setPurgeError(null);
+    setPurgePassword("");
+    setPurgeStats(null);
+    setPurgeLoading(true);
+    try {
+      const { data: stats } = await apiGet<PurgeStats>("/api/admin/activity-logs/purge");
+      setPurgeStats(stats);
+    } catch (e) {
+      setPurgeError(e instanceof Error ? e.message : "Failed to load log counts");
+    } finally {
+      setPurgeLoading(false);
+    }
+  };
+
+  const runPurge = async () => {
+    setPurgeBusy(true);
+    setPurgeError(null);
+    try {
+      const res = await apiSend<{ deleted: number; remaining: number }>("/api/admin/activity-logs/purge", "POST", { password: purgePassword });
+      toast.success("Activity log cleared", {
+        description: `${res.deleted.toLocaleString()} entries permanently deleted — the log starts fresh now.`,
+      });
+      setPurgeOpen(false);
+      setPurgePassword("");
+      setPage(1);
+      void refetch();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Purge failed";
+      setPurgeError(msg);
+    } finally {
+      setPurgeBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -432,22 +867,34 @@ export function ActivityView() {
         title="Activity Log"
         description="Who did what across the platform — logins, exports, webhooks and more."
         actions={
-          <Select
-            value={actorType}
-            onValueChange={(v) => {
-              setActorType(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="min-h-[44px] w-40" aria-label="Actor type filter">
-              <SelectValue placeholder="Actor" />
-            </SelectTrigger>
-            <SelectContent>
-              {ACTOR_TYPES.map((t) => (
-                <SelectItem key={t} value={t} className="capitalize">{t === "all" ? "All actors" : t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            {isSuper ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-[44px] border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 sm:min-h-0 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                onClick={() => void openPurge()}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Clear All
+              </Button>
+            ) : null}
+            <Select
+              value={actorType}
+              onValueChange={(v) => {
+                setActorType(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="min-h-[44px] w-40" aria-label="Actor type filter">
+                <SelectValue placeholder="Actor" />
+              </SelectTrigger>
+              <SelectContent>
+                {ACTOR_TYPES.map((t) => (
+                  <SelectItem key={t} value={t} className="capitalize">{t === "all" ? "All actors" : t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         }
       />
 
@@ -505,6 +952,88 @@ export function ActivityView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ---- Clear All Activity Log (permanent, password-gated) ---- */}
+      <Dialog
+        open={purgeOpen}
+        onOpenChange={(o) => {
+          if (!o && !purgeBusy) setPurgeOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TriangleAlert className="h-4 w-4 text-red-600" /> Clear all activity log?
+            </DialogTitle>
+            <DialogDescription>
+              Permanently deletes every activity entry across the whole platform — admin, seller, shopper and system. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+              {purgeLoading ? (
+                <p className="flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Counting entries…
+                </p>
+              ) : purgeStats ? (
+                <>
+                  <p className="font-semibold">{purgeStats.total.toLocaleString()} entries will be permanently deleted:</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {purgeStats.byActor.map((a) => (
+                      <Badge
+                        key={a.actorType}
+                        variant="outline"
+                        className="border-red-300 capitalize text-red-800 dark:border-red-800 dark:text-red-300"
+                      >
+                        {a.actorType}: {a.count.toLocaleString()}
+                      </Badge>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+              <p className="mt-2">
+                Kept: the admin Audit Log (compliance trail), notification and webhook logs. A single reset record will be written after clearing.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="purge-password">Confirm with your admin password</Label>
+              <Input
+                id="purge-password"
+                type="password"
+                autoComplete="current-password"
+                value={purgePassword}
+                onChange={(e) => setPurgePassword(e.target.value)}
+                placeholder="••••••••"
+                className="min-h-[44px]"
+                disabled={purgeBusy}
+              />
+            </div>
+
+            {purgeError ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" role="alert">
+                {purgeError}
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurgeOpen(false)} disabled={purgeBusy} className="min-h-[44px] sm:min-h-0">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void runPurge()}
+              disabled={purgeBusy || purgeLoading || !purgePassword || !purgeStats || purgeStats.total === 0}
+              className="min-h-[44px] sm:min-h-0"
+            >
+              {purgeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {purgeBusy ? "Clearing…" : `Permanently clear${purgeStats ? ` (${purgeStats.total.toLocaleString()})` : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

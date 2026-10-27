@@ -158,6 +158,38 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
   return unread;
 }
 
+// ---- platform chrome config (global footer visibility) ---------------------
+// Admin → Settings → "Show global footer" (Setting ui.footer_visible) governs
+// the shopper footer. Public endpoint + 60 s module cache: toggling takes
+// effect on the next app load without per-navigation refetch chatter.
+let appConfigCache: { at: number; footerVisible: boolean } | null = null;
+
+function useFooterVisible() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    if (appConfigCache && Date.now() - appConfigCache.at < 60_000) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cache hit syncs an external module cache; the fresh-fetch path below sets state in a callback
+      setVisible(appConfigCache.footerVisible);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/sf/app-config", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        const v = (b as { data?: { footerVisible?: boolean } } | null)?.data?.footerVisible;
+        if (typeof v === "boolean" && !cancelled) {
+          appConfigCache = { at: Date.now(), footerVisible: v };
+          setVisible(v);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return visible;
+}
+
 export default function ShopperShell() {
   const setSurface = useApp((s) => s.setSurface);
   const activeStoreSlug = useApp((s) => s.activeStoreSlug);
@@ -303,6 +335,8 @@ export default function ShopperShell() {
   const showChrome = !isStoreChrome(view);
   // App-like bottom navigation — mobile only, hidden during checkout focus mode.
   const showBottomNav = showChrome && view.name !== "checkout" && view.name !== "pay";
+  // Admin-controlled global footer switch (default ON; checkout never shows it).
+  const footerVisible = useFooterVisible();
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
@@ -360,7 +394,7 @@ export default function ShopperShell() {
         />
       ) : null}
 
-      {showChrome ? (
+      {showChrome && footerVisible ? (
         <ShopperFooter
           onSeller={() => setSurface("seller")}
           onLookup={() => nav({ name: "lookup" })}
