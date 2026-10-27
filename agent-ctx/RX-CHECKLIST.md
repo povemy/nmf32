@@ -93,3 +93,20 @@ current tree FIRST; do not redo completed work without regression evidence.
 ## Phase 5 — evidence & verdict (DONE)
 - [x] REPORT.md §O + readiness-checklist addendum #2 (PASS/FAIL/NOT TESTED per critical requirement)
 - [x] worklog appended; lint clean; browser verified
+
+---
+
+# ADDENDUM #3 — 2026-10-27 (current-state documentation-sync verification)
+
+Mission: synchronize `performance/current-state-verification.md` with REPORT §R+§O; verify
+every claimed change against the actual tree; reconcile contradictions. NO business-logic
+changes permitted for doc-sync purposes.
+
+- [x] All §R.2 fixes + §O.2/O.3 artifacts verified present in code at `main @ f8674c5` (cron-auth, checkout-gate 8/32/5s, expiry-sweep, refund-reconcile, psp-refund, PaymentReconciliation/PspRefundRecord models, obligation at both GROUP_EXPIRED sites, admin routes, runbook, topology doc).
+- [x] Code-version correspondence: `git diff 6646301..HEAD` = env/boot-guard files only → 2026-10-25 test evidence valid for current business code.
+- [x] Evidence re-read: all 14 performance/runs/*.json inspected; numbers match REPORT (§R.3, §O.5). EMAXCONNSESSION fact NOT in any archived JSON → relabeled to worklog evidence.
+- [x] Live re-executed 2026-10-27: /api/health?fresh=1 healthy; verify-ledger.ts ALL PASS (325/325, 6/6 wallets); refund-reconcile counts (8 succeeded / 1 S7-residue failed / 0 open).
+- [x] INCIDENT found & resolved: expiry-scheduler dead since Oct-25 session reset (128-group backlog) → restarted 01:35Z → MISSED_INTERVAL catch-up → backlog drained to 0 autonomously. §O.2 "RUNNING" was stale; §P addendum added to REPORT.
+- [x] Docs corrected: gate "16 inflight"→8 (never was 16); current-state-verification.md rewritten (baseline preserved as HISTORICAL §5); REPORT §P added.
+- [x] Hygiene: .env untracked from git; new-style Supabase keys (sb_publishable/sb_secret) installed + REST-validated; legacy anon JWT 401 resolved.
+- [x] Verdict unchanged: CONDITIONALLY READY; outstanding = real-PSP refund adapter, production build/staging/external generator, production env (CRON_SECRET, PSP_WEBHOOK_SECRET, cron).

@@ -1,11 +1,11 @@
 {
   "service": "expiry-scheduler",
-  "startedAt": "2026-10-25T13:29:13.643Z",
+  "startedAt": "2026-10-27T01:35:31.494Z",
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-25T14:04:14.350Z",
-      "lastSuccessAt": "2026-10-25T14:04:14.528Z",
+      "lastTickAt": "2026-10-27T01:44:18.884Z",
+      "lastSuccessAt": "2026-10-27T01:44:19.178Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 126,
-        "at": "2026-10-25T14:04:14.485Z",
+        "durationMs": 193,
+        "at": "2026-10-27T01:44:19.084Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 110
+      "ticks": 128
     },
     "refund": {
-      "lastTickAt": "2026-10-25T14:04:14.350Z",
-      "lastSuccessAt": "2026-10-25T14:04:14.492Z",
+      "lastTickAt": "2026-10-27T01:44:18.884Z",
+      "lastSuccessAt": "2026-10-27T01:44:19.071Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-25T14:04:14.448Z",
-        "durationMs": 82,
+        "at": "2026-10-27T01:44:18.979Z",
+        "durationMs": 85,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,7 +48,7 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 110
+      "ticks": 128
     }
   },
   "alerts": [
@@ -91,6 +91,11 @@
       "at": "2026-10-25T13:29:13.643Z",
       "type": "MISSED_INTERVAL",
       "detail": "scheduler was down ~48s (last success 2026-10-25T13:28:25.835Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-27T01:35:31.495Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~127877s (last success 2026-10-25T14:04:14.528Z) — catch-up tick starting now"
     }
   ]
 }

@@ -496,3 +496,46 @@ extent this environment permits:**
 Every claim above is dev-mode/combined-environment evidence. Production build,
 staging, external generator, and a real PSP remain **NOT TESTED** — no
 production or influencer-launch readiness is claimed.
+
+---
+
+# §P. CURRENT-STATUS ADDENDUM — 2026-10-27 (documentation-sync verification)
+
+> Re-verification mission: synchronize `current-state-verification.md` with §R+§O.
+> Method: direct code inspection of every §R/§O artifact + live re-execution of
+> safe checks. Full matrix with per-claim labels:
+> `performance/current-state-verification.md` (rewritten this date).
+
+- **All §R and §O changes confirmed in the tree** at `main @ f8674c5` (working
+  tree clean). Since the FINAL-GAPS-CLOSE-era tree (`6646301`) the only diffs are
+  env/boot-guard files (`.env*`, `.gitignore`, `package.json` dev-script wiring,
+  `scripts/ensure-env.ts`, `src/instrumentation*.ts`) — **zero business-logic
+  drift**, so the 2026-10-25 test evidence corresponds to the current code.
+- **Live re-verified 2026-10-27:** `/api/health?fresh=1` healthy (invariants ok,
+  0 hard drift); `scripts/verify-ledger.ts` **ALL PASS** (325/325 balanced,
+  6/6 wallets cache==truth); refund cases 8 succeeded / 1 failed (S7 designed
+  residue) / 0 open.
+- **Scheduler outage incident (found & resolved):** the Oct-27 sandbox session
+  reset had killed the expiry-scheduler (last tick 2026-10-25T14:04Z; §O.2's
+  "RUNNING in this deployment" was stale). A 128-group expiry backlog
+  accumulated (~35.5 h). Restarted 2026-10-27T01:35Z → `MISSED_INTERVAL`
+  catch-up fired → backlog **autonomously drained to 0** (batch 50/tick) —
+  fresh live proof of the recovery design. *Caveat: in THIS sandbox the
+  scheduler must be restarted after session resets; the production equivalent
+  (platform cron) does not share this limitation.*
+- **Credential incidents (found & resolved):** harness `.env` reset recurred
+  (2nd time) — now permanently defused by boot-time guards
+  (`scripts/ensure-env.ts` + `src/instrumentation-node.ts`, vault at
+  `upload/.env.vault`). Legacy anon JWT had been REST-401 (rotated) — replaced
+  with new-style keys (`sb_publishable_…` under RLS, `sb_secret_…` privileged,
+  both REST-validated 200). `.env` untracked from git (secrets were previously
+  committed to this local-only repo).
+- **Documentation corrections:** gate default is **8** inflight (an older
+  current-state doc said 16 — never true in code); the `EMAXCONNSESSION
+  pool_size: 15` measurement is evidenced in the mission worklog, not in any
+  archived run JSON (citation tightened). Mission-start baseline preserved but
+  explicitly labeled HISTORICAL.
+- **Verdict UNCHANGED: CONDITIONALLY READY** — outstanding items are exactly
+  §O.6's three: real-PSP refund adapter, production build + staging + external
+  generator, production env (`CRON_SECRET` + `PSP_WEBHOOK_SECRET` + cron). No
+  production or influencer-launch readiness is claimed.
