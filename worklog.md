@@ -1552,3 +1552,18 @@ Stage Summary:
 - All three §R.5 conditions closed to this environment's maximum: expiry scheduling RUNNING with measured evidence (production equivalent = config action); topology/budget documented with scaling gate; late-payment handling durable/idempotent/operator-visible, fully tested on mock rails (real-PSP adapter honestly NOT TESTED, runbook covers interim).
 - Verdict: CONDITIONALLY READY (conditions now: staging/production-build validation, production env + platform cron, real PSP adapter).
 - Financial invariants preserved throughout: no ledger edits, no order resurrection, no simulated provider outcomes, [LT] fixtures only.
+
+---
+Task ID: ops-restart-env-restore-2
+Agent: Z.ai Code (main)
+Task: Restart dev server (user request, trace 1a17adbc1e0f4ad9)
+
+Work Log:
+- Killed old next dev processes; restarted `bun run dev` (Next.js 16.1.3 Turbopack, port 3000, Ready in 822ms).
+- ENV INCIDENT RECURRED: sandbox harness had reset .env to the stale 50-byte SQLite-only file (DATABASE_URL=file:... only) → SUPABASE_DATABASE_URL missing → Prisma P1012, /api/health + /api/auth/me returned 500.
+- Restored .env from /tmp/my-project/.env snapshot (1656 bytes: SUPABASE_DATABASE_URL Supavisor session pooler + SUPABASE_URL + ANON + SERVICE_ROLE keys + CHECKOUT_TIMING). Stale file backed up to /tmp/stale-env-backup-*.
+- Route verification after restore: / 200, /api/health 200 (real DB queries pass), /api/auth/me 200, /api/market/home 200. (/api/products top-level 404 is expected — market API lives at /api/market/*.)
+
+Stage Summary:
+- Dev server healthy on port 3000 with Supabase Postgres connectivity confirmed.
+- RECURRENCE PATTERN: harness resets .env on session restarts. If Prisma P1012 "Environment variable not found: SUPABASE_DATABASE_URL" appears, restore .env from /tmp/my-project/.env and restart. Keep the /tmp snapshot intact.
