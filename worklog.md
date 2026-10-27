@@ -1567,3 +1567,22 @@ Work Log:
 Stage Summary:
 - Dev server healthy on port 3000 with Supabase Postgres connectivity confirmed.
 - RECURRENCE PATTERN: harness resets .env on session restarts. If Prisma P1012 "Environment variable not found: SUPABASE_DATABASE_URL" appears, restore .env from /tmp/my-project/.env and restart. Keep the /tmp snapshot intact.
+
+---
+Task ID: ops-env-vault-boot-guard
+Agent: Z.ai Code (main)
+Task: Persist Supabase credentials + load them automatically at dev-server boot (user request, trace 1a17ae231c721021)
+
+Work Log:
+- User re-supplied Supabase credentials; compared value-for-value against the current .env — ALL 5 keys IDENTICAL (no rotation). CHECKOUT_TIMING preserved.
+- Installed canonical .env (1392 bytes, 5 keys, commented header). Durable vault copies written to: upload/.env.vault (PRIMARY — ossfs mount, survives harness resets AND rsync --delete since upload/ is excluded), /tmp/nomofee-env/.env and /tmp/my-project/.env (secondary snapshots).
+- NEW scripts/ensure-env.ts — preboot restorer: verifies required keys (SUPABASE_DATABASE_URL/URL/ANON/SERVICE_ROLE) exist in .env; if the harness reset is detected, restores verbatim from vault (priority: upload/.env.vault → /tmp snapshots) and self-heals the tmp snapshots. Prints key names ONLY, never values. Exit 1 with clear FATAL message if no vault has the keys.
+- package.json scripts wired: dev / db:push / db:generate / db:migrate / db:reset all run `bun run scripts/ensure-env.ts &&` first.
+- NEW src/instrumentation.ts + src/instrumentation-node.ts — server-boot guard: Next.js register() runs before route modules (incl. PrismaClient instantiation); if SUPABASE_* missing from process.env, loads them from the vault. Node-only logic split into instrumentation-node.ts imported only when NEXT_RUNTIME === "nodejs" (fixes Edge Runtime compile errors on node:fs/process.cwd). Never overrides explicit env; never logs values.
+- .gitignore: added .env, .env.*, !.env.example, upload/.env.vault (secrets were previously NOT ignored!). NEW .env.example with placeholders + docs.
+- VERIFIED: (a) normal boot — ensure-env OK line, all endpoints 200; (b) SIMULATED HARNESS RESET (stale 50-byte .env) + `bun run dev` → auto-restored from upload/.env.vault, endpoints 200; (c) stale .env + DIRECT `next dev` (bypassing npm script) → instrumentation guard loaded 5 vars from vault at boot, /api/health + /api/market/home 200 — proves Prisma got vault-loaded env; (d) lint clean; (e) REST key validation: service-role HTTP 200 (valid), anon HTTP 401 (STILL stale/rotated — same as previously flagged; non-blocking for DB data plane, user should fetch fresh anon key from dashboard if needed).
+
+Stage Summary:
+- Credential persistence is now self-healing with TWO independent guards: (1) scripts/ensure-env.ts restores the .env FILE before any dev/db command; (2) src/instrumentation-node.ts injects vars into process.env at server boot even for direct next dev/start. Master vault: upload/.env.vault.
+- The recurring "ENV INCIDENT" (harness resets .env → Prisma P1012 → 500s) is now permanently defused: restart `bun run dev` and credentials auto-restore.
+- Anomaly to watch: anon key REST 401 persists (user-supplied value matches previous; possibly disabled/rotated in dashboard — needs a fresh key from the user if anon REST usage is ever required).
