@@ -18,12 +18,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.product.update({ where: { id }, data: { status: "rejected", rejectReason: reason } });
 
-  await notify({
-    event: "product.rejected",
-    channel: "email",
-    recipient: product.store.seller.email,
-    subject: `Product rejected: ${product.title}`,
-  });
+  if (product.store.seller?.email) {
+    await notify({
+      event: "product.rejected",
+      channel: "email",
+      recipient: product.store.seller.email,
+      subject: `Product rejected: ${product.title}`,
+    });
+  }
 
   await auditAdmin({
     adminId: admin.id,

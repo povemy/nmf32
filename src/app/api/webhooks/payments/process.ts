@@ -498,7 +498,13 @@ export async function processPaymentWebhook(input: {
   // with the same F1 remediation (post-commit wallet refresh + bounded P2034
   // retry of the whole transaction).
   const walletIdsTouched = new Set<string>();
-  let postedOrder: { order: any; sellerEmail: string | null } | null = null;
+  // NOTE: array holder (same pattern as the group path's postedOrders) — a
+  // `let x: T | null = null` assigned inside the $transaction callback gets
+  // CFA-narrowed to `null` at post-commit use sites (TS never sees the callback
+  // assignment), making `if (postedOrder)` `never` and every property access an
+  // error. Array contents are not flow-narrowed, so the post-commit fan-out
+  // below reads the real types.
+  const postedOrderRef: { order: Prisma.OrderGetPayload<{ include: { items: true; store: { include: { seller: { include: { wallet: true } } } } } }>; sellerEmail: string | null }[] = [];
   let outcome: { claimed: boolean } | undefined;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -564,7 +570,7 @@ export async function processPaymentWebhook(input: {
       // Notification/audit fan-out moved POST-COMMIT (group-path F1 note):
       // these ran on the global db client inside the tx window, multiplying
       // pool-connection demand under concurrency (measured P2024/P2028).
-      postedOrder = { order, sellerEmail: seller?.email ?? null };
+      postedOrderRef.push({ order, sellerEmail: seller?.email ?? null });
 
       return { claimed: true as const };
     },
@@ -597,8 +603,7 @@ export async function processPaymentWebhook(input: {
   await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
 
   // POST-COMMIT fan-out (see group-path F1 note) — non-transactional side effects.
-  if (postedOrder) {
-    const { order, sellerEmail } = postedOrder;
+  for (const { order, sellerEmail } of postedOrderRef) {
     try {
       await dispatchStoreWebhooks({
         storeId: order.storeId,

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { productCardInclude, toProductCard, type ProductWithRelations } from "../../../_shared/product-card";
@@ -33,7 +34,11 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
     where.isFeatured = true;
   }
 
-  const orderBy = source === "featured" ? ([{ salesCount: "desc" }, { createdAt: "desc" }] as const) : ({ createdAt: "desc" } as const);
+  // Mutable array type — `as const` (readonly) is not assignable to Prisma's
+  // orderBy input, and the resulting generic poisoning stripped the include
+  // types off the findMany result below.
+  const orderBy: Prisma.ProductOrderByWithRelationInput[] =
+    source === "featured" ? [{ salesCount: "desc" }, { createdAt: "desc" }] : [{ createdAt: "desc" }];
 
   const products = await db.product.findMany({
     where,

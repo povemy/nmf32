@@ -24,7 +24,7 @@ export const GET = handle(async (req: NextRequest) => {
     orderBy: { createdAt: "asc" },
   });
 
-  const data = [];
+  const data: unknown[] = [];
   for (const w of wallets) {
     // safeRefresh: one contended wallet row can no longer 500 the whole
     // admin finance list — it falls back to last-known values for that row.

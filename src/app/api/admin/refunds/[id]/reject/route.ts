@@ -19,12 +19,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.refund.update({ where: { id }, data: { status: "rejected" } });
 
-  await notify({
-    event: "refund.rejected",
-    channel: "email",
-    recipient: refund.order.store.seller.email,
-    subject: `Refund rejected for order ${refund.order.orderNumber}`,
-  });
+  if (refund.order.store.seller?.email) {
+    await notify({
+      event: "refund.rejected",
+      channel: "email",
+      recipient: refund.order.store.seller.email,
+      subject: `Refund rejected for order ${refund.order.orderNumber}`,
+    });
+  }
 
   await auditAdmin({
     adminId: admin.id,

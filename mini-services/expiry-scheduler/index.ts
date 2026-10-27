@@ -219,12 +219,14 @@ Bun.serve({
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/status")) {
       return Response.json({
         data: {
+          // spread FIRST so the live constants below always win over any
+          // persisted state copies (TS2783: duplicate-key overwrite warning)
+          ...state,
           service: "expiry-scheduler",
           role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile",
           appBase: APP_BASE,
           intervalMs: INTERVAL_MS,
           secretConfigured: Boolean(CRON_SECRET), // the secret itself is never exposed
-          ...state,
         },
       });
     }

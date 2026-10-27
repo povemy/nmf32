@@ -256,8 +256,11 @@ async function seedOrder(opts: {
   const shipping = opts.shippingMinor ?? (subtotal >= 10000 ? 0 : 800);
   const total = subtotal - discount + shipping;
 
+  const storeForCommission = await db.store.findUnique({ where: { id: opts.storeId } });
+  if (!storeForCommission?.sellerId) throw new Error(`seed order: store ${opts.storeId} or its seller missing`);
+
   const computed = await computeOrderCommissions({
-    sellerId: (await db.store.findUnique({ where: { id: opts.storeId } }))!.sellerId,
+    sellerId: storeForCommission.sellerId,
     items: opts.items.map((i) => ({
       title: i.title, unitPriceMinor: i.unitPrice, qty: i.qty,
       productId: i.product.id, categoryId: i.product.categoryId, variantLabel: i.variantLabel ?? null,
@@ -448,7 +451,7 @@ async function main() {
     storeName: "Warung Satu", slug: "warung-satu", tagline: "Traditional kuih & snacks, modern packing.",
     status: "pending_review", kyc: "pending",
     bank: { holder: "Ahmad Faizal", bank: "Bank Rakyat", last4: "7712", verified: false },
-    createdAt: daysAgo(2), submittedAt: daysAgo(1),
+    createdAt: daysAgo(2),
   });
   await seedSeller({
     email: "trail@nomofee.io", password: "Seller123!", fullName: "Nurul Huda", displayName: "Nurul",

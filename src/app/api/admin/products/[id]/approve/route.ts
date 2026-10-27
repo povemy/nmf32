@@ -18,12 +18,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     data: { status: "active", rejectReason: null, publishedAt: product.publishedAt ?? new Date() },
   });
 
-  await notify({
-    event: "product.approved",
-    channel: "email",
-    recipient: product.store.seller.email,
-    subject: `Product approved: ${product.title}`,
-  });
+  if (product.store.seller?.email) {
+    await notify({
+      event: "product.approved",
+      channel: "email",
+      recipient: product.store.seller.email,
+      subject: `Product approved: ${product.title}`,
+    });
+  }
 
   await auditAdmin({
     adminId: admin.id,

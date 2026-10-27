@@ -59,20 +59,20 @@ export const useApp = create<AppState>((set, get) => ({
       const body = await res.json();
       const data = body?.data;
       if (data?.userType === "admin") {
-        set({ me: { loaded: true, admin: data.admin, seller: null, shopper: null } } as MeState);
+        set({ me: { loaded: true, admin: data.admin, seller: null, shopper: null } });
       } else if (data?.userType === "seller") {
-        set({ me: { loaded: true, admin: null, seller: data.seller, shopper: null } } as MeState);
+        set({ me: { loaded: true, admin: null, seller: data.seller, shopper: null } });
       } else if (data?.userType === "shopper") {
-        set({ me: { loaded: true, admin: null, seller: null, shopper: data.shopper } } as MeState);
+        set({ me: { loaded: true, admin: null, seller: null, shopper: data.shopper } });
         // Task 34: warm the Me-hub cache the moment the shopper identity
         // lands (boot, sign-in, register) — the Me page banner then paints
         // from prefetched/persisted data instead of skeleton-while-fetching.
         prefetchMeHub(data.shopper.id);
       } else {
-        set({ me: { loaded: true, admin: null, seller: null, shopper: null } } as MeState);
+        set({ me: { loaded: true, admin: null, seller: null, shopper: null } });
       }
     } catch {
-      set({ me: { loaded: true, admin: null, seller: null, shopper: null } } as MeState);
+      set({ me: { loaded: true, admin: null, seller: null, shopper: null } });
     }
   },
   logout: async () => {

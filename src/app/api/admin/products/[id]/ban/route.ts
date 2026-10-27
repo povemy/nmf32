@@ -20,12 +20,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   // banned products must not stay in marketplace slots
   await db.featuredSlot.deleteMany({ where: { productId: id } });
 
-  await notify({
-    event: "product.banned",
-    channel: "email",
-    recipient: product.store.seller.email,
-    subject: `Product banned: ${product.title}`,
-  });
+  if (product.store.seller?.email) {
+    await notify({
+      event: "product.banned",
+      channel: "email",
+      recipient: product.store.seller.email,
+      subject: `Product banned: ${product.title}`,
+    });
+  }
 
   await auditAdmin({
     adminId: admin.id,

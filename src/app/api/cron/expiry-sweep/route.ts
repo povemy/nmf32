@@ -103,6 +103,9 @@ export const POST = handle(async (req: Request) => {
             data: { orderId: order.id, fromStatus: "payment_pending", toStatus: "payment_expired", actor: "system", note: `Payment window expired (${group.ref}) — stock released by expiry sweep` },
           });
           for (const item of order.items) {
+            // OrderItem.variantId is nullable (legacy/product-level lines have
+            // no variant row) — there is nothing to restock or log for them.
+            if (!item.variantId) continue;
             await tx.productVariant.update({
               where: { id: item.variantId },
               data: { stock: { increment: item.qty } },

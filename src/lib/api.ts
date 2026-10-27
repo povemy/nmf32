@@ -2,7 +2,7 @@
 // Envelope: single => {data}; list => {data:[], meta:{page,size,total}}.
 // Errors:   {error:{code, message, details}}.
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
 
 export class ApiError extends Error {

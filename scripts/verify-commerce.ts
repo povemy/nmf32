@@ -33,6 +33,7 @@ const create = await fetch(`${BASE}/api/checkout/create`, {
 });
 const created = (await create.json()) as { data?: { paymentRef?: string; ref?: string; redirectUrl?: string }; error?: { message: string } };
 if (create.status !== 200 && create.status !== 201) throw new Error(`checkout create failed: ${create.status} ${JSON.stringify(created).slice(0, 200)}`);
+if (!created.data) throw new Error(`checkout create succeeded but response has no data envelope: ${JSON.stringify(created).slice(0, 200)}`);
 const ref = created.data.paymentRef ?? created.data.ref ?? created.data.redirectUrl?.split("/").pop() ?? "";
 console.log(`checkout created, paymentRef=${ref}`);
 

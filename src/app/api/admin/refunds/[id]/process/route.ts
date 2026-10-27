@@ -185,7 +185,9 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   }
 
   const order = refund.order;
-  const wallet = order.store.seller.wallet;
+  // Store.sellerId is nullable — a missing seller surfaces as the existing
+  // NO_WALLET 400 instead of a TypeError 500.
+  const wallet = order.store.seller?.wallet;
   if (!wallet) throw new ApiError(400, "NO_WALLET", "Seller has no wallet");
 
   // ---- 3a.1a Cumulative cap (fast-fail on the stale read; re-validated under
@@ -368,12 +370,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     recipient: order.customerEmail,
     subject: `Refund processed for order ${order.orderNumber}`,
   });
-  await notify({
-    event: "refund.approved",
-    channel: "email",
-    recipient: order.store.seller.email,
-    subject: `Refund processed for order ${order.orderNumber}`,
-  });
+  if (order.store.seller?.email) {
+    await notify({
+      event: "refund.approved",
+      channel: "email",
+      recipient: order.store.seller.email,
+      subject: `Refund processed for order ${order.orderNumber}`,
+    });
+  }
 
   // store webhooks
   await dispatchStoreWebhooks({

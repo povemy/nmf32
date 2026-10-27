@@ -19,13 +19,13 @@ export const GET = handle(async (req: NextRequest) => {
   const sellerIds = rows.map((r) => r.sellerId).filter((x): x is string => !!x);
   const productIds = rows.map((r) => r.productId).filter((x): x is string => !!x);
   const [categories, sellers, products] = await Promise.all([
-    categoryIds.length ? db.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } }) : [],
-    sellerIds.length ? db.seller.findMany({ where: { id: { in: sellerIds } }, select: { id: true, displayName: true, email: true } }) : [],
-    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true } }) : [],
+    categoryIds.length ? db.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } }) : [] as { id: string; name: string }[],
+    sellerIds.length ? db.seller.findMany({ where: { id: { in: sellerIds } }, select: { id: true, displayName: true, email: true } }) : [] as { id: string; displayName: string; email: string }[],
+    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true } }) : [] as { id: string; title: string }[],
   ]);
-  const cMap = new Map(categories.map((c) => [c.id, c.name]));
-  const sMap = new Map(sellers.map((s) => [s.id, s]));
-  const pMap = new Map(products.map((p) => [p.id, p.title]));
+  const cMap = new Map(categories.map((c) => [c.id, c.name] as const));
+  const sMap = new Map(sellers.map((s) => [s.id, s] as const));
+  const pMap = new Map(products.map((p) => [p.id, p.title] as const));
   const data = rows.map((r) => ({
     ...r,
     categoryName: r.categoryId ? cMap.get(r.categoryId) ?? null : null,

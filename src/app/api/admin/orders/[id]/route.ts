@@ -23,7 +23,10 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
   });
   if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found");
 
-  const wallet = await db.wallet.findUnique({ where: { sellerId: order.store.seller.id } });
+  // Store.sellerId is nullable in the schema — no seller → no wallet (was a
+  // TypeError 500 before; findUnique already returns Wallet|null downstream).
+  const sellerId = order.store.seller?.id;
+  const wallet = sellerId ? await db.wallet.findUnique({ where: { sellerId: sellerId } }) : null;
 
   return ok({
     order,

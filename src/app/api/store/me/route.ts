@@ -38,7 +38,7 @@ export const GET = handle(async () => {
   const cutoff30 = new Date(Date.now() - 30 * 86400000);
   const revenue30dMinor = orders30.filter((o) => o.paidAt && o.paidAt >= cutoff30).reduce((s, o) => s + o.totalMinor, 0);
 
-  let wallet = null;
+  let wallet: Awaited<ReturnType<typeof db.wallet.findUnique>> = null;
   if (sellerRow) {
     const w = await db.wallet.findUnique({ where: { sellerId: sellerRow.id } });
     if (w) {

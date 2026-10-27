@@ -38,7 +38,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const seller = await db.seller.findUnique({
     where: { id: payout.sellerId },
-    include: { store: { select: { name: true } } },
+    include: { store: { select: { id: true, name: true } } },
   });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
@@ -56,9 +56,15 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const periodFrom = prevPaid?.paidAt ?? walletRow?.createdAt ?? new Date(Date.now() - 30 * 86400000);
   const periodTo = new Date();
   const periodFromSafe = periodFrom > periodTo ? new Date(Date.now() - 30 * 86400000) : periodFrom;
-  const orderCount = await db.order.count({
-    where: { storeId: seller.store?.id, paidAt: { not: null, gte: periodFromSafe, lte: periodTo } },
-  });
+  // DEFECT FIX (TS-typed, was a silent runtime bug): seller.store was selected
+  // with { name } only, so `seller.store?.id` was ALWAYS undefined and Prisma
+  // silently dropped the storeId filter — orderCount counted orders across ALL
+  // stores. Now scoped to the seller's store; store-less seller → 0.
+  const orderCount = seller.store
+    ? await db.order.count({
+        where: { storeId: seller.store.id, paidAt: { not: null, gte: periodFromSafe, lte: periodTo } },
+      })
+    : 0;
   const statementJson = await buildLedgerStatementFromLedger({
     walletId: payout.walletId,
     sellerName: seller.store?.name ?? seller.displayName,
