@@ -1,0 +1,826 @@
+{
+  "runId": "lt-sweep-mvkm5w9p-iu4fu",
+  "label": "baseline",
+  "base": "http://127.0.0.1:3000",
+  "capturedAt": "2026-10-23T06:55:02.964Z",
+  "levels": [
+    1,
+    12,
+    25,
+    50,
+    100,
+    120
+  ],
+  "stormStockBefore": 999690,
+  "results": [
+    {
+      "level": "n1",
+      "buyers": 1,
+      "wallSec": 1.85,
+      "create": {
+        "n": 1,
+        "p50": 1850,
+        "p95": 1850,
+        "p99": 1850,
+        "max": 1850,
+        "classes": {
+          "created": 1,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 1
+        },
+        "attemptsPerSec": 0.54,
+        "ordersPerMin": 32
+      },
+      "integrity": {
+        "newOrders": 1,
+        "createdCount": 1,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999689
+      },
+      "anatomy": {
+        "records": 1,
+        "totalMs": {
+          "p50": 1842,
+          "p95": 1842,
+          "max": 1842,
+          "avg": 1842
+        },
+        "gateWaitMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "authMs": {
+          "p50": 81,
+          "p95": 81,
+          "max": 81,
+          "avg": 81
+        },
+        "idemMs": {
+          "p50": 153,
+          "p95": 153,
+          "max": 153,
+          "avg": 153
+        },
+        "bodyMs": {
+          "p50": 2,
+          "p95": 2,
+          "max": 2,
+          "avg": 2
+        },
+        "pricingMs": {
+          "p50": 304,
+          "p95": 304,
+          "max": 304,
+          "avg": 304
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 90,
+          "p95": 90,
+          "max": 90,
+          "avg": 90
+        },
+        "cartMs": {
+          "p50": 45,
+          "p95": 45,
+          "max": 45,
+          "avg": 45
+        },
+        "counterMs": {
+          "p50": 90,
+          "p95": 90,
+          "max": 90,
+          "avg": 90
+        },
+        "txAcquireMs": {
+          "p50": 45,
+          "p95": 45,
+          "max": 45,
+          "avg": 45
+        },
+        "txExecMs": {
+          "p50": 718,
+          "p95": 718,
+          "max": 718,
+          "avg": 718
+        },
+        "postTxMs": {
+          "p50": 268,
+          "p95": 268,
+          "max": 268,
+          "avg": 268
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 0,
+        "gateQueuedMax": 0,
+        "gateActiveMax": 0
+      },
+      "pool": {
+        "samples": 4,
+        "byStateMax": {
+          "total": 19,
+          "active": 0,
+          "idleInTx": 1,
+          "idle": 18
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    },
+    {
+      "level": "n12",
+      "buyers": 12,
+      "wallSec": 5.45,
+      "create": {
+        "n": 12,
+        "p50": 3325,
+        "p95": 5451,
+        "p99": 5451,
+        "max": 5451,
+        "classes": {
+          "created": 12,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 12
+        },
+        "attemptsPerSec": 2.2,
+        "ordersPerMin": 132
+      },
+      "integrity": {
+        "newOrders": 12,
+        "createdCount": 12,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999677
+      },
+      "anatomy": {
+        "records": 12,
+        "totalMs": {
+          "p50": 3256,
+          "p95": 5416,
+          "max": 5416,
+          "avg": 3811
+        },
+        "gateWaitMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "authMs": {
+          "p50": 131,
+          "p95": 173,
+          "max": 173,
+          "avg": 140
+        },
+        "idemMs": {
+          "p50": 156,
+          "p95": 204,
+          "max": 204,
+          "avg": 163
+        },
+        "bodyMs": {
+          "p50": 1,
+          "p95": 1,
+          "max": 1,
+          "avg": 1
+        },
+        "pricingMs": {
+          "p50": 342,
+          "p95": 577,
+          "max": 577,
+          "avg": 350
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 243,
+          "p95": 366,
+          "max": 366,
+          "avg": 247
+        },
+        "cartMs": {
+          "p50": 130,
+          "p95": 299,
+          "max": 299,
+          "avg": 165
+        },
+        "counterMs": {
+          "p50": 96,
+          "p95": 140,
+          "max": 140,
+          "avg": 92
+        },
+        "txAcquireMs": {
+          "p50": 60,
+          "p95": 696,
+          "max": 696,
+          "avg": 143
+        },
+        "txExecMs": {
+          "p50": 1555,
+          "p95": 3637,
+          "max": 3637,
+          "avg": 1744
+        },
+        "postTxMs": {
+          "p50": 707,
+          "p95": 1356,
+          "max": 1356,
+          "avg": 724
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 1,
+        "gateQueuedMax": 0,
+        "gateActiveMax": 11
+      },
+      "pool": {
+        "samples": 9,
+        "byStateMax": {
+          "total": 19,
+          "active": 8,
+          "idleInTx": 10,
+          "idle": 18
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    },
+    {
+      "level": "n25",
+      "buyers": 25,
+      "wallSec": 6.88,
+      "create": {
+        "n": 25,
+        "p50": 5135,
+        "p95": 6723,
+        "p99": 6882,
+        "max": 6882,
+        "classes": {
+          "created": 25,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 25
+        },
+        "attemptsPerSec": 3.63,
+        "ordersPerMin": 218
+      },
+      "integrity": {
+        "newOrders": 25,
+        "createdCount": 25,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999652
+      },
+      "anatomy": {
+        "records": 25,
+        "totalMs": {
+          "p50": 5069,
+          "p95": 6607,
+          "max": 6801,
+          "avg": 4737
+        },
+        "gateWaitMs": {
+          "p50": 2056,
+          "p95": 4161,
+          "max": 4502,
+          "avg": 1602
+        },
+        "authMs": {
+          "p50": 241,
+          "p95": 266,
+          "max": 290,
+          "avg": 239
+        },
+        "idemMs": {
+          "p50": 274,
+          "p95": 307,
+          "max": 316,
+          "avg": 268
+        },
+        "bodyMs": {
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "avg": 1
+        },
+        "pricingMs": {
+          "p50": 344,
+          "p95": 403,
+          "max": 440,
+          "avg": 337
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 199,
+          "p95": 333,
+          "max": 376,
+          "avg": 212
+        },
+        "cartMs": {
+          "p50": 119,
+          "p95": 300,
+          "max": 336,
+          "avg": 143
+        },
+        "counterMs": {
+          "p50": 93,
+          "p95": 177,
+          "max": 262,
+          "avg": 101
+        },
+        "txAcquireMs": {
+          "p50": 55,
+          "p95": 425,
+          "max": 586,
+          "avg": 103
+        },
+        "txExecMs": {
+          "p50": 1188,
+          "p95": 2986,
+          "max": 3267,
+          "avg": 1401
+        },
+        "postTxMs": {
+          "p50": 280,
+          "p95": 645,
+          "max": 769,
+          "avg": 287
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 1,
+        "gateQueuedMax": 12,
+        "gateActiveMax": 12
+      },
+      "pool": {
+        "samples": 13,
+        "byStateMax": {
+          "total": 18,
+          "active": 8,
+          "idleInTx": 2,
+          "idle": 17
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    },
+    {
+      "level": "n50",
+      "buyers": 50,
+      "wallSec": 9.98,
+      "create": {
+        "n": 50,
+        "p50": 5999,
+        "p95": 9673,
+        "p99": 9983,
+        "max": 9983,
+        "classes": {
+          "created": 50,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 50
+        },
+        "attemptsPerSec": 5.01,
+        "ordersPerMin": 300
+      },
+      "integrity": {
+        "newOrders": 50,
+        "createdCount": 50,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999602
+      },
+      "anatomy": {
+        "records": 50,
+        "totalMs": {
+          "p50": 5881,
+          "p95": 9422,
+          "max": 9726,
+          "avg": 5960
+        },
+        "gateWaitMs": {
+          "p50": 3304,
+          "p95": 6723,
+          "max": 7114,
+          "avg": 3214
+        },
+        "authMs": {
+          "p50": 295,
+          "p95": 407,
+          "max": 415,
+          "avg": 307
+        },
+        "idemMs": {
+          "p50": 404,
+          "p95": 476,
+          "max": 478,
+          "avg": 417
+        },
+        "bodyMs": {
+          "p50": 2,
+          "p95": 2,
+          "max": 3,
+          "avg": 1
+        },
+        "pricingMs": {
+          "p50": 286,
+          "p95": 434,
+          "max": 439,
+          "avg": 311
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 135,
+          "p95": 199,
+          "max": 219,
+          "avg": 141
+        },
+        "cartMs": {
+          "p50": 88,
+          "p95": 189,
+          "max": 196,
+          "avg": 104
+        },
+        "counterMs": {
+          "p50": 94,
+          "p95": 153,
+          "max": 168,
+          "avg": 93
+        },
+        "txAcquireMs": {
+          "p50": 81,
+          "p95": 178,
+          "max": 537,
+          "avg": 105
+        },
+        "txExecMs": {
+          "p50": 784,
+          "p95": 2105,
+          "max": 2277,
+          "avg": 973
+        },
+        "postTxMs": {
+          "p50": 247,
+          "p95": 377,
+          "max": 661,
+          "avg": 252
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 1,
+        "gateQueuedMax": 37,
+        "gateActiveMax": 12
+      },
+      "pool": {
+        "samples": 18,
+        "byStateMax": {
+          "total": 18,
+          "active": 7,
+          "idleInTx": 3,
+          "idle": 17
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    },
+    {
+      "level": "n100",
+      "buyers": 100,
+      "wallSec": 19.21,
+      "create": {
+        "n": 100,
+        "p50": 11151,
+        "p95": 18365,
+        "p99": 19042,
+        "max": 19206,
+        "classes": {
+          "created": 100,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 100
+        },
+        "attemptsPerSec": 5.21,
+        "ordersPerMin": 312
+      },
+      "integrity": {
+        "newOrders": 100,
+        "createdCount": 100,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999502
+      },
+      "anatomy": {
+        "records": 100,
+        "totalMs": {
+          "p50": 10947,
+          "p95": 17962,
+          "max": 18778,
+          "avg": 10937
+        },
+        "gateWaitMs": {
+          "p50": 7245,
+          "p95": 14537,
+          "max": 15298,
+          "avg": 7442
+        },
+        "authMs": {
+          "p50": 596,
+          "p95": 800,
+          "max": 1063,
+          "avg": 561
+        },
+        "idemMs": {
+          "p50": 862,
+          "p95": 980,
+          "max": 1095,
+          "avg": 864
+        },
+        "bodyMs": {
+          "p50": 1,
+          "p95": 2,
+          "max": 17,
+          "avg": 1
+        },
+        "pricingMs": {
+          "p50": 269,
+          "p95": 917,
+          "max": 941,
+          "avg": 347
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 142,
+          "p95": 227,
+          "max": 261,
+          "avg": 150
+        },
+        "cartMs": {
+          "p50": 81,
+          "p95": 157,
+          "max": 225,
+          "avg": 91
+        },
+        "counterMs": {
+          "p50": 109,
+          "p95": 161,
+          "max": 172,
+          "avg": 106
+        },
+        "txAcquireMs": {
+          "p50": 80,
+          "p95": 131,
+          "max": 529,
+          "avg": 93
+        },
+        "txExecMs": {
+          "p50": 868,
+          "p95": 2075,
+          "max": 2629,
+          "avg": 977
+        },
+        "postTxMs": {
+          "p50": 263,
+          "p95": 343,
+          "max": 570,
+          "avg": 262
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 1,
+        "gateQueuedMax": 87,
+        "gateActiveMax": 12
+      },
+      "pool": {
+        "samples": 34,
+        "byStateMax": {
+          "total": 18,
+          "active": 7,
+          "idleInTx": 5,
+          "idle": 17
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    },
+    {
+      "level": "n120",
+      "buyers": 120,
+      "wallSec": 23.28,
+      "create": {
+        "n": 120,
+        "p50": 13301,
+        "p95": 22325,
+        "p99": 23147,
+        "max": 23280,
+        "classes": {
+          "created": 120,
+          "business": 0,
+          "overload": 0,
+          "infra": 0,
+          "network": 0
+        },
+        "codes": {
+          "201": 120
+        },
+        "attemptsPerSec": 5.15,
+        "ordersPerMin": 309
+      },
+      "integrity": {
+        "newOrders": 120,
+        "createdCount": 120,
+        "ordersMatchCreated": true,
+        "duplicateIdempotencyGroups": 0,
+        "stockAfter": 999382
+      },
+      "anatomy": {
+        "records": 120,
+        "totalMs": {
+          "p50": 12763,
+          "p95": 21582,
+          "max": 22522,
+          "avg": 12936
+        },
+        "gateWaitMs": {
+          "p50": 9056,
+          "p95": 17761,
+          "max": 18780,
+          "avg": 9188
+        },
+        "authMs": {
+          "p50": 711,
+          "p95": 1014,
+          "max": 1052,
+          "avg": 670
+        },
+        "idemMs": {
+          "p50": 979,
+          "p95": 1045,
+          "max": 1056,
+          "avg": 934
+        },
+        "bodyMs": {
+          "p50": 1,
+          "p95": 2,
+          "max": 3,
+          "avg": 1
+        },
+        "pricingMs": {
+          "p50": 277,
+          "p95": 1069,
+          "max": 1099,
+          "avg": 355
+        },
+        "voucherMs": {
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "avg": 0
+        },
+        "commissionMs": {
+          "p50": 139,
+          "p95": 459,
+          "max": 532,
+          "avg": 174
+        },
+        "cartMs": {
+          "p50": 81,
+          "p95": 283,
+          "max": 383,
+          "avg": 104
+        },
+        "counterMs": {
+          "p50": 118,
+          "p95": 169,
+          "max": 183,
+          "avg": 113
+        },
+        "txAcquireMs": {
+          "p50": 89,
+          "p95": 156,
+          "max": 424,
+          "avg": 100
+        },
+        "txExecMs": {
+          "p50": 815,
+          "p95": 1977,
+          "max": 2897,
+          "avg": 987
+        },
+        "postTxMs": {
+          "p50": 260,
+          "p95": 354,
+          "max": 610,
+          "avg": 267
+        },
+        "txStatementsAvg": 8,
+        "loopLagMaxMs": 2,
+        "gateQueuedMax": 107,
+        "gateActiveMax": 12
+      },
+      "pool": {
+        "samples": 41,
+        "byStateMax": {
+          "total": 18,
+          "active": 7,
+          "idleInTx": 4,
+          "idle": 17
+        },
+        "note": "pg_stat_activity via dedicated 1-connection client; 500 ms interval; includes Supabase internal backends"
+      },
+      "server": {
+        "cpuPctDuringLevel": null,
+        "rssKbEnd": null,
+        "note": "combined-environment dev sandbox; CPU from /proc jiffies delta (best-effort)"
+      }
+    }
+  ],
+  "replayBypass": {
+    "replayStatus": 200,
+    "replayMs": 5230,
+    "duplicateFlag": true,
+    "backgroundLoad": 24,
+    "note": "replay must return 200 duplicate=true WITHOUT admission-gate wait while new load queues"
+  },
+  "ledger": {
+    "exitCode": 0,
+    "failLines": [],
+    "pass": true
+  },
+  "env": {
+    "platform": "linux/x64",
+    "cpus": 2,
+    "loadavg": [
+      0.31,
+      0.43,
+      0.28
+    ],
+    "generatorRssKb": 107941888,
+    "note": "dev-mode combined-environment Measured (app + generator share this host); do not extrapolate to production"
+  }
+}

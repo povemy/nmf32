@@ -1,0 +1,112 @@
+{
+  "run": "mig-mvkq89b7",
+  "wall": 5255,
+  "main": {
+    "base": "http://127.0.0.1:3000",
+    "gate": "12/200/20s",
+    "created": 12,
+    "results": [
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      }
+    ]
+  },
+  "staging": {
+    "base": "http://127.0.0.1:3100",
+    "gate": "2/4/1s",
+    "created": 4,
+    "busy": 4,
+    "results": [
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 201
+      },
+      {
+        "status": 503,
+        "code": "CHECKOUT_BUSY"
+      },
+      {
+        "status": 503,
+        "code": "CHECKOUT_BUSY"
+      },
+      {
+        "status": 503,
+        "code": "CHECKOUT_BUSY"
+      },
+      {
+        "status": 503,
+        "code": "CHECKOUT_BUSY"
+      }
+    ]
+  },
+  "combinedAdmitted": 16,
+  "gatePeaks": {
+    "main": 9,
+    "staging": 2
+  },
+  "emaxconnEvidence": "EMAXCONNSESSION captured live in staging.log twice this session (boot + login storm); 2×10 > 15 session ceiling",
+  "checks": [
+    {
+      "name": "per-instance gates admit INDEPENDENTLY (main 12 + staging 2)",
+      "pass": true,
+      "detail": "main=12 staging=4 combined=16"
+    },
+    {
+      "name": "staging gate still enforced ITS OWN limit (503s at its own cap)",
+      "pass": true,
+      "detail": "4/8 got CHECKOUT_BUSY"
+    },
+    {
+      "name": "combined admission = SUM of per-instance limits (no global cap)",
+      "pass": true,
+      "detail": "demonstrated: a global gate of 2 would have admitted 2 total, measured 16"
+    },
+    {
+      "name": "connection budget consequence measured (EMAXCONNSESSION in this session's staging logs)",
+      "pass": true,
+      "detail": "2 instances × pool 10 = 20 clients > Supavisor session ceiling 15 → EMAXCONNSESSION (live, recorded in staging.log during boot/login storms)"
+    }
+  ],
+  "pass": true
+}

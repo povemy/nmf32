@@ -1,0 +1,140 @@
+{
+  "label": "after",
+  "date": "2026-10-23T08:16:24.943Z",
+  "workload": {
+    "checkouts": 12,
+    "duplicateStorm": 4,
+    "store": "bytebazaar",
+    "concurrencyModel": "Promise.all HTTP against dev server",
+    "evidenceClass": "Measured"
+  },
+  "checkoutLatencyMs": {
+    "p50": 1189,
+    "p95": 1995,
+    "max": 1995
+  },
+  "storm1SameRef": {
+    "total": 4,
+    "byStatus": {
+      "200": 4
+    },
+    "winners": 1,
+    "duplicates": 3,
+    "internalErrors": 0,
+    "errorCodes": [],
+    "p50": 2378,
+    "p95": 2627,
+    "max": 2627
+  },
+  "storm2CrossRef": {
+    "total": 12,
+    "byStatus": {
+      "200": 2,
+      "500": 10
+    },
+    "winners": 1,
+    "duplicates": 1,
+    "internalErrors": 10,
+    "errorCodes": [
+      "INTERNAL"
+    ],
+    "p50": 11996,
+    "p95": 13524,
+    "max": 13524
+  },
+  "replaySequential": {
+    "status": 200,
+    "duplicate": true,
+    "errorCode": null,
+    "ms": 622
+  },
+  "providerRedeliveryConvergence": {
+    "redelivered": 10,
+    "stillUnconfirmed": 0,
+    "outcomes": [
+      {
+        "ref": "ref_8f6d37b3ee",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_3b79747421",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_0c2f951c22",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_896e77cef9",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_7eaca6ce10",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_05e03b4702",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_f1c7a34e70",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_429f795a8a",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_a9981fbf75",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      },
+      {
+        "ref": "ref_1fd24e81d4",
+        "wave": 1,
+        "status": 200,
+        "duplicate": false,
+        "errorCode": null
+      }
+    ]
+  },
+  "integrity": {
+    "dupPaidTransitions": 0,
+    "dupT1": 0,
+    "dupActivity": 0,
+    "dupSellerMail": 0,
+    "dupReceipt": 0,
+    "dupBell": 0,
+    "dupWebhookDeliveries": 0,
+    "refsWithProcessedSucceededDelivery": 12,
+    "retryQueueUnprocessedRows": 11,
+    "stockAfter": 2
+  },
+  "confirmedPayments": 2
+}

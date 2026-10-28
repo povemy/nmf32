@@ -1,0 +1,759 @@
+     1→     1→"use client";
+     2→     2→// Shared UI primitives for the admin command centre (chips, money, dialogs, states).
+     3→     3→import { useState, type ReactNode } from "react";
+     4→     4→import { Badge } from "@/components/ui/badge";
+     5→     5→import { Button } from "@/components/ui/button";
+     6→     6→import {
+     7→     7→  AlertDialog,
+     8→     8→  AlertDialogAction,
+     9→     9→  AlertDialogCancel,
+    10→    10→  AlertDialogContent,
+    11→    11→  AlertDialogDescription,
+    12→    12→  AlertDialogFooter,
+    13→    13→  AlertDialogHeader,
+    14→    14→  AlertDialogTitle,
+    15→    15→} from "@/components/ui/alert-dialog";
+    16→    16→import {
+    17→    17→  Dialog,
+    18→    18→  DialogContent,
+    19→    19→  DialogDescription,
+    20→    20→  DialogFooter,
+    21→    21→  DialogHeader,
+    22→    22→  DialogTitle,
+    23→    23→} from "@/components/ui/dialog";
+    24→    24→import { Input } from "@/components/ui/input";
+    25→    25→import { Label } from "@/components/ui/label";
+    26→    26→import { Skeleton } from "@/components/ui/skeleton";
+    27→    27→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    28→    28→import { Textarea } from "@/components/ui/textarea";
+    29→    29→import { formatMinor } from "@/lib/money";
+    30→    30→import { cn } from "@/lib/utils";
+    31→    31→import { AlertTriangle, Check, Copy, Inbox, Loader2, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
+    32→    32→import { toast } from "sonner";
+    33→    33→import { parseJsonSafe } from "./use-api";
+    34→    34→
+    35→    35→/* ------------------------------------------------------------------ tones */
+    36→    36→
+    37→    37→type Tone = "emerald" | "amber" | "red" | "gray" | "teal" | "slate" | "violet";
+    38→    38→
+    39→    39→export const TONE_CLASS: Record<Tone, string> = {
+    40→    40→  emerald:
+    41→    41→    "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
+    42→    42→  amber:
+    43→    43→    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+    44→    44→  red: "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300",
+    45→    45→  gray: "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400",
+    46→    46→  teal: "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300",
+    47→    47→  slate:
+    48→    48→    "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300",
+    49→    49→  violet:
+    50→    50→    "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
+    51→    51→};
+    52→    52→
+    53→    53→const EMERALD_STATUSES = new Set([
+    54→    54→  "active", "live", "paid", "approved", "verified", "completed", "delivered", "success",
+    55→    55→  "succeeded", "sent", "processed", "resolved", "issued", "ok", "done", "match",
+    56→    56→]);
+    57→    57→const AMBER_STATUSES = new Set([
+    58→    58→  "pending", "pending_review", "processing", "verifying", "open", "queued", "requires_payment",
+    59→    59→  "onboarding", "under_review", "refunding", "partially_refunded", "payment_pending", "requested",
+    60→    60→  "running", "partial",
+    61→    61→]);
+    62→    62→const RED_STATUSES = new Set([
+    63→    63→  "suspended", "rejected", "banned", "failed", "dead", "terminated", "urgent", "high",
+    64→    64→  "mismatch", "drift",
+    65→    65→]);
+    66→    66→const TEAL_STATUSES = new Set(["shipped", "medium"]);
+    67→    67→
+    68→    68→export function statusTone(status?: string | null): Tone {
+    69→    69→  const s = (status ?? "").toLowerCase();
+    70→    70→  if (EMERALD_STATUSES.has(s)) return "emerald";
+    71→    71→  if (AMBER_STATUSES.has(s)) return "amber";
+    72→    72→  if (RED_STATUSES.has(s)) return "red";
+    73→    73→  if (TEAL_STATUSES.has(s)) return "teal";
+    74→    74→  return "gray";
+    75→    75→}
+    76→    76→
+    77→    77→export function StatusChip({ status, className }: { status?: string | null; className?: string }) {
+    78→    78→  const tone = statusTone(status);
+    79→    79→  const label = (status ?? "unknown").replace(/_/g, " ");
+    80→    80→  return (
+    81→    81→    <Badge variant="outline" className={cn(TONE_CLASS[tone], "capitalize", className)}>
+    82→    82→      {label}
+    83→    83→    </Badge>
+    84→    84→  );
+    85→    85→}
+    86→    86→
+    87→    87→export function RiskChip({ tier }: { tier?: string | null }) {
+    88→    88→  const t = (tier ?? "low").toLowerCase();
+    89→    89→  const tone: Tone = t === "high" ? "red" : t === "medium" ? "amber" : "emerald";
+    90→    90→  return (
+    91→    91→    <Badge variant="outline" className={cn(TONE_CLASS[tone], "capitalize")}>
+    92→    92→      risk: {t}
+    93→    93→    </Badge>
+    94→    94→  );
+    95→    95→}
+    96→    96→
+    97→    97→export function ChannelBadge({ channel }: { channel: string }) {
+    98→    98→  const tone: Tone = channel === "email" ? "teal" : channel === "whatsapp" ? "emerald" : "violet";
+    99→    99→  return <Badge variant="outline" className={TONE_CLASS[tone]}>{channel}</Badge>;
+   100→   100→}
+   101→   101→
+   102→   102→/* ------------------------------------------------------------------ money */
+   103→   103→
+   104→   104→export function Money({
+   105→   105→  minor,
+   106→   106→  className,
+   107→   107→  muted,
+   108→   108→  bold,
+   109→   109→}: {
+   110→   110→  minor: number | null | undefined;
+   111→   111→  className?: string;
+   112→   112→  muted?: boolean;
+   113→   113→  bold?: boolean;
+   114→   114→}) {
+   115→   115→  const v = minor ?? 0;
+   116→   116→  return (
+   117→   117→    <span
+   118→   118→      className={cn(
+   119→   119→        "tabular-nums whitespace-nowrap",
+   120→   120→        bold && "font-semibold",
+   121→   121→        v < 0 && "text-red-600 dark:text-red-400",
+   122→   122→        muted && "text-muted-foreground",
+   123→   123→        className
+   124→   124→      )}
+   125→   125→    >
+   126→   126→      {formatMinor(v)}
+   127→   127→    </span>
+   128→   128→  );
+   129→   129→}
+   130→   130→
+   131→   131→/* ------------------------------------------------------------------ dates */
+   132→   132→
+   133→   133→export function fmtDT(iso?: string | Date | null): string {
+   134→   134→  if (!iso) return "—";
+   135→   135→  const d = typeof iso === "string" ? new Date(iso) : iso;
+   136→   136→  if (Number.isNaN(d.getTime())) return "—";
+   137→   137→  return d.toLocaleString("en-MY", {
+   138→   138→    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+   139→   139→  });
+   140→   140→}
+   141→   141→
+   142→   142→export function fmtDate(iso?: string | Date | null): string {
+   143→   143→  if (!iso) return "—";
+   144→   144→  const d = typeof iso === "string" ? new Date(iso) : iso;
+   145→   145→  if (Number.isNaN(d.getTime())) return "—";
+   146→   146→  return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
+   147→   147→}
+   148→   148→
+   149→   149→export function timeAgo(iso?: string | Date | null): string {
+   150→   150→  if (!iso) return "—";
+   151→   151→  const d = typeof iso === "string" ? new Date(iso) : iso;
+   152→   152→  if (Number.isNaN(d.getTime())) return "—";
+   153→   153→  const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+   154→   154→  if (secs < 60) return "just now";
+   155→   155→  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+   156→   156→  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+   157→   157→  if (secs < 86400 * 30) return `${Math.floor(secs / 86400)}d ago`;
+   158→   158→  return fmtDate(d);
+   159→   159→}
+   160→   160→
+   161→   161→/* --------------------------------------------------------------- layout */
+   162→   162→
+   163→   163→export function PageHeader({
+   164→   164→  title,
+   165→   165→  description,
+   166→   166→  actions,
+   167→   167→}: {
+   168→   168→  title: ReactNode;
+   169→   169→  description?: string;
+   170→   170→  actions?: ReactNode;
+   171→   171→}) {
+   172→   172→  return (
+   173→   173→    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+   174→   174→      <div className="min-w-0">
+   175→   175→        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+   176→   176→        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+   177→   177→      </div>
+   178→   178→      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+   179→   179→    </div>
+   180→   180→  );
+   181→   181→}
+   182→   182→
+   183→   183→/** Vertically scrollable region with the app scrollbar styling (long lists). */
+   184→   184→export function ScrollY({ children, className }: { children: ReactNode; className?: string }) {
+   185→   185→  return (
+   186→   186→    <div
+   187→   187→      className={cn(
+   188→   188→        "max-h-[480px] overflow-y-auto [scrollbar-width:thin] [scrollbar-color:rgba(20,184,166,0.45)_transparent]",
+   189→   189→        "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent",
+   190→   190→        "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/30 hover:[&::-webkit-scrollbar-thumb]:bg-teal-600/50",
+   191→   191→        className
+   192→   192→      )}
+   193→   193→    >
+   194→   194→      {children}
+   195→   195→    </div>
+   196→   196→  );
+   197→   197→}
+   198→   198→
+   199→   199→export function Field({
+   200→   200→  label,
+   201→   201→  hint,
+   202→   202→  children,
+   203→   203→  className,
+   204→   204→}: {
+   205→   205→  label: string;
+   206→   206→  hint?: string;
+   207→   207→  children: ReactNode;
+   208→   208→  className?: string;
+   209→   209→}) {
+   210→   210→  return (
+   211→   211→    <div className={cn("space-y-1.5", className)}>
+   212→   212→      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+   213→   213→      {children}
+   214→   214→      {hint ? <p className="text-[11px] leading-tight text-muted-foreground">{hint}</p> : null}
+   215→   215→    </div>
+   216→   216→  );
+   217→   217→}
+   218→   218→
+   219→   219→/* ----------------------------------------------------------------- KPIs */
+   220→   220→
+   221→   221→export function KpiCard({
+   222→   222→  label,
+   223→   223→  value,
+   224→   224→  sub,
+   225→   225→  icon: Icon,
+   226→   226→  onClick,
+   227→   227→  tone = "plain",
+   228→   228→}: {
+   229→   229→  label: string;
+   230→   230→  value: ReactNode;
+   231→   231→  sub?: ReactNode;
+   232→   232→  icon?: LucideIcon;
+   233→   233→  onClick?: () => void;
+   234→   234→  tone?: Tone | "plain";
+   235→   235→}) {
+   236→   236→  const clickable = Boolean(onClick);
+   237→   237→  const iconColor =
+   238→   238→    tone === "emerald"
+   239→   239→      ? "text-emerald-600 dark:text-emerald-400"
+   240→   240→      : tone === "amber"
+   241→   241→        ? "text-amber-600 dark:text-amber-400"
+   242→   242→        : tone === "red"
+   243→   243→          ? "text-red-600 dark:text-red-400"
+   244→   244→          : tone === "teal"
+   245→   245→            ? "text-teal-600 dark:text-teal-400"
+   246→   246→            : "text-muted-foreground";
+   247→   247→  return (
+   248→   248→    <div
+   249→   249→      role={clickable ? "button" : undefined}
+   250→   250→      tabIndex={clickable ? 0 : undefined}
+   251→   251→      onClick={onClick}
+   252→   252→      onKeyDown={(e) => {
+   253→   253→        if (clickable && (e.key === "Enter" || e.key === " ")) {
+   254→   254→          e.preventDefault();
+   255→   255→          onClick?.();
+   256→   256→        }
+   257→   257→      }}
+   258→   258→      className={cn(
+   259→   259→        "rounded-xl border bg-card p-4 shadow-sm transition-shadow sm:p-5",
+   260→   260→        clickable && "cursor-pointer hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+   261→   261→      )}
+   262→   262→    >
+   263→   263→      <div className="flex items-center justify-between gap-2">
+   264→   264→        <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+   265→   265→        {Icon ? <Icon className={cn("h-4 w-4 shrink-0", iconColor)} /> : null}
+   266→   266→      </div>
+   267→   267→      <div className="mt-2 text-xl font-semibold sm:text-2xl">{value}</div>
+   268→   268→      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+   269→   269→    </div>
+   270→   270→  );
+   271→   271→}
+   272→   272→
+   273→   273→/* ----------------------------------------------------------------- states */
+   274→   274→
+   275→   275→export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+   276→   276→  return (
+   277→   277→    <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+   278→   278→      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+   279→   279→        <Inbox className="h-5 w-5 text-muted-foreground" />
+   280→   280→      </div>
+   281→   281→      <p className="text-sm font-medium">{title}</p>
+   282→   282→      {hint ? <p className="max-w-sm text-xs text-muted-foreground">{hint}</p> : null}
+   283→   283→    </div>
+   284→   284→  );
+   285→   285→}
+   286→   286→
+   287→   287→export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+   288→   288→  return (
+   289→   289→    <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+   290→   290→      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/50">
+   291→   291→        <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+   292→   292→      </div>
+   293→   293→      <div>
+   294→   294→        <p className="text-sm font-medium">Could not load data</p>
+   295→   295→        <p className="mt-0.5 max-w-md text-xs text-muted-foreground">{message}</p>
+   296→   296→      </div>
+   297→   297→      {onRetry ? (
+   298→   298→        <Button variant="outline" size="sm" onClick={onRetry} className="min-h-[44px] sm:min-h-0">
+   299→   299→          <RefreshCw className="h-3.5 w-3.5" /> Retry
+   300→   300→        </Button>
+   301→   301→      ) : null}
+   302→   302→    </div>
+   303→   303→  );
+   304→   304→}
+   305→   305→
+   306→   306→export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: number }) {
+   307→   307→  return (
+   308→   308→    <Table>
+   309→   309→      <TableHeader>
+   310→   310→        <TableRow>
+   311→   311→          {Array.from({ length: cols }).map((_, i) => (
+   312→   312→            <TableHead key={i}>
+   313→   313→              <Skeleton className="h-3.5 w-16" />
+   314→   314→            </TableHead>
+   315→   315→          ))}
+   316→   316→        </TableRow>
+   317→   317→      </TableHeader>
+   318→   318→      <TableBody>
+   319→   319→        {Array.from({ length: rows }).map((_, r) => (
+   320→   320→          <TableRow key={r}>
+   321→   321→            {Array.from({ length: cols }).map((_, c) => (
+   322→   322→              <TableCell key={c}>
+   323→   323→                <Skeleton className={cn("h-4", c === 0 ? "w-28" : "w-16")} />
+   324→   324→              </TableCell>
+   325→   325→            ))}
+   326→   326→          </TableRow>
+   327→   327→        ))}
+   328→   328→      </TableBody>
+   329→   329→    </Table>
+   330→   330→  );
+   331→   331→}
+   332→   332→
+   333→   333→export function CardsSkeleton({ n = 6, className }: { n?: number; className?: string }) {
+   334→   334→  return (
+   335→   335→    <div className={cn("grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
+   336→   336→      {Array.from({ length: n }).map((_, i) => (
+   337→   337→        <div key={i} className="rounded-xl border p-4">
+   338→   338→          <div className="flex items-center gap-3">
+   339→   339→            <Skeleton className="h-10 w-10 rounded-full" />
+   340→   340→            <div className="flex-1 space-y-2">
+   341→   341→              <Skeleton className="h-4 w-28" />
+   342→   342→              <Skeleton className="h-3 w-20" />
+   343→   343→            </div>
+   344→   344→          </div>
+   345→   345→          <div className="mt-4 flex gap-2">
+   346→   346→            <Skeleton className="h-5 w-16" />
+   347→   347→            <Skeleton className="h-5 w-16" />
+   348→   348→            <Skeleton className="h-5 w-16" />
+   349→   349→          </div>
+   350→   350→          <div className="mt-4 flex gap-2">
+   351→   351→            <Skeleton className="h-9 flex-1" />
+   352→   352→            <Skeleton className="h-9 flex-1" />
+   353→   353→          </div>
+   354→   354→        </div>
+   355→   355→      ))}
+   356→   356→    </div>
+   357→   357→  );
+   358→   358→}
+   359→   359→
+   360→   360→export function Pager({
+   361→   361→  page,
+   362→   362→  size,
+   363→   363→  total,
+   364→   364→  onPrev,
+   365→   365→  onNext,
+   366→   366→}: {
+   367→   367→  page: number;
+   368→   368→  size: number;
+   369→   369→  total: number;
+   370→   370→  onPrev: () => void;
+   371→   371→  onNext: () => void;
+   372→   372→}) {
+   373→   373→  const pages = Math.max(1, Math.ceil(total / Math.max(1, size)));
+   374→   374→  return (
+   375→   375→    <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
+   376→   376→      <p className="text-xs text-muted-foreground">
+   377→   377→        {total} record{total === 1 ? "" : "s"} · page {Math.min(page, pages)} of {pages}
+   378→   378→      </p>
+   379→   379→      <div className="flex gap-2">
+   380→   380→        <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" disabled={page <= 1} onClick={onPrev}>
+   381→   381→          Previous
+   382→   382→        </Button>
+   383→   383→        <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" disabled={page >= pages} onClick={onNext}>
+   384→   384→          Next
+   385→   385→        </Button>
+   386→   386→      </div>
+   387→   387→    </div>
+   388→   388→  );
+   389→   389→}
+   390→   390→
+   391→   391→/* ---------------------------------------------------------------- dialogs */
+   392→   392→
+   393→   393→export function ConfirmDialog({
+   394→   394→  open,
+   395→   395→  onOpenChange,
+   396→   396→  title,
+   397→   397→  description,
+   398→   398→  confirmLabel = "Confirm",
+   399→   399→  destructive,
+   400→   400→  loading,
+   401→   401→  onConfirm,
+   402→   402→}: {
+   403→   403→  open: boolean;
+   404→   404→  onOpenChange: (open: boolean) => void;
+   405→   405→  title: string;
+   406→   406→  description?: string;
+   407→   407→  confirmLabel?: string;
+   408→   408→  destructive?: boolean;
+   409→   409→  loading?: boolean;
+   410→   410→  onConfirm: () => void;
+   411→   411→}) {
+   412→   412→  return (
+   413→   413→    <AlertDialog open={open} onOpenChange={onOpenChange}>
+   414→   414→      <AlertDialogContent>
+   415→   415→        <AlertDialogHeader>
+   416→   416→          <AlertDialogTitle>{title}</AlertDialogTitle>
+   417→   417→          {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
+   418→   418→        </AlertDialogHeader>
+   419→   419→        <AlertDialogFooter>
+   420→   420→          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+   421→   421→          <AlertDialogAction
+   422→   422→            disabled={loading}
+   423→   423→            onClick={(e) => {
+   424→   424→              e.preventDefault();
+   425→   425→              onConfirm();
+   426→   426→            }}
+   427→   427→            className={cn(destructive && "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600")}
+   428→   428→          >
+   429→   429→            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmLabel}
+   430→   430→          </AlertDialogAction>
+   431→   431→        </AlertDialogFooter>
+   432→   432→      </AlertDialogContent>
+   433→   433→    </AlertDialog>
+   434→   434→  );
+   435→   435→}
+   436→   436→
+   437→   437→/** Destructive confirm where the user must type the object id exactly. */
+   438→   438→export function TypingConfirm({
+   439→   439→  open,
+   440→   440→  onOpenChange,
+   441→   441→  title,
+   442→   442→  description,
+   443→   443→  expected,
+   444→   444→  confirmLabel = "Delete",
+   445→   445→  loading,
+   446→   446→  onConfirm,
+   447→   447→}: {
+   448→   448→  open: boolean;
+   449→   449→  onOpenChange: (open: boolean) => void;
+   450→   450→  title: string;
+   451→   451→  description?: string;
+   452→   452→  expected: string;
+   453→   453→  confirmLabel?: string;
+   454→   454→  loading?: boolean;
+   455→   455→  onConfirm: () => void;
+   456→   456→}) {
+   457→   457→  return (
+   458→   458→    <AlertDialog open={open} onOpenChange={onOpenChange}>
+   459→   459→      {open ? (
+   460→   460→        <TypingConfirmInner
+   461→   461→          title={title}
+   462→   462→          description={description}
+   463→   463→          expected={expected}
+   464→   464→          confirmLabel={confirmLabel}
+   465→   465→          loading={loading}
+   466→   466→          onConfirm={onConfirm}
+   467→   467→        />
+   468→   468→      ) : null}
+   469→   469→    </AlertDialog>
+   470→   470→  );
+   471→   471→}
+   472→   472→
+   473→   473→function TypingConfirmInner({
+   474→   474→  title,
+   475→   475→  description,
+   476→   476→  expected,
+   477→   477→  confirmLabel = "Delete",
+   478→   478→  loading,
+   479→   479→  onConfirm,
+   480→   480→}: {
+   481→   481→  title: string;
+   482→   482→  description?: string;
+   483→   483→  expected: string;
+   484→   484→  confirmLabel?: string;
+   485→   485→  loading?: boolean;
+   486→   486→  onConfirm: () => void;
+   487→   487→}) {
+   488→   488→  const [text, setText] = useState("");
+   489→   489→  const match = text.trim() === expected;
+   490→   490→  return (
+   491→   491→    <AlertDialogContent>
+   492→   492→      <AlertDialogHeader>
+   493→   493→        <AlertDialogTitle className="flex items-center gap-2">
+   494→   494→          <TriangleAlert className="h-4 w-4 text-red-600" /> {title}
+   495→   495→        </AlertDialogTitle>
+   496→   496→        <AlertDialogDescription>
+   497→   497→          {description ?? "This action is irreversible."} Type{" "}
+   498→   498→          <code className="rounded bg-muted px-1 py-0.5 text-[11px] font-semibold text-foreground">{expected}</code>{" "}
+   499→   499→          to confirm.
+   500→   500→        </AlertDialogDescription>
+   501→   501→      </AlertDialogHeader>
+   502→   502→      <Input
+   503→   503→        value={text}
+   504→   504→        onChange={(e) => setText(e.target.value)}
+   505→   505→        placeholder={expected}
+   506→   506→        aria-label={`Type ${expected} to confirm`}
+   507→   507→        className="min-h-[44px]"
+   508→   508→        autoComplete="off"
+   509→   509→      />
+   510→   510→      <AlertDialogFooter>
+   511→   511→        <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+   512→   512→        <AlertDialogAction
+   513→   513→          disabled={!match || loading}
+   514→   514→          onClick={(e) => {
+   515→   515→            e.preventDefault();
+   516→   516→            if (match) onConfirm();
+   517→   517→          }}
+   518→   518→          className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+   519→   519→        >
+   520→   520→          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmLabel}
+   521→   521→        </AlertDialogAction>
+   522→   522→      </AlertDialogFooter>
+   523→   523→    </AlertDialogContent>
+   524→   524→  );
+   525→   525→}
+   526→   526→
+   527→   527→export function ReasonDialog({
+   528→   528→  open,
+   529→   529→  onOpenChange,
+   530→   530→  title,
+   531→   531→  description,
+   532→   532→  placeholder,
+   533→   533→  submitLabel = "Submit",
+   534→   534→  destructive,
+   535→   535→  loading,
+   536→   536→  onSubmit,
+   537→   537→}: {
+   538→   538→  open: boolean;
+   539→   539→  onOpenChange: (open: boolean) => void;
+   540→   540→  title: string;
+   541→   541→  description?: string;
+   542→   542→  placeholder?: string;
+   543→   543→  submitLabel?: string;
+   544→   544→  destructive?: boolean;
+   545→   545→  loading?: boolean;
+   546→   546→  onSubmit: (reason: string) => void;
+   547→   547→}) {
+   548→   548→  return (
+   549→   549→    <Dialog open={open} onOpenChange={onOpenChange}>
+   550→   550→      {open ? (
+   551→   551→        <ReasonDialogInner
+   552→   552→          onOpenChange={onOpenChange}
+   553→   553→          title={title}
+   554→   554→          description={description}
+   555→   555→          placeholder={placeholder}
+   556→   556→          submitLabel={submitLabel}
+   557→   557→          destructive={destructive}
+   558→   558→          loading={loading}
+   559→   559→          onSubmit={onSubmit}
+   560→   560→        />
+   561→   561→      ) : null}
+   562→   562→    </Dialog>
+   563→   563→  );
+   564→   564→}
+   565→   565→
+   566→   566→function ReasonDialogInner({
+   567→   567→  onOpenChange,
+   568→   568→  title,
+   569→   569→  description,
+   570→   570→  placeholder,
+   571→   571→  submitLabel = "Submit",
+   572→   572→  destructive,
+   573→   573→  loading,
+   574→   574→  onSubmit,
+   575→   575→}: {
+   576→   576→  onOpenChange: (open: boolean) => void;
+   577→   577→  title: string;
+   578→   578→  description?: string;
+   579→   579→  placeholder?: string;
+   580→   580→  submitLabel?: string;
+   581→   581→  destructive?: boolean;
+   582→   582→  loading?: boolean;
+   583→   583→  onSubmit: (reason: string) => void;
+   584→   584→}) {
+   585→   585→  const [reason, setReason] = useState("");
+   586→   586→  return (
+   587→   587→    <DialogContent className="sm:max-w-md">
+   588→   588→      <DialogHeader>
+   589→   589→        <DialogTitle>{title}</DialogTitle>
+   590→   590→        {description ? <DialogDescription>{description}</DialogDescription> : null}
+   591→   591→      </DialogHeader>
+   592→   592→      <Textarea
+   593→   593→        value={reason}
+   594→   594→        onChange={(e) => setReason(e.target.value)}
+   595→   595→        placeholder={placeholder ?? "Reason…"}
+   596→   596→        rows={4}
+   597→   597→        className="resize-none"
+   598→   598→      />
+   599→   599→      <DialogFooter>
+   600→   600→        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading} className="min-h-[44px] sm:min-h-0">
+   601→   601→          Cancel
+   602→   602→        </Button>
+   603→   603→        <Button
+   604→   604→          onClick={() => onSubmit(reason.trim())}
+   605→   605→          disabled={loading || !reason.trim()}
+   606→   606→          className={cn("min-h-[44px] sm:min-h-0", destructive && "bg-red-600 text-white hover:bg-red-700")}
+   607→   607→        >
+   608→   608→          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : submitLabel}
+   609→   609→        </Button>
+   610→   610→      </DialogFooter>
+   611→   611→    </DialogContent>
+   612→   612→  );
+   613→   613→}
+   614→   614→
+   615→   615→export function CopyButton({ text, label }: { text: string; label?: string }) {
+   616→   616→  return (
+   617→   617→    <Button
+   618→   618→      variant="ghost"
+   619→   619→      size="icon"
+   620→   620→      className="h-8 w-8"
+   621→   621→      aria-label={label ?? "Copy"}
+   622→   622→      onClick={async () => {
+   623→   623→        try {
+   624→   624→          await navigator.clipboard.writeText(text);
+   625→   625→          toast.success("Copied to clipboard", { description: text });
+   626→   626→        } catch {
+   627→   627→          toast.error("Could not copy");
+   628→   628→        }
+   629→   629→      }}
+   630→   630→    >
+   631→   631→      <Copy className="h-3.5 w-3.5" />
+   632→   632→    </Button>
+   633→   633→  );
+   634→   634→}
+   635→   635→
+   636→   636→/* -------------------------------------------------------------- breakdown */
+   637→   637→
+   638→   638→const BREAKDOWN_MONEY_KEYS = new Set([
+   639→   639→  "base", "percent_part", "fixed_fee_allocated", "discount_allocated", "shipping_allocated",
+   640→   640→]);
+   641→   641→
+   642→   642→function breakdownValue(key: string, v: unknown): string | null {
+   643→   643→  if (v === null || v === undefined) return null;
+   644→   644→  if (key === "flags") {
+   645→   645→    const arr = Array.isArray(v) ? v.map(String) : [];
+   646→   646→    return arr.length ? arr.join(", ") : null;
+   647→   647→  }
+   648→   648→  if (BREAKDOWN_MONEY_KEYS.has(key)) return formatMinor(Number(v));
+   649→   649→  if (typeof v === "number") return key === "percent" ? `${v}%` : String(v);
+   650→   650→  if (typeof v === "string") return v;
+   651→   651→  return JSON.stringify(v);
+   652→   652→}
+   653→   653→
+   654→   654→/** Renders a commission breakdownJson payload as key:value chips. */
+   655→   655→export function BreakdownChips({ json, className }: { json?: string | null; className?: string }) {
+   656→   656→  const data = parseJsonSafe<Record<string, unknown>>(json, {});
+   657→   657→  const entries = Object.entries(data).filter(([k, v]) => breakdownValue(k, v) !== null);
+   658→   658→  if (entries.length === 0) return <span className="text-xs text-muted-foreground">No breakdown snapshot</span>;
+   659→   659→  return (
+   660→   660→    <div className={cn("flex flex-wrap gap-1.5", className)}>
+   661→   661→      {entries.map(([k, v]) => {
+   662→   662→        const val = breakdownValue(k, v) as string;
+   663→   663→        const highlight = k === "rule_source";
+   664→   664→        return (
+   665→   665→          <span
+   666→   666→            key={k}
+   667→   667→            className={cn(
+   668→   668→              "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]",
+   669→   669→              highlight ? TONE_CLASS.teal : "bg-muted/60 text-muted-foreground"
+   670→   670→            )}
+   671→   671→          >
+   672→   672→            <span className="font-medium capitalize">{k.replace(/_/g, " ")}</span>
+   673→   673→            <span className="tabular-nums">{val}</span>
+   674→   674→          </span>
+   675→   675→        );
+   676→   676→      })}
+   677→   677→    </div>
+   678→   678→  );
+   679→   679→}
+   680→   680→
+   681→   681→/* -------------------------------------------------------------- diff view */
+   682→   682→
+   683→   683→function flatObj(v: unknown): Record<string, unknown> {
+   684→   684→  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+   685→   685→}
+   686→   686→
+   687→   687→function diffVal(key: string, v: unknown): string {
+   688→   688→  if (v === null || v === undefined || v === "") return "—";
+   689→   689→  if (typeof v === "object") return JSON.stringify(v);
+   690→   690→  if (key.endsWith("Minor")) return formatMinor(Number(v));
+   691→   691→  if (typeof v === "boolean") return v ? "true" : "false";
+   692→   692→  return String(v);
+   693→   693→}
+   694→   694→
+   695→   695→/** Field-by-field before/after viewer for audit log rows. */
+   696→   696→export function DiffViewer({ beforeJson, afterJson }: { beforeJson?: string | null; afterJson?: string | null }) {
+   697→   697→  const before = flatObj(parseJsonSafe<unknown>(beforeJson, {}));
+   698→   698→  const after = flatObj(parseJsonSafe<unknown>(afterJson, {}));
+   699→   699→  const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)])).sort();
+   700→   700→  if (keys.length === 0) {
+   701→   701→    return <p className="text-xs text-muted-foreground">No structured before/after snapshot recorded for this entry.</p>;
+   702→   702→  }
+   703→   703→  return (
+   704→   704→    <div className="overflow-hidden rounded-lg border">
+   705→   705→      <Table>
+   706→   706→        <TableHeader>
+   707→   707→          <TableRow>
+   708→   708→            <TableHead className="w-40">Field</TableHead>
+   709→   709→            <TableHead>Before</TableHead>
+   710→   710→            <TableHead>After</TableHead>
+   711→   711→          </TableRow>
+   712→   712→        </TableHeader>
+   713→   713→        <TableBody>
+   714→   714→          {keys.map((k) => {
+   715→   715→            const b = k in before ? diffVal(k, before[k]) : null;
+   716→   716→            const a = k in after ? diffVal(k, after[k]) : null;
+   717→   717→            const changed = b !== a;
+   718→   718→            const added = b === null;
+   719→   719→            const removed = a === null;
+   720→   720→            return (
+   721→   721→              <TableRow key={k} className={cn(changed && !removed && "bg-amber-50/60 dark:bg-amber-950/20")}>
+   722→   722→                <TableCell className="font-mono text-[11px] font-medium">{k}</TableCell>
+   723→   723→                <TableCell className={cn("text-xs tabular-nums", removed && "text-red-600 line-through dark:text-red-400")}>
+   724→   724→                  {b ?? "—"}
+   725→   725→                </TableCell>
+   726→   726→                <TableCell className={cn("text-xs tabular-nums", added && "font-medium text-emerald-700 dark:text-emerald-400")}>
+   727→   727→                  {a ?? "—"}
+   728→   728→                </TableCell>
+   729→   729→              </TableRow>
+   730→   730→            );
+   731→   731→          })}
+   732→   732→        </TableBody>
+   733→   733→      </Table>
+   734→   734→    </div>
+   735→   735→  );
+   736→   736→}
+   737→   737→
+   738→   738→/** Green/red health dot used across dashboard + health screens. */
+   739→   739→export function HealthDot({ ok, label }: { ok: boolean; label?: string }) {
+   740→   740→  return (
+   741→   741→    <span className="inline-flex items-center gap-1.5 text-xs font-medium" aria-label={label ?? (ok ? "Healthy" : "Problem")}>
+   742→   742→      <span className={cn("relative flex h-2 w-2 rounded-full", ok ? "bg-emerald-500" : "bg-red-500")}>
+   743→   743→        {!ok ? <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" /> : null}
+   744→   744→      </span>
+   745→   745→      <span className={ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+   746→   746→        {ok ? "Healthy" : "Problem"}
+   747→   747→      </span>
+   748→   748→    </span>
+   749→   749→  );
+   750→   750→}
+   751→   751→
+   752→   752→export function CheckRow({ ok, children }: { ok: boolean; children: ReactNode }) {
+   753→   753→  return (
+   754→   754→    <span className={cn("inline-flex items-center gap-1.5 text-xs", ok ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+   755→   755→      <Check className="h-3.5 w-3.5" /> {children}
+   756→   756→    </span>
+   757→   757→  );
+   758→   758→}
+   759→   759→

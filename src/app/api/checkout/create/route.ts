@@ -253,6 +253,12 @@ export const POST = handle(async (req: Request) => {
           couponCode: g.coupon.valid ? g.coupon.code : null,
           voucherId: uvRow?.voucher.id ?? null,
           shippingAddressJson,
+          // Seller Insights — destination-country snapshot. This route itself
+          // enforces the Malaysian 5-digit postcode + MY state rules above, so
+          // "MY" is recorded from the VERIFIED input at order time (frozen like
+          // shippingAddressJson; never derived from the customer's later profile).
+          shippingCountryCode: "MY",
+          shippingCountrySource: "checkout",
           customerNote: body.customerNote != null ? String(body.customerNote) : null,
           paymentProvider: provider,
           cartToken,

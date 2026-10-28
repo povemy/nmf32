@@ -1,0 +1,193 @@
+{
+  "runId": "mvs94ss0",
+  "startedAt": "2026-10-28T15:10:55.921Z",
+  "tests": [
+    {
+      "name": "1a: matured T1 → available reflects net",
+      "ok": true,
+      "detail": "cache=9500 truth=9500"
+    },
+    {
+      "name": "1b: cache lifetime fields == truth",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "2a: while held → cache == truth, pending>0, available unchanged",
+      "ok": true,
+      "detail": "pend=19000"
+    },
+    {
+      "name": "2b: after maturity → invariant classifies TIME_MATURITY (benign), not hard drift",
+      "ok": true,
+      "detail": "maturedSinceLastWrite=19000"
+    },
+    {
+      "name": "2c: totals equal (no money missing)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "2d: magnitude equals the matured hold",
+      "ok": true,
+      "detail": "19000"
+    },
+    {
+      "name": "13a: dry-run exits clean",
+      "ok": true,
+      "detail": "exit=0"
+    },
+    {
+      "name": "13b: dry-run classifies STALE_TIME_MATURITY",
+      "ok": true,
+      "detail": "STALE_TIME_MATURITY"
+    },
+    {
+      "name": "13c: dry-run wrote NOTHING (cache untouched)",
+      "ok": true,
+      "detail": "updatedAt unchanged=true"
+    },
+    {
+      "name": "15a: apply succeeds and verifies",
+      "ok": true,
+      "detail": "exit=0"
+    },
+    {
+      "name": "15b: after repair cache == truth (available includes matured hold)",
+      "ok": true,
+      "detail": "cache=28500/0 truth=28500/0"
+    },
+    {
+      "name": "15c: invariant reports MATCH for fixture (no drift entries)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "14a: ledger history unchanged by repair (count + checksum)",
+      "ok": true,
+      "detail": "2→2 cksum -1863862456→-1863862456"
+    },
+    {
+      "name": "13d: re-apply idempotent (same cache values, exit clean)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "13e: re-apply did not touch ledger",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "12: concurrent applies both succeed, cache == truth exactly once",
+      "ok": true,
+      "detail": "exits=0,0 "
+    },
+    {
+      "name": "3a: totals-differ drift is HARD (flips ok=false)",
+      "ok": true,
+      "detail": "availΔ=1"
+    },
+    {
+      "name": "3b: repair from truth fixes corruption",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "3c: ok=true again after repair",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "6a: T3 debit reduces available exactly once",
+      "ok": true,
+      "detail": "28500 → 25500"
+    },
+    {
+      "name": "6b: T4 clearing→bank leaves seller payable unchanged",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "6c: T4f reversal credits available back (immediately matured)",
+      "ok": true,
+      "detail": "25500"
+    },
+    {
+      "name": "6d: cache tracks truth through the lifecycle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "7a: T5 debits seller share (amount − commission reversal)",
+      "ok": true,
+      "detail": "Δ=-4750"
+    },
+    {
+      "name": "7b: refund keeps cache == truth",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "7c: duplicate refund replay converges (dedupKey, no double debit)",
+      "ok": true,
+      "detail": "idempotentReplay=true"
+    },
+    {
+      "name": "8a: 5/5 concurrent postings succeed (row-lock wait, no SSI storm)",
+      "ok": true,
+      "detail": "5/5"
+    },
+    {
+      "name": "8b: exactly 5 new pending credits (no double/lost movement)",
+      "ok": true,
+      "detail": "pend 0 → 4500"
+    },
+    {
+      "name": "8c: final cache == truth",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "10a: posting path THROWS when the cache update faults",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "10b: T1 posting SURVIVED committed and balanced (no lost/partial money)",
+      "ok": true,
+      "detail": "12→13"
+    },
+    {
+      "name": "10c: retry after the fault converges via dedupKey (no double posting)",
+      "ok": true,
+      "detail": "txns=1"
+    },
+    {
+      "name": "10d: cache healed by the retry's refresh (== truth again)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "11a: first attempt failed on injected fault",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "11b: retry succeeds and exactly ONE posting exists (dedupKey backstop)",
+      "ok": true,
+      "detail": "txns=1"
+    },
+    {
+      "name": "final: fixture wallet fully reconciled (no drift of either class)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "final: ledger still balanced after every operation",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "finishedAt": "2026-10-28T15:11:26.058Z",
+  "failures": 0
+}

@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→// ============================================================================
+     3→// Shopper — THREE-PHASE CHECKOUT (Information → Delivery → Payment), sandbox
+     4→// payment, order status, order history + lookup. All totals, delivery options
+     5→// and stock come from the server (/api/checkout/quote) — never from the client.
+     6→// ============================================================================
+     7→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     8→import { motion } from "framer-motion";
+     9→import {
+    10→  AlertTriangle,
+    11→  BadgeCheck,
+    12→  CreditCard,
+    13→  Landmark,
+    14→  Home,
+    15→  Wallet,
+    16→  Smartphone,
+    17→  Tag,
+    18→  TicketPercent,
+    19→  Loader2,
+    20→  ArrowLeft,
+    21→  CheckCircle2,
+    22→  XCircle,
+    23→  Clock,
+    24→  Copy,
+    25→  MessagesSquare,
+    26→  ReceiptText,
+    27→  PackageCheck,
+    28→  PackageSearch,
+    29→  ShoppingBag,
+    30→  RotateCcw,
+    31→  MapPin,
+    32→  Pencil,
+    33→  Trash2,
+    34→  Plus,
+    35→  Check,
+    36→  User,
+    37→  Truck,
+    38→  ShieldCheck,
+    39→  Star,
+    40→  LogIn,
+    41→  Store,
+    42→} from "lucide-react";
+    43→import { toast } from "sonner";
+    44→import { useApp } from "@/lib/app-store";
+    45→import { Button } from "@/components/ui/button";
+    46→import { Input } from "@/components/ui/input";
+    47→import { Label } from "@/components/ui/label";
+    48→import { Textarea } from "@/components/ui/textarea";
+    49→import { Separator } from "@/components/ui/separator";
+    50→import { Skeleton } from "@/components/ui/skeleton";
+    51→import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+    52→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    53→import { formatMinor } from "@/lib/money";
+    54→import { cn } from "@/lib/utils";
+    55→import {
+    56→  fetchJson,
+    57→  postJson,
+    58→  patchJson,
+    59→  deleteJson,
+    60→  notifyCartUpdated,
+    61→  trackOrderRef,
+    62→  readOrderRefs,
+    63→  useCart,
+    64→  EmptyState,
+    65→  StatusBadge,
+    66→  StatusTimeline,
+    67→  OrderFlowTimeline,
+    68→  statusLabel,
+    69→  ApiFail,
+    70→  dateShort,
+    71→  type LookupResultT,
+    72→  type OrderDetailT,
+    73→  type ShopperCtx,
+    74→  type CartItemT,
+    75→} from "./ui-bits";
+    76→
+    77→// ---------------------------------------------------------------------------
+    78→// constants
+    79→// ---------------------------------------------------------------------------
+    80→
+    81→/** Stable empty-cart sentinel — keeps `items`/`payloadItems`/`refreshQuote`
+    82→ *  identities stable while the cart context is still loading. A fresh `[]`
+    83→ *  literal per render here used to re-trigger the auto-quote effect. */
+    84→const EMPTY_CART_ITEMS: CartItemT[] = [];
+    85→
+    86→const MY_STATES = [
+    87→  "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Melaka", "Negeri Sembilan",
+    88→  "Pahang", "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
+    89→];
+    90→
+    91→const PROVIDERS = [
+    92→  { id: "fpx_toyyibpay", label: "FPX Online Banking", icon: Landmark },
+    93→  { id: "tng", label: "Touch 'n Go eWallet", icon: Smartphone },
+    94→  { id: "grabpay", label: "GrabPay", icon: Wallet },
+    95→  { id: "card_stripe", label: "Card (Stripe MY)", icon: CreditCard },
+    96→];
+    97→
+    98→const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.label]));
+    99→
+   100→// ---------------------------------------------------------------------------
+   101→// EDD (estimated delivery) helpers — Task 14-b. The checkout quote carries a
+   102→// working-days label ("2-4 working days"); the shipment record carries
+   103→// concrete etaFrom/etaTo dates. Both surface as the same small chip:
+   104→//   [ Estimated delivery Oct 18–21 ]
+   105→// ---------------------------------------------------------------------------
+   106→
+   107→function addWorkingDays(from: Date, days: number): Date {
+   108→  const d = new Date(from);
+   109→  let added = 0;
+   110→  while (added < days) {
+   111→    d.setDate(d.getDate() + 1);
+   112→    const wd = d.getDay();
+   113→    if (wd !== 0 && wd !== 6) added += 1; // skip Sat/Sun
+   114→  }
+   115→  return d;
+   116→}
+   117→
+   118→function eddRangeLabel(from: Date, to: Date): string {
+   119→  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth()) {
+   120→    return `${from.toLocaleDateString("en-MY", { month: "short" })} ${from.getDate()}–${to.getDate()}`;
+   121→  }
+   122→  return `${from.toLocaleDateString("en-MY", { day: "numeric", month: "short" })} – ${to.toLocaleDateString("en-MY", { day: "numeric", month: "short" })}`;
+   123→}
+   124→
+   125→/** Working-days eta label from the quote ("2-4 working days") → date window. */
+   126→function eddFromEtaLabel(eta: string | null | undefined): { from: Date; to: Date } | null {
+   127→  if (!eta) return null;
+   128→  const m = /(\d+)\s*(?:-|–)\s*(\d+)\s*working days?/i.exec(eta) ?? /^(\d+)\s*working days?$/i.exec(eta);
+   129→  if (!m) return null;
+   130→  const a = Number(m[1]);
+   131→  const b = Number(m[2] ?? m[1]);
+   132→  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b < 1) return null;
+   133→  const now = new Date();
+   134→  return { from: addWorkingDays(now, a), to: addWorkingDays(now, Math.max(a, b)) };
+   135→}
+   136→
+   137→/** Concrete ISO dates from the shipment record → label (null when absent). */
+   138→function eddFromShipment(etaFrom: string | null | undefined, etaTo: string | null | undefined): string | null {
+   139→  if (!etaFrom || !etaTo) return null;
+   140→  const a = new Date(etaFrom);
+   141→  const b = new Date(etaTo);
+   142→  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+   143→  return eddRangeLabel(a, b);
+   144→}
+   145→
+   146→function EddChip({ label, dark = false }: { label: string; dark?: boolean }) {
+   147→  return (
+   148→    <span
+   149→      className={cn(
+   150→        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
+   151→        dark ? "bg-white/15 text-white" : "border border-teal-200 bg-teal-50 text-teal-800"
+   152→      )}
+   153→    >
+   154→      <Truck className="h-3.5 w-3.5" aria-hidden />
+   155→      <span>Estimated delivery</span>
+   156→      <span className="font-extrabold">{label}</span>
+   157→    </span>
+   158→  );
+   159→}
+   160→
+   161→const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+   162→const PHONE_RE = /^[+()\d\s-]{6,20}$/;
+   163→const POSTCODE_RE = /^\d{5}$/;
+   164→
+   165→// ---------------------------------------------------------------------------
+   166→// checkout draft — one shared state for all three phases, persisted to
+   167→// sessionStorage so navigation away/back (and refreshes) never lose input.
+   168→// ---------------------------------------------------------------------------
+   169→
+   170→type DraftT = {
+   171→  phase: 1 | 2 | 3;
+   172→  name: string;
+   173→  email: string;
+   174→  phone: string;
+   175→  addressId: string | null;
+   176→  shippingRateId: string;
+   177→  provider: string;
+   178→  couponCode: string;
+   179→  note: string;
+   180→  agreed: boolean;
+   181→  idemKey: string;
+   182→};
+   183→
+   184→const DRAFT_KEY = "sm_checkout_draft";
+   185→const CONTACT_KEY = "sm_shopper_contact";
+   186→const EMAIL_KEY = "sm_shopper_email";
+   187→
+   188→function makeIdemKey(): string {
+   189→  try {
+   190→    return crypto.randomUUID();
+   191→  } catch {
+   192→    return `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+   193→  }
+   194→}
+   195→
+   196→function loadDraft(): DraftT {
+   197→  const savedContact: Record<string, string> = (() => {
+   198→    if (typeof window === "undefined") return {};
+   199→    try {
+   200→      return JSON.parse(window.localStorage.getItem(CONTACT_KEY) ?? "{}") as Record<string, string>;
+   201→    } catch {
+   202→      return {};
+   203→    }
+   204→  })();
+   205→  const base: DraftT = {
+   206→    phase: 1,
+   207→    name: savedContact.name ?? "",
+   208→    email: savedContact.email ?? "",
+   209→    phone: savedContact.phone ?? "",
+   210→    addressId: null,
+   211→    shippingRateId: "standard",
+   212→    provider: "fpx_toyyibpay",
+   213→    couponCode: "",
+   214→    note: "",
+   215→    agreed: false,
+   216→    idemKey: makeIdemKey(),
+   217→  };
+   218→  if (typeof window === "undefined") return base;
+   219→  try {
+   220→    const raw = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY) ?? "{}") as Partial<DraftT>;
+   221→    // Cart-drawer order note (Seller "Cart Experience" feature) pre-fills the
+   222→    // checkout note when the shopper hasn't typed one here yet.
+   223→    let drawerNote = "";
+   224→    try {
+   225→      drawerNote = window.localStorage.getItem("sm_cart_note") ?? "";
+   226→    } catch {
+   227→      /* ignore */
+   228→    }
+   229→    return {
+   230→      ...base,
+   231→      ...raw,
+   232→      note: raw.note || drawerNote || "",
+   233→      phase: raw.phase === 2 || raw.phase === 3 ? raw.phase : 1,
+   234→      idemKey: raw.idemKey || base.idemKey, // stable across retries → idempotent resubmits
+   235→    };
+   236→  } catch {
+   237→    return base;
+   238→  }
+   239→}
+   240→
+   241→function persistDraft(d: DraftT) {
+   242→  if (typeof window !== "undefined") window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+   243→}
+   244→
+   245→function clearDraft() {
+   246→  if (typeof window !== "undefined") window.sessionStorage.removeItem(DRAFT_KEY);
+   247→}
+   248→
+   249→// ---------------------------------------------------------------------------
+   250→// server types
+   251→// ---------------------------------------------------------------------------
+   252→
+   253→type ShippingOptionT = {
+   254→  id: string;
+   255→  label: string;
+   256→  eta: string;
+   257→  amountMinor: number;
+   258→  freeShipping: boolean;
+   259→  available: boolean;
+   260→  reason: string | null;
+   261→};
+   262→
+   263→type VoucherOutcomeT = {
+   264→  storeId: string;
+   265→  userVoucherId?: string;
+   266→  valid: boolean;
+   267→  reason: string | null;
+   268→  code: string | null;
+   269→  title: string | null;
+   270→  kind: string | null;
+   271→  discountMinor: number;
+   272→  freeShipping: boolean;
+   273→};
+   274→
+   275→type QuoteGroupT = {
+   276→  storeId: string;
+   277→  storeSlug: string;
+   278→  storeName: string;
+   279→  subtotalMinor: number;
+   280→  discountMinor: number;
+   281→  shippingMinor: number;
+   282→  totalMinor: number;
+   283→  itemCount: number;
+   284→  couponApplied: boolean;
+   285→  voucher?: VoucherOutcomeT | null;
+   286→};
+   287→
+   288→/** A held voucher from GET /api/me/vouchers `mine` (Task 10-b). */
+   289→type HeldVoucherT = {
+   290→  id: string;
+   291→  status: string;
+   292→  voucher: {
+   293→    id: string;
+   294→    code: string;
+   295→    title: string;
+   296→    kind: string;
+   297→    discountMinor: number;
+   298→    percentOff: number | null;
+   299→    maxDiscountMinor: number | null;
+   300→    minSpendMinor: number;
+   301→    expiryAt: string;
+   302→    scope: string;
+   303→    storeId: string | null;
+   304→    regionLimit: string | null;
+   305→    store?: { name: string; slug: string; logoUrl: string | null } | null;
+   306→  };
+   307→};
+   308→
+   309→function voucherOptionLabel(v: HeldVoucherT): string {
+   310→  const d = v.voucher;
+   311→  if (d.kind === "freeshipping") return `Free shipping · ${d.code}`;
+   312→  if (d.percentOff != null) {
+   313→    const cap = d.maxDiscountMinor != null ? ` (cap ${formatMinor(d.maxDiscountMinor)})` : "";
+   314→    return `${d.percentOff}% off${cap} · ${d.code}`;
+   315→  }
+   316→  return `${formatMinor(d.discountMinor)} off · ${d.code}`;
+   317→}
+   318→
+   319→type QuoteT = {
+   320→  subtotalMinor: number;
+   321→  discountMinor: number;
+   322→  shippingMinor: number;
+   323→  totalMinor: number;
+   324→  shippingRateId: string;
+   325→  coupon: { code: string; valid: boolean; discountMinor?: number; freeShip?: boolean; reason?: string };
+   326→  items: {
+   327→    title: string;
+   328→    variantLabel: string | null;
+   329→    qty: number;
+   330→    unitPriceMinor: number;
+   331→    lineTotalMinor: number;
+   332→    stock: number;
+   333→    moq?: number;
+   334→    storeId?: string;
+   335→    storeSlug?: string;
+   336→    storeName?: string;
+   337→  }[];
+   338→  groups?: QuoteGroupT[];
+   339→  shippingOptions?: ShippingOptionT[];
+   340→};
+   341→
+   342→type AddressT = {
+   343→  id: string;
+   344→  label: string;
+   345→  name: string;
+   346→  phone: string | null;
+   347→  line1: string;
+   348→  city: string;
+   349→  state: string;
+   350→  postcode: string;
+   351→  isDefault: boolean;
+   352→};
+   353→
+   354→// =============================================================================================
+   355→// PROGRESS STEPPER
+   356→// =============================================================================================
+   357→
+   358→const STEPS = [
+   359→  { n: 1 as const, label: "Information", icon: User },
+   360→  { n: 2 as const, label: "Delivery", icon: Truck },
+   361→  { n: 3 as const, label: "Payment", icon: CreditCard },
+   362→];
+   363→
+   364→function Stepper({ phase, onJump }: { phase: 1 | 2 | 3; onJump: (n: 1 | 2) => void }) {
+   365→  return (
+   366→    <ol className="flex min-w-0 items-center gap-2 overflow-hidden sm:gap-3" aria-label="Checkout progress">
+   367→      {STEPS.map((s, i) => {
+   368→        const done = phase > s.n;
+   369→        const current = phase === s.n;
+   370→        return (
+   371→          <li key={s.n} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none sm:gap-3">
+   372→            <button
+   373→              type="button"
+   374→              disabled={!done}
+   375→              onClick={() => done && s.n !== 3 && onJump(s.n)}
+   376→              className="flex min-w-0 items-center gap-2 disabled:cursor-default"
+   377→              aria-current={current ? "step" : undefined}
+   378→              aria-label={`Step ${s.n}: ${s.label}${done ? " (completed — click to edit)" : ""}`}
+   379→            >
+   380→              <span
+   381→                className={cn(
+   382→                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+   383→                  done && "border-transparent bg-brand-gradient text-white shadow-sm",
+   384→                  current && "border-teal-600 bg-teal-50 text-teal-700",
+   385→                  !done && !current && "border-muted-foreground/25 bg-card text-muted-foreground"
+   386→                )}
+   387→              >
+   388→                {done ? <Check className="h-4 w-4" aria-hidden="true" /> : s.n}
+   389→              </span>
+   390→              <span
+   391→                className={cn(
+   392→                  "truncate text-xs font-bold sm:text-sm",
+   393→                  current ? "text-teal-800" : done ? "text-foreground" : "text-muted-foreground"
+   394→                )}
+   395→              >
+   396→                {s.label}
+   397→              </span>
+   398→            </button>
+   399→            {i < STEPS.length - 1 ? (
+   400→              <span className={cn("h-0.5 min-w-4 flex-1 rounded-full", phase > s.n ? "bg-brand-gradient" : "bg-border")} aria-hidden="true" />
+   401→            ) : null}
+   402→          </li>
+   403→        );
+   404→      })}
+   405→    </ol>
+   406→  );
+   407→}
+   408→
+   409→// =============================================================================================
+   410→// ADDRESS BOOK (guest device-scoped, persisted via /api/checkout/addresses)
+   411→// =============================================================================================
+   412→
+   413→const emptyForm = { label: "Home", name: "", phone: "", line1: "", city: "", state: "Selangor", postcode: "", isDefault: false };
+   414→
+   415→function AddressFormFields({
+   416→  form,
+   417→  setForm,
+   418→  errors,
+   419→}: {
+   420→  form: typeof emptyForm;
+   421→  setForm: (f: typeof emptyForm) => void;
+   422→  errors: Record<string, string | null>;
+   423→}) {
+   424→  const f = (label: string, node: React.ReactNode, err?: string | null, required = true) => (
+   425→    <div className="space-y-1.5">
+   426→      <Label className="text-xs font-semibold text-muted-foreground">{label}{required ? " *" : ""}</Label>
+   427→      {node}
+   428→      {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+   429→    </div>
+   430→  );
+   431→  return (
+   432→    <div className="grid gap-3 sm:grid-cols-2">
+   433→      {f("Label", <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Home / Office" className="min-h-[44px]" required={false} />)}
+   434→      {f("Recipient name", <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Aina Binti Ahmad" className="min-h-[44px]" />, errors.name)}
+   435→      {f("Phone", <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="012-345 6789" className="min-h-[44px]" required={false} />, errors.phone)}
+   436→      {f("Postcode", <Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value.replace(/\D/g, "").slice(0, 5) })} inputMode="numeric" placeholder="43650" className="min-h-[44px]" />, errors.postcode)}
+   437→      <div className="sm:col-span-2">
+   438→        {f("Street address", <Textarea value={form.line1} onChange={(e) => setForm({ ...form, line1: e.target.value })} placeholder="42 Jalan Merdeka, Taman Setia" rows={2} className="min-h-[44px]" />, errors.line1)}
+   439→      </div>
+   440→      {f("City", <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Kuala Lumpur" className="min-h-[44px]" />, errors.city)}
+   441→      {f(
+   442→        "State",
+   443→        <select
+   444→          value={form.state}
+   445→          onChange={(e) => setForm({ ...form, state: e.target.value })}
+   446→          className="flex h-11 min-h-[44px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/40"
+   447→          aria-label="State"
+   448→        >
+   449→          {MY_STATES.map((s) => (
+   450→            <option key={s} value={s}>{s}</option>
+   451→          ))}
+   452→        </select>,
+   453→        errors.state
+   454→      )}
+   455→    </div>
+   456→  );
+   457→}
+   458→
+   459→function validateForm(form: typeof emptyForm): Record<string, string | null> {
+   460→  return {
+   461→    name: form.name.trim().length >= 2 ? null : "Recipient name is required",
+   462→    phone: !form.phone.trim() || PHONE_RE.test(form.phone.trim()) ? null : "Enter a valid phone number",
+   463→    line1: form.line1.trim() ? null : "Street address is required",
+   464→    city: form.city.trim() ? null : "City is required",
+   465→    state: form.state ? null : "State is required",
+   466→    postcode: POSTCODE_RE.test(form.postcode.trim()) ? null : "5-digit postcode required",
+   467→  };
+   468→}
+   469→
+   470→// =============================================================================================
+   471→// CHECKOUT VIEW — three phases
+   472→// =============================================================================================
+   473→
+   474→export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
+   475→  const { cart, loading: cartLoading, refresh: refreshCart } = useCart();
+   476→  // Selection-aware checkout: only TICKED cart lines are bought — anything
+   477→  // unticked in the drawer stays in the cart for a later purchase.
+   478→  const items = useMemo(() => (cart?.items ?? EMPTY_CART_ITEMS).filter((i) => i.selected), [cart]);
+   479→  const keptCount = (cart?.items.length ?? 0) - items.length;
+   480→
+   481→  const me = useApp((s) => s.me);
+   482→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+   483→  const shopper = me.loaded ? me.shopper : null;
+   484→
+   485→  const [draft, setDraft] = useState<DraftT>(loadDraft);
+   486→  useEffect(() => persistDraft(draft), [draft]);
+   487→
+   488→  // Contact details come from the ACCOUNT (carts/checkout are account-scoped);
+   489→  // only fill blanks so the shopper can still override per-order (gifts etc.).
+   490→  useEffect(() => {
+   491→    if (!shopper) return;
+   492→    setDraft((d) => ({
+   493→      ...d,
+   494→      name: d.name.trim() || shopper.fullName,
+   495→      email: d.email.trim() || shopper.email,
+   496→      phone: d.phone.trim() || shopper.phone || "",
+   497→    }));
+   498→  }, [shopper]);
+   499→
+   500→  const [addresses, setAddresses] = useState<AddressT[] | null>(null);
+   501→  const [addressesLoading, setAddressesLoading] = useState(true);
+   502→  const [formMode, setFormMode] = useState<null | { kind: "new" } | { kind: "edit"; address: AddressT }>(null);
+   503→  const [form, setForm] = useState(emptyForm);
+   504→  const [formErrors, setFormErrors] = useState<Record<string, string | null>>({});
+   505→  const [formBusy, setFormBusy] = useState(false);
+   506→  const [deleteArm, setDeleteArm] = useState<string | null>(null);
+   507→
+   508→  const [quote, setQuote] = useState<QuoteT | null>(null);
+   509→  const [quoting, setQuoting] = useState(false);
+   510→  const [couponInput, setCouponInput] = useState("");
+   511→  const [couponErr, setCouponErr] = useState<string | null>(null);
+   512→  const [tried, setTried] = useState(false);
+   513→  const [submitting, setSubmitting] = useState(false);
+   514→
+   515→  // Task 10-b claimable vouchers — one held voucher per seller group.
+   516→  const [heldVouchers, setHeldVouchers] = useState<HeldVoucherT[] | null>(null);
+   517→  const [voucherSel, setVoucherSel] = useState<Record<string, string>>({}); // storeId → userVoucherId
+   518→
+   519→  const selectedAddr = useMemo(
+   520→    () => addresses?.find((a) => a.id === draft.addressId) ?? null,
+   521→    [addresses, draft.addressId]
+   522→  );
+   523→
+   524→  // load the device address book once
+   525→  useEffect(() => {
+   526→    let alive = true;
+   527→    fetchJson<{ addresses: AddressT[] }>("/api/checkout/addresses")
+   528→      .then((d) => {
+   529→        if (!alive) return;
+   530→        setAddresses(d.addresses);
+   531→        setDraft((dft) => {
+   532→          if (dft.addressId && d.addresses.some((a) => a.id === dft.addressId)) return dft;
+   533→          const def = d.addresses.find((a) => a.isDefault) ?? d.addresses[0];
+   534→          return def ? { ...dft, addressId: def.id } : dft;
+   535→        });
+   536→      })
+   537→      .catch(() => alive && setAddresses([]))
+   538→      .finally(() => alive && setAddressesLoading(false));
+   539→    return () => {
+   540→      alive = false;
+   541→    };
+   542→  }, []);
+   543→
+   544→  const payloadItems = useMemo(() => items.map((i) => ({ variantId: i.variantId, qty: i.qty })), [items]);
+   545→  const destState = selectedAddr?.state ?? null;
+   546→
+   547→  // Seller groups in this checkout — quote groups first (server truth), cart
+   548→  // grouping as the pre-quote fallback.
+   549→  const storeGroups = useMemo(() => {
+   550→    if (quote?.groups?.length) return quote.groups.map((g) => ({ storeId: g.storeId, storeName: g.storeName }));
+   551→    if (cart?.stores?.length) return cart.stores.map((s) => ({ storeId: s.storeId, storeName: s.storeName }));
+   552→    const map = new Map<string, string>();
+   553→    for (const i of items) if (!map.has(i.storeId)) map.set(i.storeId, i.storeName);
+   554→    return [...map.entries()].map(([storeId, storeName]) => ({ storeId, storeName }));
+   555→  }, [quote, cart, items]);
+   556→
+   557→  // Selected vouchers pruned to stores actually in this checkout — the create
+   558→  // endpoint is HARD about vouchers for sellers that are not part of the cart.
+   559→  const voucherEntries = useMemo(
+   560→    () =>
+   561→      storeGroups
+   562→        .map((g) => ({ storeId: g.storeId, userVoucherId: voucherSel[g.storeId] }))
+   563→        .filter((e): e is { storeId: string; userVoucherId: string } => Boolean(e.userVoucherId)),
+   564→    [storeGroups, voucherSel]
+   565→  );
+   566→
+   567→  // Load the shopper's held vouchers (checkout is account-only — always a session here).
+   568→  useEffect(() => {
+   569→    if (!shopper) return;
+   570→    let alive = true;
+   571→    fetchJson<{ mine: HeldVoucherT[] }>("/api/me/vouchers")
+   572→      .then((d) => {
+   573→        if (!alive) return;
+   574→        setHeldVouchers((d.mine ?? []).filter((v) => v.status === "AVAILABLE"));
+   575→      })
+   576→      .catch(() => alive && setHeldVouchers([]));
+   577→    return () => {
+   578→      alive = false;
+   579→    };
+   580→  }, [shopper]);
+   581→
+   582→  // Quote-request sequencing — only the NEWEST request may write quote state,
+   583→  // so a slow response can never clobber (or outlive) a fresher one.
+   584→  const quoteSeq = useRef(0);
+   585→  // Latest held-voucher selection, read at call time via ref. `voucherEntries`
+   586→  // is intentionally NOT in refreshQuote's deps: it is recomputed (new array
+   587→  // identity, even when empty) every time `storeGroups` changes — and
+   588→  // `storeGroups` depends on `quote` itself. That cycle
+   589→  // (quote → storeGroups → voucherEntries → refreshQuote → effect → refetch →
+   590→  // setQuote → …) used to re-quote on every render, leaving the checkout stuck
+   591→  // on "Updating prices from server…" with Continue-to-payment greyed out.
+   592→  const voucherEntriesRef = useRef(voucherEntries);
+   593→  useEffect(() => {
+   594→    voucherEntriesRef.current = voucherEntries;
+   595→  }, [voucherEntries]);
+   596→  // Stable dependency signal — changes only when the selection CONTENT changes.
+   597→  const voucherKey = voucherEntries.map((v) => `${v.storeId}:${v.userVoucherId}`).join("|");
+   598→
+   599→  const refreshQuote = useCallback(
+   600→    async (code: string, rateId: string, state: string | null) => {
+   601→      if (payloadItems.length === 0) return;
+   602→      const seq = ++quoteSeq.current;
+   603→      setQuoting(true);
+   604→      try {
+   605→        // OPTION A: no storeSlug — the server groups cart items per seller itself.
+   606→        // vouchers: per-group claimable voucher verdicts (Task 10-b).
+   607→        const ve = voucherEntriesRef.current;
+   608→        const q = await postJson<QuoteT>("/api/checkout/quote", {
+   609→          items: payloadItems,
+   610→          couponCode: code || undefined,
+   611→          shippingRateId: rateId,
+   612→          state: state ?? undefined,
+   613→          vouchers: ve.length > 0 ? ve : undefined,
+   614→        });
+   615→        if (seq !== quoteSeq.current) return; // superseded by a newer request
+   616→        setQuote(q);
+   617→      } catch {
+   618→        if (seq !== quoteSeq.current) return;
+   619→        setQuote(null);
+   620→      } finally {
+   621→        if (seq === quoteSeq.current) setQuoting(false);
+   622→      }
+   623→    },
+   624→    [payloadItems, voucherKey]
+   625→  );
+   626→
+   627→  // auto-quote on cart / shipping / destination / voucher / coupon change
+   628→  useEffect(() => {
+   629→    refreshQuote(draft.couponCode, draft.shippingRateId, destState);
+   630→  }, [refreshQuote, draft.couponCode, draft.shippingRateId, destState]);
+   631→
+   632→  // delivery option became invalid for this destination → fall back to Standard (server rule)
+   633→  useEffect(() => {
+   634→    if (!quote?.shippingOptions) return;
+   635→    const sel = quote.shippingOptions.find((o) => o.id === draft.shippingRateId);
+   636→    if (sel && !sel.available) {
+   637→      setDraft((d) => ({ ...d, shippingRateId: "standard" }));
+   638→      toast.error(sel.reason ?? "Selected delivery is unavailable — switched to Standard");
+   639→    }
+   640→  }, [quote, draft.shippingRateId]);
+   641→
+   642→  const stockIssues = useMemo(
+   643→    () => (quote?.items ?? []).filter((i) => i.qty > i.stock),
+   644→    [quote]
+   645→  );
+   646→
+   647→  // Seller minimum-order-quantity issues — same soft-warning pattern as the
+   648→  // oversell list: the quote stays renderable, Pay is blocked, and the buyer
+   649→  // gets a persistent fix-it box (checkout/create still hard-rejects).
+   650→  const moqIssues = useMemo(
+   651→    () => (quote?.items ?? []).filter((i) => i.moq != null && i.qty < i.moq),
+   652→    [quote]
+   653→  );
+   654→
+   655→  // ------------------------------------------------------------- coupon
+   656→  async function applyCoupon() {
+   657→    const code = couponInput.trim().toUpperCase();
+   658→    if (!code) return;
+   659→    setCouponErr(null);
+   660→    const seq = ++quoteSeq.current; // join the same sequencing as refreshQuote
+   661→    setQuoting(true);
+   662→    try {
+   663→      const q = await postJson<QuoteT>("/api/checkout/quote", {
+   664→        items: payloadItems,
+   665→        couponCode: code,
+   666→        shippingRateId: draft.shippingRateId,
+   667→        state: destState ?? undefined,
+   668→        vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
+   669→      });
+   670→      if (seq !== quoteSeq.current) return; // superseded by a newer request
+   671→      if (q.coupon?.valid) {
+   672→        setDraft((d) => ({ ...d, couponCode: code }));
+   673→        setQuote(q);
+   674→        toast.success(`Coupon ${code} applied`, {
+   675→          description: q.coupon.freeShip ? "Free shipping unlocked" : `You save ${formatMinor(q.coupon.discountMinor ?? 0)}`,
+   676→        });
+   677→      } else {
+   678→        setCouponErr(q.coupon?.reason ?? "Invalid coupon");
+   679→      }
+   680→    } catch (e) {
+   681→      if (seq === quoteSeq.current) setCouponErr(e instanceof Error ? e.message : "Could not validate coupon");
+   682→    } finally {
+   683→      if (seq === quoteSeq.current) setQuoting(false);
+   684→    }
+   685→  }
+   686→
+   687→  function removeCoupon() {
+   688→    setDraft((d) => ({ ...d, couponCode: "" }));
+   689→    setCouponInput("");
+   690→    setCouponErr(null);
+   691→  }
+   692→
+   693→  // ------------------------------------------------------------- address book ops
+   694→  async function saveAddress() {
+   695→    const errs = validateForm(form);
+   696→    setFormErrors(errs);
+   697→    if (Object.values(errs).some(Boolean)) return;
+   698→    setFormBusy(true);
+   699→    try {
+   700→      const payload = { ...form, name: form.name.trim(), line1: form.line1.trim(), city: form.city.trim(), postcode: form.postcode.trim() };
+   701→      const res =
+   702→        formMode?.kind === "edit"
+   703→          ? await patchJson<{ address: AddressT; addresses: AddressT[] }>(`/api/checkout/addresses/${formMode.address.id}`, payload)
+   704→          : await postJson<{ address: AddressT; addresses: AddressT[] }>("/api/checkout/addresses", payload);
+   705→      setAddresses(res.addresses);
+   706→      setDraft((d) => ({ ...d, addressId: res.address.id }));
+   707→      setFormMode(null);
+   708→      setForm(emptyForm);
+   709→      window.dispatchEvent(new Event("nomofee:addresses-changed"));
+   710→      toast.success(formMode?.kind === "edit" ? "Address updated" : "Address saved", {
+   711→        description: `${res.address.line1}, ${res.address.city} ${res.address.postcode}`,
+   712→      });
+   713→    } catch (e) {
+   714→      toast.error(e instanceof Error ? e.message : "Could not save address");
+   715→    } finally {
+   716→      setFormBusy(false);
+   717→    }
+   718→  }
+   719→
+   720→  async function removeAddress(id: string) {
+   721→    try {
+   722→      const res = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
+   723→      setAddresses(res.addresses);
+   724→      setDeleteArm(null);
+   725→      setDraft((d) => (d.addressId === id ? { ...d, addressId: res.addresses.find((a) => a.isDefault)?.id ?? res.addresses[0]?.id ?? null } : d));
+   726→      window.dispatchEvent(new Event("nomofee:addresses-changed"));
+   727→      toast.success("Address removed");
+   728→    } catch (e) {
+   729→      toast.error(e instanceof Error ? e.message : "Could not remove address");
+   730→    }
+   731→  }
+   732→
+   733→  async function makeDefault(id: string) {
+   734→    try {
+   735→      const res = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
+   736→      setAddresses(res.addresses);
+   737→      window.dispatchEvent(new Event("nomofee:addresses-changed"));
+   738→      toast.success("Default address updated");
+   739→    } catch (e) {
+   740→      toast.error(e instanceof Error ? e.message : "Could not update address");
+   741→    }
+   742→  }
+   743→
+   744→  // ------------------------------------------------------------- phase validation
+   745→  const contactErrors = {
+   746→    name: draft.name.trim().length >= 2 ? null : "Full name is required",
+   747→    email: EMAIL_RE.test(draft.email.trim()) ? null : "Enter a valid email address",
+   748→    phone: !draft.phone.trim() || PHONE_RE.test(draft.phone.trim()) ? null : "Enter a valid phone number",
+   749→  };
+   750→  const contactValid = !Object.values(contactErrors).some(Boolean);
+   751→  const addressPicked = !!selectedAddr;
+   752→  const phase1Valid = contactValid && addressPicked;
+   753→
+   754→  function goToDelivery() {
+   755→    setTried(true);
+   756→    if (!phase1Valid) {
+   757→      if (!addressPicked) toast.error("Choose or save a delivery address first");
+   758→      return;
+   759→    }
+   760→    setTried(false);
+   761→    setDraft((d) => ({ ...d, phase: 2 }));
+   762→    window.scrollTo({ top: 0, behavior: "smooth" });
+   763→  }
+   764→
+   765→  function goToPayment() {
+   766→    const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+   767→    if (sel && !sel.available) {
+   768→      toast.error(sel.reason ?? "Please pick an available delivery option");
+   769→      return;
+   770→    }
+   771→    setDraft((d) => ({ ...d, phase: 3 }));
+   772→    window.scrollTo({ top: 0, behavior: "smooth" });
+   773→  }
+   774→
+   775→  // ------------------------------------------------------------- place order
+   776→  async function placeOrder() {
+   777→    if (submitting) return; // double-tap guard
+   778→    setTried(true);
+   779→    if (!quote || !selectedAddr || items.length === 0) return;
+   780→    if (stockIssues.length > 0) {
+   781→      toast.error("Some items exceed available stock — please update your cart");
+   782→      return;
+   783→    }
+   784→    if (!draft.agreed) {
+   785→      toast.error("Please accept the terms to place your order");
+   786→      return;
+   787→    }
+   788→    setSubmitting(true);
+   789→    try {
+   790→      const res = await postJson<{
+   791→        orderNumber: string;
+   792→        orderNumbers?: string[];
+   793→        orderPaymentRef: string;
+   794→        totalMinor: number;
+   795→        vouchersApplied?: { storeId: string; code: string | null; title: string | null; kind: string | null; discountMinor: number; freeShipping: boolean }[];
+   796→      }>(
+   797→        "/api/checkout/create",
+   798→        {
+   799→          items: payloadItems,
+   800→          customer: { name: draft.name.trim(), email: draft.email.trim(), phone: draft.phone.trim() || undefined },
+   801→          shippingAddress: {
+   802→            line1: selectedAddr.line1,
+   803→            city: selectedAddr.city,
+   804→            state: selectedAddr.state,
+   805→            postcode: selectedAddr.postcode,
+   806→          },
+   807→          couponCode: draft.couponCode || undefined,
+   808→          vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
+   809→          shippingRateId: draft.shippingRateId,
+   810→          provider: draft.provider,
+   811→          customerNote: draft.note.trim() || undefined,
+   812→        },
+   813→        { "Idempotency-Key": draft.idemKey } // stable per checkout session → safe retries
+   814→      );
+   815→      const orderNumbers = res.orderNumbers?.length ? res.orderNumbers : [res.orderNumber];
+   816→      for (const n of orderNumbers) trackOrderRef(n, draft.email.trim().toLowerCase());
+   817→      try {
+   818→        window.localStorage.setItem(CONTACT_KEY, JSON.stringify({ name: draft.name, email: draft.email, phone: draft.phone }));
+   819→        window.localStorage.setItem(EMAIL_KEY, draft.email.trim().toLowerCase());
+   820→      } catch {
+   821→        /* storage full — non-critical */
+   822→      }
+   823→      clearDraft();
+   824→      const applied = (res.vouchersApplied ?? []).filter((a) => a.code);
+   825→      const appliedTxt = applied
+   826→        .map((a) => `${a.code}${a.freeShipping ? " — free shipping" : a.discountMinor > 0 ? ` — ${formatMinor(a.discountMinor)} off` : ""}`)
+   827→        .join(" · ");
+   828→      toast.success(
+   829→        orderNumbers.length > 1 ? `${orderNumbers.length} orders created` : `Order ${res.orderNumber} created`,
+   830→        {
+   831→          description: appliedTxt
+   832→            ? `${appliedTxt} — redirecting to secure payment…`
+   833→            : "One payment for all sellers — redirecting to secure payment…",
+   834→        }
+   835→      );
+   836→      ctx.nav({ name: "pay", ref: res.orderPaymentRef });
+   837→    } catch (e) {
+   838→      if (e instanceof ApiFail && e.code === "SHIPPING_UNAVAILABLE") {
+   839→        setDraft((d) => ({ ...d, phase: 2 }));
+   840→      }
+   841→      if (e instanceof ApiFail && e.code === "OUT_OF_STOCK") {
+   842→        refreshCart();
+   843→      }
+   844→      toast.error(e instanceof Error ? e.message : "Checkout failed — please try again");
+   845→    } finally {
+   846→      setSubmitting(false);
+   847→    }
+   848→  }
+   849→
+   850→  // ------------------------------------------------------------- guards
+   851→  if (cartLoading) {
+   852→    return (
+   853→      <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+   854→        <Skeleton className="mb-6 h-8 w-48" />
+   855→        <div className="grid gap-6 lg:grid-cols-3">
+   856→          <div className="space-y-4 lg:col-span-2">
+   857→            <Skeleton className="h-64 rounded-xl" />
+   858→            <Skeleton className="h-40 rounded-xl" />
+   859→          </div>
+   860→          <Skeleton className="h-80 rounded-xl" />
+   861→        </div>
+   862→      </div>
+   863→    );
+   864→  }
+   865→
+   866→  if (items.length === 0) {
+   867→    return (
+   868→      <div className="flex-1">
+   869→        <EmptyState
+   870→          icon={ShoppingBag}
+   871→          title={keptCount > 0 ? "Nothing selected for checkout" : "Your cart is empty"}
+   872→          hint={
+   873→            keptCount > 0
+   874→              ? "Everything is unticked — your items are safe in the cart. Open the cart and tick what you'd like to buy now."
+   875→              : "Add something lovely from the marketplace or a store first."
+   876→          }
+   877→          action={
+   878→            keptCount > 0 ? (
+   879→              <Button onClick={() => ctx.openCart()} className="bg-brand-gradient-deep hover:brightness-110">
+   880→                Open cart
+   881→              </Button>
+   882→            ) : (
+   883→              <Button onClick={() => ctx.nav({ name: "market" })} className="bg-brand-gradient-deep hover:brightness-110">
+   884→                Start shopping
+   885→              </Button>
+   886→            )
+   887→          }
+   888→        />
+   889→      </div>
+   890→    );
+   891→  }
+   892→
+   893→  // Checkout is account-only — carts, addresses and orders all live on the account.
+   894→  if (!shopper) {
+   895→    return (
+   896→      <div className="flex-1">
+   897→        <EmptyState
+   898→          icon={LogIn}
+   899→          title="Sign in to check out"
+   900→          hint="Your cart, saved addresses and orders are tied to your NOMOFEE account so they follow you on every device."
+   901→          action={
+   902→            <Button
+   903→              onClick={() => openShopperAuth()}
+   904→              className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
+   905→            >
+   906→              <LogIn className="h-4 w-4" /> Sign in or create account
+   907→            </Button>
+   908→          }
+   909→        />
+   910→      </div>
+   911→    );
+   912→  }
+   913→
+   914→  const subtotal = quote?.subtotalMinor ?? items.reduce((s, i) => s + i.lineTotalMinor, 0);
+   915→  const freeShipProgress = Math.min(100, Math.round((subtotal / 10000) * 100));
+   916→  // OPTION A: summary grouped per seller (server-validated quote items carry the store name).
+   917→  // Plain computation (no hook) — this sits after the early-return guards.
+   918→  const summaryGroups = (() => {
+   919→    const src = (quote?.items ?? items.map((i) => ({ title: i.title, variantLabel: i.variantLabel, qty: i.qty, lineTotalMinor: i.lineTotalMinor, storeName: i.storeName }))).map(
+   920→      (i, idx) => ({ ...i, key: `${i.title}-${idx}`, storeName: i.storeName ?? "Your items" })
+   921→    );
+   922→    const map = new Map<string, { storeName: string; subtotalMinor: number; rows: { key: string; title: string; variantLabel: string | null; qty: number; lineTotalMinor: number }[] }>();
+   923→    for (const it of src) {
+   924→      const g = map.get(it.storeName);
+   925→      if (g) {
+   926→        g.subtotalMinor += it.lineTotalMinor;
+   927→        g.rows.push({ key: it.key, title: it.title, variantLabel: it.variantLabel, qty: it.qty, lineTotalMinor: it.lineTotalMinor });
+   928→      } else {
+   929→        map.set(it.storeName, {
+   930→          storeName: it.storeName,
+   931→          subtotalMinor: it.lineTotalMinor,
+   932→          rows: [{ key: it.key, title: it.title, variantLabel: it.variantLabel, qty: it.qty, lineTotalMinor: it.lineTotalMinor }],
+   933→        });
+   934→      }
+   935→    }
+   936→    return [...map.values()];
+   937→  })();
+   938→  const field = (label: string, node: React.ReactNode, err?: string | null) => (
+   939→    <div className="space-y-1.5">
+   940→      <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
+   941→      {node}
+   942→      {err ? <p className="text-xs font-medium text-rose-600">{err}</p> : null}
+   943→    </div>
+   944→  );
+   945→
+   946→  return (
+   947→    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+   948→      <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
+   949→      <p className="text-sm text-muted-foreground">
+   950→        {quote?.groups && quote.groups.length > 1 ? (
+   951→          <>
+   952→            Items from <span className="font-semibold text-teal-700">{quote.groups.length} sellers</span> · you pay ONCE — we split the order per seller
+   953→          </>
+   954→        ) : (
+   955→          <>
+   956→            Items from <span className="font-semibold text-teal-700">{quote?.groups?.[0]?.storeName ?? cart?.storeName ?? "your sellers"}</span>
+   957→          </>
+   958→        )}
+   959→      </p>
+   960→
+   961→      <div className="mt-5 rounded-xl border bg-card p-4 shadow-soft sm:px-6">
+   962→        <Stepper phase={draft.phase} onJump={(n) => setDraft((d) => ({ ...d, phase: n }))} />
+   963→      </div>
+   964→
+   965→      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+   966→        {/* left column — phases */}
+   967→        <div className="space-y-6 lg:col-span-3">
+   968→          {/* ============================ PHASE 1: INFORMATION ============================ */}
+   969→          {draft.phase === 1 ? (
+   970→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+   971→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-contact">
+   972→                <h2 id="checkout-contact" className="flex items-center gap-2 text-base font-bold">
+   973→                  <User className="h-4 w-4 text-teal-700" /> Contact
+   974→                </h2>
+   975→                <div className="grid gap-4 sm:grid-cols-2">
+   976→                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, tried || draft.name.length > 0 ? contactErrors.name : null)}
+   977→                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, tried || draft.email.length > 0 ? contactErrors.email : null)}
+   978→                  <div className="sm:col-span-2">
+   979→                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried ? contactErrors.phone : null)}
+   980→                  </div>
+   981→                </div>
+   982→              </section>
+   983→
+   984→              <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-addresses">
+   985→                <div className="flex items-center justify-between gap-2">
+   986→                  <h2 id="checkout-addresses" className="flex items-center gap-2 text-base font-bold">
+   987→                    <MapPin className="h-4 w-4 text-teal-700" /> Delivery address
+   988→                  </h2>
+   989→                  {!formMode ? (
+   990→                    <Button
+   991→                      variant="outline"
+   992→                      size="sm"
+   993→                      className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50"
+   994→                      onClick={() => {
+   995→                        setForm(emptyForm);
+   996→                        setFormErrors({});
+   997→                        setFormMode({ kind: "new" });
+   998→                      }}
+   999→                    >
+  1000→                      <Plus className="h-4 w-4" /> Add address
+  1001→                    </Button>
+  1002→                  ) : null}
+  1003→                </div>
+  1004→
+  1005→                {addressesLoading ? (
+  1006→                  <div className="space-y-2">
+  1007→                    <Skeleton className="h-20 rounded-lg" />
+  1008→                    <Skeleton className="h-20 rounded-lg" />
+  1009→                  </div>
+  1010→                ) : (addresses?.length ?? 0) === 0 && !formMode ? (
+  1011→                  <p className="rounded-lg border border-dashed border-teal-700/25 bg-teal-50/50 px-4 py-6 text-center text-sm text-muted-foreground">
+  1012→                    No saved addresses yet — add one to continue.
+  1013→                  </p>
+  1014→                ) : null}
+  1015→
+  1016→                {addresses && addresses.length > 0 ? (
+  1017→                  <RadioGroup
+  1018→                    value={draft.addressId ?? ""}
+  1019→                    onValueChange={(v) => setDraft((d) => ({ ...d, addressId: v }))}
+  1020→                    className="gap-2"
+  1021→                  >
+  1022→                    {addresses.map((a) => (
+  1023→                      <div
+  1024→                        key={a.id}
+  1025→                        className={cn(
+  1026→                          "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border p-3.5 transition-colors",
+  1027→                          draft.addressId === a.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+  1028→                        )}
+  1029→                      >
+  1030→                        <RadioGroupItem value={a.id} id={`addr-${a.id}`} className="mt-1" />
+  1031→                        <Label htmlFor={`addr-${a.id}`} className="min-w-0 flex-1 cursor-pointer space-y-0.5">
+  1032→                          <span className="flex flex-wrap items-center gap-2">
+  1033→                            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-teal-800">{a.label}</span>
+  1034→                            {a.isDefault ? (
+  1035→                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+  1036→                                <Star className="h-3 w-3" /> Default
+  1037→                              </span>
+  1038→                            ) : null}
+  1039→                            <span className="text-sm font-semibold">{a.name}</span>
+  1040→                            {a.phone ? <span className="text-xs text-muted-foreground">· {a.phone}</span> : null}
+  1041→                          </span>
+  1042→                          <span className="block text-sm text-muted-foreground">
+  1043→                            {a.line1}, {a.city}, {a.state} {a.postcode}
+  1044→                          </span>
+  1045→                        </Label>
+  1046→                        <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
+  1047→                          {!a.isDefault ? (
+  1048→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs text-muted-foreground" onClick={() => makeDefault(a.id)} aria-label={`Set ${a.label} as default address`}>
+  1049→                              Set default
+  1050→                            </Button>
+  1051→                          ) : null}
+  1052→                          <Button
+  1053→                            variant="ghost"
+  1054→                            size="icon"
+  1055→                            className="h-8 w-8"
+  1056→                            aria-label={`Edit ${a.label} address`}
+  1057→                            onClick={() => {
+  1058→                              setForm({
+  1059→                                label: a.label,
+  1060→                                name: a.name,
+  1061→                                phone: a.phone ?? "",
+  1062→                                line1: a.line1,
+  1063→                                city: a.city,
+  1064→                                state: a.state,
+  1065→                                postcode: a.postcode,
+  1066→                                isDefault: a.isDefault,
+  1067→                              });
+  1068→                              setFormErrors({});
+  1069→                              setFormMode({ kind: "edit", address: a });
+  1070→                            }}
+  1071→                          >
+  1072→                            <Pencil className="h-3.5 w-3.5" />
+  1073→                          </Button>
+  1074→                          {deleteArm === a.id ? (
+  1075→                            <Button variant="ghost" size="sm" className="h-8 min-h-[36px] px-2 text-xs font-bold text-rose-600 hover:bg-rose-50" onClick={() => removeAddress(a.id)}>
+  1076→                              Confirm
+  1077→                            </Button>
+  1078→                          ) : (
+  1079→                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${a.label} address`} onClick={() => setDeleteArm(a.id)}>
+  1080→                              <Trash2 className="h-3.5 w-3.5" />
+  1081→                            </Button>
+  1082→                          )}
+  1083→                        </div>
+  1084→                      </div>
+  1085→                    ))}
+  1086→                  </RadioGroup>
+  1087→                ) : null}
+  1088→
+  1089→                {formMode ? (
+  1090→                  <div className="space-y-3 rounded-lg border border-teal-700/25 bg-teal-50/40 p-4">
+  1091→                    <p className="text-sm font-bold">{formMode.kind === "edit" ? "Edit address" : "New address"}</p>
+  1092→                    <AddressFormFields form={form} setForm={setForm} errors={formErrors} />
+  1093→                    <div className="flex items-center gap-2">
+  1094→                      <input
+  1095→                        id="addr-default"
+  1096→                        type="checkbox"
+  1097→                        checked={form.isDefault}
+  1098→                        onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+  1099→                        className="h-4 w-4 rounded border-input accent-teal-700"
+  1100→                      />
+  1101→                      <Label htmlFor="addr-default" className="text-sm font-normal">Set as default address</Label>
+  1102→                    </div>
+  1103→                    <div className="flex gap-2 pt-1">
+  1104→                      <Button onClick={saveAddress} disabled={formBusy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+  1105→                        {formBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save address
+  1106→                      </Button>
+  1107→                      <Button variant="outline" onClick={() => { setFormMode(null); setFormErrors({}); }} className="min-h-[44px]">
+  1108→                        Cancel
+  1109→                      </Button>
+  1110→                    </div>
+  1111→                  </div>
+  1112→                ) : null}
+  1113→              </section>
+  1114→
+  1115→              {tried && !phase1Valid ? (
+  1116→                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+  1117→                  Please complete your contact details and choose a delivery address to continue.
+  1118→                </p>
+  1119→              ) : null}
+  1120→
+  1121→              <Button size="lg" onClick={goToDelivery} className="w-full min-h-[48px] bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto sm:px-10">
+  1122→                Continue to delivery
+  1123→              </Button>
+  1124→            </motion.div>
+  1125→          ) : null}
+  1126→
+  1127→          {/* ============================ PHASE 2: DELIVERY ============================ */}
+  1128→          {draft.phase === 2 ? (
+  1129→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+  1130→              {selectedAddr ? (
+  1131→                <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-5 shadow-soft">
+  1132→                  <div className="min-w-0">
+  1133→                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Deliver to</p>
+  1134→                    <p className="pt-0.5 text-sm font-semibold">
+  1135→                      {selectedAddr.name} · {selectedAddr.phone ?? draft.phone}
+  1136→                    </p>
+  1137→                    <p className="text-sm text-muted-foreground">
+  1138→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+  1139→                    </p>
+  1140→                  </div>
+  1141→                  <Button variant="outline" size="sm" className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))}>
+  1142→                    <Pencil className="h-3.5 w-3.5" /> Change
+  1143→                  </Button>
+  1144→                </div>
+  1145→              ) : null}
+  1146→
+  1147→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-shipping">
+  1148→                <h2 id="checkout-shipping" className="flex items-center gap-2 text-base font-bold">
+  1149→                  <Truck className="h-4 w-4 text-teal-700" /> Delivery method
+  1150→                </h2>
+  1151→
+  1152→                {!quote?.shippingOptions ? (
+  1153→                  <div className="space-y-2">
+  1154→                    <Skeleton className="h-16 rounded-lg" />
+  1155→                    <Skeleton className="h-16 rounded-lg" />
+  1156→                  </div>
+  1157→                ) : (
+  1158→                  <RadioGroup
+  1159→                    value={draft.shippingRateId}
+  1160→                    onValueChange={(v) => setDraft((d) => ({ ...d, shippingRateId: v }))}
+  1161→                    className="gap-2"
+  1162→                  >
+  1163→                    {quote.shippingOptions.map((s) => (
+  1164→                      <Label
+  1165→                        key={s.id}
+  1166→                        htmlFor={`ship-${s.id}`}
+  1167→                        className={cn(
+  1168→                          "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+  1169→                          draft.shippingRateId === s.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50",
+  1170→                          !s.available && "cursor-not-allowed opacity-60"
+  1171→                        )}
+  1172→                        aria-disabled={!s.available}
+  1173→                      >
+  1174→                        <RadioGroupItem value={s.id} id={`ship-${s.id}`} disabled={!s.available} />
+  1175→                        <div className="min-w-0 flex-1">
+  1176→                          <p className="text-sm font-semibold">{s.label}</p>
+  1177→                          <p className="text-xs text-muted-foreground">{s.available ? s.eta : s.reason}</p>
+  1178→                        </div>
+  1179→                        <span className={cn("text-sm font-bold", s.freeShipping ? "text-emerald-700" : "text-teal-700")}>
+  1180→                          {s.freeShipping ? "FREE" : formatMinor(s.amountMinor)}
+  1181→                        </span>
+  1182→                      </Label>
+  1183→                    ))}
+  1184→                  </RadioGroup>
+  1185→                )}
+  1186→
+  1187→                {quote && quote.shippingMinor === 0 && quote.shippingOptions?.find((o) => o.id === draft.shippingRateId)?.id === "standard" ? (
+  1188→                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+  1189→                    <ShieldCheck className="h-4 w-4" /> Free standard shipping applied (order above RM 100)
+  1190→                  </div>
+  1191→                ) : (
+  1192→                  <div className="pt-1">
+  1193→                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+  1194→                      <div className="h-full rounded-full bg-brand-gradient transition-all" style={{ width: `${freeShipProgress}%` }} />
+  1195→                    </div>
+  1196→                    <p className="pt-1.5 text-xs text-muted-foreground">
+  1197→                      {freeShipProgress >= 100
+  1198→                        ? "You've unlocked FREE standard shipping!"
+  1199→                        : `${formatMinor(Math.max(0, 10000 - subtotal))} away from FREE standard shipping`}
+  1200→                    </p>
+  1201→                  </div>
+  1202→                )}
+  1203→              </section>
+  1204→
+  1205→              <div className="flex flex-wrap gap-3">
+  1206→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="min-h-[48px]">
+  1207→                  Back
+  1208→                </Button>
+  1209→                <Button size="lg" onClick={goToPayment} disabled={quoting} className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110 sm:flex-none sm:px-10">
+  1210→                  Continue to payment
+  1211→                </Button>
+  1212→              </div>
+  1213→            </motion.div>
+  1214→          ) : null}
+  1215→
+  1216→          {/* ============================ PHASE 3: PAYMENT & REVIEW ============================ */}
+  1217→          {draft.phase === 3 ? (
+  1218→            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-6">
+  1219→              {/* review blocks */}
+  1220→              <div className="grid gap-3 sm:grid-cols-2">
+  1221→                {selectedAddr ? (
+  1222→                  <div className="rounded-xl border bg-card p-4 shadow-soft">
+  1223→                    <div className="flex items-start justify-between gap-2">
+  1224→                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+  1225→                        <MapPin className="h-3.5 w-3.5" /> Deliver to
+  1226→                      </p>
+  1227→                      <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+  1228→                        Edit
+  1229→                      </button>
+  1230→                    </div>
+  1231→                    <p className="pt-1 text-sm font-semibold">{selectedAddr.name}</p>
+  1232→                    <p className="text-sm text-muted-foreground">
+  1233→                      {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
+  1234→                    </p>
+  1235→                  </div>
+  1236→                ) : null}
+  1237→                <div className="rounded-xl border bg-card p-4 shadow-soft">
+  1238→                  <div className="flex items-start justify-between gap-2">
+  1239→                    <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+  1240→                      <Truck className="h-3.5 w-3.5" /> Delivery
+  1241→                    </p>
+  1242→                    <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+  1243→                      Edit
+  1244→                    </button>
+  1245→                  </div>
+  1246→                  {(() => {
+  1247→                    const sel = quote?.shippingOptions?.find((o) => o.id === draft.shippingRateId);
+  1248→                    const edd = eddFromEtaLabel(sel?.eta);
+  1249→                    return (
+  1250→                      <>
+  1251→                        <p className="pt-1 text-sm font-semibold">{sel?.label ?? "—"}</p>
+  1252→                        <p className="text-sm text-muted-foreground">
+  1253→                          {sel ? `${sel.eta} · ${sel.freeShipping ? "FREE" : formatMinor(sel.amountMinor)}` : "—"}
+  1254→                        </p>
+  1255→                        {edd ? (
+  1256→                          <div className="pt-1.5">
+  1257→                            <EddChip label={eddRangeLabel(edd.from, edd.to)} />
+  1258→                          </div>
+  1259→                        ) : null}
+  1260→                      </>
+  1261→                    );
+  1262→                  })()}
+  1263→                </div>
+  1264→              </div>
+  1265→
+  1266→              <section className="space-y-3 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-payment">
+  1267→                <h2 id="checkout-payment" className="flex items-center gap-2 text-base font-bold">
+  1268→                  <CreditCard className="h-4 w-4 text-teal-700" /> Payment method
+  1269→                </h2>
+  1270→                <RadioGroup value={draft.provider} onValueChange={(v) => setDraft((d) => ({ ...d, provider: v }))} className="gap-2">
+  1271→                  {PROVIDERS.map((p) => (
+  1272→                    <Label
+  1273→                      key={p.id}
+  1274→                      htmlFor={`pay-${p.id}`}
+  1275→                      className={cn(
+  1276→                        "flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3.5 transition-colors",
+  1277→                        draft.provider === p.id ? "border-teal-600 bg-teal-50/60" : "hover:bg-muted/50"
+  1278→                      )}
+  1279→                    >
+  1280→                      <RadioGroupItem value={p.id} id={`pay-${p.id}`} />
+  1281→                      <p.icon className="h-5 w-5 text-teal-700" />
+  1282→                      <span className="text-sm font-semibold">{p.label}</span>
+  1283→                    </Label>
+  1284→                  ))}
+  1285→                </RadioGroup>
+  1286→                <p className="text-xs text-muted-foreground">
+  1287→                  You&apos;ll confirm the payment on the secure NOMOFEE sandbox gateway — no real money moves.
+  1288→                </p>
+  1289→              </section>
+  1290→
+  1291→              <Textarea value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="Note to seller (optional)" rows={2} className="min-h-[44px] text-sm" />
+  1292→
+  1293→              <div className="flex items-start gap-2.5 rounded-xl border bg-card p-4 shadow-soft">
+  1294→                <input
+  1295→                  id="terms"
+  1296→                  type="checkbox"
+  1297→                  checked={draft.agreed}
+  1298→                  onChange={(e) => setDraft((d) => ({ ...d, agreed: e.target.checked }))}
+  1299→                  className="mt-0.5 h-4 w-4 rounded border-input accent-teal-700"
+  1300→                  aria-required
+  1301→                />
+  1302→                <Label htmlFor="terms" className="text-sm font-normal leading-snug">
+  1303→                  I agree to the NOMOFEE Terms of Service and understand that paid orders can only be refunded through the
+  1304→                  platform&apos;s dispute process.
+  1305→                </Label>
+  1306→              </div>
+  1307→
+  1308→              <div className="flex flex-wrap gap-3">
+  1309→                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="min-h-[48px]">
+  1310→                  Back
+  1311→                </Button>
+  1312→                <Button
+  1313→                  size="lg"
+  1314→                  onClick={placeOrder}
+  1315→                  disabled={submitting || quoting || !quote || stockIssues.length > 0 || moqIssues.length > 0}
+  1316→                  className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110"
+  1317→                >
+  1318→                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+  1319→                  {submitting ? "Creating order…" : `Pay ${formatMinor(quote?.totalMinor ?? 0)}`}
+  1320→                </Button>
+  1321→              </div>
+  1322→            </motion.div>
+  1323→          ) : null}
+  1324→        </div>
+  1325→
+  1326→        {/* right column — order summary (shared across phases) */}
+  1327→        <aside className="lg:col-span-2">
+  1328→          <div className="space-y-4 rounded-xl border bg-card p-5 shadow-soft lg:sticky lg:top-20">
+  1329→            <h2 className="text-base font-bold">Order summary</h2>
+  1330→
+  1331→            {keptCount > 0 ? (
+  1332→              <p className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground" role="status">
+  1333→                {keptCount === 1 ? "1 item is" : `${keptCount} items are`} still in your cart (unticked at the cart) — not part of this checkout.
+  1334→              </p>
+  1335→            ) : null}
+  1336→
+  1337→            {stockIssues.length > 0 ? (
+  1338→              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+  1339→                {stockIssues.map((i) => (
+  1340→                  <p key={i.title}>
+  1341→                    Only {i.stock} left of “{i.title}” — you have {i.qty} in cart.
+  1342→                  </p>
+  1343→                ))}
+  1344→                <button type="button" onClick={() => ctx.openCart()} className="pt-1 font-bold underline underline-offset-2">
+  1345→                  Update cart
+  1346→                </button>
+  1347→              </div>
+  1348→            ) : null}
+  1349→
+  1350→            {moqIssues.length > 0 ? (
+  1351→              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+  1352→                {moqIssues.map((i) => (
+  1353→                  <p key={i.title}>
+  1354→                    “{i.title}” has a seller minimum of {i.moq} — you have {i.qty} in cart.
+  1355→                  </p>
+  1356→                ))}
+  1357→                <button type="button" onClick={() => ctx.openCart()} className="pt-1 font-bold underline underline-offset-2">
+  1358→                  Update cart
+  1359→                </button>
+  1360→              </div>
+  1361→            ) : null}
+  1362→
+  1363→            <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
+  1364→              {summaryGroups.map((g) => (
+  1365→                <li key={g.storeName} className="space-y-2">
+  1366→                  <div className="flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-1">
+  1367→                    <span className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-teal-800">
+  1368→                      <Store className="h-3 w-3 shrink-0" />
+  1369→                      <span className="truncate">{g.storeName}</span>
+  1370→                    </span>
+  1371→                    <span className="shrink-0 text-xs font-semibold text-muted-foreground">{formatMinor(g.subtotalMinor)}</span>
+  1372→                  </div>
+  1373→                  <ul className="space-y-2">
+  1374→                    {g.rows.map((r) => (
+  1375→                      <li key={r.key} className="flex gap-3">
+  1376→                        <div className="min-w-0 flex-1">
+  1377→                          <p className="line-clamp-2 text-sm font-medium leading-tight">{r.title}</p>
+  1378→                          {r.variantLabel ? <p className="text-xs text-muted-foreground">{r.variantLabel}</p> : null}
+  1379→                          <p className="text-xs text-muted-foreground">Qty {r.qty}</p>
+  1380→                        </div>
+  1381→                        <span className="text-sm font-semibold">{formatMinor(r.lineTotalMinor)}</span>
+  1382→                      </li>
+  1383→                    ))}
+  1384→                  </ul>
+  1385→                </li>
+  1386→              ))}
+  1387→            </ul>
+  1388→
+  1389→            {/* coupon */}
+  1390→            <div className="space-y-1.5">
+  1391→              {draft.couponCode ? (
+  1392→                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+  1393→                  <span>
+  1394→                    {draft.couponCode} applied
+  1395→                    {quote?.coupon?.valid && quote.coupon.freeShip ? " — free shipping" : quote?.coupon?.valid ? ` — ${formatMinor(quote.coupon.discountMinor ?? 0)} off` : ""}
+  1396→                  </span>
+  1397→                  <button type="button" onClick={removeCoupon} className="font-bold underline underline-offset-2" aria-label="Remove coupon">
+  1398→                    Remove
+  1399→                  </button>
+  1400→                </div>
+  1401→              ) : (
+  1402→                <>
+  1403→                  <div className="flex gap-2">
+  1404→                    <div className="relative flex-1">
+  1405→                      <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  1406→                      <Input
+  1407→                        value={couponInput}
+  1408→                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+  1409→                        placeholder="Coupon code"
+  1410→                        className="min-h-[44px] pl-8"
+  1411→                        aria-label="Coupon code"
+  1412→                        onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+  1413→                      />
+  1414→                    </div>
+  1415→                    <Button variant="outline" onClick={applyCoupon} disabled={quoting || !couponInput.trim()} className="min-h-[44px] border-teal-700/40 text-teal-800 hover:bg-teal-50">
+  1416→                      {quoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />} Apply
+  1417→                    </Button>
+  1418→                  </div>
+  1419→                  {couponErr ? <p className="text-xs font-medium text-rose-600">{couponErr}</p> : null}
+  1420→                </>
+  1421→              )}
+  1422→            </div>
+  1423→
+  1424→            {/* claimable vouchers — one per seller group (Task 10-b) */}
+  1425→            {storeGroups.length > 0 ? (
+  1426→              <div className="space-y-2.5">
+  1427→                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+  1428→                  <TicketPercent className="h-3.5 w-3.5 text-teal-700" /> Shop vouchers
+  1429→                </p>
+  1430→                {storeGroups.map((g) => {
+  1431→                  // coinsback is platform-dormant (NOMO_FINANCE disabled) — never offer it.
+  1432→                  const options = (heldVouchers ?? []).filter(
+  1433→                    (v) =>
+  1434→                      v.voucher.kind !== "coinsback" &&
+  1435→                      (v.voucher.scope === "PLATFORM" || v.voucher.storeId === g.storeId)
+  1436→                  );
+  1437→                  const verdict = quote?.groups?.find((gg) => gg.storeId === g.storeId)?.voucher ?? null;
+  1438→                  return (
+  1439→                    <div key={g.storeId} className="space-y-1">
+  1440→                      <Label className="block text-[11px] font-semibold text-muted-foreground">
+  1441→                        {quote?.groups && quote.groups.length > 1 ? g.storeName : "Use a voucher"}
+  1442→                        {heldVouchers !== null && options.length === 0 ? " · none available" : ""}
+  1443→                      </Label>
+  1444→                      <Select
+  1445→                        value={voucherSel[g.storeId] ?? "none"}
+  1446→                        onValueChange={(v) =>
+  1447→                          setVoucherSel((s) => {
+  1448→                            const next = { ...s };
+  1449→                            if (v === "none") delete next[g.storeId];
+  1450→                            else next[g.storeId] = v;
+  1451→                            return next;
+  1452→                          })
+  1453→                        }
+  1454→                      >
+  1455→                        <SelectTrigger
+  1456→                          className="min-h-[44px] w-full text-xs"
+  1457→                          aria-label={`Voucher for ${g.storeName}`}
+  1458→                        >
+  1459→                          <SelectValue placeholder="Select a voucher" />
+  1460→                        </SelectTrigger>
+  1461→                        <SelectContent>
+  1462→                          <SelectItem value="none">No voucher</SelectItem>
+  1463→                          {options.map((v) => (
+  1464→                            <SelectItem key={v.id} value={v.id}>
+  1465→                              {voucherOptionLabel(v)}
+  1466→                            </SelectItem>
+  1467→                          ))}
+  1468→                        </SelectContent>
+  1469→                      </Select>
+  1470→                      {verdict ? (
+  1471→                        verdict.valid ? (
+  1472→                          <p className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800">
+  1473→                            {verdict.kind === "freeshipping"
+  1474→                              ? `${verdict.code} applied — free shipping on this parcel`
+  1475→                              : `${verdict.code} applied — ${formatMinor(verdict.discountMinor)} off`}
+  1476→                          </p>
+  1477→                        ) : (
+  1478→                          <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700">
+  1479→                            {verdict.reason}
+  1480→                          </p>
+  1481→                        )
+  1482→                      ) : null}
+  1483→                    </div>
+  1484→                  );
+  1485→                })}
+  1486→              </div>
+  1487→            ) : null}
+  1488→
+  1489→            <Separator />
+  1490→
+  1491→            <dl className="space-y-2 text-sm">
+  1492→              <div className="flex justify-between">
+  1493→                <dt className="text-muted-foreground">Subtotal</dt>
+  1494→                <dd className="font-semibold">{formatMinor(quote?.subtotalMinor ?? 0)}</dd>
+  1495→              </div>
+  1496→              {quote && quote.discountMinor > 0 ? (
+  1497→                <div className="flex justify-between text-emerald-700">
+  1498→                  <dt>Discount</dt>
+  1499→                  <dd className="font-semibold">-{formatMinor(quote.discountMinor)}</dd>
+  1500→                </div>
+  1501→              ) : null}
+  1502→              <div className="flex justify-between">
+  1503→                <dt className="text-muted-foreground">Shipping</dt>
+  1504→                <dd className="font-semibold">{quote ? (quote.shippingMinor === 0 ? "FREE" : formatMinor(quote.shippingMinor)) : "—"}</dd>
+  1505→              </div>
+  1506→              <Separator />
+  1507→              <div className="flex justify-between text-base">
+  1508→                <dt className="font-bold">Total</dt>
+  1509→                <dd className="font-extrabold text-teal-700">{formatMinor(quote?.totalMinor ?? 0)}</dd>
+  1510→              </div>
+  1511→            </dl>
+  1512→
+  1513→            {quoting ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating prices from server…</p> : null}
+  1514→            {quote?.groups && quote.groups.length > 1 ? (
+  1515→              <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-3 py-2 text-[11px] leading-snug text-teal-900">
+  1516→                <span className="font-bold">One payment, {quote.groups.length} parcels.</span> Your order is split per seller for fulfilment — shipping and free-shipping thresholds apply per seller. You pay once through our licensed payment partner, which splits each seller their share automatically — NOMOFEE never holds your money.
+  1517→              </div>
+  1518→            ) : null}
+  1519→            <p className="text-center text-[11px] text-muted-foreground">Totals are recalculated server-side before payment.</p>
+  1520→          </div>
+  1521→        </aside>
+  1522→      </div>
+  1523→    </div>
+  1524→  );
+  1525→}
+  1526→
+  1527→// =============================================================================================
+  1528→// SANDBOX PAYMENT VIEW
+  1529→// =============================================================================================
+  1530→
+  1531→type PaymentT = {
+  1532→  status: string;
+  1533→  orderNumber: string;
+  1534→  orderNumbers?: string[];
+  1535→  isGroup?: boolean;
+  1536→  orderCount?: number;
+  1537→  storeNames?: string[];
+  1538→  amountMinor: number;
+  1539→  storeName: string | null;
+  1540→  storeSlug: string | null;
+  1541→  provider: string;
+  1542→};
+  1543→
+  1544→export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: string }) {
+  1545→  const [payment, setPayment] = useState<PaymentT | null>(null);
+  1546→  const [failed, setFailed] = useState(false);
+  1547→  const [phase, setPhase] = useState<"awaiting" | "success" | "failure" | "expired">("awaiting");
+  1548→  const [busy, setBusy] = useState(false);
+  1549→  const [secondsLeft, setSecondsLeft] = useState(10 * 60);
+  1550→
+  1551→  const load = useCallback(async () => {
+  1552→    try {
+  1553→      const p = await fetchJson<PaymentT>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
+  1554→      setPayment(p);
+  1555→      setFailed(false);
+  1556→      if (p.status === "succeeded") {
+  1557→        setPhase((ph) => (ph === "awaiting" ? "success" : ph));
+  1558→      } else if (p.status === "failed") {
+  1559→        setPhase((ph) => (ph === "awaiting" || ph === "expired" ? "failure" : ph));
+  1560→      } else if (p.status === "expired") {
+  1561→        setPhase((ph) => (ph === "awaiting" ? "expired" : ph));
+  1562→      }
+  1563→    } catch {
+  1564→      setFailed(true);
+  1565→    }
+  1566→  }, [paymentRef]);
+  1567→
+  1568→  // initial load + 3s polling — status is always server-authoritative
+  1569→  useEffect(() => {
+  1570→    load();
+  1571→    const t = setInterval(load, 3000);
+  1572→    return () => clearInterval(t);
+  1573→  }, [load]);
+  1574→
+  1575→  // 10:00 countdown
+  1576→  useEffect(() => {
+  1577→    if (phase !== "awaiting") return;
+  1578→    const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+  1579→    return () => clearInterval(t);
+  1580→  }, [phase]);
+  1581→
+  1582→  const navToOrder = useCallback(
+  1583→    (orderNumber: string) => ctx.nav({ name: "order-status", orderNumber }),
+  1584→    [ctx]
+  1585→  );
+  1586→
+  1587→  // auto-redirect after success — single order → its status page; a multi-seller
+  1588→  // group → the order list where every order of the group is visible.
+  1589→  const orderNumber = payment?.orderNumber ?? "";
+  1590→  const isGroupOrder = Boolean(payment?.isGroup && (payment?.orderCount ?? 1) > 1);
+  1591→  useEffect(() => {
+  1592→    if (phase !== "success") return;
+  1593→    const t = setTimeout(() => {
+  1594→      if (isGroupOrder) ctx.nav({ name: "orders" });
+  1595→      else navToOrder(orderNumber);
+  1596→    }, 1600);
+  1597→    return () => clearTimeout(t);
+  1598→  }, [phase, orderNumber, isGroupOrder, navToOrder, ctx]);
+  1599→
+  1600→  async function simulate(result: "succeeded" | "failed") {
+  1601→    if (busy) return;
+  1602→    setBusy(true);
+  1603→    try {
+  1604→      await postJson<{ status: string; orderNumber: string }>(
+  1605→        `/api/checkout/payments/${encodeURIComponent(paymentRef)}/simulate`,
+  1606→        { result }
+  1607→      );
+  1608→      if (result === "succeeded") {
+  1609→        // cart is emptied server-side on verified success — just refresh the badge
+  1610→        const email = typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : "";
+  1611→        if (orderNumber && email) trackOrderRef(orderNumber, email);
+  1612→        notifyCartUpdated();
+  1613→        setPhase("success");
+  1614→      } else {
+  1615→        setPhase("failure");
+  1616→      }
+  1617→    } catch (e) {
+  1618→      toast.error(e instanceof Error ? e.message : "Payment failed — please try again");
+  1619→      load();
+  1620→    } finally {
+  1621→      setBusy(false);
+  1622→    }
+  1623→  }
+  1624→
+  1625→  // Retry = a new gateway attempt: re-open the failed session server-side first,
+  1626→  // so the status poller sees "requires_payment" and stays consistent.
+  1627→  async function retryPayment() {
+  1628→    if (busy) return;
+  1629→    setBusy(true);
+  1630→    try {
+  1631→      await postJson(`/api/checkout/payments/${encodeURIComponent(paymentRef)}/retry`, {});
+  1632→      setPhase("awaiting");
+  1633→      await load();
+  1634→    } catch (e) {
+  1635→      toast.error(e instanceof Error ? e.message : "Could not restart this payment");
+  1636→      await load();
+  1637→    } finally {
+  1638→      setBusy(false);
+  1639→    }
+  1640→  }
+  1641→
+  1642→  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  1643→  const ss = String(secondsLeft % 60).padStart(2, "0");
+  1644→
+  1645→  return (
+  1646→    <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8 sm:py-12" style={{ background: "linear-gradient(180deg, #f0fdfa 0%, #ffffff 40%)" }}>
+  1647→      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="w-full max-w-md">
+  1648→        <div className="overflow-hidden rounded-2xl border shadow-lg bg-card">
+  1649→          {/* gateway chrome */}
+  1650→          <div className="bg-brand-gradient-deep px-5 py-4 text-white">
+  1651→            <div className="flex items-center justify-between">
+  1652→              <p className="flex items-center gap-2 text-sm font-bold tracking-wide">
+  1653→                <ShieldCheck className="h-4 w-4 text-emerald-300" /> NOMOFEE Secure Checkout
+  1654→              </p>
+  1655→              <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-teal-950">Sandbox</span>
+  1656→            </div>
+  1657→            <p className="pt-1 text-xs text-teal-100/80">256-bit encrypted · demo gateway — no real money moves</p>
+  1658→          </div>
+  1659→
+  1660→          {failed ? (
+  1661→            <div className="space-y-3 p-8 text-center">
+  1662→              <XCircle className="mx-auto h-10 w-10 text-rose-500" />
+  1663→              <p className="font-semibold">Payment session not found</p>
+  1664→              <p className="text-sm text-muted-foreground">This payment reference may have expired.</p>
+  1665→              <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })}>Track your order</Button>
+  1666→            </div>
+  1667→          ) : !payment ? (
+  1668→            <div className="space-y-4 p-8">
+  1669→              <Skeleton className="h-6 w-40" />
+  1670→              <Skeleton className="h-16 w-full" />
+  1671→              <Skeleton className="h-12 w-full" />
+  1672→            </div>
+  1673→          ) : phase === "success" ? (
+  1674→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1675→              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }} className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+  1676→                <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+  1677→              </motion.div>
+  1678→              <p className="text-lg font-extrabold">Payment successful!</p>
+  1679→              <p className="text-sm text-muted-foreground">
+  1680→                {isGroupOrder
+  1681→                  ? `${payment.orderCount} seller orders are confirmed — one payment, ${payment.orderCount} parcels.`
+  1682→                  : `Order ${payment.orderNumber} is confirmed.`}
+  1683→              </p>
+  1684→              <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
+  1685→              <p className="text-xs text-muted-foreground">{isGroupOrder ? "Taking you to your orders…" : "Taking you to your order…"}</p>
+  1686→            </motion.div>
+  1687→          ) : phase === "expired" ? (
+  1688→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1689→              <Clock className="mx-auto h-12 w-12 text-amber-500" />
+  1690→              <p className="text-lg font-extrabold">Payment session expired</p>
+  1691→              <p className="text-sm text-muted-foreground">No money was taken. Your order is still unpaid — start a new checkout to place it again.</p>
+  1692→              <div className="grid gap-2 pt-2">
+  1693→                <Button onClick={() => ctx.nav({ name: "checkout" })} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+  1694→                  <ShoppingBag className="h-4 w-4" /> New checkout
+  1695→                </Button>
+  1696→                <Button variant="outline" onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })} className="min-h-[44px]">
+  1697→                  {payment.storeSlug ? "Back to store" : "Back to marketplace"}
+  1698→                </Button>
+  1699→              </div>
+  1700→            </motion.div>
+  1701→          ) : phase === "failure" ? (
+  1702→            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-3 p-8 text-center">
+  1703→              <XCircle className="mx-auto h-12 w-12 text-rose-500" />
+  1704→              <p className="text-lg font-extrabold">Payment failed</p>
+  1705→              <p className="text-sm text-muted-foreground">No money was taken. You can retry the payment or head back to the store.</p>
+  1706→              <div className="grid gap-2 pt-2">
+  1707→                <Button onClick={retryPayment} disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+  1708→                  <RotateCcw className="h-4 w-4" /> Retry payment
+  1709→                </Button>
+  1710→                <Button variant="outline" onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })} className="min-h-[44px]">
+  1711→                  {payment.storeSlug ? "Back to store" : "Back to marketplace"}
+  1712→                </Button>
+  1713→              </div>
+  1714→            </motion.div>
+  1715→          ) : (
+  1716→            <div className="space-y-5 p-6 sm:p-8">
+  1717→              <div className="space-y-1 text-center">
+  1718→                <p className="text-xs uppercase tracking-widest text-muted-foreground">Amount to pay</p>
+  1719→                <p className="text-4xl font-extrabold tabular-nums text-teal-800">{formatMinor(payment.amountMinor)}</p>
+  1720→                <p className="text-sm text-muted-foreground">
+  1721→                  to <span className="font-semibold text-foreground">{payment.storeName ?? "NOMOFEE Marketplace"}</span>
+  1722→                  {isGroupOrder ? <span className="block text-xs">one secure payment via our licensed payment partner — split to {payment.orderCount} sellers, each ships separately</span> : null}
+  1723→                </p>
+  1724→              </div>
+  1725→
+  1726→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1727→                <span className="text-muted-foreground">Method</span>
+  1728→                <span className="font-semibold">{PROVIDER_LABEL[payment.provider] ?? payment.provider}</span>
+  1729→              </div>
+  1730→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1731→                <span className="text-muted-foreground">{isGroupOrder ? "Orders" : "Order"}</span>
+  1732→                <span className="font-mono font-semibold">
+  1733→                  {isGroupOrder && (payment.orderNumbers?.length ?? 0) > 1
+  1734→                    ? `${payment.orderNumber} + ${(payment.orderCount ?? payment.orderNumbers?.length ?? 1) - 1} more`
+  1735→                    : payment.orderNumber}
+  1736→                </span>
+  1737→              </div>
+  1738→              <div className="flex items-center justify-between rounded-lg bg-muted/70 px-4 py-3 text-sm">
+  1739→                <span className="text-muted-foreground">Session expires in</span>
+  1740→                <span className={cn("font-mono font-bold tabular-nums", secondsLeft < 60 ? "text-rose-600" : "text-foreground")}>
+  1741→                  {mm}:{ss}
+  1742→                </span>
+  1743→              </div>
+  1744→
+  1745→              <Button
+  1746→                size="lg"
+  1747→                disabled={busy || secondsLeft <= 0}
+  1748→                onClick={() => simulate("succeeded")}
+  1749→                className="min-h-[48px] w-full bg-emerald-600 text-white hover:bg-emerald-700"
+  1750→              >
+  1751→                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Landmark className="h-4 w-4" />}
+  1752→                {busy ? "Processing…" : "Pay Now"}
+  1753→              </Button>
+  1754→              <Button
+  1755→                variant="outline"
+  1756→                size="sm"
+  1757→                disabled={busy}
+  1758→                onClick={() => simulate("failed")}
+  1759→                className="min-h-[40px] w-full border-rose-300 text-rose-600 hover:bg-rose-50"
+  1760→              >
+  1761→                Simulate declined payment
+  1762→              </Button>
+  1763→              <p className="text-center text-[11px] text-muted-foreground">Sandbox gateway — result is verified server-side before the order is confirmed.</p>
+  1764→            </div>
+  1765→          )}
+  1766→        </div>
+  1767→
+  1768→        {payment && (phase === "awaiting" || phase === "failure") ? (
+  1769→          <button
+  1770→            type="button"
+  1771→            onClick={() => ctx.nav(payment.storeSlug ? { name: "storefront", slug: payment.storeSlug } : { name: "market" })}
+  1772→            className="mx-auto mt-4 block text-xs text-muted-foreground underline-offset-2 hover:underline"
+  1773→          >
+  1774→            {payment.storeSlug
+  1775→              ? `Cancel and return to ${payment.storeName} — order ${payment.orderNumber} stays unpaid`
+  1776→              : "Cancel and return to the marketplace — your orders stay unpaid"}
+  1777→          </button>
+  1778→        ) : null}
+  1779→      </motion.div>
+  1780→    </div>
+  1781→  );
+  1782→}
+  1783→
+  1784→// =============================================================================================
+  1785→// ORDER STATUS + HISTORY + LOOKUP
+  1786→// =============================================================================================
+  1787→
+  1788→function OrderCard({ o, compact = false }: { o: LookupResultT; compact?: boolean }) {
+  1789→  const [copied, setCopied] = useState(false);
+  1790→  const paid = !["payment_pending", "cancelled"].includes(o.status);
+  1791→
+  1792→  function copy() {
+  1793→    navigator.clipboard?.writeText(o.orderNumber).then(
+  1794→      () => {
+  1795→        setCopied(true);
+  1796→        toast.success("Order number copied");
+  1797→        setTimeout(() => setCopied(false), 1500);
+  1798→      },
+  1799→      () => toast.error("Could not copy")
+  1800→    );
+  1801→  }
+  1802→
+  1803→  return (
+  1804→    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className={cn("space-y-5 rounded-2xl border bg-card p-5 sm:p-6", compact && "shadow-sm")}>
+  1805→      <div className="flex items-start gap-4">
+  1806→        <motion.div
+  1807→          initial={{ scale: 0, rotate: -20 }}
+  1808→          animate={{ scale: 1, rotate: 0 }}
+  1809→          transition={{ type: "spring", stiffness: 260, damping: 14 }}
+  1810→          className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-full", paid ? "bg-emerald-100" : "bg-amber-100")}
+  1811→        >
+  1812→          {paid ? <CheckCircle2 className="h-7 w-7 text-emerald-600" /> : <PackageSearch className="h-7 w-7 text-amber-600" />}
+  1813→        </motion.div>
+  1814→        <div className="min-w-0 flex-1">
+  1815→          <p className="text-xs uppercase tracking-widest text-muted-foreground">Order</p>
+  1816→          <div className="flex flex-wrap items-center gap-2">
+  1817→            <p className="font-mono text-xl font-extrabold tracking-tight">{o.orderNumber}</p>
+  1818→            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={copy} aria-label="Copy order number">
+  1819→              {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+  1820→            </Button>
+  1821→          </div>
+  1822→          <p className="text-sm text-muted-foreground">
+  1823→            {o.storeName} · placed {new Date(o.createdAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}
+  1824→          </p>
+  1825→          <div className="pt-2">
+  1826→            <StatusBadge status={o.status} />
+  1827→          </div>
+  1828→        </div>
+  1829→        <div className="text-right">
+  1830→          <p className="text-xs uppercase tracking-widest text-muted-foreground">Total</p>
+  1831→          <p className="text-lg font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</p>
+  1832→        </div>
+  1833→      </div>
+  1834→
+  1835→      <Separator />
+  1836→
+  1837→      <div className="grid gap-6 sm:grid-cols-2">
+  1838→        <div>
+  1839→          <h3 className="pb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Items</h3>
+  1840→          <ul className="space-y-2">
+  1841→            {o.items.map((it, i) => (
+  1842→              <li key={i} className="flex items-center justify-between gap-2 text-sm">
+  1843→                <span className="min-w-0 truncate">
+  1844→                  {it.title} <span className="text-muted-foreground">× {it.qty}</span>
+  1845→                </span>
+  1846→              </li>
+  1847→            ))}
+  1848→          </ul>
+  1849→        </div>
+  1850→        <div>
+  1851→          <h3 className="pb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Progress</h3>
+  1852→          <OrderFlowTimeline history={o.history} current={o.status} />
+  1853→        </div>
+  1854→      </div>
+  1855→    </motion.div>
+  1856→  );
+  1857→}
+  1858→
+  1859→// ---------------------------------------------------------------- hero copy
+  1860→
+  1861→/** Shopee-style hero headline per order status (Task 14-b rebuild). */
+  1862→function orderHero(d: OrderDetailT): { Icon: typeof Clock; title: string; blurb: string } {
+  1863→  switch (d.status) {
+  1864→    case "payment_pending":
+  1865→      return { Icon: Clock, title: "Awaiting payment", blurb: `Complete the payment to confirm your order with ${d.storeName}.` };
+  1866→    case "paid":
+  1867→      return { Icon: CheckCircle2, title: "Payment confirmed", blurb: `${d.storeName} is preparing your parcel for dispatch.` };
+  1868→    case "processing":
+  1869→      return { Icon: PackageSearch, title: "Being prepared", blurb: `${d.storeName} is packing your items right now.` };
+  1870→    case "shipped":
+  1871→      return {
+  1872→        Icon: Truck,
+  1873→        title: "Parcel on the way",
+  1874→        blurb: d.shippingCourierName
+  1875→          ? `Your parcel is with ${d.shippingCourierName} — follow every step below.`
+  1876→          : "Your parcel is on its way — follow every step below.",
+  1877→      };
+  1878→    case "delivered":
+  1879→      return {
+  1880→        Icon: Home,
+  1881→        title: "Parcel delivered",
+  1882→        blurb: d.deliveredAt ? `Delivered on ${dateShort(d.deliveredAt)} — confirm receipt below.` : "Delivered — confirm receipt below.",
+  1883→      };
+  1884→    case "completed":
+  1885→      return { Icon: BadgeCheck, title: "Order completed", blurb: `Thanks for shopping with ${d.storeName} — we hope to see you again soon.` };
+  1886→    case "cancelled":
+  1887→      return { Icon: XCircle, title: "Order cancelled", blurb: "This order was cancelled. Any payment made is returned through the platform's dispute process." };
+  1888→    default:
+  1889→      return { Icon: PackageSearch, title: statusLabel(d.status), blurb: `Order ${d.orderNumber} · ${d.storeName}.` };
+  1890→  }
+  1891→}
+  1892→
+  1893→type ReorderResultT = { added: { title: string; qty: number }[]; skipped: { title: string; reason: string }[] };
+  1894→
+  1895→export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
+  1896→  const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
+  1897→  const [receiptEmail, setReceiptEmail] = useState(email);
+  1898→  const [data, setData] = useState<OrderDetailT | null>(null);
+  1899→  const [failed, setFailed] = useState<string | null>(null);
+  1900→  const [receiptBusy, setReceiptBusy] = useState(false);
+  1901→  const [receiveBusy, setReceiveBusy] = useState(false);
+  1902→  const [reorderBusy, setReorderBusy] = useState(false);
+  1903→  const [copied, setCopied] = useState(false);
+  1904→  const loadedRef = useRef(false);
+  1905→
+  1906→  const load = useCallback(async () => {
+  1907→    // 1) Guest path — email + order number lookup (unchanged).
+  1908→    const guestLookup = email
+  1909→      ? fetchJson<OrderDetailT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
+  1910→      : Promise.reject(new Error("no-guest-email"));
+  1911→    try {
+  1912→      const d = await guestLookup;
+  1913→      setData(d);
+  1914→      loadedRef.current = true;
+  1915→      trackOrderRef(d.orderNumber, email);
+  1916→      return;
+  1917→    } catch {
+  1918→      /* fall through to the account path */
+  1919→    }
+  1920→    // 2) Account path — signed-in buyer deep-linking from the Me hub;
+  1921→    //    ownership enforced server-side by the session's shopperId.
+  1922→    try {
+  1923→      const d = await fetchJson<OrderDetailT>(`/api/me/orders/${encodeURIComponent(orderNumber)}`);
+  1924→      setData(d);
+  1925→      loadedRef.current = true;
+  1926→      if (d.customerEmail) {
+  1927→        setReceiptEmail(d.customerEmail);
+  1928→        trackOrderRef(d.orderNumber, d.customerEmail);
+  1929→      }
+  1930→    } catch (e) {
+  1931→      // polling blips must never blank an already-loaded view
+  1932→      if (!loadedRef.current) {
+  1933→        setFailed(e instanceof Error && e.message !== "no-guest-email" ? e.message : "");
+  1934→      }
+  1935→    }
+  1936→  }, [email, orderNumber]);
+  1937→
+  1938→  useEffect(() => {
+  1939→    loadedRef.current = false;
+  1940→    setFailed(null);
+  1941→    void load();
+  1942→  }, [load]);
+  1943→
+  1944→  // Live refresh (Task 11): poll every 12s + refetch when the tab regains
+  1945→  // focus/visibility — shipped→delivered transitions appear without a reload.
+  1946→  useEffect(() => {
+  1947→    const t = setInterval(() => void load(), 12_000);
+  1948→    const onFocus = () => void load();
+  1949→    const onVisibility = () => {
+  1950→      if (document.visibilityState === "visible") void load();
+  1951→    };
+  1952→    window.addEventListener("focus", onFocus);
+  1953→    document.addEventListener("visibilitychange", onVisibility);
+  1954→    return () => {
+  1955→      clearInterval(t);
+  1956→      window.removeEventListener("focus", onFocus);
+  1957→      document.removeEventListener("visibilitychange", onVisibility);
+  1958→    };
+  1959→  }, [load]);
+  1960→
+  1961→  const downloadReceipt = async () => {
+  1962→    if (receiptBusy || !receiptEmail || !data) return;
+  1963→    setReceiptBusy(true);
+  1964→    try {
+  1965→      const res = await fetch(`/api/orders/receipt?email=${encodeURIComponent(receiptEmail)}&orderNumber=${encodeURIComponent(data.orderNumber)}`);
+  1966→      if (!res.ok) {
+  1967→        const body = await res.json().catch(() => null);
+  1968→        throw new Error(body?.error?.message ?? "Could not generate the receipt");
+  1969→      }
+  1970→      const blob = await res.blob();
+  1971→      const a = document.createElement("a");
+  1972→      a.href = URL.createObjectURL(blob);
+  1973→      a.download = `NOMOFEE-Receipt-${data.orderNumber}.pdf`;
+  1974→      document.body.appendChild(a);
+  1975→      a.click();
+  1976→      a.remove();
+  1977→      URL.revokeObjectURL(a.href);
+  1978→      toast.success("Receipt downloaded", { description: `PDF receipt for ${data.orderNumber} saved to your device.` });
+  1979→    } catch (e) {
+  1980→      toast.error(e instanceof Error ? e.message : "Could not download the receipt");
+  1981→    } finally {
+  1982→      setReceiptBusy(false);
+  1983→    }
+  1984→  };
+  1985→
+  1986→  function copyOrder() {
+  1987→    navigator.clipboard?.writeText(orderNumber).then(
+  1988→      () => {
+  1989→        setCopied(true);
+  1990→        toast.success("Order number copied");
+  1991→        setTimeout(() => setCopied(false), 1500);
+  1992→      },
+  1993→      () => toast.error("Could not copy")
+  1994→    );
+  1995→  }
+  1996→
+  1997→  // POST /api/me/orders/[orderNumber]/receive — buyer confirms receipt
+  1998→  // (shipped|delivered → completed; the platform also fast-forwards a
+  1999→  // mid-flight shipment to DELIVERED so the timeline never trails the buyer).
+  2000→  async function confirmReceipt() {
+
+[showing lines 1-2000 of 2620; use offset=2001 with limit to continue reading]

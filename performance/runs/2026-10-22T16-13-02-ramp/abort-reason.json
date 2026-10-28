@@ -1,0 +1,10 @@
+{
+  "aborted": true,
+  "reason": "heap_used",
+  "detail": {
+    "observedHeapUsedMb": 897.6,
+    "thresholdMb": 880.8,
+    "derivedCeilingMb": 1101,
+    "at": "2026-10-22T16:19:35.078Z"
+  }
+}

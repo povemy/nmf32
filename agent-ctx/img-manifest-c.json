@@ -1,0 +1,202 @@
+[
+  {
+    "file": "public/gen/products/barrier-repair-serum.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "barrier-repair-serum",
+    "prompt": "Glow Theory ceramide and panthenol barrier repair serum, 30ml frosted glass serum bottle with dropper cap, minimal beige backdrop, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/barrier-repair-serum-2.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "barrier-repair-serum",
+    "prompt": "Glow Theory ceramide barrier repair serum 30ml frosted glass dropper bottle standing on a bathroom shelf next to a neatly folded white towel and a small green potted plant, soft morning light through window, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/gentle-gel-cleanser.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "gentle-gel-cleanser",
+    "prompt": "Glow Theory gentle gel cleanser, 150ml clear gel bottle with pump dispenser, pH 5.5 sulfate-free facial cleanser, dynamic water-splash accent around the bottle, soft blue-white backdrop, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/mineral-spf50.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "mineral-spf50",
+    "prompt": "Glow Theory mineral zinc oxide sunscreen tube SPF50, non-greasy mineral sunscreen in a white squeeze tube standing upright, sunny warm backdrop with a soft leaf shadow cast on the wall, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/sheet-mask-5.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "sheet-mask",
+    "prompt": "Glow Theory hyaluronic acid bio-cellulose sheet masks, five elegant foil sachets fanned out in an arc, one transparent sheet mask unfolded in front showing eye and mouth cutouts, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/sleeping-mask.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "sleeping-mask",
+    "prompt": "Glow Theory squalane gel-cream overnight sleeping mask, open frosted glass jar showing translucent gel texture with a swirl, lid resting beside it, dusk-toned backdrop in soft lavender and warm grey, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/vitc-ampoules.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "vitamin-c-ampoules",
+    "prompt": "Glow Theory 7-day vitamin C brightening ampoule set, seven small amber glass vials with gold caps arranged in a neat row, 5 percent THD ascorbate brightening serum, gold accents, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/products/peptide-eye-complex.png",
+    "kind": "product",
+    "entity": "Glow Theory",
+    "productSlug": "peptide-eye-complex",
+    "prompt": "Glow Theory peptide eye complex for tired eyes, small slim white tube with metal rollerball applicator tip, caffeine and peptides de-puffing eye serum, cool-toned aesthetic on a white marble surface, professional skincare product photography, soft pastel background, clean clinical-luxury aesthetic, gentle shadows, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/electronics.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "electronics",
+    "prompt": "sleek modern consumer electronics flat lay with wireless headphones, smartwatch and smartphone, bright airy flat composition, modern e-commerce category tile, soft gradient background in cool grey-teal, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/fashion.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "fashion",
+    "prompt": "stylish clothing flat lay with neatly folded shirts, a summer dress, white sneakers and a handbag, bright airy flat composition, modern e-commerce category tile, soft gradient background in warm neutral tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/home-living.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "home-living",
+    "prompt": "cozy home decor flat lay with soft cushions, a lit scented candle, a small potted plant and a ceramic vase, bright airy flat composition, modern e-commerce category tile, soft gradient background in warm beige, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/beauty.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "beauty",
+    "prompt": "skincare and cosmetics flat lay with serum bottles, a cream jar and a lipstick, bright airy flat composition, modern e-commerce category tile, soft gradient background in soft pink, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/sports-outdoors.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "sports-outdoors",
+    "prompt": "sports gear flat lay with running shoes, a dumbbell, a water bottle and a rolled yoga mat, bright airy flat composition, modern e-commerce category tile, soft gradient background in energetic green, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/food-beverage.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "food-beverage",
+    "prompt": "Malaysian food and beverage flat lay with a cup of kopi coffee, a glass of teh tarik tea, snack packets and tropical fruit like mango and rambutan, bright airy flat composition, modern e-commerce category tile, soft gradient background in appetizing warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/pet-supplies.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "pet-supplies",
+    "prompt": "pet supplies flat lay with a colorful dog toy, a stainless steel pet food bowl, a leash and a grooming brush, bright airy flat composition, modern e-commerce category tile, soft gradient background in friendly warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/toys-games.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "toys-games",
+    "prompt": "colorful toys and board games flat lay with wooden building blocks, jigsaw puzzle pieces and dice, bright airy flat composition, modern e-commerce category tile, soft gradient background in playful yellow, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/electronics-audio.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "electronics-audio",
+    "prompt": "close-up of premium over-ear headphones beside a small portable bluetooth speaker, bright airy flat composition, modern e-commerce audio category tile, soft gradient background, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/electronics-gadgets.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "electronics-gadgets",
+    "prompt": "tech gadget accessories flat lay with a USB hub, braided charging cables and a slim power bank, bright airy flat composition, modern e-commerce category tile, soft gradient background, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/fashion-women.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "fashion-women",
+    "prompt": "womens fashion accessories flat lay with a silk scarf, cat-eye sunglasses, delicate gold jewelry and a small handbag, bright airy flat composition, modern e-commerce category tile, soft gradient background in soft rose tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/fashion-men.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "fashion-men",
+    "prompt": "mens fashion flat lay with a classic wristwatch, a leather wallet, a leather belt and a neatly folded oxford shirt, bright airy flat composition, modern e-commerce category tile, soft gradient background in charcoal tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/home-living-decor.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "home-living-decor",
+    "prompt": "decorative home items flat lay with scented candles, a small picture frame and a vase of dried flowers, bright airy flat composition, modern e-commerce decor category tile, soft gradient background in warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/home-living-kitchen.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "home-living-kitchen",
+    "prompt": "kitchen items flat lay with handmade ceramic mugs, wooden spoons and a wooden cutting board, bright airy flat composition, modern e-commerce kitchen category tile, soft gradient background in warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/sports-outdoors-camping-hiking.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "sports-outdoors-camping-hiking",
+    "prompt": "camping gear flat lay with a brass compass, a mini camping lantern, a hiking boot and a coiled backpack strap, bright airy flat composition, modern e-commerce category tile, soft gradient background in forest green, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/food-beverage-snacks.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "food-beverage-snacks",
+    "prompt": "Malaysian snacks flat lay with colorful kuih traditional bite-size cakes, butter biscuits on a plate and crispy banana chips in a bowl, bright airy flat composition, modern e-commerce category tile, soft gradient background in warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/categories/food-beverage-coffee-tea.png",
+    "kind": "category",
+    "entity": "category",
+    "categorySlug": "food-beverage-coffee-tea",
+    "prompt": "Malaysian coffee and tea flat lay with a tall glass of frothy teh tarik pulled milk tea, a cup of kopi and a small ceramic teapot, bright airy flat composition, modern e-commerce category tile, soft gradient background in warm tones, photorealistic items, no text, no watermark",
+    "status": "ok"
+  }
+]

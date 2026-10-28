@@ -384,6 +384,9 @@ model ProductVariant {
   inventoryLogs       InventoryLog[]
   orderItems          OrderItem[]
   product             Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Seller Insights: relation + current-cart snapshot queries.
+  @@index([productId])
 }
 
 model InventoryLog {
@@ -457,6 +460,10 @@ model CartItem {
   createdAt DateTime       @default(now())
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  // Seller Insights: relation + current-cart snapshot queries.
+  @@index([cartId])
+  @@index([variantId])
 }
 
 model Order {
@@ -492,6 +499,12 @@ model Order {
   trackingProvider    String?
   riskFlagsJson       String               @default("[]")
   voucherId           String?
+  // Geographic sales snapshot (Seller Insights): destination country recorded at
+  // checkout time. "" = not recorded (pre-feature historical rows pending backfill).
+  // source: "checkout" = written by checkout-create; "backfill" = derived from the
+  // frozen shippingAddressJson (5-digit postcode + known MY state rule); code "ZZ" = unspecified.
+  shippingCountryCode   String             @default("")
+  shippingCountrySource String             @default("")
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   paymentGroupId      String?
@@ -508,6 +521,10 @@ model Order {
 
   @@index([shopperId])
   @@index([paymentGroupId])
+  // Seller Insights aggregation indexes (additive): every dashboard/report query
+  // filters by store + payment date.
+  @@index([storeId, paidAt])
+  @@index([paidAt])
 }
 
 model Shipment {
@@ -610,6 +627,10 @@ model OrderItem {
   variant           ProductVariant? @relation(fields: [variantId], references: [id])
   product           Product?        @relation(fields: [productId], references: [id])
   order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Seller Insights: relation lookups (order -> items) previously had no FK index.
+  @@index([orderId])
+  @@index([productId])
 }
 
 model OrderStatusHistory {
@@ -1361,4 +1382,37 @@ model ProductCardStyle {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Seller Store Insights — append-only analytics event log.
+// Filled by src/lib/analytics/* (fire-and-forget, dedupKey-idempotent queue).
+// Purchase/refund/revenue metrics are NOT stored here — they are derived from
+// authoritative Order/OrderItem/Refund records (see docs/seller-insights/
+// metric-definitions.md). Retention: analytics.retention_days (Setting), purged
+// by the /api/cron/analytics-tick scheduler endpoint.
+// ---------------------------------------------------------------------------
+model AnalyticsEvent {
+  id           String   @id @default(cuid())
+  // Idempotency key: identical deliveries/retries converge to one row
+  // (unique + createMany skipDuplicates).
+  dedupKey     String   @unique
+  eventType    String // store_view | product_view | view_cart | add_to_cart | remove_from_cart
+  storeId      String
+  productId    String?
+  variantId    String?
+  // Present only when the actor was authenticated at event time.
+  shopperId    String?
+  // Pseudonymous first-party cookie identities (no IP, no UA, no PII).
+  visitorId    String?
+  sessionId    String?
+  // Units delta for cart events (add = post-pre; remove = qty removed).
+  qty          Int?
+  // Referrer host only (≤100 chars) — full URLs are never stored.
+  referrerHost String?
+  channel      String? // direct | search | social | internal | other
+  createdAt    DateTime @default(now())
+
+  @@index([storeId, eventType, createdAt])
+  @@index([storeId, createdAt])
 }

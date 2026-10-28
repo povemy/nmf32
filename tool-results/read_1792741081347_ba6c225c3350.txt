@@ -1,0 +1,820 @@
+     1→// ============================================================================
+     2→// Shared payment-webhook verification + processing.
+     3→// Used by POST /api/webhooks/payments/[provider] AND POST /api/checkout/payments/[ref]/simulate
+     4→// (sandbox mock) AND POST /api/webhooks/payments/payout-simulate (sandbox mock,
+     5→// payout lifecycle). HMAC secret NEVER leaves the server.
+     6→//
+     7→// PAYMENT MODEL — OPTION B (approved): one PSP charge per checkout. A licensed
+     8→// payment service provider (sandbox: the "mock" provider via /simulate — see
+     9→// src/lib/psp.ts) collects a SINGLE buyer payment for a PaymentGroup covering
+    10→// N per-seller orders, deducts the platform's application fee (commission)
+    11→// at payment time and settles each seller their share. NOMOFEE NEVER TAKES
+    12→// CUSTODY OF BUYER FUNDS — the ledger T1 postings below are the platform's
+    13→// ACCOUNTING MIRROR of the PSP's per-seller balances (bookkeeping that feeds
+    14→// seller dashboards + the payout pipeline), not escrow.
+    15→// (Historical note: first built as "Option A" collect-then-disburse; the data
+    16→// model is identical under Option B — only custody semantics changed.)
+    17→//
+    18→// FIN-2b HARDENING (this revision):
+    19→//   • secret from PSP_WEBHOOK_SECRET env (sandbox fallback documented below)
+    20→//   • timing-safe signature compare (safeEqual, lib/secretbox.ts)
+    21→//   • ±10 min timestamp acceptance window → 400 STALE_EVENT (replay guard)
+    22→//   • PSP_PROVIDERS[id].sandboxOnly enforced (403 in production)
+    23→//   • success paths are CLAIM-FIRST + Serializable: one conditional updateMany
+    24→//     serializes concurrent deliveries; only the winner moves money
+    25→//   • inbound payout.succeeded / payout.failed events drive the payout
+    26→//     lifecycle (T4/T4f) with the same claim pattern
+    27→//   • optional T2 auto-settle after success (setting psp.split.auto_settle)
+    28→//   • notifications carry stable dedupKeys (unique (channel, dedupKey))
+    29→//   • webhook rows are ALWAYS logged first (log-then-verify order preserved)
+    30→// F1 HARDENING (this revision):
+    31→//   • both payment success transactions (group + single-order) are wrapped in
+    32→//     bounded whole-transaction retries via lib/tx-retry.ts: ONLY transient
+    33→//     serialization conflicts (Prisma P2034 ← PG 40001/40P01) are retried,
+    34→//     max attempts + bounded jittered backoff (env-tunable), exhaustion →
+    35→//     ApiError 503 PAYMENT_TX_RETRY_EXHAUSTED (never a fake success; the
+    36→//     webhook log row stays processed=false for the FIN-1 sweep). Validation,
+    37→//     amount-mismatch, signature and business errors are NEVER retried.
+    38→//     Retry safety: the conditional claim is re-evaluated first inside every
+    39→//     attempt, so a retry that races a committed winner converges to the
+    40→//     duplicate response; ledger T1 postings carry dedupKey
+    41→//     order_paid:order:{id} (P2002 replay recovery in lib/ledger.ts) and the
+    42→//     notify() side-channel writes carry (channel, dedupKey) — audited in
+    43→//     performance/f1-audit.md. Payout lifecycle tx intentionally left as-is.
+    44→// ============================================================================
+    45→import { Prisma } from "@prisma/client";
+    46→import { db } from "@/lib/db";
+    47→import { ApiError } from "@/lib/api";
+    48→import { safeEqual } from "@/lib/secretbox";
+    49→import { hmacSha256Hex } from "@/lib/password";
+    50→import { transitionOrder, dispatchStoreWebhooks, notify, logActivity } from "@/lib/api";
+    51→import { getCommissionSettings } from "@/lib/commission";
+    52→import { postOrderPaid, postGatewaySettlement, postPayoutConfirmed, postPayoutFailed, refreshWalletCache, AUTO_SETTLE_SETTING_KEY } from "@/lib/ledger";
+    53→import { releaseOrderReservation, reReserveOrderStock } from "@/lib/inventory-release";
+    54→import { assertTransition } from "@/lib/payout-state";
+    55→import { resolvePspProvider } from "@/lib/psp";
+    56→import { parseMaybeJson } from "@/app/api/admin/_helpers";
+    57→import { toJson } from "@/lib/json";
+    58→import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
+    59→import { withSerializableTxRetry } from "@/lib/tx-retry";
+    60→
+    61→// Sandbox fallback keeps the mock rails working without env setup; production
+    62→// MUST set PSP_WEBHOOK_SECRET (a real PSP secret) — the fallback is intentionally
+    63→// public knowledge so it can never be trusted to authenticate real money events.
+    64→const WEBHOOK_SECRET = process.env.PSP_WEBHOOK_SECRET ?? "sm_webhook_secret_demo";
+    65→
+    66→/** Replay-acceptance window: a correct MAC over an out-of-window timestamp is
+    67→ *  still a replay — rejected with STALE_EVENT. Simulate endpoints stamp
+    68→ *  Date.now() so sandbox flows always fall inside the window. */
+    69→export const WEBHOOK_TS_WINDOW_MS = 10 * 60_000;
+    70→
+    71→export function expectedSignature(providerRef: string, eventType: string, amountMinor: number, ts: number): string {
+    72→  return hmacSha256Hex(WEBHOOK_SECRET, `${providerRef}.${eventType}.${amountMinor}.${ts}`);
+    73→}
+    74→
+    75→export type ProcessResult = {
+    76→  ok: true;
+    77→  duplicate: boolean;
+    78→  eventType: string;
+    79→  orderNumber: string;
+    80→  orderStatus: string;
+    81→  intentStatus: string;
+    82→  orderNumbers?: string[]; // OPTION A: every order paid under this group ref
+    83→  isGroup?: boolean;
+    84→  // FIN-2b inbound payout events:
+    85→  /** True when the delivery was a replay/conflict (claim lost or already
+    86→   *  applied) — answered ok so PSP retries converge; never a raw throw. */
+    87→  payoutConflict?: boolean;
+    88→  /** Payout status after processing (consumed by payout-simulate + probes). */
+    89→  payoutStatus?: string;
+    90→};
+    91→
+    92→// ---------------------------------------------------------------------------
+    93→// Payout state machine: SHARED import from lib/payout-state.ts (FIN-2-a's
+    94→// single source of truth). Initially ran as a local copy under
+    95→// TODO(FIN-2-a merge) while that file was landing in parallel — swapped to the
+    96→// shared import the moment it was detected. Contract matches the checklist:
+    97→// assertTransition(from, to) throws ApiError 409 (code STATE_INVALID) on an
+    98→// illegal transition; map: requested→processing|rejected, processing→
+    99→// paid|failed, paid→returned|reversed (future, webhook-only), failed→processing.
+   100→// ---------------------------------------------------------------------------
+   101→
+   102→/** FIN-1 1.6 wiring lives here: T2 auto-settle toggle. Default false = DORMANT
+   103→ *  (documented decision) — GATEWAY:* intentionally carries the unsettled PSP
+   104→ *  position until a real PSP contract exists. */
+   105→async function autoSettleEnabled(): Promise<boolean> {
+   106→  const row = await db.setting.findUnique({ where: { key: AUTO_SETTLE_SETTING_KEY } });
+   107→  return parseMaybeJson<boolean>(row?.valueJson, false) === true;
+   108→}
+   109→
+   110→/**
+   111→ * Verify signature (caller may pre-compute it, as simulate does), log the raw
+   112→ * webhook, then process idempotently. Throws ApiError with proper status codes.
+   113→ *
+   114→ * RACE SAFETY (why claim-first): the success paths' FIRST write inside the
+   115→ * Serializable transaction is a CONDITIONAL updateMany (status flip guarded by
+   116→ * the pre-status). Two concurrent deliveries of the same event race on that
+   117→ * row lock; the loser matches zero rows, writes nothing and returns the
+   118→ * duplicate result — money movement, order transitions and notifications can
+   119→ * only ever run for the winner. The ledger dedupKeys (FIN-1) backstop this at
+   120→ * the posting layer, and the notification dedupKeys backstop the mail log.
+   121→ */
+   122→export async function processPaymentWebhook(input: {
+   123→  provider: string;
+   124→  body: { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string; reason?: string };
+   125→  rawBody: string;
+   126→  headerSignature?: string | null;
+   127→}): Promise<ProcessResult> {
+   128→  // (2b.2) Provider sandbox enforcement FIRST — fail closed. resolvePspProvider
+   129→  // falls back to the mock provider for unknown ids, so in production an
+   130→  // unregistered provider id can never sneak through: mock is sandboxOnly → 403.
+   131→  const psp = resolvePspProvider(input.provider);
+   132→  if (psp.sandboxOnly && process.env.NODE_ENV === "production") {
+   133→    throw new ApiError(403, "PROVIDER_SANDBOX_ONLY", `Provider "${input.provider}" is sandbox-only and cannot process webhooks in production`);
+   134→  }
+   135→
+   136→  const providerRef = String(input.body.providerRef ?? "");
+   137→  const eventType = String(input.body.eventType ?? "");
+   138→  const amountMinor = Math.round(Number(input.body.amountMinor ?? 0));
+   139→  const ts = Math.round(Number(input.body.ts ?? 0));
+   140→  if (!providerRef || !eventType) {
+   141→    throw new ApiError(400, "BAD_REQUEST", "providerRef and eventType are required");
+   142→  }
+   143→
+   144→  // (2b.1) Timing-safe compare + freshness. signatureValid in the log means
+   145→  // "authenticated as a LIVE event": correct MAC AND inside the replay window —
+   146→  // a stale-but-correctly-signed delivery is recorded as signatureValid=false
+   147→  // (replay protection is part of webhook authentication semantics) and
+   148→  // rejected with STALE_EVENT below, AFTER the row is logged.
+   149→  const providedSig = input.headerSignature ?? (input.body.sig ? String(input.body.sig) : null);
+   150→  const expected = expectedSignature(providerRef, eventType, amountMinor, ts);
+   151→  const sigMatches = !!providedSig && safeEqual(providedSig, expected);
+   152→  const fresh = Math.abs(Date.now() - ts) <= WEBHOOK_TS_WINDOW_MS;
+   153→  const signatureValid = sigMatches && fresh;
+   154→
+   155→  // OPTION A first: the ref may be a multi-seller payment group.
+   156→  const group = await db.paymentGroup.findUnique({
+   157→    where: { ref: providerRef },
+   158→    include: {
+   159→      orders: {
+   160→        orderBy: { createdAt: "asc" },
+   161→        include: { items: true, store: { include: { seller: { include: { wallet: true } } } } },
+   162→      },
+   163→    },
+   164→  });
+   165→
+   166→  const intent = group ? null : await db.paymentIntent.findUnique({ where: { providerRef } });
+   167→
+   168→  // ALWAYS log the webhook first (even for invalid signature / unknown ref) —
+   169→  // invalid/stale rows stay in the log with their signatureValid flag.
+   170→  const log = await db.paymentWebhookLog.create({
+   171→    data: {
+   172→      provider: input.provider,
+   173→      providerRef,
+   174→      eventType,
+   175→      payloadJson: input.rawBody,
+   176→      signatureValid,
+   177→      processed: false,
+   178→      orderId: group?.orders[0]?.id ?? intent?.orderId ?? null,
+   179→    },
+   180→  });
+   181→
+   182→  if (!sigMatches) {
+   183→    throw new ApiError(400, "BAD_SIGNATURE", "Webhook signature verification failed");
+   184→  }
+   185→  if (!fresh) {
+   186→    throw new ApiError(400, "STALE_EVENT", `Webhook timestamp is outside the ±${WEBHOOK_TS_WINDOW_MS / 60_000}-minute acceptance window (replay protection)`);
+   187→  }
+   188→
+   189→  // ------------------------------------------------------------------ FIN-2b: inbound payout events
+   190→  if (eventType === "payout.succeeded" || eventType === "payout.failed") {
+   191→    return processPayoutEvent({ provider: input.provider, providerRef, eventType, amountMinor, reason: input.body.reason ?? null, logId: log.id });
+   192→  }
+   193→
+   194→  // ------------------------------------------------------------------ OPTION A group path
+   195→  if (group) {
+   196→    if (eventType === "payment.failed") {
+   197→      // No money moves on failure — a single conditional update is fine outside
+   198→      // a Serializable tx (an already-succeeded group ignores the failed event).
+   199→      if (group.status === "succeeded") {
+   200→        await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   201→        return {
+   202→          ok: true,
+   203→          duplicate: true,
+   204→          eventType,
+   205→          orderNumber: group.orders[0]?.orderNumber ?? "",
+   206→          orderNumbers: group.orders.map((o) => o.orderNumber),
+   207→          orderStatus: "paid",
+   208→          intentStatus: "succeeded",
+   209→          isGroup: true,
+   210→        };
+   211→      }
+   212→      await db.paymentGroup.update({ where: { id: group.id }, data: { status: "failed" } });
+   213→      // F3 — definitive terminal payment failure releases the reservation
+   214→      // exactly once (CAS-claimed; a concurrent success webhook that already
+   215→      // committed leaves count=0 here and nothing is restocked). Pending /
+   216→      // timeout / unknown outcomes NEVER take this path — only payment.failed.
+   217→      const failedReleases: import("@/lib/inventory-release").ReleaseOutcome[] = [];
+   218→      for (const o of group.orders) {
+   219→        try {
+   220→          failedReleases.push(await releaseOrderReservation({ orderId: o.id, actor: "payment-failed", reason: "payment failed" }));
+   221→        } catch (e) {
+   222→          console.warn(`[f3] release after payment.failed deferred for order=${o.id.slice(-8)}: ${e instanceof Error ? e.message.slice(0, 120) : e} (expiry sweep will retry)`);
+   223→        }
+   224→      }
+   225→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   226→      return {
+   227→        ok: true,
+   228→        duplicate: false,
+   229→        eventType,
+   230→        orderNumber: group.orders[0]?.orderNumber ?? "",
+   231→        orderNumbers: group.orders.map((o) => o.orderNumber),
+   232→        orderStatus: "cancelled",
+   233→        intentStatus: "failed",
+   234→        isGroup: true,
+   235→        reservationsReleased: failedReleases.filter((r) => r.released).length,
+   236→      };
+   237→    }
+   238→
+   239→    // Unknown-event + amount checks BEFORE the claim (unchanged order) — a
+   240→    // malformed delivery must never even attempt the status flip.
+   241→    if (eventType !== "payment.succeeded") {
+   242→      throw new ApiError(400, "UNKNOWN_EVENT", `Unsupported eventType: ${eventType}`);
+   243→    }
+   244→
+   245→    if (amountMinor !== group.totalMinor) {
+   246→      throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${amountMinor} does not match payment group ${group.totalMinor}`);
+   247→    }
+   248→
+   249→    const settings = await getCommissionSettings();
+   250→    const paidAt = new Date();
+   251→
+   252→    // SUCCESS PATH — one Serializable transaction around claim + money.
+   253→    // The conditional claim is the FIRST write: count 0 ⇒ another delivery
+   254→    // already succeeded ⇒ nothing this tx wrote (the claim was the only
+   255→    // intended write) ⇒ return the duplicate sentinel; committing an empty tx
+   256→    // is equivalent to rollback-by-return.
+   257→    // F1: wrapped in bounded whole-tx retry (P2034 only) — see header +
+   258→    // lib/tx-retry.ts. A retried attempt re-runs the claim first, so it either
+   259→    // wins cleanly or converges to the duplicate sentinel below.
+   260→    // F3: STOCK_LOST_AFTER_RELEASE (late success after the reservation was
+   261→    // released and stock is gone) aborts the tx and is converted into a
+   262→    // documented refund-required outcome — never a 500, never a fake success.
+   263→    let outcome;
+   264→    try {
+   265→      outcome = await withSerializableTxRetry(
+   266→      async (tx) => {
+   267→        const claim = await tx.paymentGroup.updateMany({
+   268→          where: { id: group.id, status: { not: "succeeded" } },
+   269→          data: { status: "succeeded", paidAt },
+   270→        });
+   271→        if (claim.count === 0) return { claimed: false as const };
+   272→
+   273→        const touchedWalletIds = new Set<string>();
+   274→
+   275→        for (const order of group.orders) {
+   276→          // F3 — late payment after reservation release: if the expiry sweep
+   277→          // (or a payment.failed release) already released this order's stock,
+   278→          // atomically re-reserve inside THIS tx before committing to paid.
+   279→          // If stock is gone the typed ApiError aborts the whole tx (the F1
+   280→          // wrapper never retries ApiErrors) and the route records a
+   281→          // refund-required outcome — a released order is never silently
+   282→          // fulfilled, and stock can never go negative.
+   283→          const fresh = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } });
+   284→          if (fresh?.status === "cancelled") {
+   285→            await reReserveOrderStock(tx, {
+   286→              order: { id: order.id, orderNumber: order.orderNumber, items: order.items.map((it) => ({ variantId: it.variantId, qty: it.qty })) },
+   287→              providerRef,
+   288→            });
+   289→          }
+   290→          await transitionOrder({
+   291→            orderId: order.id,
+   292→            toStatus: "paid",
+   293→            actor: "system",
+   294→            note: `Payment ${providerRef} succeeded via ${group.provider} (group payment)`,
+   295→            timestamps: { paidAt },
+   296→            tx,
+   297→          });
+   298→
+   299→          // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.
+   300→          const seller = order.store.seller;
+   301→          const wallet = seller?.wallet;
+   302→          if (seller && wallet) {
+   303→            const holdDays = seller.holdDaysOverride ?? settings.payoutHoldDays;
+   304→            const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
+   305→            const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
+   306→            const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+   307→            await postOrderPaid({
+   308→              orderId: order.id,
+   309→              orderNumber: order.orderNumber,
+   310→              walletId: wallet.id,
+   311→              provider: group.provider,
+   312→              totalMinor: order.totalMinor,
+   313→              sellerNetMinor,
+   314→              commissionMinor,
+   315→              holdUntil,
+   316→              currency: order.currency,
+   317→              occurredAt: paidAt,
+   318→              tx,
+   319→              skipCacheRefresh: true, // F2-D2: cache refresh moved AFTER commit
+   320→            });
+   321→            touchedWalletIds.add(wallet.id);
+   322→          }
+   323→
+   324→          // Store webhooks + notifications run inside the success tx (log-only
+   325→          // writes on their own connections). notify carries dedupKeys so even
+   326→          // an aborted tx + provider retry cannot multiply seller/customer mail.
+   327→          await dispatchStoreWebhooks({
+   328→            storeId: order.storeId,
+   329→            event: "order.paid",
+   330→            payload: { orderNumber: order.orderNumber, totalMinor: order.totalMinor, currency: order.currency, paymentGroupRef: providerRef },
+   331→          });
+   332→          if (seller) {
+   333→            await notify({ event: "order.paid", channel: "email", recipient: seller.email, subject: `You have a new paid order ${order.orderNumber}`, dedupKey: `order.paid.email:${order.id}` });
+   334→            await notify({ event: "order.paid", channel: "inapp", recipient: seller.email, subject: "You have a new paid order", dedupKey: `order.paid.inapp:${order.id}` });
+   335→          }
+   336→          await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed`, dedupKey: `order.receipt.email:${order.id}` });
+   337→          // Shopper in-app nudge (Task 10-d) — payment confirmed → "Order confirmed".
+   338→          // Left as-is: its own promo-cap rules make it idempotent-ish, and the
+   339→          // claim above means it only runs for the winning delivery anyway.
+   340→          await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
+   341→          await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: group.provider, totalMinor: order.totalMinor, paymentGroup: true } });
+   342→        }
+   343→
+   344→        // Server-side cart clearing — only the PURCHASED variants leave the cart,
+   345→        // and only on verified payment success (never on failure/pending). Lines
+   346→        // the buyer unchecked (kept for later) survive: selection-aware carts.
+   347→        // PaymentGroups are account-scoped (shopperId always set). Inside the tx:
+   348→        // a rollback never strands paid items out of the cart inconsistently.
+   349→        const purchasedVariantIds = [
+   350→          ...new Set(group.orders.flatMap((o) => o.items.map((it) => it.variantId)).filter((v): v is string => Boolean(v))),
+   351→        ];
+   352→        await tx.cartItem.deleteMany({
+   353→          where: { cart: { shopperId: group.shopperId }, variantId: { in: purchasedVariantIds } },
+   354→        });
+   355→
+   356→        return { claimed: true as const, touchedWalletIds };
+   357→      }
+   358→    );
+   359→    } catch (e) {
+   360→      if (e instanceof ApiError && e.code === "STOCK_LOST_AFTER_RELEASE") {
+   361→        const affected = await db.order.findMany({
+   362→          where: { paymentGroupId: group.id },
+   363→          select: { id: true, orderNumber: true, totalMinor: true },
+   364→        });
+   365→        for (const o of affected) {
+   366→          const existing = await db.refund.findFirst({ where: { orderId: o.id, reason: { startsWith: "late payment" }, status: "requested" } });
+   367→          if (!existing) {
+   368→            await db.refund.create({
+   369→              data: {
+   370→                orderId: o.id,
+   371→                amountMinor: o.totalMinor,
+   372→                reason: `late payment after reservation release (${providerRef}) — reconciliation required`,
+   373→                restock: false,
+   374→                requestedBy: "system",
+   375→              },
+   376→            });
+   377→          }
+   378→        }
+   379→        await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   380→        return {
+   381→          ok: true,
+   382→          duplicate: false,
+   383→          eventType,
+   384→          refundRequired: true,
+   385→          orderNumber: affected[0]?.orderNumber ?? "",
+   386→          orderNumbers: affected.map((o) => o.orderNumber),
+   387→          orderStatus: "cancelled",
+   388→          intentStatus: "succeeded_but_unfulfillable",
+   389→          isGroup: true,
+   390→        };
+   391→      }
+   392→      throw e;
+   393→    }
+   394→
+   395→    if (!outcome.claimed) {
+   396→      // Duplicate delivery — existing duplicate branch shape, processed=true.
+   397→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   398→      return {
+   399→        ok: true,
+   400→        duplicate: true,
+   401→        eventType,
+   402→        orderNumber: group.orders[0]?.orderNumber ?? "",
+   403→        orderNumbers: group.orders.map((o) => o.orderNumber),
+   404→        orderStatus: "paid",
+   405→        intentStatus: "succeeded",
+   406→        isGroup: true,
+   407→      };
+   408→    }
+   409→
+   410→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   411→
+   412→    // F2-D2 — wallet cache refresh AFTER commit (best-effort). The cache is
+   413→    // derived state (truth = ledger lines); refreshWalletCache recomputes it
+   414→    // idempotently. Moving it out of the Serializable window removes the hot
+   415→    // seller-Wallet row write that measured 86×P2034 conflicts under a
+   416→    // 100-order single-store confirm burst. A failure here leaves truth
+   417→    // correct and cache stale — detectable by scripts/verify-ledger.ts and
+   418→    // healed by the next refresh — so it must NOT fail the confirmation.
+   419→    if (outcome.touchedWalletIds && outcome.touchedWalletIds.size > 0) {
+   420→      await Promise.all(
+   421→        [...outcome.touchedWalletIds].map((walletId) =>
+   422→          refreshWalletCache(walletId).catch((e) => {
+   423→            console.warn(`[f2] post-commit wallet cache refresh deferred — wallet=${walletId.slice(-8)} code=${e instanceof Prisma.PrismaClientKnownRequestError ? e.code : "unknown"} (truth unaffected; verify-ledger will flag drift)`);
+   424→          })
+   425→        )
+   426→      );
+   427→    }
+   428→
+   429→    // (FIN-1 1.6 wiring) T2 auto-settle — AFTER the success tx commits. The
+   430→    // recipe is idempotent (dedupKey gateway_settlement:settlement:{ref}), so a
+   431→    // crash here is healed by the next delivery's claim-miss path... which is
+   432→    // why the call lives outside the tx: the PSP settles buyer funds to the
+   433→    // platform bank account; T2 clears the GATEWAY:{provider} receivable into
+   434→    // BANK_MAIN. Default setting false = dormant (documented decision).
+   435→    if (await autoSettleEnabled()) {
+   436→      await postGatewaySettlement({ provider: group.provider, amountMinor: group.totalMinor, ref: providerRef, occurredAt: paidAt });
+   437→    }
+   438→
+   439→    return {
+   440→      ok: true,
+   441→      duplicate: false,
+   442→      eventType,
+   443→      orderNumber: group.orders[0]?.orderNumber ?? "",
+   444→      orderNumbers: group.orders.map((o) => o.orderNumber),
+   445→      orderStatus: "paid",
+   446→      intentStatus: "succeeded",
+   447→      isGroup: true,
+   448→    };
+   449→  }
+   450→
+   451→  // ------------------------------------------------------------------ legacy single-order path
+   452→  if (!intent) {
+   453→    throw new ApiError(404, "INTENT_NOT_FOUND", "Payment intent not found");
+   454→  }
+   455→
+   456→  if (eventType === "payment.failed") {
+   457→    if (intent.status === "succeeded") {
+   458→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   459→      const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   460→      return {
+   461→        ok: true,
+   462→        duplicate: true,
+   463→        eventType,
+   464→        orderNumber: order?.orderNumber ?? "",
+   465→        orderStatus: order?.status ?? "",
+   466→        intentStatus: intent.status,
+   467→      };
+   468→    }
+   469→    await db.paymentIntent.update({ where: { id: intent.id }, data: { status: "failed" } });
+   470→    // F3 — definitive terminal failure releases the reservation exactly once
+   471→    // (CAS-claimed; concurrent success → count=0 → no restock of a paid order).
+   472→    let reservationsReleased = 0;
+   473→    try {
+   474→      const rel = await releaseOrderReservation({ orderId: intent.orderId, actor: "payment-failed", reason: "payment failed" });
+   475→      if (rel.released) reservationsReleased = 1;
+   476→    } catch (e) {
+   477→      console.warn(`[f3] release after payment.failed deferred for order=${intent.orderId.slice(-8)}: ${e instanceof Error ? e.message.slice(0, 120) : e} (expiry sweep will retry)`);
+   478→    }
+   479→    const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   480→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   481→    return {
+   482→      ok: true,
+   483→      duplicate: false,
+   484→      eventType,
+   485→      orderNumber: order?.orderNumber ?? "",
+   486→      orderStatus: order?.status ?? "",
+   487→      intentStatus: "failed",
+   488→      reservationsReleased,
+   489→    };
+   490→  }
+   491→
+   492→  if (eventType !== "payment.succeeded") {
+   493→    throw new ApiError(400, "UNKNOWN_EVENT", `Unsupported eventType: ${eventType}`);
+   494→  }
+   495→
+   496→  if (amountMinor !== intent.amountMinor) {
+   497→    throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${amountMinor} does not match intent ${intent.amountMinor}`);
+   498→  }
+   499→
+   500→  const settings = await getCommissionSettings();
+   501→  const paidAt = new Date();
+   502→
+   503→  // SUCCESS PATH — same claim-first Serializable pattern as the group path,
+   504→  // with the same F1 bounded whole-tx retry (P2034 only).
+   505→  // F3: STOCK_LOST_AFTER_RELEASE → documented refund-required outcome (see group path).
+   506→  let outcome;
+   507→  try {
+   508→    outcome = await withSerializableTxRetry(
+   509→    async (tx) => {
+   510→      const claim = await tx.paymentIntent.updateMany({
+   511→        where: { id: intent.id, status: { not: "succeeded" } },
+   512→        data: { status: "succeeded" },
+   513→      });
+   514→      if (claim.count === 0) return { claimed: false as const };
+   515→
+   516→      const order = await tx.order.findUnique({
+   517→        where: { id: intent.orderId },
+   518→        include: { items: true, store: { include: { seller: { include: { wallet: true } } } } },
+   519→      });
+   520→      if (!order) throw new ApiError(404, "ORDER_NOT_FOUND", "Order for payment intent not found");
+   521→
+   522→      // F3 — late payment after release: re-reserve (see group path rationale).
+   523→      const fresh = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } });
+   524→      if (fresh?.status === "cancelled") {
+   525→        await reReserveOrderStock(tx, {
+   526→          order: { id: order.id, orderNumber: order.orderNumber, items: order.items.map((it) => ({ variantId: it.variantId, qty: it.qty })) },
+   527→          providerRef,
+   528→        });
+   529→      }
+   530→
+   531→      await transitionOrder({ orderId: order.id, toStatus: "paid", actor: "system", note: `Payment ${providerRef} succeeded via ${intent.provider}`, timestamps: { paidAt }, tx });
+   532→
+   533→      // Server-side cart clearing — only the PURCHASED variants leave the cart,
+   534→      // and only on verified payment success (never on failure/pending, never
+   535→      // client-driven). Account carts clear by shopperId; the token is a legacy/
+   536→      // reconciliation fallback for rows that predate account-scoped carts.
+   537→      // Selection-aware: unchecked (kept-for-later) lines are never removed here.
+   538→      const purchasedVariantIds = [...new Set(order.items.map((it) => it.variantId).filter((v): v is string => Boolean(v)))];
+   539→      if (order.shopperId) {
+   540→        await tx.cartItem.deleteMany({
+   541→          where: { cart: { shopperId: order.shopperId }, variantId: { in: purchasedVariantIds } },
+   542→        });
+   543→      } else if (order.cartToken) {
+   544→        await tx.cartItem.deleteMany({
+   545→          where: { cart: { token: order.cartToken }, variantId: { in: purchasedVariantIds } },
+   546→        });
+   547→      }
+   548→
+   549→      // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.
+   550→      const seller = order.store.seller;
+   551→      const wallet = seller?.wallet;
+   552→      const touchedWalletIds = new Set<string>();
+   553→      if (seller && wallet) {
+   554→        const holdDays = seller.holdDaysOverride ?? settings.payoutHoldDays;
+   555→        const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
+   556→        const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
+   557→        const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+   558→        await postOrderPaid({
+   559→          orderId: order.id,
+   560→          orderNumber: order.orderNumber,
+   561→          walletId: wallet.id,
+   562→          provider: intent.provider,
+   563→          totalMinor: intent.amountMinor,
+   564→          sellerNetMinor,
+   565→          commissionMinor,
+   566→          holdUntil,
+   567→          currency: order.currency,
+   568→          occurredAt: paidAt,
+   569→          tx,
+   570→          skipCacheRefresh: true, // F2-D2: cache refresh moved AFTER commit
+   571→        });
+   572→        touchedWalletIds.add(wallet.id);
+   573→      }
+   574→
+   575→      // Store webhooks + notifications (see group path rationale — dedupKeys).
+   576→      await dispatchStoreWebhooks({
+   577→        storeId: order.storeId,
+   578→        event: "order.paid",
+   579→        payload: { orderNumber: order.orderNumber, totalMinor: order.totalMinor, currency: order.currency },
+   580→      });
+   581→      if (seller) {
+   582→        await notify({ event: "order.paid", channel: "email", recipient: seller.email, subject: `You have a new paid order ${order.orderNumber}`, dedupKey: `order.paid.email:${order.id}` });
+   583→        await notify({ event: "order.paid", channel: "inapp", recipient: seller.email, subject: "You have a new paid order", dedupKey: `order.paid.inapp:${order.id}` });
+   584→      }
+   585→      await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed`, dedupKey: `order.receipt.email:${order.id}` });
+   586→      // Shopper in-app nudge (Task 10-d) — payment confirmed → "Order confirmed".
+   587→      await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
+   588→      await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: intent.provider, totalMinor: intent.amountMinor } });
+   589→
+   590→      return { claimed: true as const, touchedWalletIds };
+   591→    }
+   592→  );
+   593→  } catch (e) {
+   594→    if (e instanceof ApiError && e.code === "STOCK_LOST_AFTER_RELEASE") {
+   595→      const affected = await db.order.findUnique({ where: { id: intent.orderId }, select: { id: true, orderNumber: true, totalMinor: true } });
+   596→      if (affected) {
+   597→        const existing = await db.refund.findFirst({ where: { orderId: affected.id, reason: { startsWith: "late payment" }, status: "requested" } });
+   598→        if (!existing) {
+   599→          await db.refund.create({
+   600→            data: {
+   601→              orderId: affected.id,
+   602→              amountMinor: affected.totalMinor,
+   603→              reason: `late payment after reservation release (${providerRef}) — reconciliation required`,
+   604→              restock: false,
+   605→              requestedBy: "system",
+   606→            },
+   607→          });
+   608→        }
+   609→      }
+   610→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   611→      return {
+   612→        ok: true,
+   613→        duplicate: false,
+   614→        eventType,
+   615→        refundRequired: true,
+   616→        orderNumber: affected?.orderNumber ?? "",
+   617→        orderStatus: "cancelled",
+   618→        intentStatus: "succeeded_but_unfulfillable",
+   619→      };
+   620→    }
+   621→    throw e;
+   622→  }
+   623→
+   624→  if (!outcome.claimed) {
+   625→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   626→    const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   627→    return {
+   628→      ok: true,
+   629→      duplicate: true,
+   630→      eventType,
+   631→      orderNumber: order?.orderNumber ?? "",
+   632→      orderStatus: order?.status ?? "",
+   633→      intentStatus: "succeeded",
+   634→    };
+   635→  }
+   636→
+   637→  await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   638→
+   639→  // F2-D2 — wallet cache refresh AFTER commit (best-effort; see group path
+   640→  // rationale). Truth is the ledger; a failed refresh leaves detectable drift,
+   641→  // never a failed confirmation.
+   642→  if (outcome.touchedWalletIds && outcome.touchedWalletIds.size > 0) {
+   643→    await Promise.all(
+   644→      [...outcome.touchedWalletIds].map((walletId) =>
+   645→        refreshWalletCache(walletId).catch((e) => {
+   646→          console.warn(`[f2] post-commit wallet cache refresh deferred — wallet=${walletId.slice(-8)} code=${e instanceof Prisma.PrismaClientKnownRequestError ? e.code : "unknown"} (truth unaffected; verify-ledger will flag drift)`);
+   647→        })
+   648→      )
+   649→    );
+   650→  }
+   651→
+   652→  // T2 auto-settle (see group path) — after commit, idempotent recipe.
+   653→  if (await autoSettleEnabled()) {
+   654→    await postGatewaySettlement({ provider: intent.provider, amountMinor: intent.amountMinor, ref: providerRef, occurredAt: paidAt });
+   655→  }
+   656→
+   657→  return {
+   658→    ok: true,
+   659→    duplicate: false,
+   660→    eventType,
+   661→    orderNumber: (await db.order.findUnique({ where: { id: intent.orderId } }))?.orderNumber ?? "",
+   662→    orderStatus: "paid",
+   663→    intentStatus: "succeeded",
+   664→  };
+   665→}
+   666→
+   667→/**
+   668→ * FIN-2b (2b.4) — inbound PAYOUT lifecycle events from the PSP.
+   669→ *
+   670→ * The provider confirms (or fails) a bank transfer we initiated. providerRef
+   671→ * resolution: try Payout.referenceNo first (the canonical platform reference —
+   672→ * what the mock PSP and payout-simulate echo); fall back to Payout.providerRef
+   673→ * (the transfer ref an admin recorded at mark-paid — some providers echo that
+   674→ * instead). Both lookups are documented PSP integration surface.
+   675→ *
+   676→ * Same claim-first race safety as the payment paths: assertTransition guards
+   677→ * the semantics, the conditional updateMany serializes concurrent deliveries,
+   678→ * and T4/T4f post inside the same Serializable tx as the status flip.
+   679→ */
+   680→async function processPayoutEvent(args: {
+   681→  provider: string;
+   682→  providerRef: string;
+   683→  eventType: "payout.succeeded" | "payout.failed";
+   684→  amountMinor: number;
+   685→  reason: string | null;
+   686→  logId: string;
+   687→}): Promise<ProcessResult> {
+   688→  const payout =
+   689→    (await db.payout.findUnique({ where: { referenceNo: args.providerRef } })) ??
+   690→    (await db.payout.findFirst({ where: { providerRef: args.providerRef } }));
+   691→  if (!payout) {
+   692→    throw new ApiError(404, "PAYOUT_NOT_FOUND", `No payout matches providerRef ${args.providerRef}`);
+   693→  }
+   694→
+   695→  const toStatus = args.eventType === "payout.succeeded" ? "paid" : "failed";
+   696→  const dedupKey = `${toStatus === "paid" ? "payout.paid" : "payout.failed"}:${payout.id}`;
+   697→
+   698→  // Idempotent replay: the provider re-delivered an event we already applied
+   699→  // (e.g. payout.succeeded for an already-paid payout) → ok + conflict flag,
+   700→  // never a raw 409 at the provider. Decision is recorded (processed=true).
+   701→  if (payout.status === toStatus) {
+   702→    await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+   703→    return {
+   704→      ok: true,
+   705→      duplicate: true,
+   706→      payoutConflict: true,
+   707→      eventType: args.eventType,
+   708→      orderNumber: "",
+   709→      orderStatus: payout.status,
+   710→      intentStatus: "",
+   711→      payoutStatus: payout.status,
+   712→    };
+   713→  }
+   714→
+   715→  // State machine guard (cheap, no locks): an illegal transition (e.g.
+   716→  // requested→paid — the money was never reserved by T3) is a hard 409. The
+   717→  // decision is recorded on the webhook row before throwing.
+   718→  assertTransition(payout.status, toStatus);
+   719→
+   720→  // Amount guard BEFORE the claim (mirror of the payment paths).
+   721→  if (args.amountMinor !== payout.amountMinor) {
+   722→    throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${args.amountMinor} does not match payout ${payout.amountMinor}`);
+   723→  }
+   724→
+   725→  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+   726→  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller for payout not found");
+   727→
+   728→  const at = new Date();
+   729→  // T4f reason: use the provider-supplied reason when present.
+   730→  const reason = args.reason ?? "provider reported failure";
+   731→  const subject = toStatus === "paid" ? `Payout ${payout.referenceNo} on the way` : `Payout ${payout.referenceNo} failed`;
+   732→
+   733→  const outcome = await db.$transaction(
+   734→    async (tx) => {
+   735→      // Conditional claim — expectedFrom is "processing" per the state machine
+   736→      // (only processing payouts are awaiting provider confirmation). count 0
+   737→      // ⇒ lost race / concurrent admin action ⇒ empty-tx-return (rollback-by-
+   738→      // return: the claim was the only intended write and it wrote nothing).
+   739→      const claim = await tx.payout.updateMany({
+   740→        where: { id: payout.id, status: "processing" },
+   741→        data: { status: toStatus },
+   742→      });
+   743→      if (claim.count === 0) return { claimed: false as const };
+   744→
+   745→      if (toStatus === "paid") {
+   746→        await tx.payout.update({ where: { id: payout.id }, data: { paidAt: at } });
+   747→        // T4 — clearing → bank; refreshWalletCache runs inside the recipe (tx).
+   748→        await postPayoutConfirmed({
+   749→          walletId: payout.walletId,
+   750→          payoutId: payout.id,
+   751→          referenceNo: payout.referenceNo,
+   752→          amountMinor: payout.amountMinor,
+   753→          tx,
+   754→        });
+   755→      } else {
+   756→        await tx.payout.update({ where: { id: payout.id }, data: { failReason: reason } });
+   757→        // T4f — reversal of T3 (clearing → back to seller payable).
+   758→        await postPayoutFailed({
+   759→          walletId: payout.walletId,
+   760→          payoutId: payout.id,
+   761→          referenceNo: payout.referenceNo,
+   762→          amountMinor: payout.amountMinor,
+   763→          reason,
+   764→          tx,
+   765→        });
+   766→      }
+   767→
+   768→      // Seller notifications (email + inapp) with stable per-event dedupKeys;
+   769→      // subjects mirror the admin mark-paid / fail routes.
+   770→      await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "email", recipient: seller.email, subject, dedupKey });
+   771→      await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "inapp", recipient: seller.email, subject, dedupKey });
+   772→      await logActivity({
+   773→        actorType: "system",
+   774→        action: toStatus === "paid" ? "payout.provider_confirmed" : "payout.provider_failed",
+   775→        entityType: "payout",
+   776→        entityId: payout.id,
+   777→        meta: { providerRef: args.providerRef, referenceNo: payout.referenceNo, amountMinor: payout.amountMinor },
+   778→      });
+   779→
+   780→      return { claimed: true as const };
+   781→    },
+   782→    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+   783→  );
+   784→
+   785→  const freshPayout = await db.payout.findUnique({ where: { id: payout.id } });
+   786→  const payoutStatus = freshPayout?.status ?? payout.status;
+   787→
+   788→  if (!outcome.claimed) {
+   789→    // Lost the race (e.g. an admin transitioned the payout concurrently) —
+   790→    // answer ok with payoutConflict so the provider's retry converges; never
+   791→    // throw raw 5xx at a PSP. Decision recorded (processed=true).
+   792→    await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+   793→    return {
+   794→      ok: true,
+   795→      duplicate: true,
+   796→      payoutConflict: true,
+   797→      eventType: args.eventType,
+   798→      orderNumber: "",
+   799→      orderStatus: payoutStatus,
+   800→      intentStatus: "",
+   801→      payoutStatus,
+   802→    };
+   803→  }
+   804→
+   805→  await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+   806→  return {
+   807→    ok: true,
+   808→    duplicate: false,
+   809→    eventType: args.eventType,
+   810→    orderNumber: "",
+   811→    orderStatus: payoutStatus,
+   812→    intentStatus: "",
+   813→    payoutStatus,
+   814→  };
+   815→}
+   816→
+   817→export function webhookPayloadJson(body: unknown): string {
+   818→  return toJson(body);
+   819→}
+   820→

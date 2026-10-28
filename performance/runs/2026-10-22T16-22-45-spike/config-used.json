@@ -1,0 +1,176 @@
+{
+  "profile": "spike",
+  "scenario": "spike-launch.js",
+  "scenarioPath": "/home/z/my-project/scripts/loadtest/scenarios/spike-launch.js",
+  "baseUrl": "http://localhost:3000",
+  "viaCaddy": false,
+  "overrides": {
+    "duration": null,
+    "vus": null
+  },
+  "config": {
+    "catalogCount": 5000,
+    "shopperCount": 120,
+    "perfStock": 1000000,
+    "correctStock": 60,
+    "baseUrl": "http://localhost:3000",
+    "viaCaddy": false,
+    "caddyUrl": "http://localhost:81",
+    "thinkTimeMinS": 0.5,
+    "thinkTimeMaxS": 2.5,
+    "profiles": {
+      "smoke": {
+        "scenario": "browse.js",
+        "vus": 1,
+        "duration": "30s"
+      },
+      "baseline": {
+        "scenario": "browse.js",
+        "vus": 5,
+        "duration": "3m"
+      },
+      "ramp": {
+        "scenario": "browse.js",
+        "stages": [
+          "5vus:1m",
+          "25vus:2m",
+          "50vus:2m",
+          "100vus:2m",
+          "200vus:2m"
+        ]
+      },
+      "spike": {
+        "scenario": "spike-launch.js",
+        "arrivalStart": 0,
+        "arrivalPeak": 3,
+        "rampToPeak": "10s",
+        "plateau": "2m",
+        "tail": "30s"
+      },
+      "stress": {
+        "scenario": "stress.js",
+        "stages": [
+          "100vus:2m",
+          "150vus:2m",
+          "200vus:2m",
+          "250vus:2m",
+          "300vus:2m"
+        ],
+        "hardVuCap": 300,
+        "abort": {
+          "httpP95Ms": 5000,
+          "errorRatePct": 10,
+          "eventLoopLagMs": 2000,
+          "heapUsedPct": 80,
+          "fdMax": 9000,
+          "delayAbortEvalS": 15
+        }
+      },
+      "soak": {
+        "scenario": "soak.js",
+        "arrivalPerSec": 20,
+        "duration": "30m"
+      },
+      "correctness": {
+        "scenario": "correctness-storm.js",
+        "vus": 100,
+        "iterationsPerVu": 1
+      },
+      "purchase": {
+        "scenario": "purchase.js",
+        "vus": 5,
+        "duration": "3m"
+      }
+    },
+    "purchaseMix": {
+      "checkoutSharePct": 30
+    },
+    "endpoints": {
+      "storeSlug": "lt-main-store",
+      "storefrontFallbackSlugs": [
+        "glow-theory",
+        "bytebazaar",
+        "lumina-living"
+      ],
+      "perfProductSlug": "lt-flash-perf-item",
+      "correctProductSlug": "lt-flash-correct-item",
+      "shopperEmailTemplate": "lt-shopper-{{i}}@lt.nomofee.test",
+      "shopperPassword": "LT-Pass-2026!",
+      "searchTerms": [
+        "lt",
+        "candle",
+        "serum",
+        "vase",
+        "keyboard",
+        "[LT] Catalog Item 12"
+      ],
+      "suggestTerms": [
+        "lt",
+        "candle",
+        "serum",
+        "vase",
+        "keyboard",
+        "byte"
+      ],
+      "checkout": {
+        "provider": "fpx_toyyibpay",
+        "shippingAddress": {
+          "line1": "LT Load Test Jalan 1",
+          "city": "Shah Alam",
+          "state": "Selangor",
+          "postcode": "40000"
+        }
+      },
+      "paymentPollMaxTries": 10,
+      "paymentPollIntervalS": 0.5
+    },
+    "openModel": {
+      "preAllocatedVusPerArrival": 3,
+      "maxVusFactor": 10,
+      "hardVuCap": 600
+    },
+    "xffPrefix": "10.",
+    "sampler": {
+      "intervalMs": 1000
+    },
+    "watcher": {
+      "intervalMs": 2000,
+      "killGraceS": 10,
+      "metricsFailStreakAbort": 15
+    },
+    "heapCeiling": {
+      "safetyMarginMb": 400,
+      "minCeilingMb": 512
+    },
+    "wallClockCapSec": {
+      "default": 2400,
+      "smoke": 300,
+      "baseline": 600,
+      "ramp": 900,
+      "spike": 600,
+      "stress": 900,
+      "soak": 2100,
+      "correctness": 300,
+      "purchase": 600
+    }
+  },
+  "wallClockCapSec": 600,
+  "resolved": {
+    "executor": "spike-launch.js",
+    "appPid": 14689,
+    "caddyPid": 2,
+    "appFdLimit": 100000,
+    "caddyFdLimit": 100000,
+    "memAvailStartMb": 1460,
+    "memTotalMb": 4042,
+    "heapCeilingMb": 1060,
+    "heapAbortMb": 848,
+    "watcherIntervalMs": 2000,
+    "killGraceS": 10,
+    "metricsFailStreakAbort": 15,
+    "samplerIntervalMs": 1000,
+    "k6Version": "k6 v2.3.0 (commit/e088784614, go1.26.8, linux/amd64)",
+    "bunVersion": "1.3.14"
+  },
+  "startedAt": "2026-10-22T16:22:45.244Z"
+}

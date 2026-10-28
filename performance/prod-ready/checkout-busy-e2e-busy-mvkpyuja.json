@@ -1,0 +1,257 @@
+{
+  "run": "busy-mvkpyuja",
+  "base": "http://127.0.0.1:3100",
+  "stormMs": 2648,
+  "firstOutcomes": [
+    {
+      "status": 503,
+      "ms": 1587,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 598,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 201,
+      "ms": 2272,
+      "retryAfter": null
+    },
+    {
+      "status": 201,
+      "ms": 2648,
+      "retryAfter": null
+    },
+    {
+      "status": 503,
+      "ms": 1577,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 616,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 201,
+      "ms": 1573,
+      "retryAfter": null
+    },
+    {
+      "status": 503,
+      "ms": 601,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 1583,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 623,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 618,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 627,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 642,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 639,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 657,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    },
+    {
+      "status": 503,
+      "ms": 659,
+      "code": "CHECKOUT_BUSY",
+      "retryAfter": "2"
+    }
+  ],
+  "burst": [
+    {
+      "status": 503,
+      "ms": 1543,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 1567,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 1552,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 201,
+      "ms": 1687
+    },
+    {
+      "status": 201,
+      "ms": 2344
+    },
+    {
+      "status": 201,
+      "ms": 1487
+    },
+    {
+      "status": 503,
+      "ms": 571,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 585,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 578,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 592,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 596,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 607,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 610,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 618,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 625,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 636,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 632,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 646,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 651,
+      "code": "CHECKOUT_BUSY"
+    },
+    {
+      "status": 503,
+      "ms": 659,
+      "code": "CHECKOUT_BUSY"
+    }
+  ],
+  "checks": [
+    {
+      "name": "overload produced deliberate 503 CHECKOUT_BUSY responses",
+      "pass": true,
+      "detail": "13/16"
+    },
+    {
+      "name": "no disguised failures (no unexpected 5xx/4xx in the storm)",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "all 503s carry error.code=CHECKOUT_BUSY",
+      "pass": true,
+      "detail": "CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY,CHECKOUT_BUSY"
+    },
+    {
+      "name": "all 503s carry Retry-After >= 1s",
+      "pass": true,
+      "detail": "2,2,2,2,2,2,2,2,2,2,2,2,2"
+    },
+    {
+      "name": "503 leaves the buyer's cart byte-identical (nothing created, nothing charged)",
+      "pass": false,
+      "detail": "status=201 cart 1→1 rows=[{\"variantId\":\"cmvke5nz50003sdpra1fqsfms\",\"qty\":2}]"
+    },
+    {
+      "name": "every 503'd request recovered via bounded retry with the SAME idempotency key",
+      "pass": true,
+      "detail": "16/16 settled (waves=4, still pending=0)"
+    },
+    {
+      "name": "exactly ONE payment group per unique idempotency key (no duplicates from retries)",
+      "pass": true,
+      "detail": "groups=16 for 16 keys"
+    },
+    {
+      "name": "exactly ONE order per key",
+      "pass": true,
+      "detail": "orders=16"
+    },
+    {
+      "name": "retry storm answered with 503 CHECKOUT_BUSY (not 5xx infra, not a hang)",
+      "pass": false,
+      "detail": "busy=17/20, infra=17"
+    },
+    {
+      "name": "overflow 503s are FAST (bounded queue answers immediately, no unbounded wait)",
+      "pass": true,
+      "detail": "p50≈607ms max=1567ms burst wall=2345ms"
+    },
+    {
+      "name": "server responsive immediately after the storm",
+      "pass": true,
+      "detail": "status=200"
+    }
+  ],
+  "pass": false
+}

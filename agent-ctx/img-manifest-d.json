@@ -1,0 +1,100 @@
+[
+  {
+    "file": "public/gen/stores/lumina-living-logo.png",
+    "kind": "store-logo",
+    "entity": "lumina-living",
+    "prompt": "Minimalist line-art candle flame inside a house silhouette emblem for a home decor brand, warm terracotta and beige palette, minimal flat vector-style emblem logo, centered composition on plain soft solid background, clean geometry, high quality, no text, no letters, no words, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/bytebazaar-logo.png",
+    "kind": "store-logo",
+    "entity": "bytebazaar",
+    "prompt": "Geometric circuit-node hexagon motif emblem for an electronics brand, teal #0D9488 and charcoal palette, minimal flat vector-style emblem logo, centered composition on plain soft solid background, clean geometry, high quality, no text, no letters, no words, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/glow-theory-logo.png",
+    "kind": "store-logo",
+    "entity": "glow-theory",
+    "prompt": "Abstract serum droplet with a soft glowing orbit ring emblem for a skincare brand, blush pink and gold palette, minimal flat vector-style emblem logo, centered composition on plain soft solid background, clean geometry, high quality, no text, no letters, no words, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/warung-satu-logo.png",
+    "kind": "store-logo",
+    "entity": "warung-satu",
+    "prompt": "Stylized Malaysian warung food stall with banana-leaf plate emblem for a traditional food brand, warm red and green palette, minimal flat vector-style emblem logo, centered composition on plain soft solid background, clean geometry, high quality, no text, no letters, no words, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/trailkit-outdoors-logo.png",
+    "kind": "store-logo",
+    "entity": "trailkit-outdoors",
+    "prompt": "Mountain peak with winding trail path line emblem for an outdoor gear brand, forest green and earth tone palette, minimal flat vector-style emblem logo, centered composition on plain soft solid background, clean geometry, high quality, no text, no letters, no words, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/lumina-living-hero.png",
+    "kind": "store-hero",
+    "entity": "lumina-living",
+    "prompt": "Wide lifestyle scene of a bright Malaysian home living room styled with handmade ceramics, rattan furniture, lit candles and warm morning light through windows, main subjects and furniture weighted to the right side, left third of the frame kept airy and uncluttered with soft negative space for text overlay, warm terracotta and beige tones, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/bytebazaar-hero.png",
+    "kind": "store-hero",
+    "entity": "bytebazaar",
+    "prompt": "Modern tech desk setup panorama with laptops, headphones, smart gadgets and monitors, cool teal ambient lighting matching #0D9488, clean and organized workspace, main equipment weighted to the right side, left third of frame kept clean and uncluttered with soft dark negative space for text overlay, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/glow-theory-hero.png",
+    "kind": "store-hero",
+    "entity": "glow-theory",
+    "prompt": "Serene skincare lab vanity scene with glass serum bottles, droppers and soft botanical leaves, pastel blush pink and gold luxury tones, dreamy soft light, products and bottles weighted to the right side, left third of frame airy pastel negative space for text overlay, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/warung-satu-hero.png",
+    "kind": "store-hero",
+    "entity": "warung-satu",
+    "prompt": "Cozy traditional Malaysian warung food spread panorama with colorful kuih cakes, sambal jars, banana leaves and festive Raya decorations, warm celebratory atmosphere, food arrangement weighted to the right side, left third of frame kept soft and uncluttered for text overlay, warm red and green festive tones, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/stores/trailkit-outdoors-hero.png",
+    "kind": "store-hero",
+    "entity": "trailkit-outdoors",
+    "prompt": "Malaysian tropical rainforest hiking trail with misty green depth of field, hiking gear backpack boots and water bottle neatly laid on a large mossy rock in the foreground right, dense jungle canopy and soft morning mist in background, left third of frame kept misty and uncluttered for text overlay, forest green and earth tones, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/banners/banner-merdeka.png",
+    "kind": "marketplace-banner",
+    "entity": "banner-merdeka (overlay: Merdeka Mega Sale — up to 40% off)",
+    "prompt": "Festive Malaysian Merdeka Independence Day celebration scene with Jalur Gemilang inspired red blue and yellow bunting flags, confetti, shopping bags and energetic sale mood, celebration elements weighted to the right side, left third of frame kept clean and uncluttered for sale text overlay, vibrant festive colors, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/banners/banner-zero.png",
+    "kind": "marketplace-banner",
+    "entity": "banner-zero (overlay: New sellers: zero commission this week)",
+    "prompt": "Cheerful small business sellers packing parcel boxes with tape and shipping labels in a bright airy studio workspace, teal accent decor matching color #0D9488, welcoming growth mood with warm smiles, boxes and people weighted to the right side, left third of frame kept clean and uncluttered for text overlay, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/campaigns/raya.png",
+    "kind": "campaign-hero",
+    "entity": "raya (overlay: Selamat Hari Raya Aidilfitri · festive deals up to 70% off)",
+    "prompt": "Elegant Hari Raya Aidilfitri celebration scene with ketupat rice cakes, glowing pelita oil lamps, crescent moon and lantern silhouettes, rich emerald green and gold festive palette, luxurious bokeh lights, main decoration weighted to the right side, left third of frame kept dark clean negative space for greeting text overlay, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "public/gen/campaigns/1212.png",
+    "kind": "campaign-hero",
+    "entity": "1212 (overlay: 12.12 Year-End Warm-Up)",
+    "prompt": "Year-end midnight mega sale celebration scene with gift boxes tied with ribbons, sparkling fireworks bokeh and gold confetti falling against a deep indigo night sky, countdown celebration mood, gift boxes and fireworks weighted to the right side, left third of frame kept dark clean negative space for text overlay, photorealistic, high quality, no text, no letters, no watermark",
+    "status": "ok"
+  }
+]

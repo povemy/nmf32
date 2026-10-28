@@ -1,0 +1,1142 @@
+{
+  "data": {
+    "ts": "2026-10-22T15:58:34.578Z",
+    "uptimeSec": 2235,
+    "process": {
+      "pid": 592,
+      "nodeVersion": "v24.21.0",
+      "rssMb": 1950.4,
+      "heapUsedMb": 226.7,
+      "heapTotalMb": 260.2,
+      "fdCount": 58,
+      "fdLimit": 100000
+    },
+    "eventLoopLag": {
+      "lastMs": 0,
+      "p95Ms": 1,
+      "maxMs": 38,
+      "samples": 256
+    },
+    "memoryTrend": {
+      "rssDeltaMb60s": 23.6,
+      "samples": 60
+    },
+    "inFlight": {
+      "now": 0,
+      "max": 0
+    },
+    "totals": {
+      "requests": 0,
+      "errors": 0,
+      "errorRate": 0,
+      "startedAt": "2026-10-22T15:29:46.790Z"
+    },
+    "routes": [
+      {
+        "label": "GET /api/market/home",
+        "count": 27,
+        "avgMs": 528.4,
+        "minMs": 224.6,
+        "maxMs": 734.1,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 36789,
+        "dbCountTotal": 162,
+        "dbAvgMsPerReq": 227.1,
+        "byStatus": {
+          "200": 27
+        }
+      },
+      {
+        "label": "GET /api/market/products",
+        "count": 25,
+        "avgMs": 360.7,
+        "minMs": 187.4,
+        "maxMs": 660.4,
+        "p50": 400,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 11811.5,
+        "dbCountTotal": 52,
+        "dbAvgMsPerReq": 227.1,
+        "byStatus": {
+          "200": 25
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store",
+        "count": 27,
+        "avgMs": 152.6,
+        "minMs": 82.2,
+        "maxMs": 492.1,
+        "p50": 200,
+        "p90": 400,
+        "p95": 400,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 4089.1,
+        "dbCountTotal": 79,
+        "dbAvgMsPerReq": 51.8,
+        "byStatus": {
+          "404": 27
+        }
+      },
+      {
+        "label": "GET /api/auth/me",
+        "count": 5,
+        "avgMs": 157.1,
+        "minMs": 123.4,
+        "maxMs": 203,
+        "p50": 200,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 758.8,
+        "dbCountTotal": 15,
+        "dbAvgMsPerReq": 50.6,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "GET /api/me/activity",
+        "count": 10,
+        "avgMs": 492.6,
+        "minMs": 161.9,
+        "maxMs": 913.4,
+        "p50": 800,
+        "p90": 800,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 5879.3,
+        "dbCountTotal": 40,
+        "dbAvgMsPerReq": 147,
+        "byStatus": {
+          "200": 10
+        }
+      },
+      {
+        "label": "GET /api/me/wallet",
+        "count": 5,
+        "avgMs": 388,
+        "minMs": 138.2,
+        "maxMs": 917.8,
+        "p50": 200,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 2223.3,
+        "dbCountTotal": 20,
+        "dbAvgMsPerReq": 111.2,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "GET /api/me/notifications/unread",
+        "count": 45,
+        "avgMs": 212.6,
+        "minMs": 118.9,
+        "maxMs": 604.2,
+        "p50": 200,
+        "p90": 400,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 9248.3,
+        "dbCountTotal": 135,
+        "dbAvgMsPerReq": 68.5,
+        "byStatus": {
+          "200": 45
+        }
+      },
+      {
+        "label": "GET /api/me/orders",
+        "count": 5,
+        "avgMs": 838.7,
+        "minMs": 589.7,
+        "maxMs": 1095.3,
+        "p50": 800,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 4964,
+        "dbCountTotal": 32,
+        "dbAvgMsPerReq": 155.1,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "GET /api/me/profile",
+        "count": 5,
+        "avgMs": 355.3,
+        "minMs": 174,
+        "maxMs": 669.4,
+        "p50": 400,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 2454.9,
+        "dbCountTotal": 25,
+        "dbAvgMsPerReq": 98.2,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "GET /api/cart",
+        "count": 18,
+        "avgMs": 219.3,
+        "minMs": 120,
+        "maxMs": 294.8,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 3858.8,
+        "dbCountTotal": 36,
+        "dbAvgMsPerReq": 107.2,
+        "byStatus": {
+          "200": 18
+        }
+      },
+      {
+        "label": "GET /api/chat/unread",
+        "count": 178,
+        "avgMs": 174.6,
+        "minMs": 111.8,
+        "maxMs": 546,
+        "p50": 200,
+        "p90": 400,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 30315.8,
+        "dbCountTotal": 534,
+        "dbAvgMsPerReq": 56.8,
+        "byStatus": {
+          "200": 178
+        }
+      },
+      {
+        "label": "GET /api/campaigns/active",
+        "count": 24,
+        "avgMs": 67.1,
+        "minMs": 0.2,
+        "maxMs": 413.2,
+        "p50": 2,
+        "p90": 200,
+        "p95": 400,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1597.9,
+        "dbCountTotal": 12,
+        "dbAvgMsPerReq": 133.2,
+        "byStatus": {
+          "200": 24
+        }
+      },
+      {
+        "label": "GET /api/settings/site",
+        "count": 5,
+        "avgMs": 84.6,
+        "minMs": 75.2,
+        "maxMs": 97,
+        "p50": 100,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 420.6,
+        "dbCountTotal": 5,
+        "dbAvgMsPerReq": 84.1,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "POST /api/auth/shopper/login",
+        "count": 14,
+        "avgMs": 664.5,
+        "minMs": 374.3,
+        "maxMs": 1106.3,
+        "p50": 800,
+        "p90": 800,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 8742.5,
+        "dbCountTotal": 98,
+        "dbAvgMsPerReq": 89.2,
+        "byStatus": {
+          "200": 14
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store/products/lt-flash-correct-item",
+        "count": 2,
+        "avgMs": 1017.1,
+        "minMs": 987.2,
+        "maxMs": 1047.1,
+        "p50": 1600,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 2029.2,
+        "dbCountTotal": 8,
+        "dbAvgMsPerReq": 253.7,
+        "byStatus": {
+          "200": 2
+        }
+      },
+      {
+        "label": "POST /api/cart/items",
+        "count": 18,
+        "avgMs": 870.2,
+        "minMs": 569.1,
+        "maxMs": 1118,
+        "p50": 1600,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 15571.7,
+        "dbCountTotal": 120,
+        "dbAvgMsPerReq": 129.8,
+        "byStatus": {
+          "201": 18
+        }
+      },
+      {
+        "label": "POST /api/checkout/create",
+        "count": 16,
+        "avgMs": 1864.1,
+        "minMs": 205.4,
+        "maxMs": 2586.3,
+        "p50": 3200,
+        "p90": 3200,
+        "p95": 3200,
+        "p99": 3200,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 28314.4,
+        "dbCountTotal": 393,
+        "dbAvgMsPerReq": 72,
+        "byStatus": {
+          "200": 1,
+          "201": 15
+        }
+      },
+      {
+        "label": "POST /api/checkout/payments/:id/simulate",
+        "count": 15,
+        "avgMs": 2210.5,
+        "minMs": 1396.4,
+        "maxMs": 3303.9,
+        "p50": 3200,
+        "p90": 3200,
+        "p95": 6400,
+        "p99": 6400,
+        "errors": 7,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 27635.8,
+        "dbCountTotal": 278,
+        "dbAvgMsPerReq": 99.4,
+        "byStatus": {
+          "200": 8,
+          "500": 7
+        }
+      },
+      {
+        "label": "GET /api/checkout/payments/:id",
+        "count": 8,
+        "avgMs": 180,
+        "minMs": 122.7,
+        "maxMs": 259.5,
+        "p50": 200,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1432.7,
+        "dbCountTotal": 8,
+        "dbAvgMsPerReq": 179.1,
+        "byStatus": {
+          "200": 8
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+        "count": 17,
+        "avgMs": 733.4,
+        "minMs": 498.3,
+        "maxMs": 1235.8,
+        "p50": 800,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 12431.1,
+        "dbCountTotal": 68,
+        "dbAvgMsPerReq": 182.8,
+        "byStatus": {
+          "200": 17
+        }
+      },
+      {
+        "label": "GET /api/health",
+        "count": 3,
+        "avgMs": 960.4,
+        "minMs": 872.6,
+        "maxMs": 1042.4,
+        "p50": 1600,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 3305.3,
+        "dbCountTotal": 51,
+        "dbAvgMsPerReq": 64.8,
+        "byStatus": {
+          "200": 3
+        }
+      },
+      {
+        "label": "GET /api/market/search/suggest",
+        "count": 3,
+        "avgMs": 275.1,
+        "minMs": 232.5,
+        "maxMs": 302,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1076.9,
+        "dbCountTotal": 6,
+        "dbAvgMsPerReq": 179.5,
+        "byStatus": {
+          "200": 3
+        }
+      },
+      {
+        "label": "GET /api/sf/glow-theory",
+        "count": 5,
+        "avgMs": 297.5,
+        "minMs": 167.2,
+        "maxMs": 489.7,
+        "p50": 400,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1479.8,
+        "dbCountTotal": 20,
+        "dbAvgMsPerReq": 74,
+        "byStatus": {
+          "200": 5
+        }
+      },
+      {
+        "label": "GET /api/sf/bytebazaar",
+        "count": 1,
+        "avgMs": 167.5,
+        "minMs": 167.5,
+        "maxMs": 167.5,
+        "p50": 200,
+        "p90": 200,
+        "p95": 200,
+        "p99": 200,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 166.1,
+        "dbCountTotal": 4,
+        "dbAvgMsPerReq": 41.5,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/sf/lumina-living",
+        "count": 1,
+        "avgMs": 168.4,
+        "minMs": 168.4,
+        "maxMs": 168.4,
+        "p50": 200,
+        "p90": 200,
+        "p95": 200,
+        "p99": 200,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 167.1,
+        "dbCountTotal": 4,
+        "dbAvgMsPerReq": 41.8,
+        "byStatus": {
+          "200": 1
+        }
+      }
+    ],
+    "db": {
+      "note": "prisma-observed op durations (client side, includes network + pool wait); PG server exec time comes from pg_stat_statements probes",
+      "aggregates": [
+        {
+          "key": "FeaturedSlot.findMany",
+          "count": 27,
+          "avgMs": 492.6,
+          "maxMs": 732.7,
+          "errors": 0
+        },
+        {
+          "key": "Product.findMany",
+          "count": 74,
+          "avgMs": 360,
+          "maxMs": 700.2,
+          "errors": 0
+        },
+        {
+          "key": "Product.findFirst",
+          "count": 19,
+          "avgMs": 346.9,
+          "maxMs": 520.6,
+          "errors": 0
+        },
+        {
+          "key": "UserActivity.findMany",
+          "count": 10,
+          "avgMs": 281.4,
+          "maxMs": 490.8,
+          "errors": 0
+        },
+        {
+          "key": "LedgerTransaction.create",
+          "count": 14,
+          "avgMs": 241.1,
+          "maxMs": 358.3,
+          "errors": 0
+        },
+        {
+          "key": "Cart.findUnique",
+          "count": 75,
+          "avgMs": 211,
+          "maxMs": 515.2,
+          "errors": 0
+        },
+        {
+          "key": "Order.findMany",
+          "count": 22,
+          "avgMs": 202.7,
+          "maxMs": 563.5,
+          "errors": 0
+        },
+        {
+          "key": "LedgerTransaction.findMany",
+          "count": 3,
+          "avgMs": 199.2,
+          "maxMs": 219.1,
+          "errors": 0
+        },
+        {
+          "key": "ProductVariant.findMany",
+          "count": 15,
+          "avgMs": 166.1,
+          "maxMs": 237.6,
+          "errors": 0
+        },
+        {
+          "key": "Category.findMany",
+          "count": 28,
+          "avgMs": 159.5,
+          "maxMs": 471.1,
+          "errors": 0
+        },
+        {
+          "key": "UserActivity.count",
+          "count": 10,
+          "avgMs": 156.3,
+          "maxMs": 368.7,
+          "errors": 0
+        },
+        {
+          "key": "Order.updateMany",
+          "count": 14,
+          "avgMs": 153.7,
+          "maxMs": 191.4,
+          "errors": 0
+        },
+        {
+          "key": "LedgerAccount.upsert",
+          "count": 42,
+          "avgMs": 150.1,
+          "maxMs": 265.6,
+          "errors": 0
+        },
+        {
+          "key": "PaymentGroup.findUnique",
+          "count": 54,
+          "avgMs": 149,
+          "maxMs": 449.8,
+          "errors": 0
+        },
+        {
+          "key": "UserVoucher.count",
+          "count": 10,
+          "avgMs": 139.1,
+          "maxMs": 386.4,
+          "errors": 0
+        },
+        {
+          "key": "Campaign.findFirst",
+          "count": 12,
+          "avgMs": 133.2,
+          "maxMs": 412.4,
+          "errors": 0
+        },
+        {
+          "key": "ProductVariant.findUnique",
+          "count": 33,
+          "avgMs": 119.4,
+          "maxMs": 365.8,
+          "errors": 0
+        },
+        {
+          "key": "Product.count",
+          "count": 28,
+          "avgMs": 118.2,
+          "maxMs": 329.1,
+          "errors": 0
+        },
+        {
+          "key": "WebhookEndpoint.findMany",
+          "count": 8,
+          "avgMs": 104.3,
+          "maxMs": 324.8,
+          "errors": 0
+        },
+        {
+          "key": "Setting.findUnique",
+          "count": 40,
+          "avgMs": 101.2,
+          "maxMs": 360.2,
+          "errors": 0
+        },
+        {
+          "key": "ShopperUser.update",
+          "count": 14,
+          "avgMs": 98.1,
+          "maxMs": 353.3,
+          "errors": 0
+        },
+        {
+          "key": "Order.count",
+          "count": 8,
+          "avgMs": 91.5,
+          "maxMs": 130,
+          "errors": 0
+        },
+        {
+          "key": "Order.groupBy",
+          "count": 5,
+          "avgMs": 86.5,
+          "maxMs": 88.9,
+          "errors": 0
+        },
+        {
+          "key": "Order.aggregate",
+          "count": 5,
+          "avgMs": 84.3,
+          "maxMs": 124.1,
+          "errors": 0
+        },
+        {
+          "key": "Address.count",
+          "count": 5,
+          "avgMs": 83,
+          "maxMs": 88.8,
+          "errors": 0
+        },
+        {
+          "key": "Wallet.findMany",
+          "count": 3,
+          "avgMs": 79.3,
+          "maxMs": 86.5,
+          "errors": 0
+        },
+        {
+          "key": "Shipment.findMany",
+          "count": 5,
+          "avgMs": 78.9,
+          "maxMs": 99.3,
+          "errors": 0
+        },
+        {
+          "key": "Store.findMany",
+          "count": 45,
+          "avgMs": 78.4,
+          "maxMs": 166.3,
+          "errors": 0
+        },
+        {
+          "key": "Cart.create",
+          "count": 6,
+          "avgMs": 77.3,
+          "maxMs": 89.9,
+          "errors": 0
+        },
+        {
+          "key": "PaymentWebhookLog.update",
+          "count": 8,
+          "avgMs": 76.5,
+          "maxMs": 91.9,
+          "errors": 0
+        }
+      ],
+      "slowRing": [
+        {
+          "model": "PaymentGroup",
+          "op": "findUnique",
+          "ms": 240.4,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:09.913Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 132.4,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.021Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 111.7,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.257Z"
+        },
+        {
+          "model": "Order",
+          "op": "findUnique",
+          "ms": 160.7,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.280Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 259.6,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.280Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 133.7,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.414Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 120.9,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.484Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 119.4,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.604Z"
+        },
+        {
+          "model": "LedgerTransaction",
+          "op": "create",
+          "ms": 178.5,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.682Z"
+        },
+        {
+          "model": "LedgerAccount",
+          "op": "upsert",
+          "ms": 119.4,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:10.723Z"
+        },
+        {
+          "model": "PaymentGroup",
+          "op": "findUnique",
+          "ms": 218,
+          "route": "GET /api/checkout/payments/:id",
+          "ts": "2026-10-22T15:56:11.025Z"
+        },
+        {
+          "model": "LedgerTransaction",
+          "op": "create",
+          "ms": 217.3,
+          "route": "POST /api/checkout/payments/:id/simulate",
+          "ts": "2026-10-22T15:56:11.027Z"
+        },
+        {
+          "model": "PaymentGroup",
+          "op": "findUnique",
+          "ms": 122.1,
+          "route": "GET /api/checkout/payments/:id",
+          "ts": "2026-10-22T15:56:12.540Z"
+        },
+        {
+          "model": "Notification",
+          "op": "count",
+          "ms": 136.4,
+          "route": "GET /api/me/notifications/unread",
+          "ts": "2026-10-22T15:57:05.857Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 132.3,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:00.696Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 261,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:00.824Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 495.1,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:01.414Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 204.5,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:01.619Z"
+        },
+        {
+          "model": "Order",
+          "op": "updateMany",
+          "ms": 119.8,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T15:58:02.412Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 122.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:02.664Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 182.1,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:02.724Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 477.7,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:03.020Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 585.6,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:03.127Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 123.2,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:04.612Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 289.4,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:04.778Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 467.9,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:06.581Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 318.6,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:06.900Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 234.9,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:08.381Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 199.9,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:08.581Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 235,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:10.984Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 205.4,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:11.190Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 134,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:13.169Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 273,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:13.308Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 447.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:13.483Z"
+        },
+        {
+          "model": "ProductVariant",
+          "op": "findUnique",
+          "ms": 120.8,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T15:58:15.359Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 239.2,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T15:58:15.722Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 241,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T15:58:16.011Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 119.5,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:18.102Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 274,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:18.256Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 235.3,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:19.136Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 208.3,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:21.228Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 527,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:21.547Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 101.9,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:23.117Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 456.9,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T15:58:23.472Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 161.8,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:25.412Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 452.2,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:25.703Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 527.6,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T15:58:25.778Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 289.5,
+          "route": "GET /api/market/search/suggest",
+          "ts": "2026-10-22T15:58:27.720Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 257,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:29.663Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 217.9,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T15:58:29.881Z"
+        }
+      ]
+    },
+    "prismaMetrics": {
+      "available": true,
+      "pool": {
+        "active_queries": 0,
+        "prisma_pool_connections_busy": 0,
+        "prisma_pool_connections_idle": 10,
+        "prisma_pool_connections_open": 10
+      },
+      "waitP95Ms": null,
+      "waitMaxMs": null
+    }
+  }
+}

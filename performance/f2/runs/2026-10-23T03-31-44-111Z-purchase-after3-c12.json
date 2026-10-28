@@ -1,0 +1,52 @@
+{
+  "runId": "1792726239515-fd24q",
+  "profile": "purchase",
+  "label": "after3-c12",
+  "base": "http://127.0.0.1:3000",
+  "buyers": 100,
+  "loginWallSec": 6.6,
+  "create": {
+    "n": 100,
+    "p50": 12971,
+    "p95": 20427,
+    "p99": 21091,
+    "max": 21270,
+    "classes": {
+      "created": 100,
+      "business": 0,
+      "infra": 0,
+      "network": 0
+    },
+    "codes": {
+      "201": 100
+    },
+    "wallSec": 21.3,
+    "ordersPerMin": 282
+  },
+  "confirm": {
+    "n": 100,
+    "p50": 1934,
+    "p95": 3620,
+    "p99": 3970,
+    "max": 4963,
+    "classes": {
+      "ok": 100,
+      "business": 0,
+      "infra": 0,
+      "network": 0
+    }
+  },
+  "integrity": {
+    "stockBefore": 999906,
+    "stockAfter": 999806,
+    "stockDelta": 100,
+    "expectedDelta": 100,
+    "stockDeltaMatches": true,
+    "newOrders": 100,
+    "newOrdersMatchCreated": true,
+    "duplicateIdempotencyGroups": 0,
+    "paidCount": 194,
+    "createdCount": 100
+  },
+  "note": "dev-mode combined-environment Measured; login excluded from create latency; do not extrapolate to production"
+}

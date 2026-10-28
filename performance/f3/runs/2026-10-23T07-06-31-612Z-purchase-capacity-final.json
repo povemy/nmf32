@@ -1,0 +1,52 @@
+{
+  "runId": "1792739125400-d7dyl",
+  "profile": "purchase",
+  "label": "capacity-final",
+  "base": "http://127.0.0.1:3000",
+  "buyers": 100,
+  "loginWallSec": 6.1,
+  "create": {
+    "n": 100,
+    "p50": 12408,
+    "p95": 19424,
+    "p99": 20024,
+    "max": 20198,
+    "classes": {
+      "created": 100,
+      "business": 0,
+      "infra": 0,
+      "network": 0
+    },
+    "codes": {
+      "201": 100
+    },
+    "wallSec": 20.2,
+    "ordersPerMin": 297
+  },
+  "confirm": {
+    "n": 100,
+    "p50": 2006,
+    "p95": 3691,
+    "p99": 6935,
+    "max": 7082,
+    "classes": {
+      "ok": 100,
+      "business": 0,
+      "infra": 0,
+      "network": 0
+    }
+  },
+  "integrity": {
+    "stockBefore": 999026,
+    "stockAfter": 998926,
+    "stockDelta": 100,
+    "expectedDelta": 100,
+    "stockDeltaMatches": true,
+    "newOrders": 100,
+    "newOrdersMatchCreated": true,
+    "duplicateIdempotencyGroups": 0,
+    "paidCount": 100,
+    "createdCount": 100
+  },
+  "note": "dev-mode combined-environment Measured; login excluded from create latency; do not extrapolate to production"
+}

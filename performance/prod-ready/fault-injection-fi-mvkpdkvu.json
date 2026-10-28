@@ -1,0 +1,222 @@
+{
+  "run": "fi-mvkpdkvu",
+  "base": "http://127.0.0.1:3000",
+  "results": [
+    {
+      "test": "Test A",
+      "boundary": "checkout-create tx (order+inventory+group)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "injected transient DB failure observed (5xx)",
+          "pass": true,
+          "detail": "got 500"
+        },
+        {
+          "name": "no PaymentGroup committed for the aborted tx",
+          "pass": true
+        },
+        {
+          "name": "stock unchanged after abort",
+          "pass": true,
+          "detail": "1000000 → 1000000"
+        },
+        {
+          "name": "no inventoryLog rows written by aborted tx",
+          "pass": true,
+          "detail": "[]"
+        },
+        {
+          "name": "retry with SAME Idempotency-Key succeeds after transient failure",
+          "pass": true,
+          "detail": "got 201"
+        },
+        {
+          "name": "exactly ONE group for the key (no duplicates)",
+          "pass": true
+        },
+        {
+          "name": "exactly one order row",
+          "pass": true,
+          "detail": "[\"payment_pending\"]"
+        },
+        {
+          "name": "stock decremented exactly once",
+          "pass": true,
+          "detail": "1000000 → 999999"
+        },
+        {
+          "name": "exactly one reserve inventoryLog",
+          "pass": true,
+          "detail": "[{\"delta\":-1,\"reason\":\"order:NM-102406\",\"refId\":\"cmvkpf74700qdsdlf1exf4jl7\"}]"
+        }
+      ],
+      "notes": [
+        "create under lock → HTTP 500 (INTERNAL) — expect 5xx transient (P2028)"
+      ]
+    },
+    {
+      "test": "Test B",
+      "boundary": "payment-confirm claim (payment state gate)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "injected transient DB failure observed (5xx)",
+          "pass": true,
+          "detail": "got 500"
+        },
+        {
+          "name": "payment group NOT claimed (still requires_payment)",
+          "pass": true,
+          "detail": "requires_payment"
+        },
+        {
+          "name": "order NOT paid",
+          "pass": true,
+          "detail": "[\"payment_pending\"]"
+        },
+        {
+          "name": "NO ledger T1 posted for the aborted tx",
+          "pass": true
+        },
+        {
+          "name": "delivery left unprocessed for the FIN-1 sweep (PSP retry contract)",
+          "pass": true,
+          "detail": "processed=false"
+        },
+        {
+          "name": "PSP redelivery converges to 200",
+          "pass": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "group flipped to succeeded exactly once",
+          "pass": true,
+          "detail": "succeeded"
+        },
+        {
+          "name": "order paid",
+          "pass": true
+        },
+        {
+          "name": "exactly ONE ledger T1 after redelivery",
+          "pass": true
+        },
+        {
+          "name": "second redelivery is an idempotent duplicate",
+          "pass": true
+        },
+        {
+          "name": "still exactly ONE ledger T1 (no duplicate money)",
+          "pass": true
+        }
+      ],
+      "notes": [
+        "simulate under PaymentGroup lock → HTTP 500 (INTERNAL) — expect 5xx transient (P2028)"
+      ]
+    },
+    {
+      "test": "Test C",
+      "boundary": "payment-confirm POST-T1 (ledger rollback after money insert)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "injected transient DB failure observed (5xx)",
+          "pass": true,
+          "detail": "got 500"
+        },
+        {
+          "name": "order ROLLED BACK to payment_pending (paid transition aborted)",
+          "pass": true,
+          "detail": "[\"payment_pending\"]"
+        },
+        {
+          "name": "ledger T1 ROLLED BACK (no money effect from aborted tx)",
+          "pass": true
+        },
+        {
+          "name": "seller wallet balances unchanged (truth = ledger)",
+          "pass": true,
+          "detail": "{\"before\":{\"id\":\"cmvjrxy870002q76rrtpyc9ie\",\"pendingMinor\":25600,\"availableMinor\":0},\"after\":{\"pendingMinor\":25600,\"availableMinor\":0}}"
+        },
+        {
+          "name": "cart item still present (clear aborted)",
+          "pass": true
+        },
+        {
+          "name": "group still requires_payment",
+          "pass": true,
+          "detail": "requires_payment"
+        },
+        {
+          "name": "redelivery after post-T1 abort converges to 200",
+          "pass": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "order paid after redelivery",
+          "pass": true
+        },
+        {
+          "name": "exactly ONE ledger T1 (aborted copy left no residue)",
+          "pass": true
+        },
+        {
+          "name": "cart cleared exactly once (row gone)",
+          "pass": true
+        }
+      ],
+      "notes": [
+        "simulate with cart-clear blocked AFTER T1 insert → HTTP 500 (INTERNAL) — expect 5xx (P2028)"
+      ]
+    },
+    {
+      "test": "Test D",
+      "boundary": "inventory-release CAS (expiry sweep)",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "order NOT released while lock held",
+          "pass": true,
+          "detail": "[\"payment_pending\"]"
+        },
+        {
+          "name": "no restock inventoryLog for THIS order from aborted release",
+          "pass": true,
+          "detail": "[]"
+        },
+        {
+          "name": "no history row to cancelled",
+          "pass": true
+        },
+        {
+          "name": "sweep after lock release releases the reservation",
+          "pass": true,
+          "detail": "[\"cancelled\"]"
+        },
+        {
+          "name": "exactly one restock inventoryLog for THIS order (+qty)",
+          "pass": true,
+          "detail": "[{\"delta\":1,\"reason\":\"expired unpaid:NM-102409\",\"refId\":\"cmvkpixl600shsdlfmhm7bw48\"}]"
+        },
+        {
+          "name": "variant stock grew by at least qty (other [LT] releases may interleave)",
+          "pass": true
+        },
+        {
+          "name": "repeated sweeps NEVER double-restock THIS order (exactly-once)",
+          "pass": true,
+          "detail": "restockLogs=1"
+        },
+        {
+          "name": "order stays cancelled after repeated sweeps",
+          "pass": true
+        }
+      ],
+      "notes": [
+        "tick under Order-row lock → HTTP 200, errors=[{\"orderId\":\"cmvkpixl600shsdlfmhm7bw48\",\"error\":\"\\nInvalid `tx.order.updateMany()` invocation in\\n/home/z/my-project/.next/dev/server/chunks/[root-of-the-server]__7a3a1021._.js:1691:38\\n\\n  1688 return __TURBOPACK\"}] — sweep must survive (error-collecting)"
+      ]
+    }
+  ],
+  "negativeStockGate": true
+}

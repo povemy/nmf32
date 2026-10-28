@@ -1,0 +1,776 @@
+{
+  "data": {
+    "ts": "2026-10-22T16:08:58.959Z",
+    "uptimeSec": 130,
+    "process": {
+      "pid": 4883,
+      "nodeVersion": "v24.21.0",
+      "rssMb": 1866.7,
+      "heapUsedMb": 184.1,
+      "heapTotalMb": 191.8,
+      "fdCount": 57,
+      "fdLimit": 100000
+    },
+    "eventLoopLag": {
+      "lastMs": 14,
+      "p95Ms": 1,
+      "maxMs": 16,
+      "samples": 256
+    },
+    "memoryTrend": {
+      "rssDeltaMb60s": 21.1,
+      "samples": 60
+    },
+    "inFlight": {
+      "now": 0,
+      "max": 6
+    },
+    "totals": {
+      "requests": 42,
+      "errors": 0,
+      "errorRate": 0,
+      "startedAt": "2026-10-22T16:07:03.244Z"
+    },
+    "routes": [
+      {
+        "label": "GET /api/auth/me",
+        "count": 1,
+        "avgMs": 501.4,
+        "minMs": 501.4,
+        "maxMs": 501.4,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 496.2,
+        "dbCountTotal": 3,
+        "dbAvgMsPerReq": 165.4,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/notifications/unread",
+        "count": 4,
+        "avgMs": 232.6,
+        "minMs": 178.5,
+        "maxMs": 307.7,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 773.3,
+        "dbCountTotal": 12,
+        "dbAvgMsPerReq": 64.4,
+        "byStatus": {
+          "200": 4
+        }
+      },
+      {
+        "label": "GET /api/me/activity",
+        "count": 2,
+        "avgMs": 924.3,
+        "minMs": 827.6,
+        "maxMs": 1021,
+        "p50": 1600,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 2107.8,
+        "dbCountTotal": 8,
+        "dbAvgMsPerReq": 263.5,
+        "byStatus": {
+          "200": 2
+        }
+      },
+      {
+        "label": "GET /api/me/orders",
+        "count": 1,
+        "avgMs": 1280,
+        "minMs": 1280,
+        "maxMs": 1280,
+        "p50": 1600,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1434.1,
+        "dbCountTotal": 7,
+        "dbAvgMsPerReq": 204.9,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/wallet",
+        "count": 1,
+        "avgMs": 572.7,
+        "minMs": 572.7,
+        "maxMs": 572.7,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 622.4,
+        "dbCountTotal": 4,
+        "dbAvgMsPerReq": 155.6,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/profile",
+        "count": 1,
+        "avgMs": 766.2,
+        "minMs": 766.2,
+        "maxMs": 766.2,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1173.1,
+        "dbCountTotal": 5,
+        "dbAvgMsPerReq": 234.6,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/cart",
+        "count": 3,
+        "avgMs": 208.3,
+        "minMs": 201.3,
+        "maxMs": 217.5,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 613.7,
+        "dbCountTotal": 6,
+        "dbAvgMsPerReq": 102.3,
+        "byStatus": {
+          "200": 3
+        }
+      },
+      {
+        "label": "GET /api/chat/unread",
+        "count": 18,
+        "avgMs": 180.9,
+        "minMs": 124.5,
+        "maxMs": 302.1,
+        "p50": 200,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 3095.9,
+        "dbCountTotal": 54,
+        "dbAvgMsPerReq": 57.3,
+        "byStatus": {
+          "200": 18
+        }
+      },
+      {
+        "label": "GET /api/market/home",
+        "count": 3,
+        "avgMs": 529.7,
+        "minMs": 493.4,
+        "maxMs": 561.6,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 4085.8,
+        "dbCountTotal": 18,
+        "dbAvgMsPerReq": 227,
+        "byStatus": {
+          "200": 3
+        }
+      },
+      {
+        "label": "GET /api/campaigns/active",
+        "count": 3,
+        "avgMs": 30.6,
+        "minMs": 0.3,
+        "maxMs": 91.1,
+        "p50": 2,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 89.6,
+        "dbCountTotal": 1,
+        "dbAvgMsPerReq": 89.6,
+        "byStatus": {
+          "200": 3
+        }
+      },
+      {
+        "label": "GET /api/settings/site",
+        "count": 2,
+        "avgMs": 86.1,
+        "minMs": 85.6,
+        "maxMs": 86.6,
+        "p50": 100,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 171.3,
+        "dbCountTotal": 2,
+        "dbAvgMsPerReq": 85.6,
+        "byStatus": {
+          "200": 2
+        }
+      },
+      {
+        "label": "GET /api/market/products",
+        "count": 1,
+        "avgMs": 459.3,
+        "minMs": 459.3,
+        "maxMs": 459.3,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 577.8,
+        "dbCountTotal": 2,
+        "dbAvgMsPerReq": 288.9,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/market/search/suggest",
+        "count": 1,
+        "avgMs": 372.6,
+        "minMs": 372.6,
+        "maxMs": 372.6,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 458.6,
+        "dbCountTotal": 2,
+        "dbAvgMsPerReq": 229.3,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store",
+        "count": 1,
+        "avgMs": 363.5,
+        "minMs": 363.5,
+        "maxMs": 363.5,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 361.1,
+        "dbCountTotal": 4,
+        "dbAvgMsPerReq": 90.3,
+        "byStatus": {
+          "200": 1
+        }
+      }
+    ],
+    "db": {
+      "note": "prisma-observed op durations (client side, includes network + pool wait); PG server exec time comes from pg_stat_statements probes",
+      "aggregates": [
+        {
+          "key": "FeaturedSlot.findMany",
+          "count": 3,
+          "avgMs": 528.1,
+          "maxMs": 560,
+          "errors": 0
+        },
+        {
+          "key": "Product.findMany",
+          "count": 5,
+          "avgMs": 396.3,
+          "maxMs": 458.1,
+          "errors": 0
+        },
+        {
+          "key": "Address.count",
+          "count": 1,
+          "avgMs": 334.6,
+          "maxMs": 334.6,
+          "errors": 0
+        },
+        {
+          "key": "UserActivity.count",
+          "count": 2,
+          "avgMs": 325.5,
+          "maxMs": 353.6,
+          "errors": 0
+        },
+        {
+          "key": "Order.findMany",
+          "count": 2,
+          "avgMs": 318.4,
+          "maxMs": 506.5,
+          "errors": 0
+        },
+        {
+          "key": "UserActivity.findMany",
+          "count": 2,
+          "avgMs": 294.3,
+          "maxMs": 502.3,
+          "errors": 0
+        },
+        {
+          "key": "Category.findMany",
+          "count": 3,
+          "avgMs": 174.2,
+          "maxMs": 201.3,
+          "errors": 0
+        },
+        {
+          "key": "Cart.findUnique",
+          "count": 3,
+          "avgMs": 163.5,
+          "maxMs": 170.9,
+          "errors": 0
+        },
+        {
+          "key": "Shipment.findMany",
+          "count": 1,
+          "avgMs": 133.8,
+          "maxMs": 133.8,
+          "errors": 0
+        },
+        {
+          "key": "Order.count",
+          "count": 1,
+          "avgMs": 129.8,
+          "maxMs": 129.8,
+          "errors": 0
+        },
+        {
+          "key": "Product.count",
+          "count": 1,
+          "avgMs": 119.7,
+          "maxMs": 119.7,
+          "errors": 0
+        },
+        {
+          "key": "Session.findUnique",
+          "count": 32,
+          "avgMs": 111.6,
+          "maxMs": 370.6,
+          "errors": 0
+        },
+        {
+          "key": "Setting.findUnique",
+          "count": 5,
+          "avgMs": 100.8,
+          "maxMs": 129.9,
+          "errors": 0
+        },
+        {
+          "key": "Store.findUnique",
+          "count": 1,
+          "avgMs": 98.1,
+          "maxMs": 98.1,
+          "errors": 0
+        },
+        {
+          "key": "MarketplaceBanner.findMany",
+          "count": 3,
+          "avgMs": 94.9,
+          "maxMs": 111.8,
+          "errors": 0
+        },
+        {
+          "key": "UserVoucher.count",
+          "count": 2,
+          "avgMs": 90.7,
+          "maxMs": 92.6,
+          "errors": 0
+        },
+        {
+          "key": "CmsPage.findFirst",
+          "count": 1,
+          "avgMs": 90.5,
+          "maxMs": 90.5,
+          "errors": 0
+        },
+        {
+          "key": "Campaign.findFirst",
+          "count": 1,
+          "avgMs": 89.6,
+          "maxMs": 89.6,
+          "errors": 0
+        },
+        {
+          "key": "Order.groupBy",
+          "count": 1,
+          "avgMs": 88.9,
+          "maxMs": 88.9,
+          "errors": 0
+        },
+        {
+          "key": "ProductCardStyle.findUnique",
+          "count": 1,
+          "avgMs": 86.6,
+          "maxMs": 86.6,
+          "errors": 0
+        },
+        {
+          "key": "StoreFollow.count",
+          "count": 1,
+          "avgMs": 85.9,
+          "maxMs": 85.9,
+          "errors": 0
+        },
+        {
+          "key": "Notification.count",
+          "count": 4,
+          "avgMs": 85.6,
+          "maxMs": 86.7,
+          "errors": 0
+        },
+        {
+          "key": "Order.aggregate",
+          "count": 1,
+          "avgMs": 82.9,
+          "maxMs": 82.9,
+          "errors": 0
+        },
+        {
+          "key": "Store.findMany",
+          "count": 4,
+          "avgMs": 74.2,
+          "maxMs": 88,
+          "errors": 0
+        },
+        {
+          "key": "ShopperUser.findUnique",
+          "count": 29,
+          "avgMs": 66.6,
+          "maxMs": 344.2,
+          "errors": 0
+        },
+        {
+          "key": "ChatThread.aggregate",
+          "count": 18,
+          "avgMs": 64.1,
+          "maxMs": 101,
+          "errors": 0
+        }
+      ],
+      "slowRing": [
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 370.6,
+          "route": "GET /api/auth/me",
+          "ts": "2026-10-22T16:07:03.628Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 330.3,
+          "route": "GET /api/me/profile",
+          "ts": "2026-10-22T16:07:04.671Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 345.8,
+          "route": "GET /api/me/activity",
+          "ts": "2026-10-22T16:07:04.685Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 352.4,
+          "route": "GET /api/me/activity",
+          "ts": "2026-10-22T16:07:04.693Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 354.5,
+          "route": "GET /api/me/wallet",
+          "ts": "2026-10-22T16:07:04.695Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 358.2,
+          "route": "GET /api/me/orders",
+          "ts": "2026-10-22T16:07:04.698Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 160.8,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:07:04.851Z"
+        },
+        {
+          "model": "Order",
+          "op": "findMany",
+          "ms": 130.2,
+          "route": "GET /api/me/orders",
+          "ts": "2026-10-22T16:07:04.916Z"
+        },
+        {
+          "model": "Shipment",
+          "op": "findMany",
+          "ms": 133.8,
+          "route": "GET /api/me/orders",
+          "ts": "2026-10-22T16:07:05.050Z"
+        },
+        {
+          "model": "UserActivity",
+          "op": "count",
+          "ms": 297.4,
+          "route": "GET /api/me/activity",
+          "ts": "2026-10-22T16:07:05.068Z"
+        },
+        {
+          "model": "Address",
+          "op": "count",
+          "ms": 334.6,
+          "route": "GET /api/me/profile",
+          "ts": "2026-10-22T16:07:05.088Z"
+        },
+        {
+          "model": "ShopperUser",
+          "op": "findUnique",
+          "ms": 344.2,
+          "route": "GET /api/me/profile",
+          "ts": "2026-10-22T16:07:05.097Z"
+        },
+        {
+          "model": "UserActivity",
+          "op": "count",
+          "ms": 353.6,
+          "route": "GET /api/me/activity",
+          "ts": "2026-10-22T16:07:05.133Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 109.2,
+          "route": "GET /api/chat/unread",
+          "ts": "2026-10-22T16:07:05.161Z"
+        },
+        {
+          "model": "Order",
+          "op": "count",
+          "ms": 129.8,
+          "route": "GET /api/me/orders",
+          "ts": "2026-10-22T16:07:05.181Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 176.4,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.207Z"
+        },
+        {
+          "model": "UserActivity",
+          "op": "findMany",
+          "ms": 502.3,
+          "route": "GET /api/me/activity",
+          "ts": "2026-10-22T16:07:05.272Z"
+        },
+        {
+          "model": "MarketplaceBanner",
+          "op": "findMany",
+          "ms": 111.8,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.302Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 112,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.302Z"
+        },
+        {
+          "model": "ChatThread",
+          "op": "aggregate",
+          "ms": 101,
+          "route": "GET /api/chat/unread",
+          "ts": "2026-10-22T16:07:05.303Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 144.7,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.335Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 446.4,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.477Z"
+        },
+        {
+          "model": "Order",
+          "op": "findMany",
+          "ms": 506.5,
+          "route": "GET /api/me/orders",
+          "ts": "2026-10-22T16:07:05.557Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 532.1,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.563Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 158.7,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:07:05.571Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 439.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.632Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 492.3,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:05.683Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 170.9,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:07:05.700Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 129.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:24.156Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 201.3,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:24.228Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 266.4,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:24.294Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 560,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:07:24.587Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 119.7,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:07:24.775Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 458.1,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:07:25.113Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 370.6,
+          "route": "GET /api/market/search/suggest",
+          "ts": "2026-10-22T16:07:25.558Z"
+        }
+      ]
+    },
+    "prismaMetrics": {
+      "available": true,
+      "pool": {
+        "active_queries": 0,
+        "prisma_pool_connections_busy": 0,
+        "prisma_pool_connections_idle": 10,
+        "prisma_pool_connections_open": 10
+      },
+      "waitP95Ms": null,
+      "waitMaxMs": null
+    }
+  }
+}

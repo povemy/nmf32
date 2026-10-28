@@ -1,0 +1,639 @@
+================================================================================
+NOMOFEE — MULTIVENDOR MARKETPLACE PLATFORM
+CODEBASE & BUSINESS-LOGIC SUMMARY FOR EXTERNAL AI ANALYSIS
+================================================================================
+Prepared: 2026 (from live source code + engineering worklog)
+Purpose:  Give another AI a complete, factual picture of what NOMOFEE is, what
+          is already built, what is decided-but-not-built, what compliance
+          posture exists, and where the open opportunities are.
+          PLEASE DO NOT re-litigate decisions marked [DECIDED]; instead build on
+          them and suggest what MORE can be done.
+
+STATUS VOCABULARY (used throughout):
+  [LIVE]              Implemented in code and browser-verified end-to-end.
+  [SCAFFOLD-DORMANT]  Code deliberately kept but switched OFF (feature flag).
+                      Do not suggest deletion; do not suggest re-enabling
+                      without the stated licensing review.
+  [DECIDED-NOT-BUILT] User-approved design; implementation queued.
+  [PROPOSED]          Discussed, awaiting user confirmation.
+  [OPEN]              Explicitly deferred by the user ("to be discussed later").
+
+--------------------------------------------------------------------------------
+1. PRODUCT OVERVIEW
+--------------------------------------------------------------------------------
+NOMOFEE is a Malaysia-focused multivendor marketplace (Shopee/Shopify hybrid):
+
+  * SHOPPERS browse a central marketplace OR individual seller storefronts,
+    buy from multiple sellers in ONE cart with ONE payment, chat with sellers,
+    and manage orders in a buyer dashboard ("Me hub").
+  * SELLERS get a Shopify-like backend: onboarding, product catalog with
+    variants, inventory, order fulfilment, coupons, CMS page builder, themed
+    storefronts with custom domains, SEO, webhooks/API keys, payouts wallet,
+    marketplace-import tools, and buyer chat.
+  * ADMINS run a command centre: seller KYC/approvals, product moderation,
+    commission engine, refunds/disputes, payouts, ledger, coupons/banners,
+    support tickets, reports, audit logs, feature flags.
+
+Business model: marketplace facilitator. Platform commission (rate model
+under config, see §9) deducted per order; sellers paid out from a
+licensed-PSP split — the platform NEVER custodies buyer funds (see §9/§10).
+
+Test accounts (sandbox seed):
+  Admin  : admin@nomofee.io   / Admin123!
+  Seller : lumina@nomofee.io  / Seller123!   (store: Lumina Living)
+  Shopper: aisyah@nomofee.test/ NOMOFEE123!  (Nur Aisyah)
+  Other seeded stores: ByteBazaar, Glow Theory, Warung Satu, TrailKit.
+
+--------------------------------------------------------------------------------
+2. TECHNOLOGY STACK & ARCHITECTURE
+--------------------------------------------------------------------------------
+  Framework    : Next.js 16 (App Router, Turbopack dev) + TypeScript 5 strict
+  UI           : Tailwind CSS 4 + shadcn/ui (New York) + lucide-react icons
+                 + framer-motion animations + zustand client state
+  Data         : Prisma ORM 6 over SQLite (file db/custom.db)
+                 * Money = Int minor units (cents). Percent = Float.
+                 * Enums = String columns + app-level validation.
+                 * JSON columns = String holding JSON (src/lib/json.ts).
+                 * No Decimal in SQLite — this is why Int cents everywhere.
+  Auth         : Custom DB-backed revocable sessions (NOT next-auth for the
+                 portals; next-auth is installed but unused).
+  Realtime     : socket.io mini-service (mini-services/chat-service, public
+                 port 3003 behind a Caddy gateway; internal HTTP relay 3103)
+                 used ONLY as a dumb broadcast hub; the Next.js API routes are
+                 the authoritative chat persistence.
+  PDF          : pdf-lib (order receipts).
+  Single route : The whole product is ONE route (/) — a portal-switching SPA.
+                 In production the three portals become separate hosts
+                 (market/seller/admin.nomofee.io); the sandbox shows them as
+                 surfaces of one page with a draggable portal FAB switcher.
+  API style    : REST route handlers under src/app/api/**; uniform envelope
+                 { ok, data | error:{code,message} } via src/lib/api.ts
+                 (ok()/okPaged()/handle()/ApiError) + guard helpers.
+  Runs with    : bun package manager; `bun run dev` (port 3000);
+                 `bun run db:push` for schema; `bun run lint` for ESLint.
+
+--------------------------------------------------------------------------------
+3. CODEBASE MAP
+--------------------------------------------------------------------------------
+  prisma/schema.prisma      ~1140 lines, ~70 models (§4)
+  db/custom.db              SQLite database
+  src/app/page.tsx          5 lines — renders <AppRoot/>
+  src/components/
+    app-root.tsx            portal switcher shell (shopper|seller|admin)
+    portal-fab.tsx          draggable portal switcher (demo chrome)
+    shopper/                market.tsx, pdp.tsx, storefront.tsx, checkout.tsx,
+                            me-hub.tsx, shopper-shell.tsx, ui-bits.tsx,
+                            generate.tsx (AI theme/image generation)
+    seller/                 onboarding.tsx, dashboard.tsx, products.tsx,
+                            orders.tsx, marketing.tsx, wallet.tsx, builder.tsx
+                            + builder-render.tsx (page builder), domains.tsx,
+                            seo.tsx, settings.tsx, imports.tsx, integrations.tsx,
+                            messages.tsx, seller-shell.tsx
+    admin/                  dashboard, sellers, seller-detail, stores, orders,
+                            order-detail, moderation, commission, finance,
+                            payouts, wallets-ledger, marketing, support,
+                            reports, system, categories, banks + admin-shell
+    ui/                     full shadcn/ui set (~45 components)
+  src/lib/
+    api.ts                  response envelope + ApiError + guards glue
+    auth.ts                 sessions + guards + RBAC capability matrix
+    session-client.ts       client identity bridge (Bearer header + device
+                            tokens for legacy guest paths — mostly dormant)
+    app-store.ts            zustand global store (me, surface, cart state)
+    shopper-merge.ts        guest→account claim-on-login (orders only now)
+    psp.ts                  Option B payment-provider layer (mock PSP)  §9
+    ledger.ts               double-entry ledger engine               §7.4
+    commission.ts           commission resolution (settings→overrides→holidays)
+    feature-flags.ts        MESH_FINANCE_ENABLED=false               §11
+    membership.ts           SILVER/GOLD/PLATINUM tiers from lifetime paid spend
+    chat.ts / chat-context / chat-quick-replies   chat helpers + canned replies
+    marketplaces/           Phase 5 connector registry (shopee, tiktok, fixture)
+    db.ts, money.ts, password.ts, secretbox.ts, json.ts, seo.ts, sections.ts,
+    store-lifecycle.ts, utils.ts
+  src/app/api/**            ~130 REST endpoints (§6 has the surface map)
+  mini-services/chat-service  socket.io broadcast hub (ports 3003 public / 3103 relay)
+  worklog.md                engineering history — every task logged (source of
+                            truth for what is done)
+  Caddyfile                 sandbox gateway: only port 3000 exposed; other
+                            services reached via ?XTransformPort=<port>
+
+--------------------------------------------------------------------------------
+4. DATA MODEL (Prisma / SQLite) — GROUPED
+--------------------------------------------------------------------------------
+A. CONFIG
+   Plan(monthly fee, commission %, product/media/staff limits)
+   CommissionSetting(singleton: defaultPercent=8, appliesToShipping,
+     basePriceRule=paid_price|list_price, fixedFeeMinor, minCommissionMinor)
+   CommissionOverride(per store/category/product), FeeHoliday(periods with 0%)
+
+B. IDENTITY
+   AdminUser(role: superadmin|ops|moderator|finance, isActive)
+   Seller(email, fullName, displayName, status: pending|approved|suspended|
+     terminated, store 1:1)
+   KycDocument(type, fileUrl, review state)          ← seller KYC
+   SellerNote(admin notes), Session(token, userType, userId, expiresAt)
+   ShopperUser(email, fullName, phone, status, membershipLevel)
+
+C. STORES
+   Store(slug, status lifecycle: draft→live|generating|pending_verification|
+     pending_claim|claimed|maintenance|suspended|archived, themeJson,
+     templateKey, socialJson, supportEmail/Phone, whatsapp, currency=MYR,
+     timezone=Asia/Kuala_Lumpur, lifecycleSource native|import)
+   StoreDomain(cname|ns, verify + ssl status), CmsPage(draft/published JSON)
+
+D. CATALOG
+   Category, Product(status incl. moderation: pending/approved/rejected/banned,
+     pricing, weight/dims, salesCount), ProductImage, ProductVariant(price,
+     stock, sku), InventoryLog(change reasons), Review(rating, reply),
+     Collection + CollectionProduct
+
+E. CART / ORDERS
+   Cart(shopperId — account-scoped; storeId nullable legacy),
+   CartItem(cartId, productId, variantId, qty)
+   Order(per-SELLER order! orderNumber SM-1000xx, status machine:
+     payment_pending|paid|processing|shipped|delivered|completed|cancelled|
+     refunding|partially_refunded|refunded|closed,
+     shopperId, cartToken(legacy guest), channel storefront|market,
+     subtotal/discount/shipping/tax/totalMinor, shippingAddressJson,
+     couponCode, paymentProvider, idemKey @unique, paid/fulfilled/shipped/
+     delivered/completed/cancelled timestamps, trackingNumber,
+     trackingProvider, riskFlagsJson, paymentGroupId)
+   OrderItem(line commission snapshot: commissionPercent/Minor, fixedFee,
+     sellerNetMinor, breakdownJson, refundedMinor)
+   OrderStatusHistory(from→to, actor system|seller|admin|shopper, note)
+   PaymentGroup(ONE PSP checkout session for N orders: ref @unique, provider,
+     status requires_payment|succeeded|failed|expired, totals, idemKey @unique,
+     expiresAt, paidAt)                            ← Option B multi-seller
+   PaymentIntent(legacy single-order path, kept), PaymentWebhookLog,
+   Refund(request→approve/reject→process), Dispute
+
+F. MONEY (seller side — ACTIVE; buyer side DORMANT §11)
+   Wallet(per seller), LedgerAccount/Transaction/Line (double-entry),
+   PayoutBatch + Payout(T+ policy pipeline: hold→clear→mark-paid/fail),
+   BankAccount(admin-verified)
+
+G. MARKETING
+   Coupon(store or platform scope, per-store rules), CouponRedemption, Address
+     (shopperId-scoped account address book, isDefault single-default invariant)
+
+B3. BUYER DASHBOARD (Task A)
+   ShopperWallet [SCAFFOLD-DORMANT — see §11], Voucher, UserVoucher,
+   UserActivity, MarketplaceBanner, FeaturedSlot
+
+H. INTEGRATIONS & OPS
+   StoreIntegration, WebhookEndpoint + WebhookDelivery(replayable), ApiKey,
+   Setting, FeatureFlag, AdminAuditLog, ActivityLog, NotificationTemplate/Log,
+   SupportTicket + SupportMessage, Announcement, Counter(order numbers),
+   ExportJob, MarketplaceConnection(shopee|tiktok) + ImportJob + ImportJobItem
+   + StoreClaim, SeoMeta
+
+--------------------------------------------------------------------------------
+5. AUTHENTICATION & AUTHORIZATION — ALL ACCOUNT TYPES
+--------------------------------------------------------------------------------
+SESSION MECHANICS [LIVE]
+  * DB-backed revocable sessions (Session table), TTL 7 days.
+  * Delivery: httpOnly cookie "sm_session" (SameSite=None; Secure — survives
+    cross-site iframe preview panels) OR "Authorization: Bearer <token>" from
+    client localStorage bridge. Server accepts either (lib/auth.ts).
+  * createSession(userType, userId) / destroySession / getSession.
+  * Login rotates the session token; localStorage session key cleared on
+    logout. Auth continuation callbacks read fresh auth from zustand at call
+    time (stale-closure bug fixed in Task 6).
+
+THREE ACCOUNT TYPES (userType on Session):
+  1) admin   → requireAdmin(), requireAdminRole([roles]),
+               requireCap(cap) with RBAC matrix ADMIN_CAPS:
+                 sellers.approve/suspend  → superadmin, ops
+                 products.moderate        → superadmin, ops, moderator
+                 commission.manage        → superadmin, finance
+                 payouts.manage           → superadmin, finance
+                 refunds/disputes.manage  → superadmin, ops, finance
+                 settings.manage          → superadmin only
+                 impersonate              → superadmin only
+  2) seller  → requireSeller(), requireActiveSellerStore() (approved/live store)
+               Seller status lifecycle: pending→approved→suspended/terminated.
+  3) shopper → requireShopper() (status must be active).
+
+NO-GUEST-CHECKOUT POLICY [LIVE — root-cause fix for "session pollution" bugs]
+  * Add-to-cart REQUIRES sign-in (guest add triggers a sign-in/register dialog,
+    and the intended action auto-resumes after auth).
+  * Carts, checkout, and the address book are strictly account-scoped
+    (shopperId). Guests cannot create addresses or carts anymore.
+  * claimGuestStateForShopper(): at login/registration, legacy GUEST orders
+    (placed before this policy, matched by customerEmail) are claimed into the
+    account. Address claiming was REMOVED — the old guest-address leaking into
+    logged-in checkout is structurally impossible now.
+  * One default address invariant enforced at login and on address ops.
+
+SECURITY POSTURE
+  * Guards on every portal API; admin capabilities checked per endpoint.
+  * auditAdmin() writes AdminAuditLog for privileged actions.
+  * Order/receipt lookup endpoints are token/ref-scoped.
+  * KNOWN GAP: a full adversarial Auth/IDOR audit pass has NOT been done yet
+    (spot checks were done during feature work). [DECIDED-NOT-BUILT — queued]
+
+--------------------------------------------------------------------------------
+6. FEATURE MATRIX BY PORTAL
+--------------------------------------------------------------------------------
+6.1 SHOPPER (Market + buyer dashboard) — mostly [LIVE]
+  * Market home: banners, featured slots, category nav, search, product grid.
+  * PDP: variants, stock, reviews, seller info card, related items.
+  * Storefronts (per seller, /api/sf/[slug]): themed pages rendered from
+    CmsPage JSON, collections, product pages with reviews, newsletter signup.
+  * Cart: multi-seller (items grouped per store in the drawer, per-store
+    subtotals + free-shipping badges), badge count syncs everywhere.
+  * Checkout: account address book CRUD (single default), contact prefilled
+    from profile, per-store grouping summary ("Items from N sellers · you pay
+    ONCE"), per-store coupons (a coupon applies to exactly ONE group),
+    Option B explainer copy ("licensed payment partner splits each seller
+    their share — NOMOFEE never holds your money").
+  * Payment page: one charge for the whole group (mock PSP), success → orders.
+  * Me hub (buyer dashboard): profile, address book, orders list/detail with
+    status pipeline + tracking number display, PDF receipt, vouchers,
+    membership tier (SILVER/GOLD/PLATINUM auto-upgrade on lifetime paid spend),
+    activity feed, recommendations, order-count badges (To Pay/To Ship/To
+    Receive/To Rate), instant address-count refresh (window event
+    "nomofee:addresses-changed").
+  * Chat with sellers: threads, unread badges, realtime via socket hub,
+    mobile bottom-nav 5-tab layout + desktop sticky sidebar + bento grid.
+  * DORMANT finance cards (NOMOFEE Pay / Coins / SPayLater) show "coming
+    soon" teasers only (§11).
+
+6.2 SELLER — mostly [LIVE]
+  * Onboarding wizard → creates Store (status draft→live; admin approval gate).
+  * Dashboard (KPIs), products CRUD + variants + inventory adjust,
+    collections, coupons, orders (list/detail, mark fulfilled, SHIP with
+    carrier + tracking number, request refund), reviews reply.
+  * Wallet: balance (available vs pending hold), payout history, ledger-linked;
+    bank accounts (admin-verified before payout).
+  * Storefront builder: page builder (drag sections incl. testimonials editor),
+    theme settings, templates, publish/draft/revert; custom domains
+    (CNAME/NS verify flow); SEO meta; sitemap.
+  * Integrations: webhook endpoints + delivery log/replay, API keys,
+    marketplace import (Shopee/TikTok URL resolution → import jobs), store
+    claim flow for imported stores.
+  * Messages: buyer chat threads, unread counts, quick-reply chips
+    (canned responses — chip fills the composer draft, never auto-sends).
+
+6.3 ADMIN — [LIVE]
+  * Dashboard KPIs; sellers: list/detail, approve/reject/activate/suspend/
+    terminate, KYC queue with document review, internal notes.
+  * Stores list; product moderation (approve/reject/ban).
+  * Orders (all), order detail, refunds (approve/process/reject), disputes.
+  * Commission engine UI: settings, per-store/category/product overrides,
+    fee holidays, commission simulator.
+  * Finance: wallets + ledger browser, payouts + payout batches
+    (mark-paid/fail), bank account verification.
+  * Marketing: platform coupons, categories, banners, featured slots,
+    announcements, notifications (templates + log).
+  * Support tickets (reply/close), reports (per type), export jobs.
+  * System: feature flags, settings, activity + admin audit logs, webhook
+    deliveries, system health.
+
+6.4 API SURFACE MAP (route groups under /api)
+  /api/auth/**            login/logout/register/me + shopper register/login
+                          + callback/[platform]
+  /api/cart/**            get cart, add/update/remove items (requires shopper)
+  /api/checkout/**        quote (multi-seller groups), addresses CRUD,
+                          create (PaymentGroup + N orders), payments
+                          [ref] get/retry/simulate
+  /api/webhooks/payments/[provider]   PSP webhook receiver (mock verified)
+  /api/me/**              profile, orders, activity, recommendations, vouchers,
+                          wallet (DORMANT envelope), coins/claim (DORMANT 403)
+  /api/market/**          home, products, stores
+  /api/sf/[slug]/**       storefront public APIs (pages, products, reviews,
+                          newsletter)
+  /api/orders/lookup      guest order lookup by ref (legacy), receipt PDF
+  /api/store/**           everything seller (incl. /ship, /fulfill,
+                          /refund-request, /payouts, /wallet, /webhooks,
+                          /connections, /imports, /onboarding)
+  /api/admin/**           everything admin (60+ endpoints incl. commission
+                          simulate, kyc-queue, payout-batches, exports)
+  /api/chat/** + /api/store/chat/**   buyer & seller chat (threads, messages,
+                          read receipts, unread counts)
+  /api/claim/bind, /api/import/**     marketplace import + store claim
+  /api/health, /api/img/[seed]        health check, placeholder image generator
+
+--------------------------------------------------------------------------------
+7. KEY FLOWS (as implemented)
+--------------------------------------------------------------------------------
+7.1 SHOPPER ONBOARDING & AUTH [LIVE]
+  Browse as guest → add-to-cart → auth dialog (login/register) → session
+  created → intended action resumes automatically (cart add, checkout step).
+  Legacy guest orders claimed into the account on login (by email match).
+
+7.2 SELLER ONBOARDING & STORE LIFECYCLE [LIVE]
+  "Start selling" from buyer header → seller auth screen (with a Back to
+  marketplace escape — fixed after user report) → register/login → onboarding
+  wizard (store name, slug, template) → store draft → product setup →
+  publish → admin approval gates (seller KYC + product moderation) → LIVE.
+  Store statuses cover the full lifecycle incl. imported stores
+  (pending_claim → claimed) and admin suspension.
+
+7.3 MULTI-SELLER SHOPPING & CHECKOUT [LIVE — verified E2E]
+  1) Cart accepts items from MANY stores (single-store rule removed).
+  2) Quote API returns per-store groups: subtotal, shipping (per-store
+     free-shipping thresholds), coupon applicability (coupon wins on exactly
+     ONE group — the highest eligible subtotal — so platform codes can't
+     multiply across sellers).
+  3) POST /api/checkout/create: ONE transaction creates a PaymentGroup
+     (idempotency via idemKey) + N per-seller Orders (orderNumber per group,
+     per-order idemKey `${key}:${storeId}`), OrderItems with COMMISSION
+     SNAPSHOT per line (commissionPercent/Minor, fixedFee, sellerNetMinor),
+     stock decrement + InventoryLog, salesCount bump, OrderStatusHistory,
+     coupon redemptions, notifications, audit.
+  4) Pay page: ONE charge for the group (mock PSP), retry/simulate endpoints
+     group-aware.
+  5) Webhook (mock PSP): payment.succeeded → group status+paidAt → per-order
+     transition to paid → ledger T1 posting per order → store webhooks +
+     notifications → cart cleared. payment.failed → group failed, orders stay
+     payment_pending (retryable). All idempotent; every webhook logged
+     (PaymentWebhookLog).
+
+7.4 LEDGER & PAYOUTS [LIVE — accounting mirror, NOT custody]
+  Double-entry engine (lib/ledger.ts). T1 on payment:
+      debit  GATEWAY:{provider}          (full order total)
+      credit SELLER:{walletId}:PAYABLE   (net after commission — pending hold)
+      credit PLATFORM:REVENUE_COMMISSION (commission = PSP application fee)
+  Balances with available_at > now are "pending" (the T+N settlement window).
+  Payout pipeline: seller requests / admin batch → T2 clear (hold→available)
+  → bank transfer record (mark-paid / fail). Admin ledger browser + wallets UI.
+
+7.5 POST-PURCHASE [LIVE]
+  Seller: fulfil → ship (carrier + tracking number entry, manual) → order
+  status machine → buyer sees tracking number + status history. Refunds:
+  seller-initiated or buyer request → admin approve/process/reject. Disputes
+  tracked. Receipt PDF. Order lookup page (legacy guest orders).
+
+7.6 CHAT [LIVE — verified E2E both directions]
+  Next API = authoritative persistence; socket.io hub (port 3003 via Caddy,
+  internal relay 3103) broadcasts to thread rooms for instant delivery;
+  unread badge sync via "nomofee:chat-sync" window events + list-first entry.
+  Quick replies: starter pack chips for sellers (draft-fill, not auto-send).
+
+7.7 MARKETPLACE IMPORT (Phase 5) [LIVE with fixture connectors]
+  Seller pastes a Shopee/TikTok product or store URL → connector registry
+  resolves platform → import job pulls items (fixture connectors in sandbox;
+  real connector adapters are the natural next step) → store claim flow.
+
+--------------------------------------------------------------------------------
+8. CHECKOUT SYSTEM — ARCHITECTURE & COMPLIANCE POSTURE
+--------------------------------------------------------------------------------
+IMPLEMENTED COMPLIANCE RELEVANT FEATURES [LIVE]
+  * MYR everywhere; itemized subtotal / discount / shipping / total on quote,
+    order, pay page, receipt (aligns with Price Display for Online Sales
+    Rules 2017 — prices displayed inclusive and itemized).
+  * Full order status history with actors (audit trail); receipts (PDF).
+  * Idempotent checkout (idemKey on PaymentGroup + per-order) — prevents
+    double-charging on retry.
+  * Stock integrity: transactional decrement + InventoryLog.
+  * Coupon fairness rule (one group per coupon) documented and enforced.
+  * Address book: account-scoped, single default, full CRUD audit.
+  * Seller identity visible on storefronts (name/status/support contacts),
+    store suspension enforced at API level.
+
+MALAYSIAN CHECKOUT-COMPLIANCE CHECKLIST — STATUS
+  [LIVE]    Itemized MYR pricing; order history; receipts; refund pipeline;
+            dispute tracking; KYC document capture (KycDocument + admin
+            queue) which partially covers CPETTR 2024 "verify seller
+            information" duties.
+  [GAP]     Bahasa Malaysia language display duty (CPETTR 2024 in force since
+            25 Dec 2024 requires marketplace info available in BM) — not yet
+            implemented; i18n keys exist (next-intl installed, unused).
+  [GAP]     ToS / Privacy Policy / Refund-Policy CONTENT pages (CmsPage engine
+            exists — content not authored; PDPA consent checkbox at
+            registration not yet added).
+  [GAP]     PDPA 2010 + Amendment Act 2024 operational items: DPO appointment,
+            breach-notification runbook (mandatory from Jun 2025), data
+            portability, cross-border transfer notice, cookie/consent notice.
+  [GAP]     Product-restriction policy enforcement (NPRA cosmetics
+            notification, SIRIM for electrical, Food Act 1983) — moderation
+            is manual today; no category-level gating.
+  [GAP]     Halal-claim moderation (Trade Descriptions (Definition of Halal)
+            Order 2011) — no scanner for "halal" claims in listings.
+  [GAP]     e-Invoice (LHDN MyInvois): platform is in early revenue bands —
+            consolidated self-billed e-invoices (7-day B2C consolidation,
+            self-billed for seller commissions) will be needed per the phased
+            bands (≤RM1m band ~1 Jul 2026; verify current LHDN schedule).
+  [GAP]     SST: service tax 8% on platform commissions (threshold RM500k) and
+            Low-Value Goods 10% sales tax for imported LVG — register when
+            thresholds approached; no tax engine in code (fields exist).
+
+--------------------------------------------------------------------------------
+9. PAYMENT INTEGRATION — OPTION B (LICENSED-PSP SPLIT) — ARCHITECTURE
+--------------------------------------------------------------------------------
+DECISION (user-approved, implemented in code as semantics + gating):
+  Buyer pays ONCE per checkout → a licensed Malaysian PSP collects the funds,
+  deducts the platform's application fee (= commission) AT PAYMENT TIME, and
+  settles each seller their share. NOMOFEE NEVER TAKES CUSTODY OF BUYER FUNDS.
+  The T+N settlement delay is the PSP's seller-settlement policy + the
+  platform's refund policy window.
+
+WHY (rationale preserved in src/lib/psp.ts header):
+  * No custody → outside BNM Merchant Acquiring Services registration scope
+    (FSA 2013 s.17), no e-money issuance, no MSB/money-broking licence.
+  * Commission is force-collected at payment time (no receivables chasing).
+  * Multi-seller single payment preserved (PSP split rails).
+
+CODE ARTIFACTS [LIVE]:
+  * src/lib/psp.ts — PspProvider interface + PSP_PROVIDERS registry:
+      - "mock" (sandboxOnly) — simulates the PSP: PaymentGroup = one PSP
+        checkout session; /api/checkout/payments/[ref]/simulate PLAYS the PSP
+        and emits the exact webhook a real gateway would send.
+      - production candidates documented (DO NOT REMOVE notes):
+          stripe_my — Stripe Malaysia + Connect (destination charges,
+                      application_fee = commission at payment time) [1st pick]
+          curlec    — Curlec marketplace routing (FPX/DuitNow strength)
+          ipay88    — iPay88 marketplace product (local method coverage)
+    4 documented production plug-in points: (1) implement PspProvider adapter
+    and register it; (2) swap simulate endpoint for hosted checkout/redirect;
+    (3) point /api/webhooks/payments/[provider] at the real gateway with
+    per-provider signature verification; (4) CommissionSetting becomes the
+    application-fee configuration.
+  * PaymentGroup model = provider-agnostic PSP checkout session record
+    (provider stored per checkout) [LIVE].
+  * Ledger = ACCOUNTING MIRROR of PSP sub-balances (not custody) [LIVE].
+  * PaymentWebhookLog records every webhook for audit [LIVE].
+
+PAYOUTS & SETTLEMENT [LIVE mechanics, config pending]:
+  * Wallet pending-hold until T+N → payout batch → bank transfer record.
+  * PayoutBatch/Payout + BankAccount admin verification.
+  * T+N number is CONFIG (policy), not code.
+
+COMMISSION MODEL [OPEN — deliberately deferred by user]:
+  Mechanics fully live (CommissionSetting defaultPercent=8, per-store/category/
+  product overrides, fee holidays, simulator, per-line snapshots). The RATE
+  MODEL decision (flat %, tiers, category-based, etc.) is deferred — numbers
+  are configuration; do NOT hardcode.
+
+PAYMENT COMPLIANCE SUMMARY (Malaysia) — from legal research (worklog Task 7):
+  * No BNM licence required for Option B as long as: funds ride a BNM-registered
+    acquirer/PSP; platform never holds buyer funds; payouts are ordinary bank
+    transfers to Malaysian sellers.
+  * E-money licence (FSA 2013) would be triggered ONLY if NOMOFEE issues its
+    own withdrawable stored value (NOMOFEE Pay wallet) → wallet is DORMANT
+    (§11) until a licensing review.
+  * MSBA 2011 remittance licence needed ONLY for cross-border seller payouts —
+    not applicable until foreign sellers are onboarded (or partner with a
+    licensed remitter/PSP).
+  * Consumer Credit Act 2025 (Act 873; SKP regulator; licensing from 1 Jun
+    2026) gates any BNPL/pay-later → SPayLater stays DORMANT.
+  * Non-redeemable loyalty points (coins redeemable only at checkout) are
+    typically limited-purpose and outside e-money regulation — the safe first
+    finance feature when revisited.
+  * e-Invoice: commission income self-billing + B2C consolidation per MyInvois
+    phases (see §8 GAP).
+
+--------------------------------------------------------------------------------
+10. MALAYSIAN REGULATORY POSTURE — DO-NOW / MONITOR (from legal research)
+--------------------------------------------------------------------------------
+DO NOW (cheap, non-blocking):
+  * SSM business registration (sole prop acceptable to start; Sdn Bhd when
+    PSP/sellers require).
+  * Author ToS, Privacy Policy (PDPA), Refund/Return policy, Seller Agreement
+    (commission %, settlement cycle, prohibited items, dispute handling).
+  * CPETTR 2024 basics: seller info verification (KYC exists), BM display plan.
+MONITOR / BEFORE SCALE:
+  * SST service-tax registration at RM500k threshold (commissions, 8%);
+    LVG 10% if importing low-value goods.
+  * MyInvois e-invoice band dates (≤RM1m band expected 1 Jul 2026 — verify).
+  * Consumer Credit Act 2025 licensing timeline if ever touching pay-later.
+  * Competition Act 2010 (platform parity clauses), halal claims moderation.
+NOT REQUIRED (Option B): BNM e-money licence, merchant-acquiring
+  registration, MSB licence, heavy AML programme (PSP carries KYC/AML for the
+  payment flow; platform keeps standard business record-keeping).
+
+--------------------------------------------------------------------------------
+11. DORMANT SCAFFOLDS — BUYER FINANCE SUITE (KEEP, DO NOT RECONNECT)
+--------------------------------------------------------------------------------
+FLAG: src/lib/feature-flags.ts → MESH_FINANCE_ENABLED = false [SCAFFOLD-DORMANT]
+
+KEPT (deliberately, with do-not-remove notes in code):
+  * Prisma model ShopperWallet + inert demo rows.
+  * /api/me/wallet — answers { disabled:true, message, wallet:null,
+    checkIn:null, vouchers:{...} } WITHOUT touching the wallet table.
+  * /api/me/coins/claim — rejects 403 FEATURE_DORMANT before any mutation
+    (daily-claim + streak logic preserved below the gate).
+  * me-hub UI: Wallet/Coin/SPayLater cards + WalletView + service cards +
+    sidebar item — all behind the flag; "coming soon" teaser cards rendered
+    instead; SPayLater chips on product cards gated.
+  * Seed data for the finance demo.
+
+RE-ACTIVATION PRECONDITIONS (documented in code):
+  1. Finance roadmap discussion concluded with the user.
+  2. Licensing review: withdrawable wallet balance = e-money (FSA 2013/BNM);
+     pay-later gated by Consumer Credit Act 2025 (SKP registration);
+     non-redeemable coins are the safe first step.
+NOTE: the SELLER payout wallet + ledger are NOT under this flag (they are the
+  Option B accounting mirror and stay active).
+
+--------------------------------------------------------------------------------
+12. KNOWN ISSUES / TECH DEBT / VERIFICATION BASELINES
+--------------------------------------------------------------------------------
+  * Pre-existing TypeScript baseline (documented, NOT to be introduced anew):
+    4 errors in shopper/checkout.tsx + a few admin route typing complaints;
+    `bunx tsc --noEmit` used as regression floor ("no NEW errors").
+  * SQLite: single-writer; after `db:push` the running dev server can hit
+    "readonly database" (stale handle) — fix is a dev-server restart.
+  * framer-motion + browser automation flakiness: programmatic element.click()
+    occasionally no-ops on animated elements; workaround = dispatch real
+    click via JS or retry (testing-only concern, not user-facing).
+  * Session delivery uses SameSite=None cookie + Bearer bridge to survive
+    cross-site iframe previews — when moving to real hosts, revisit cookie
+    posture (SameSite=Lax + host separation).
+  * deviceToken() guest-identity plumbing in session-client.ts is mostly
+    DORMANT after no-guest-checkout (kept for legacy order lookups) — clean-up
+    candidate, harmless.
+  * PaymentIntent legacy single-order path still exists beside PaymentGroup
+    (kept for old pending orders; a deprecation plan is a nice-to-have).
+  * Full Auth/IDOR adversarial audit not yet run (spot checks only).
+  * Tracking entry is MANUAL today (seller types carrier + tracking number);
+    no courier API integration yet (see §13 — the shipping layer is the next
+    big build).
+  * Storefront "generate" AI features (theme/product imagery via z-ai SDK)
+    exist in the UI; server uses placeholder image route for most media.
+
+--------------------------------------------------------------------------------
+13. DECIDED / PROPOSED ROADMAP (so the analyst AI doesn't re-scope blindly)
+--------------------------------------------------------------------------------
+[DECIDED-NOT-BUILT — next in queue]
+  1. SHIPPING / FULFILMENT LAYER (the current build focus):
+     * Model: aggregator, NOT direct courier APIs. EasyParcel (MY) primary
+       candidate — 80+ couriers (Pos Laju, J&T, Ninja Van, Flash, City-Link,
+       Skynet, DHL...), RESTful API, sandbox environment + sandbox credits,
+       two marketplace modes: platform-billed account vs seller-linked
+       accounts. ParcelDaily / Delyva as alternates; ShipLah exists.
+     * BILLING MODEL leaning Model A (platform-billed, Shopee-like UX) with
+       buyer-pays-shipping-at-checkout: the shipping fee routes into the
+       PLATFORM share of the PSP split (T+0) so EasyParcel prepaid credits
+       (auto top-up from RM28) are funded by collected fees — near-zero
+       platform working capital. Variant: seller-pays via settlement
+       deduction; "Free Shipping" marketing later. [PROPOSED — awaiting user
+       confirmation on billing variant + flat-rate vs live rates at checkout]
+     * ARCHITECTURE: ShippingProvider adapter interface shaped like
+       EasyParcel (getRates / createShipment / tracking webhook) + mock
+       provider first (so Ship→track loop demos in preview before signup);
+       SubOrder/Order gains carrierCode, carrierName, trackingNumber
+       (exists), labelUrl, shipmentStatus machine (PENDING_BOOKING→BOOKED→
+       PICKED_UP→IN_TRANSIT→OUT_FOR_DELIVERY→DELIVERED / EXCEPTION / RETURNED)
+       + new ShipmentEvent timeline table; buyer order page shows the
+       Shopee-style auto timeline (no tracking-number keying).
+     * AUTO-TRACKING: platform-booked parcels tracked via provider webhooks;
+       parcels booked OUTSIDE the platform auto-tracked via 17TRACK
+       register+webhook API (2600+ carriers, free basics tier) as fallback.
+  2. Auth/IDOR full audit pass.
+  3. Compliance content pack (ToS/Privacy/Refund/Seller Agreement pages,
+     PDPA consent at registration, BM display plan).
+
+[OPEN — user deferred]
+  * Commission rate model (mechanics live, numbers = config).
+  * Chat auto-replies beyond quick-reply chips (assembly strategy TBD).
+  * Finance suite re-activation (needs roadmap + licensing review, §11).
+
+[BACKLOG CANDIDATES seen in code but not yet built]
+  * Real Shopee/TikTok connector implementations (fixtures exist).
+  * next-intl i18n activation (BM/EN) — also serves CPETTR compliance.
+  * Notification templates → email/WhatsApp providers.
+  * Payout automation (currently admin-marked paid).
+  * Product media upload pipeline (placeholder img generator today).
+  * Deprecation plan for legacy PaymentIntent path + deviceToken plumbing.
+
+--------------------------------------------------------------------------------
+14. OPS NOTES (sandbox specifics)
+--------------------------------------------------------------------------------
+  * Dev: `bun run dev` (Next dev, port 3000, logs to dev.log). Lint:
+    `bun run lint`. Schema: `bun run db:push`. Type check: `bunx tsc --noEmit`.
+  * Only port 3000 is externally exposed; the chat hub (3003) is reached via
+    the Caddy gateway using relative URL + ?XTransformPort=3003 (all frontend
+    requests MUST be relative — io("/?XTransformPort=3003")).
+  * worklog.md is the append-only engineering log (Task IDs 1–9 so far);
+    read it first when continuing work.
+  * All UI on ONE route (/) by design in this sandbox (user instruction);
+    production intent = separate hosts per portal.
+  * Seed data re-created via scripts in the repo history; order numbers from
+    Counter model (SM-1000xx series).
+
+--------------------------------------------------------------------------------
+15. SUGGESTED ANALYSIS ANGLES FOR THE AI READING THIS
+--------------------------------------------------------------------------------
+  1. What LOW-COST high-trust features would materially raise buyer conversion
+     in Malaysia (e.g. CPETTR-compliant transparency, BM support, vouchers)
+     given the existing primitives (Coupon, Voucher, FeaturedSlot, CmsPage)?
+  2. Shipping layer design review: is the proposed ShippingProvider +
+     ShipmentEvent model sufficient for returns (RTS), multi-parcel orders,
+     and courier pickup scheduling? What did we miss?
+  3. Settlement edge cases under Option B: partial refunds across N sellers
+     in a PaymentGroup, cross-seller coupon cost allocation, commission on
+     shipping (flag exists: appliesToShipping) — propose ledger entries.
+  4. Compliance quick wins: what exact content/flow changes close the §8 GAPs
+     fastest for a Malaysian launch (PDPA consent, CPETTR seller display,
+     BM language, e-invoice readiness)?
+  5. Growth features buildable from EXISTING models (UserActivity,
+     recommendations, membership tiers, vouchers, reviews) without new infra.
+  6. Trust & safety: review moderation, dispute SLA, seller ratings,
+     counterfeit policy — what's the minimum viable set for launch?
+  7. Architecture: migration path SQLite→Postgres, single-route SPA→separate
+     hosts, mock PSP→Stripe Connect swap — risks and sequencing.
+================================================================================
+END OF DOCUMENT
+================================================================================

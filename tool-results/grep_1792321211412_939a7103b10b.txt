@@ -1,0 +1,204 @@
+/home/z/my-project/src/components/ui/select.tsx:40:        "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+/home/z/my-project/src/components/ui/command.tsx:76:          "placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+/home/z/my-project/src/components/ui/input.tsx:11:        "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+/home/z/my-project/src/components/ui/textarea.tsx:10:        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+/home/z/my-project/src/components/seller/orders.tsx:183:          placeholder="Search order number, customer, email…"
+/home/z/my-project/src/components/seller/orders.tsx:538:            <Textarea id="refund-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Damaged in transit, item out of stock…" />
+/home/z/my-project/src/components/seller/integrations.tsx:84:                placeholder={`${p.field}`}
+/home/z/my-project/src/components/seller/integrations.tsx:273:            <Input id="wh-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.yourapp.com/nomofee" />
+/home/z/my-project/src/components/seller/integrations.tsx:390:              <Input id="ak-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Inventory sync script" />
+/home/z/my-project/src/components/seller/vouchers.tsx:284:              placeholder="Raya 12% off storewide"
+/home/z/my-project/src/components/seller/vouchers.tsx:333:                  placeholder="no cap"
+/home/z/my-project/src/components/seller/vouchers.tsx:356:              <MoneyInput valueMinor={minSpendMinor} onChangeMinor={setMinSpendMinor} placeholder="0.00" />
+/home/z/my-project/src/components/seller/vouchers.tsx:365:                placeholder="unlimited"
+/home/z/my-project/src/components/seller/vouchers.tsx:388:                placeholder="auto-generated"
+/home/z/my-project/src/components/shopper/market.tsx:555:              <SelectValue placeholder="Sort" />
+/home/z/my-project/src/components/seller/marketing.tsx:206:              <Input id="cp-code" className="font-mono uppercase" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="RAYA20" />
+/home/z/my-project/src/components/seller/marketing.tsx:241:              <Input id="cp-max" inputMode="numeric" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value.replace(/[^0-9]/g, ""))} placeholder="unlimited" />
+/home/z/my-project/src/components/seller/marketing.tsx:246:            <Input id="cp-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Raya promo — 20% off everything" />
+/home/z/my-project/src/components/shopper/me-hub.tsx:584:                // wallet / coins / pay-later cards are hidden; placeholder keeps the bento shape.
+/home/z/my-project/src/components/shopper/me-hub.tsx:942:// DORMANT SCAFFOLD — NOMO FINANCE placeholders (see src/lib/feature-flags.ts).
+/home/z/my-project/src/components/shopper/me-hub.tsx:959:        Wallet, coins &amp; pay-later are switched off for now — the scaffold is kept for the roadmap.
+/home/z/my-project/src/components/shopper/me-hub.tsx:972:        hint="NomoPay balance, Nomo Coins check-ins and pay-later are switched off for now. The wallet scaffold is kept and will be reconnected when the finance roadmap lands."
+/home/z/my-project/src/components/shopper/me-hub.tsx:1111:              <Input id="set-user" value={username} onChange={(e) => { setUsername(e.target.value.toLowerCase()); setDirty(true); }} placeholder="yourhandle" className="min-h-[44px] pl-8" />
+/home/z/my-project/src/components/shopper/me-hub.tsx:1116:            <Input id="set-phone" type="tel" value={phone} onChange={(e) => { setPhone(e.target.value); setDirty(true); }} placeholder="+60 12-345 6789" className="min-h-[44px]" />
+/home/z/my-project/src/components/shopper/me-hub.tsx:1678:              placeholder="Enter a voucher code (try MESH10)"
+/home/z/my-project/src/components/shopper/me-hub.tsx:2122:  const field = (key: keyof typeof EMPTY_ADDR, label: string, opts?: { type?: string; placeholder?: string; wide?: boolean }) => (
+/home/z/my-project/src/components/shopper/me-hub.tsx:2130:        placeholder={opts?.placeholder}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2204:              {field("name", "Recipient name", { placeholder: "Nur Aisyah" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2205:              {field("phone", "Phone", { type: "tel", placeholder: "+60 12-345 6789" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2206:              {field("line1", "Street address", { wide: true, placeholder: "12 Jalan Melati, Taman Melawati" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2207:              {field("city", "City", { placeholder: "Kuala Lumpur" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2208:              {field("state", "State", { placeholder: "Selangor" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2209:              {field("postcode", "Postcode", { placeholder: "53100" })}
+/home/z/my-project/src/components/shopper/me-hub.tsx:2210:              {field("label", "Label", { placeholder: "Home / Office" })}
+/home/z/my-project/src/components/seller/builder.tsx:676:          placeholder={field.placeholder}
+/home/z/my-project/src/components/seller/builder.tsx:751:              <RotateCcw className="h-3 w-3" /> Regenerate placeholder
+/home/z/my-project/src/components/seller/builder.tsx:795:          placeholder={field.placeholder}
+/home/z/my-project/src/components/seller/builder.tsx:1019:                          placeholder={f.placeholder}
+/home/z/my-project/src/components/seller/builder.tsx:1026:                          placeholder={f.placeholder}
+/home/z/my-project/src/components/seller/ui-bits.tsx:298:  placeholder,
+/home/z/my-project/src/components/seller/ui-bits.tsx:304:  placeholder?: string;
+/home/z/my-project/src/components/seller/ui-bits.tsx:320:        placeholder={placeholder ?? "0.00"}
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:537:            placeholder="Search the marketplace…"
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:763:              <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" className="min-h-[44px]" aria-label="Email" />
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:764:              <Input name="password" type="password" required placeholder="Password" autoComplete="current-password" className="min-h-[44px]" aria-label="Password" />
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:772:              <Input name="fullName" required placeholder="Full name" autoComplete="name" className="min-h-[44px]" aria-label="Full name" />
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:773:              <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" className="min-h-[44px]" aria-label="Email" />
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:774:              <Input name="password" type="password" required minLength={8} placeholder="Password (min 8 characters)" autoComplete="new-password" className="min-h-[44px]" aria-label="Password" />
+/home/z/my-project/src/components/shopper/shopper-shell.tsx:1097:                    placeholder="Type a message… (Enter to send)"
+/home/z/my-project/src/components/seller/seller-shell.tsx:583:                  placeholder="you@store.com"
+/home/z/my-project/src/components/seller/seller-shell.tsx:594:                  placeholder="••••••••"
+/home/z/my-project/src/components/seller/seller-shell.tsx:629:                  <Input id="reg-full" value={reg.fullName} onChange={(e) => setReg({ ...reg, fullName: e.target.value })} placeholder="Sofia Lim" />
+/home/z/my-project/src/components/seller/seller-shell.tsx:633:                  <Input id="reg-disp" value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })} placeholder="Sofia" />
+/home/z/my-project/src/components/seller/seller-shell.tsx:638:                <Input id="reg-email" type="email" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} placeholder="you@store.com" />
+/home/z/my-project/src/components/seller/seller-shell.tsx:647:                  <Input id="reg-phone" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="60123456789" />
+/home/z/my-project/src/components/seller/seller-shell.tsx:652:                <Input id="reg-store" value={reg.storeName} onChange={(e) => setReg({ ...reg, storeName: e.target.value })} placeholder="Lumina Living" />
+/home/z/my-project/src/components/seller/deliver-dialog.tsx:184:              placeholder="Left with the concierge at 2:15pm…"
+/home/z/my-project/src/components/shopper/generate.tsx:433:                placeholder="https://shopee.com.my/your.shop  ·  demo links work too"
+/home/z/my-project/src/components/shopper/generate.tsx:1217:                      placeholder="e.g. Aurora Test"
+/home/z/my-project/src/components/shopper/generate.tsx:1230:                    placeholder="you@example.com"
+/home/z/my-project/src/components/shopper/generate.tsx:1242:                    placeholder={mode === "register" ? "At least 8 characters" : "Your password"}
+/home/z/my-project/src/components/seller/domains.tsx:255:            <Input id="dom-input" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shop.yourbrand.com" />
+/home/z/my-project/src/components/shopper/ui-bits.tsx:407:        {/* plain <img> (product mockups / placeholder service) — never next/image here */}
+/home/z/my-project/src/components/shopper/ui-bits.tsx:571:          {/* POD photos are data-URLs / same-origin placeholder images — plain <img>, never next/image */}
+/home/z/my-project/src/components/seller/settings.tsx:194:              <Input id="st-wa" value={form.whatsapp} onChange={(e) => set({ whatsapp: e.target.value })} placeholder="60123456789" />
+/home/z/my-project/src/components/seller/settings.tsx:200:              <Input id="st-ig" value={form.instagram} onChange={(e) => set({ instagram: e.target.value })} placeholder="https://instagram.com/…" />
+/home/z/my-project/src/components/seller/settings.tsx:204:              <Input id="st-fb" value={form.facebook} onChange={(e) => set({ facebook: e.target.value })} placeholder="https://facebook.com/…" />
+/home/z/my-project/src/components/seller/settings.tsx:208:              <Input id="st-tt" value={form.tiktok} onChange={(e) => set({ tiktok: e.target.value })} placeholder="https://tiktok.com/@…" />
+/home/z/my-project/src/components/seller/ship-order-dialog.tsx:207:                    placeholder="CityLink, J&T, PosLaju…"
+/home/z/my-project/src/components/seller/ship-order-dialog.tsx:216:                    placeholder="CL123456789"
+/home/z/my-project/src/components/seller/wallet.tsx:298:            <Input id="wa-holder" value={holderName} onChange={(e) => setHolderName(e.target.value)} placeholder="Lumina Living Sdn Bhd" />
+/home/z/my-project/src/components/seller/wallet.tsx:304:                <SelectValue placeholder="Select bank" />
+/home/z/my-project/src/components/seller/wallet.tsx:320:              placeholder="1622 3810 5543"
+/home/z/my-project/src/components/shopper/checkout.tsx:423:      {f("Label", <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Home / Office" className="min-h-[44px]" required={false} />)}
+/home/z/my-project/src/components/shopper/checkout.tsx:424:      {f("Recipient name", <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Aina Binti Ahmad" className="min-h-[44px]" />, errors.name)}
+/home/z/my-project/src/components/shopper/checkout.tsx:425:      {f("Phone", <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="012-345 6789" className="min-h-[44px]" required={false} />, errors.phone)}
+/home/z/my-project/src/components/shopper/checkout.tsx:426:      {f("Postcode", <Input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value.replace(/\D/g, "").slice(0, 5) })} inputMode="numeric" placeholder="43650" className="min-h-[44px]" />, errors.postcode)}
+/home/z/my-project/src/components/shopper/checkout.tsx:428:        {f("Street address", <Textarea value={form.line1} onChange={(e) => setForm({ ...form, line1: e.target.value })} placeholder="42 Jalan Merdeka, Taman Setia" rows={2} className="min-h-[44px]" />, errors.line1)}
+/home/z/my-project/src/components/shopper/checkout.tsx:430:      {f("City", <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Kuala Lumpur" className="min-h-[44px]" />, errors.city)}
+/home/z/my-project/src/components/shopper/checkout.tsx:945:                  {field("Full name *", <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Aina Binti Ahmad" className="min-h-[44px]" aria-required />, tried || draft.name.length > 0 ? contactErrors.name : null)}
+/home/z/my-project/src/components/shopper/checkout.tsx:946:                  {field("Email *", <Input type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} placeholder="you@example.com" className="min-h-[44px]" aria-required />, tried || draft.email.length > 0 ? contactErrors.email : null)}
+/home/z/my-project/src/components/shopper/checkout.tsx:948:                    {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried ? contactErrors.phone : null)}
+/home/z/my-project/src/components/shopper/checkout.tsx:1260:              <Textarea value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="Note to seller (optional)" rows={2} className="min-h-[44px] text-sm" />
+/home/z/my-project/src/components/shopper/checkout.tsx:1359:                        placeholder="Coupon code"
+/home/z/my-project/src/components/shopper/checkout.tsx:1409:                          <SelectValue placeholder="Select a voucher" />
+/home/z/my-project/src/components/shopper/checkout.tsx:2533:            <Input id="lk-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="min-h-[44px]" />
+/home/z/my-project/src/components/shopper/checkout.tsx:2537:            <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="SM-100017" className="min-h-[44px] font-mono" />
+/home/z/my-project/src/components/seller/onboarding.tsx:313:          <Input id="onb-name" value={identity.name} onChange={(e) => setIdentity({ ...identity, name: e.target.value })} placeholder="Lumina Living" />
+/home/z/my-project/src/components/seller/onboarding.tsx:317:          <Input id="onb-wa" value={identity.whatsapp} onChange={(e) => setIdentity({ ...identity, whatsapp: e.target.value })} placeholder="60123456789" />
+/home/z/my-project/src/components/seller/onboarding.tsx:322:        <Input id="onb-tag" value={identity.tagline} onChange={(e) => setIdentity({ ...identity, tagline: e.target.value })} placeholder="Calm, functional objects for better days." />
+/home/z/my-project/src/components/seller/onboarding.tsx:326:        <Textarea id="onb-desc" rows={3} value={identity.description} onChange={(e) => setIdentity({ ...identity, description: e.target.value })} placeholder="Tell shoppers what you sell and where you ship from…" />
+/home/z/my-project/src/components/seller/onboarding.tsx:343:          <p>A placeholder logo is created from your store name — you can change it anytime in Settings.</p>
+/home/z/my-project/src/components/seller/onboarding.tsx:426:                  placeholder="e.g. my-ic-front.jpg"
+/home/z/my-project/src/components/seller/onboarding.tsx:484:          <Input id="bank-holder" value={bank.holderName} onChange={(e) => setBank({ ...bank, holderName: e.target.value })} placeholder="Lumina Living Sdn Bhd" />
+/home/z/my-project/src/components/seller/onboarding.tsx:490:              <SelectValue placeholder="Select bank" />
+/home/z/my-project/src/components/seller/onboarding.tsx:502:        <Input id="bank-acc" inputMode="numeric" value={bank.accountNumber} onChange={(e) => setBank({ ...bank, accountNumber: e.target.value.replace(/[^0-9\s]/g, "") })} placeholder="1622 3810 5543" />
+/home/z/my-project/src/components/shopper/storefront.tsx:460:                placeholder="Search this store…"
+/home/z/my-project/src/components/shopper/storefront.tsx:493:            <Input value={local} onChange={(e) => onChange(e.target.value)} placeholder="Search this store…" className="pl-8 min-h-[44px] rounded-[var(--sf-radius)]" aria-label="Search products in this store" />
+/home/z/my-project/src/components/shopper/storefront.tsx:881:            placeholder="you@example.com"
+/home/z/my-project/src/components/seller/messages.tsx:325:                      placeholder="Type a reply… (Enter to send)"
+/home/z/my-project/src/components/seller/products.tsx:118:            placeholder="Search products…"
+/home/z/my-project/src/components/seller/products.tsx:158:          hint="Create your first product — you can generate placeholder images and add variants in seconds."
+/home/z/my-project/src/components/seller/products.tsx:397:                <Input id="prod-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Olive Wood Spoons (Set of 3)" />
+/home/z/my-project/src/components/seller/products.tsx:401:                <Textarea id="prod-desc" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Materials, dimensions, care instructions…" />
+/home/z/my-project/src/components/seller/products.tsx:407:                    <SelectValue placeholder="Uncategorised" />
+/home/z/my-project/src/components/seller/products.tsx:466:                  placeholder="https://… or /api/img/seed?w=900&h=900"
+/home/z/my-project/src/components/seller/products.tsx:494:                    <Input className="h-9" value={v.name} onChange={(e) => setVariant(i, { name: e.target.value })} placeholder="Default" />
+/home/z/my-project/src/components/seller/products.tsx:498:                    <Input className="h-9" value={v.optionValue} onChange={(e) => setVariant(i, { optionValue: e.target.value })} placeholder="Red / M" />
+/home/z/my-project/src/lib/placeholder.ts:2:// Deterministic SVG placeholder builder — shared engine behind the offline
+/home/z/my-project/src/lib/placeholder.ts:3:// placeholder pipeline. GET /api/img/{seed} serves the HTTP flavour; the lib
+/home/z/my-project/src/lib/placeholder.ts:9:export const PLACEHOLDER_PALETTES: [string, string][] = [
+/home/z/my-project/src/lib/placeholder.ts:30:export type PlaceholderOptions = {
+/home/z/my-project/src/lib/placeholder.ts:38:export function placeholderSvg(opts: PlaceholderOptions): string {
+/home/z/my-project/src/lib/placeholder.ts:39:  const seed = opts.seed ?? "placeholder";
+/home/z/my-project/src/lib/placeholder.ts:43:  const palette = PLACEHOLDER_PALETTES[hashStr(seed) % PLACEHOLDER_PALETTES.length];
+/home/z/my-project/src/lib/placeholder.ts:66:/** Relative URL served by the offline placeholder route (never external hosts). */
+/home/z/my-project/src/lib/placeholder.ts:67:export function placeholderUrl(seed: string, opts?: { w?: number; h?: number; label?: string }): string {
+/home/z/my-project/src/lib/placeholder.ts:81:/** Convenience: deterministic placeholder tile as an inline data-URL. */
+/home/z/my-project/src/lib/placeholder.ts:82:export function placeholderDataUrl(opts: PlaceholderOptions): string {
+/home/z/my-project/src/lib/placeholder.ts:83:  return svgDataUrl(placeholderSvg(opts));
+/home/z/my-project/src/components/admin/orders.tsx:97:                placeholder="Search order number or customer…"
+/home/z/my-project/src/components/admin/orders.tsx:104:                <SelectTrigger className="min-h-[44px] w-full lg:w-44" aria-label="Order status filter"><SelectValue placeholder="Status" /></SelectTrigger>
+/home/z/my-project/src/components/admin/orders.tsx:113:                <SelectTrigger className="min-h-[44px] w-full lg:w-48" aria-label="Store filter"><SelectValue placeholder="Store" /></SelectTrigger>
+/home/z/my-project/src/components/admin/orders.tsx:273:            <SelectTrigger className="min-h-[44px] w-44" aria-label="Refund status filter"><SelectValue placeholder="Status" /></SelectTrigger>
+/home/z/my-project/src/components/admin/orders.tsx:522:                  <Textarea value={resolution} onChange={(e) => setResolution(e.target.value)} rows={3} placeholder="Outcome shared with buyer and seller…" className="resize-none" />
+/home/z/my-project/src/components/admin/system.tsx:162:              placeholder='e.g. "friday" or 1000 or {"weights":{}}'
+/home/z/my-project/src/components/admin/system.tsx:309:            placeholder="Filter by admin email…"
+/home/z/my-project/src/components/admin/system.tsx:325:              placeholder="Action contains… e.g. payout"
+/home/z/my-project/src/components/admin/system.tsx:335:              placeholder="Entity type… e.g. payout"
+/home/z/my-project/src/components/admin/system.tsx:443:              <SelectValue placeholder="Actor" />
+/home/z/my-project/src/components/admin/admin-shell.tsx:501:                  placeholder="admin@nomofee.io"
+/home/z/my-project/src/components/admin/admin-shell.tsx:514:                  placeholder="••••••••"
+/home/z/my-project/src/lib/shipping.ts:7:// all derived locally (lib/placeholder pipeline), so demos work fully offline.
+/home/z/my-project/src/lib/shipping.ts:20:import { hashStr, placeholderDataUrl, svgDataUrl } from "./placeholder";
+/home/z/my-project/src/lib/shipping.ts:301:  return placeholderDataUrl({
+/home/z/my-project/src/components/admin/sellers.tsx:124:                placeholder="Search name, store or email…"
+/home/z/my-project/src/components/admin/sellers.tsx:138:                  <SelectValue placeholder="Status" />
+/home/z/my-project/src/components/admin/sellers.tsx:157:                  <SelectValue placeholder="Risk" />
+/home/z/my-project/src/lib/sections.ts:42:  placeholder?: string;
+/home/z/my-project/src/lib/sections.ts:50:  placeholder?: string;
+/home/z/my-project/src/lib/sections.ts:262:          { key: "quote", label: "Quote", type: "textarea", placeholder: "What did the customer say?" },
+/home/z/my-project/src/lib/sections.ts:263:          { key: "author", label: "Author", type: "text", placeholder: "Name, City" },
+/home/z/my-project/src/lib/sections.ts:288:          { key: "q", label: "Question", type: "text", placeholder: "How long is shipping?" },
+/home/z/my-project/src/lib/sections.ts:289:          { key: "a", label: "Answer", type: "textarea", placeholder: "Peninsular Malaysia 2-4 working days…" },
+/home/z/my-project/src/lib/sections.ts:354:          { key: "label", label: "Link label", type: "text", placeholder: "Home" },
+/home/z/my-project/src/lib/sections.ts:355:          { key: "url", label: "Link URL", type: "text", placeholder: "/" },
+/home/z/my-project/src/components/admin/marketing.tsx:215:            <DialogDescription>Served from the built-in placeholder image service — no uploads needed for the demo.</DialogDescription>
+/home/z/my-project/src/components/admin/marketing.tsx:220:              <Input id="banner-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Raya Mega Sale" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/marketing.tsx:239:                <Input id="banner-link" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="/market" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/marketing.tsx:424:              placeholder="Search products by title or slug…"
+/home/z/my-project/src/components/admin/marketing.tsx:692:                  placeholder="RAYA25"
+/home/z/my-project/src/components/admin/marketing.tsx:711:              <Input id="coupon-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Shown at checkout" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/marketing.tsx:992:                placeholder="Search by name…"
+/home/z/my-project/src/components/admin/marketing.tsx:1005:                <SelectValue placeholder="All statuses" />
+/home/z/my-project/src/components/admin/marketing.tsx:1119:                placeholder="e.g. Raya Mega Sale 2027"
+/home/z/my-project/src/components/admin/marketing.tsx:1127:                  <SelectValue placeholder="Choose a festive preset…" />
+/home/z/my-project/src/components/admin/marketing.tsx:1214:                  placeholder="Selamat Hari Raya"
+/home/z/my-project/src/components/admin/marketing.tsx:1224:                  placeholder="Festive deals up to 70% off"
+/home/z/my-project/src/components/admin/marketing.tsx:1236:                  placeholder="🌙"
+/home/z/my-project/src/components/admin/marketing.tsx:1246:                  placeholder="Salam Aidilfitri"
+/home/z/my-project/src/components/admin/marketing.tsx:1257:                placeholder="Tawaran istimewa"
+/home/z/my-project/src/components/admin/commission.tsx:474:                <SelectTrigger className="min-h-[44px]" aria-label="Category"><SelectValue placeholder="Any" /></SelectTrigger>
+/home/z/my-project/src/components/admin/commission.tsx:484:                <SelectTrigger className="min-h-[44px]" aria-label="Seller"><SelectValue placeholder="Any" /></SelectTrigger>
+/home/z/my-project/src/components/admin/ui-bits.tsx:505:        placeholder={expected}
+/home/z/my-project/src/components/admin/ui-bits.tsx:532:  placeholder,
+/home/z/my-project/src/components/admin/ui-bits.tsx:542:  placeholder?: string;
+/home/z/my-project/src/components/admin/ui-bits.tsx:555:          placeholder={placeholder}
+/home/z/my-project/src/components/admin/ui-bits.tsx:570:  placeholder,
+/home/z/my-project/src/components/admin/ui-bits.tsx:579:  placeholder?: string;
+/home/z/my-project/src/components/admin/ui-bits.tsx:595:        placeholder={placeholder ?? "Reason…"}
+/home/z/my-project/src/components/admin/seller-detail.tsx:231:                    placeholder={seller.commissionOverrideBps != null ? formatBps(seller.commissionOverrideBps) : "inherit"}
+/home/z/my-project/src/components/admin/seller-detail.tsx:241:                    placeholder={seller.holdDaysOverride != null ? String(seller.holdDaysOverride) : "global default"}
+/home/z/my-project/src/components/admin/seller-detail.tsx:429:                  placeholder="Add an internal note…"
+/home/z/my-project/src/components/admin/finance.tsx:290:                <SelectTrigger className="min-h-[44px]" aria-label="Target"><SelectValue placeholder="Pick…" /></SelectTrigger>
+/home/z/my-project/src/components/admin/finance.tsx:304:              <Input inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} placeholder="—" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/finance.tsx:308:              <Input inputMode="decimal" value={fixedFee} onChange={(e) => setFixedFee(e.target.value)} placeholder="—" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/finance.tsx:312:              <Input inputMode="numeric" value={holdDays} onChange={(e) => setHoldDays(e.target.value)} placeholder="—" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/finance.tsx:555:            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Raya campaign" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/payouts.tsx:447:        placeholder="Reason (e.g. bank account closed)…"
+/home/z/my-project/src/components/admin/payouts.tsx:613:            placeholder="e.g. BK-20261008-8817"
+/home/z/my-project/src/components/admin/support.tsx:124:              <SelectValue placeholder="Status" />
+/home/z/my-project/src/components/admin/support.tsx:253:              placeholder="Write a reply to the seller…"
+/home/z/my-project/src/components/admin/support.tsx:264:                    <SelectValue placeholder="Status" />
+/home/z/my-project/src/components/admin/support.tsx:277:                    <SelectValue placeholder="Priority" />
+/home/z/my-project/src/components/admin/categories.tsx:284:              <Input id="cat-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Home & Living" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/wallets-ledger.tsx:248:              <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/wallets-ledger.tsx:263:            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. goodwill compensation" className="min-h-[44px]" />
+/home/z/my-project/src/components/admin/wallets-ledger.tsx:379:            <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Filter by description or id…" className="min-h-[44px] pl-9" aria-label="Search transactions" />
+/home/z/my-project/src/components/admin/stores.tsx:96:                  placeholder="Search stores…"
+/home/z/my-project/src/app/api/me/coins/claim/route.ts:26:    throw new ApiError(403, "FEATURE_DORMANT", "Nomo Coins will be available soon — daily check-in is paused for now.");
+/home/z/my-project/src/app/api/me/orders/[orderNumber]/route.ts:6:import { placeholderUrl } from "@/lib/placeholder";
+/home/z/my-project/src/app/api/me/orders/[orderNumber]/route.ts:117:      imageUrl: i.product?.images[0]?.url ?? placeholderUrl(i.product?.slug ?? i.title, { w: 200, h: 200, label: i.title }),
+/home/z/my-project/src/app/api/me/orders/route.ts:5:import { placeholderUrl } from "@/lib/placeholder";
+/home/z/my-project/src/app/api/me/orders/route.ts:92:          imageUrl: i.product?.images[0]?.url ?? placeholderUrl(i.product?.slug ?? i.title, { w: 200, h: 200, label: i.title }),
+/home/z/my-project/src/app/api/img/[seed]/route.ts:3:// Deterministic SVG placeholder image service: /api/img/{seed}?w=800&h=600&label=Ceramic+Vase
+/home/z/my-project/src/app/api/claim/bind/route.ts:77:    // placeholder ("{displayName}'s Store" — native, draft, completely empty).
+/home/z/my-project/src/app/api/claim/bind/route.ts:78:    // Retire that untouched placeholder (detach, never delete) so the claimed
+/home/z/my-project/src/app/api/claim/bind/route.ts:80:    const placeholder = await tx.store.findUnique({
+/home/z/my-project/src/app/api/claim/bind/route.ts:84:    if (placeholder) {
+/home/z/my-project/src/app/api/claim/bind/route.ts:86:        placeholder.lifecycleSource === "native" &&
+/home/z/my-project/src/app/api/claim/bind/route.ts:87:        placeholder.status === "draft" &&
+/home/z/my-project/src/app/api/claim/bind/route.ts:88:        placeholder._count.products === 0 &&
+/home/z/my-project/src/app/api/claim/bind/route.ts:89:        placeholder._count.orders === 0;
+/home/z/my-project/src/app/api/claim/bind/route.ts:94:      await tx.store.update({ where: { id: placeholder.id }, data: { sellerId: null } });

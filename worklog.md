@@ -1732,3 +1732,44 @@ Stage Summary:
 - The only footer control in the system is ui.footer_visible and it now actually toggles the shopper footer; there was never a second duplicate to remove.
 - Clear All Activity Log: superadmin + password re-verified server-side, permanent, batched, audited (compliance trail preserved; log restarts with one reset record).
 - 8 files changed/created: settings-registry.ts (new), settings/route.ts, activity-logs/purge/route.ts (new), sf/app-config/route.ts (new), auth.ts, system.tsx, shopper-shell.tsx, prisma/seed.ts; regression suites green.
+
+---
+
+## 2026-10-28 — Seller Store Insights + Sales & Market Insights (unified mission, trace 1a182c544c761a81)
+
+ADDENDUM #7 to RX-CHECKLIST. Full audit (4 parallel read-only agents) → consolidated plan
+(agent-ctx/SI-PLAN.md) → incremental implementation with per-phase verification.
+
+- SCHEMA (additive db:push, row counts verified identical before/after): AnalyticsEvent
+  (append-only, dedupKey-idempotent, indexed), Order.shippingCountryCode/Source snapshot,
+  plus Order(storeId,paidAt)/Order(paidAt)/OrderItem(orderId,productId)/
+  ProductVariant(productId)/CartItem(cartId,variantId) indexes. Historical backfill:
+  1051/1051 orders → MY/backfill (postcode+MY-state rule; 0 ZZ), idempotent re-run.
+- COLLECTION: src/lib/analytics/{identity,referrer,queue,track} — pseudonymous cookies
+  (visitor 365d / session 30-min window), bounded drop-oldest queue with single
+  createMany-skipDuplicates flush every 2s; instrumented sf/storefront, sf/PDP,
+  cart view/add/remove (applied deltas). purchase/begin_checkout/refund derived from
+  authoritative Order/OrderItem/Refund ONLY. checkout-create writes MY snapshot.
+  /api/cron/analytics-tick (cron-auth) + expiry-scheduler 3rd endpoint (restarted,
+  verified ticking; 0 persistent DB conns). analytics.retention_days Setting (wired).
+  Fixed pre-existing defect: /api/me/recommendations UserActivity now userId-scoped.
+- QUERIES+API: src/lib/analytics/queries.ts + 7 /api/store/insights/* routes
+  (seller-session-scoped, rate-limited, 45s TTL cache + fresh=1) — traffic, funnel,
+  cart activity + live snapshot, product performance (sortable/paged), sales trends +
+  fulfilment, markets by country/state (+ growth/movers, min-sample 5), per-market
+  products, CSV exports. Fixed during suite: export rate-limit bucket shared with JSON
+  routes (mixed limits) → separate "insights-export" bucket.
+- UI: seller view 'insights' (1 919 lines, delegated to full-stack agent w/ exact API
+  contract) + NAV wiring — 5 tabs, window filter + prev-period deltas, recharts trends,
+  funnel bars, sortable tables, drill-down Dialog, CSV export, empty/loading/error
+  states, honesty notes, server-gated observations.
+- EVIDENCE: seller-insights suite 56/56 ALL PASS (archived 2026-10-28-seller-insights.json);
+  finance-regression 37/0; deployment-smoke 23/23 ALL PASS; remediation-live ALL PASS on
+  re-run (first-run F1-c 14/15 = documented P2034 storm flake; money exactly-once both
+  runs); lint 0 errors; browser golden path verified (storefront+PDP → Insights shows
+  2 visits/1 product view/authoritative RM174; zero console errors on clean reload;
+  mobile+desktop; VLM review positive). Screenshots: tool-results/si-*.png.
+- DOCS: performance/seller-insights-audit.md, docs/seller-insights/metric-definitions.md,
+  docs/seller-insights/implementation-report.md.
+- Dev env note: dev server restarted once (Prisma client regen after db:push) via
+  scripts/dev-supervisor.sh durable pattern; all mini-services up (3000/3003/3005).

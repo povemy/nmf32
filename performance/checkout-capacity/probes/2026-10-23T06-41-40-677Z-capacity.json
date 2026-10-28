@@ -1,0 +1,96 @@
+{
+  "capturedAt": "2026-10-23T06:41:39.796Z",
+  "app": {
+    "framework": "Next.js 16 (App Router, dev mode via Turbopack)",
+    "prismaClient": "6.11.x (package.json ^6.11.1)",
+    "poolLimit": "connection_limit=10, connect_timeout=10 (datasource URL, .env)",
+    "poolerMode": "Supavisor SESSION pooling (port 5432, sslmode=require)",
+    "instances": "1 (sandbox adaptation, worklog.md)"
+  },
+  "pgVersion": "PostgreSQL 17.11 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit",
+  "pgSettings": [
+    {
+      "name": "max_connections",
+      "setting": "60",
+      "unit": null
+    },
+    {
+      "name": "reserved_connections",
+      "setting": "0",
+      "unit": null
+    },
+    {
+      "name": "shared_buffers",
+      "setting": "28672",
+      "unit": "8kB"
+    },
+    {
+      "name": "superuser_reserved_connections",
+      "setting": "3",
+      "unit": null
+    },
+    {
+      "name": "work_mem",
+      "setting": "2184",
+      "unit": "kB"
+    }
+  ],
+  "pgStatActivity": {
+    "byState": [
+      {
+        "state": "idle",
+        "n": 16
+      },
+      {
+        "state": null,
+        "n": 1
+      }
+    ],
+    "total": 17,
+    "byApp": [
+      {
+        "application_name": "Supavisor",
+        "usename": "postgres",
+        "n": 10
+      },
+      {
+        "application_name": "",
+        "usename": "supabase_admin",
+        "n": 1
+      },
+      {
+        "application_name": "pg_cron scheduler",
+        "usename": "supabase_admin",
+        "n": 1
+      },
+      {
+        "application_name": "pg_net 0.20.4",
+        "usename": "postgres",
+        "n": 1
+      },
+      {
+        "application_name": "postgres_exporter",
+        "usename": "supabase_admin",
+        "n": 1
+      },
+      {
+        "application_name": "PostgREST 14.18",
+        "usename": "authenticator",
+        "n": 1
+      },
+      {
+        "application_name": "",
+        "usename": "pgbouncer",
+        "n": 1
+      },
+      {
+        "application_name": "Supavisor (auth_query)",
+        "usename": "pgbouncer",
+        "n": 1
+      }
+    ]
+  },
+  "SHOW_POOLS": "UNAVAILABLE: PrismaClientKnownRequestError: \nInvalid `prisma.$queryRawUnsafe()` invocation:\n\n\nRaw query failed. Code: `42704`. Message: `ERROR: unrecognized configuration parameter \"pools\"`",
+  "SHOW_CLIENTS": "UNAVAILABLE: PrismaClientKnownRequestError: \nInvalid `prisma.$queryRawUnsafe()` invocation:\n\n\nRaw query failed. Code: `42704`. Message: `ERROR: unrecognized configuration parameter \"clients\"`",
+  "SHOW_SERVERS": "UNAVAILABLE: PrismaClientKnownRequestError: \nInvalid `prisma.$queryRawUnsafe()` invocation:\n\n\nRaw query failed. Code: `42704`. Message: `ERROR: unrecognized configuration parameter \"servers\"`"
+}

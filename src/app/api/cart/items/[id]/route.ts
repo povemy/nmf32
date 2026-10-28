@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { findCartForShopper, shapeCart } from "../../cart";
+import { trackRemoveFromCart } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,15 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
 
   if (hasQty && qty === 0) {
     await db.cartItem.delete({ where: { id: item.id } });
+    // Seller Insights — remove_from_cart (qty → 0 removes the whole line).
+    await trackRemoveFromCart({
+      storeId: item.variant.product.storeId,
+      productId: item.variant.productId,
+      variantId: item.variantId,
+      cartItemId: item.id,
+      qty: item.qty,
+      shopperId: me.id,
+    });
   } else {
     if (hasQty && qty > item.variant.stock) {
       throw new ApiError(409, "OUT_OF_STOCK", `Only ${item.variant.stock} in stock`);
@@ -66,6 +76,15 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const item = await requireShopperCartItem(cart?.id ?? null, id);
 
   await db.cartItem.delete({ where: { id: item.id } });
+  // Seller Insights — remove_from_cart (explicit line removal).
+  await trackRemoveFromCart({
+    storeId: item.variant.product.storeId,
+    productId: item.variant.productId,
+    variantId: item.variantId,
+    cartItemId: item.id,
+    qty: item.qty,
+    shopperId: me.id,
+  });
 
   const fresh = await findCartForShopper(me.id);
   return ok({ cart: shapeCart(fresh) });

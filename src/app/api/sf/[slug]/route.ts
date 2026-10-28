@@ -2,11 +2,12 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { parsePageDoc, parseTheme } from "@/lib/sections";
 import { parseSocial, cardStyleFor } from "../../_shared/product-card";
+import { trackStoreView } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/sf/[slug] — public storefront home (published page + theme + store info).
-export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const { slug } = await ctx.params;
   const store = await db.store.findUnique({ where: { slug } });
   if (!store || store.status !== "live") {
@@ -18,6 +19,11 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   if (!home || !home.publishedJson) {
     throw new ApiError(404, "STORE_NOT_PUBLISHED", "Storefront has no published home page");
   }
+
+  // Seller Insights — store_view (once per session per store per hour; awaited so
+  // the pseudonymous identity cookie lands on THIS response; enqueue itself is
+  // synchronous — the DB write happens in a background batch flush).
+  await trackStoreView(req, store.id);
 
   const doc = parsePageDoc(home.publishedJson);
   const followers = await db.storeFollow.count({ where: { storeId: store.id } }); // Task 10-d

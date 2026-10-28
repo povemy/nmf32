@@ -21,6 +21,7 @@ import {
 } from "./ui-bits";
 import OnboardingWizard from "./onboarding";
 import SellerDashboard from "./dashboard";
+import SellerInsights from "./insights";
 import SellerProducts from "./products";
 import SellerOrders from "./orders";
 import SellerMessages from "./messages";
@@ -51,6 +52,7 @@ import {
   BadgePercent,
   Bell,
   Blocks,
+  ChartColumn,
   Clock3,
   DatabaseZap,
   ExternalLink,
@@ -76,6 +78,7 @@ import {
 
 const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "insights", label: "Insights", icon: ChartColumn },
   { key: "imports", label: "Imports & Publish", icon: DatabaseZap },
   { key: "products", label: "Products", icon: Package },
   { key: "orders", label: "Orders", icon: ShoppingCart },
@@ -293,6 +296,7 @@ export default function SellerShell() {
             className="mx-auto w-full max-w-6xl p-4 sm:p-6"
           >
             {nav.view === "dashboard" && <SellerDashboard onNavigate={navigate} />}
+            {nav.view === "insights" && <SellerInsights onNavigate={navigate} />}
             {nav.view === "imports" && <SellerImports onNavigate={navigate} />}
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}

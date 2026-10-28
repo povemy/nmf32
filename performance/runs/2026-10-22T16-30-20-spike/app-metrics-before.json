@@ -1,0 +1,1039 @@
+{
+  "data": {
+    "ts": "2026-10-22T16:30:20.509Z",
+    "uptimeSec": 578,
+    "process": {
+      "pid": 14689,
+      "nodeVersion": "v24.21.0",
+      "rssMb": 1956.4,
+      "heapUsedMb": 208,
+      "heapTotalMb": 288.1,
+      "fdCount": 57,
+      "fdLimit": 100000
+    },
+    "eventLoopLag": {
+      "lastMs": 0,
+      "p95Ms": 1,
+      "maxMs": 12,
+      "samples": 256
+    },
+    "memoryTrend": {
+      "rssDeltaMb60s": -89.4,
+      "samples": 60
+    },
+    "inFlight": {
+      "now": 0,
+      "max": 442
+    },
+    "totals": {
+      "requests": 1929,
+      "errors": 34,
+      "errorRate": 1.76,
+      "startedAt": "2026-10-22T16:20:52.175Z"
+    },
+    "routes": [
+      {
+        "label": "GET /api/chat/unread",
+        "count": 80,
+        "avgMs": 765,
+        "minMs": 113.9,
+        "maxMs": 12967.6,
+        "p50": 200,
+        "p90": 1600,
+        "p95": 3200,
+        "p99": 12968,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 60687.4,
+        "dbCountTotal": 240,
+        "dbAvgMsPerReq": 252.9,
+        "byStatus": {
+          "200": 80
+        }
+      },
+      {
+        "label": "GET /api/auth/me",
+        "count": 1,
+        "avgMs": 135.5,
+        "minMs": 135.5,
+        "maxMs": 135.5,
+        "p50": 200,
+        "p90": 200,
+        "p95": 200,
+        "p99": 200,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 132.6,
+        "dbCountTotal": 3,
+        "dbAvgMsPerReq": 44.2,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/notifications/unread",
+        "count": 19,
+        "avgMs": 622.8,
+        "minMs": 114.8,
+        "maxMs": 5686.6,
+        "p50": 400,
+        "p90": 3200,
+        "p95": 6400,
+        "p99": 6400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 11552.2,
+        "dbCountTotal": 57,
+        "dbAvgMsPerReq": 202.7,
+        "byStatus": {
+          "200": 19
+        }
+      },
+      {
+        "label": "GET /api/me/orders",
+        "count": 1,
+        "avgMs": 784.2,
+        "minMs": 784.2,
+        "maxMs": 784.2,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1106.4,
+        "dbCountTotal": 7,
+        "dbAvgMsPerReq": 158.1,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/activity",
+        "count": 2,
+        "avgMs": 861.3,
+        "minMs": 791.8,
+        "maxMs": 930.8,
+        "p50": 800,
+        "p90": 1600,
+        "p95": 1600,
+        "p99": 1600,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 2,
+        "inFlight": 0,
+        "dbMsTotal": 1812.6,
+        "dbCountTotal": 8,
+        "dbAvgMsPerReq": 226.6,
+        "byStatus": {
+          "200": 2
+        }
+      },
+      {
+        "label": "GET /api/me/wallet",
+        "count": 1,
+        "avgMs": 597.1,
+        "minMs": 597.1,
+        "maxMs": 597.1,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 661.7,
+        "dbCountTotal": 4,
+        "dbAvgMsPerReq": 165.4,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/me/profile",
+        "count": 1,
+        "avgMs": 729.3,
+        "minMs": 729.3,
+        "maxMs": 729.3,
+        "p50": 800,
+        "p90": 800,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1133.3,
+        "dbCountTotal": 5,
+        "dbAvgMsPerReq": 226.7,
+        "byStatus": {
+          "200": 1
+        }
+      },
+      {
+        "label": "GET /api/cart",
+        "count": 22,
+        "avgMs": 815.6,
+        "minMs": 116.3,
+        "maxMs": 2075.2,
+        "p50": 800,
+        "p90": 3200,
+        "p95": 3200,
+        "p99": 3200,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 4,
+        "inFlight": 0,
+        "dbMsTotal": 17890.9,
+        "dbCountTotal": 44,
+        "dbAvgMsPerReq": 406.6,
+        "byStatus": {
+          "200": 22
+        }
+      },
+      {
+        "label": "GET /api/market/home",
+        "count": 136,
+        "avgMs": 1728.4,
+        "minMs": 253.4,
+        "maxMs": 9137.8,
+        "p50": 1600,
+        "p90": 3200,
+        "p95": 12800,
+        "p99": 12800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 18,
+        "inFlight": 0,
+        "dbMsTotal": 721087.1,
+        "dbCountTotal": 816,
+        "dbAvgMsPerReq": 883.7,
+        "byStatus": {
+          "200": 136
+        }
+      },
+      {
+        "label": "GET /api/campaigns/active",
+        "count": 11,
+        "avgMs": 104.8,
+        "minMs": 0.2,
+        "maxMs": 721.1,
+        "p50": 2,
+        "p90": 200,
+        "p95": 800,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1147.1,
+        "dbCountTotal": 5,
+        "dbAvgMsPerReq": 229.4,
+        "byStatus": {
+          "200": 11
+        }
+      },
+      {
+        "label": "GET /api/settings/site",
+        "count": 2,
+        "avgMs": 55.5,
+        "minMs": 37.5,
+        "maxMs": 73.4,
+        "p50": 50,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 108.9,
+        "dbCountTotal": 2,
+        "dbAvgMsPerReq": 54.5,
+        "byStatus": {
+          "200": 2
+        }
+      },
+      {
+        "label": "GET /api/market/products",
+        "count": 200,
+        "avgMs": 1262.5,
+        "minMs": 223.2,
+        "maxMs": 5007.9,
+        "p50": 1600,
+        "p90": 6400,
+        "p95": 6400,
+        "p99": 6400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 20,
+        "inFlight": 0,
+        "dbMsTotal": 473372.5,
+        "dbCountTotal": 400,
+        "dbAvgMsPerReq": 1183.4,
+        "byStatus": {
+          "200": 200
+        }
+      },
+      {
+        "label": "GET /api/market/search/suggest",
+        "count": 50,
+        "avgMs": 878.7,
+        "minMs": 226.7,
+        "maxMs": 4138.8,
+        "p50": 800,
+        "p90": 1600,
+        "p95": 3200,
+        "p99": 6400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 5,
+        "inFlight": 0,
+        "dbMsTotal": 77257.6,
+        "dbCountTotal": 100,
+        "dbAvgMsPerReq": 772.6,
+        "byStatus": {
+          "200": 50
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store",
+        "count": 6,
+        "avgMs": 252.9,
+        "minMs": 226.2,
+        "maxMs": 303.8,
+        "p50": 400,
+        "p90": 400,
+        "p95": 400,
+        "p99": 400,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 1496,
+        "dbCountTotal": 24,
+        "dbAvgMsPerReq": 62.3,
+        "byStatus": {
+          "200": 6
+        }
+      },
+      {
+        "label": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+        "count": 599,
+        "avgMs": 6709.9,
+        "minMs": 476.3,
+        "maxMs": 16507.4,
+        "p50": 3200,
+        "p90": 16507,
+        "p95": 16507,
+        "p99": 16507,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 233,
+        "inFlight": 0,
+        "dbMsTotal": 4018087.3,
+        "dbCountTotal": 2396,
+        "dbAvgMsPerReq": 1677,
+        "byStatus": {
+          "200": 599
+        }
+      },
+      {
+        "label": "POST /api/auth/shopper/login",
+        "count": 382,
+        "avgMs": 9685.1,
+        "minMs": 0.6,
+        "maxMs": 22331.1,
+        "p50": 6400,
+        "p90": 22331,
+        "p95": 22331,
+        "p99": 22331,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 162,
+        "inFlight": 0,
+        "dbMsTotal": 3681152.2,
+        "dbCountTotal": 2667,
+        "dbAvgMsPerReq": 1380.3,
+        "byStatus": {
+          "200": 381,
+          "400": 1
+        }
+      },
+      {
+        "label": "POST /api/cart/items",
+        "count": 193,
+        "avgMs": 1937.9,
+        "minMs": 519.6,
+        "maxMs": 20537.9,
+        "p50": 800,
+        "p90": 6400,
+        "p95": 12800,
+        "p99": 20538,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 15,
+        "inFlight": 0,
+        "dbMsTotal": 372165.5,
+        "dbCountTotal": 1116,
+        "dbAvgMsPerReq": 333.5,
+        "byStatus": {
+          "201": 181,
+          "400": 12
+        }
+      },
+      {
+        "label": "POST /api/checkout/create",
+        "count": 89,
+        "avgMs": 2874.5,
+        "minMs": 1380.9,
+        "maxMs": 27707.9,
+        "p50": 3200,
+        "p90": 3200,
+        "p95": 12800,
+        "p99": 27708,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 5,
+        "inFlight": 0,
+        "dbMsTotal": 246248.5,
+        "dbCountTotal": 2248,
+        "dbAvgMsPerReq": 109.5,
+        "byStatus": {
+          "201": 86,
+          "400": 3
+        }
+      },
+      {
+        "label": "POST /api/checkout/payments/:id/simulate",
+        "count": 84,
+        "avgMs": 2238.8,
+        "minMs": 1401.9,
+        "maxMs": 3678.9,
+        "p50": 3200,
+        "p90": 3200,
+        "p95": 3200,
+        "p99": 6400,
+        "errors": 34,
+        "lastErrorAt": null,
+        "maxInFlight": 5,
+        "inFlight": 0,
+        "dbMsTotal": 152862.9,
+        "dbCountTotal": 1662,
+        "dbAvgMsPerReq": 92,
+        "byStatus": {
+          "200": 50,
+          "500": 34
+        }
+      },
+      {
+        "label": "GET /api/checkout/payments/:id",
+        "count": 50,
+        "avgMs": 170.3,
+        "minMs": 113.8,
+        "maxMs": 601.9,
+        "p50": 200,
+        "p90": 400,
+        "p95": 400,
+        "p99": 800,
+        "errors": 0,
+        "lastErrorAt": null,
+        "maxInFlight": 1,
+        "inFlight": 0,
+        "dbMsTotal": 8473.4,
+        "dbCountTotal": 50,
+        "dbAvgMsPerReq": 169.5,
+        "byStatus": {
+          "200": 50
+        }
+      }
+    ],
+    "db": {
+      "note": "prisma-observed op durations (client side, includes network + pool wait); PG server exec time comes from pg_stat_statements probes",
+      "aggregates": [
+        {
+          "key": "Product.findFirst",
+          "count": 599,
+          "avgMs": 1815.9,
+          "maxMs": 4965.6,
+          "errors": 0
+        },
+        {
+          "key": "Session.create",
+          "count": 381,
+          "avgMs": 1769.3,
+          "maxMs": 4775.1,
+          "errors": 0
+        },
+        {
+          "key": "Order.updateMany",
+          "count": 381,
+          "avgMs": 1685.5,
+          "maxMs": 4775.4,
+          "errors": 0
+        },
+        {
+          "key": "Product.findMany",
+          "count": 985,
+          "avgMs": 1600.8,
+          "maxMs": 5007.4,
+          "errors": 0
+        },
+        {
+          "key": "ShopperUser.update",
+          "count": 381,
+          "avgMs": 1584.3,
+          "maxMs": 4721,
+          "errors": 0
+        },
+        {
+          "key": "ProductCardStyle.findUnique",
+          "count": 605,
+          "avgMs": 1507.6,
+          "maxMs": 4786.9,
+          "errors": 0
+        },
+        {
+          "key": "Store.findUnique",
+          "count": 605,
+          "avgMs": 1442.5,
+          "maxMs": 5013.2,
+          "errors": 0
+        },
+        {
+          "key": "Address.findMany",
+          "count": 381,
+          "avgMs": 1277.3,
+          "maxMs": 4729.3,
+          "errors": 0
+        },
+        {
+          "key": "Product.count",
+          "count": 200,
+          "avgMs": 1105.1,
+          "maxMs": 5007.4,
+          "errors": 0
+        },
+        {
+          "key": "FeaturedSlot.findMany",
+          "count": 136,
+          "avgMs": 1037.4,
+          "maxMs": 4745.9,
+          "errors": 0
+        },
+        {
+          "key": "Address.findFirst",
+          "count": 381,
+          "avgMs": 1011,
+          "maxMs": 4662.6,
+          "errors": 0
+        },
+        {
+          "key": "ShopperUser.findUnique",
+          "count": 769,
+          "avgMs": 890.1,
+          "maxMs": 4937.7,
+          "errors": 0
+        },
+        {
+          "key": "Category.findMany",
+          "count": 136,
+          "avgMs": 827,
+          "maxMs": 4745.8,
+          "errors": 0
+        },
+        {
+          "key": "MarketplaceBanner.findMany",
+          "count": 136,
+          "avgMs": 772,
+          "maxMs": 4745.7,
+          "errors": 0
+        },
+        {
+          "key": "ActivityLog.create",
+          "count": 517,
+          "avgMs": 632.7,
+          "maxMs": 4674.5,
+          "errors": 0
+        },
+        {
+          "key": "Store.findMany",
+          "count": 272,
+          "avgMs": 606.1,
+          "maxMs": 4614.1,
+          "errors": 0
+        },
+        {
+          "key": "Setting.findUnique",
+          "count": 188,
+          "avgMs": 596.2,
+          "maxMs": 4746.3,
+          "errors": 0
+        },
+        {
+          "key": "UserActivity.findMany",
+          "count": 2,
+          "avgMs": 410.1,
+          "maxMs": 488.4,
+          "errors": 0
+        },
+        {
+          "key": "Address.count",
+          "count": 1,
+          "avgMs": 366,
+          "maxMs": 366,
+          "errors": 0
+        },
+        {
+          "key": "Cart.findUnique",
+          "count": 473,
+          "avgMs": 365,
+          "maxMs": 4536.3,
+          "errors": 0
+        },
+        {
+          "key": "Order.groupBy",
+          "count": 1,
+          "avgMs": 348.8,
+          "maxMs": 348.8,
+          "errors": 0
+        },
+        {
+          "key": "Session.findUnique",
+          "count": 410,
+          "avgMs": 306.2,
+          "maxMs": 4475.8,
+          "errors": 0
+        },
+        {
+          "key": "CartItem.update",
+          "count": 132,
+          "avgMs": 253.9,
+          "maxMs": 4553.3,
+          "errors": 0
+        },
+        {
+          "key": "Campaign.findFirst",
+          "count": 5,
+          "avgMs": 229.4,
+          "maxMs": 720.5,
+          "errors": 0
+        },
+        {
+          "key": "ProductVariant.findMany",
+          "count": 86,
+          "avgMs": 217.9,
+          "maxMs": 3483.6,
+          "errors": 0
+        },
+        {
+          "key": "ChatThread.aggregate",
+          "count": 80,
+          "avgMs": 213.3,
+          "maxMs": 4432.6,
+          "errors": 0
+        },
+        {
+          "key": "LedgerTransaction.create",
+          "count": 84,
+          "avgMs": 208.8,
+          "maxMs": 603.4,
+          "errors": 0
+        },
+        {
+          "key": "PaymentGroup.findUnique",
+          "count": 307,
+          "avgMs": 192.5,
+          "maxMs": 4566.6,
+          "errors": 0
+        },
+        {
+          "key": "ProductVariant.findUnique",
+          "count": 267,
+          "avgMs": 185.1,
+          "maxMs": 3639.1,
+          "errors": 0
+        },
+        {
+          "key": "Order.findUnique",
+          "count": 173,
+          "avgMs": 147.3,
+          "maxMs": 4693.8,
+          "errors": 0
+        }
+      ],
+      "slowRing": [
+        {
+          "model": "ActivityLog",
+          "op": "create",
+          "ms": 206.2,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T16:28:57.645Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 445.4,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:28:57.675Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 423.3,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:57.688Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 405.2,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:57.698Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 219.7,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:28:57.710Z"
+        },
+        {
+          "model": "ActivityLog",
+          "op": "create",
+          "ms": 198.6,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T16:28:57.719Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 419,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:57.758Z"
+        },
+        {
+          "model": "Product",
+          "op": "count",
+          "ms": 214.4,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:28:57.764Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 395,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:57.794Z"
+        },
+        {
+          "model": "ProductCardStyle",
+          "op": "findUnique",
+          "ms": 197.3,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:57.797Z"
+        },
+        {
+          "model": "ActivityLog",
+          "op": "create",
+          "ms": 185.2,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T16:28:57.801Z"
+        },
+        {
+          "model": "Cart",
+          "op": "create",
+          "ms": 217.2,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:57.815Z"
+        },
+        {
+          "model": "Address",
+          "op": "findFirst",
+          "ms": 193.5,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T16:28:57.830Z"
+        },
+        {
+          "model": "MarketplaceBanner",
+          "op": "findMany",
+          "ms": 186.1,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.837Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 427.1,
+          "route": "GET /api/market/search/suggest",
+          "ts": "2026-10-22T16:28:57.843Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 361.4,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:28:57.852Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 391.2,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:57.861Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 214.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.866Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 221.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.873Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 376.6,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:57.889Z"
+        },
+        {
+          "model": "CartItem",
+          "op": "update",
+          "ms": 144.4,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:57.903Z"
+        },
+        {
+          "model": "MarketplaceBanner",
+          "op": "findMany",
+          "ms": 101.8,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.909Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 368.8,
+          "route": "GET /api/market/products",
+          "ts": "2026-10-22T16:28:57.918Z"
+        },
+        {
+          "model": "Store",
+          "op": "findMany",
+          "ms": 218.7,
+          "route": "GET /api/market/search/suggest",
+          "ts": "2026-10-22T16:28:57.943Z"
+        },
+        {
+          "model": "Setting",
+          "op": "findUnique",
+          "ms": 137.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.945Z"
+        },
+        {
+          "model": "Product",
+          "op": "findFirst",
+          "ms": 367.3,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:57.964Z"
+        },
+        {
+          "model": "Category",
+          "op": "findMany",
+          "ms": 164.1,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:57.971Z"
+        },
+        {
+          "model": "ActivityLog",
+          "op": "create",
+          "ms": 151.1,
+          "route": "POST /api/auth/shopper/login",
+          "ts": "2026-10-22T16:28:57.982Z"
+        },
+        {
+          "model": "Store",
+          "op": "findMany",
+          "ms": 139.9,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.006Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 145.3,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:58.012Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 209.6,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.025Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 388.2,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.040Z"
+        },
+        {
+          "model": "Store",
+          "op": "findMany",
+          "ms": 107.8,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.053Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 363.1,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:58.061Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 343,
+          "route": "GET /api/market/search/suggest",
+          "ts": "2026-10-22T16:28:58.067Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 428.5,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.080Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 283.7,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.091Z"
+        },
+        {
+          "model": "CartItem",
+          "op": "create",
+          "ms": 123.1,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.148Z"
+        },
+        {
+          "model": "FeaturedSlot",
+          "op": "findMany",
+          "ms": 355.8,
+          "route": "GET /api/market/home",
+          "ts": "2026-10-22T16:28:58.163Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 275.4,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:58.165Z"
+        },
+        {
+          "model": "Product",
+          "op": "findMany",
+          "ms": 270.8,
+          "route": "GET /api/sf/lt-main-store/products/lt-flash-perf-item",
+          "ts": "2026-10-22T16:28:58.235Z"
+        },
+        {
+          "model": "ProductVariant",
+          "op": "findUnique",
+          "ms": 129.5,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.256Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 355.9,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.259Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 283.7,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:58.296Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 256.1,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.405Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 254.7,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:58.564Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 257.1,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:58.713Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 259.8,
+          "route": "POST /api/cart/items",
+          "ts": "2026-10-22T16:28:58.737Z"
+        },
+        {
+          "model": "Cart",
+          "op": "findUnique",
+          "ms": 259.1,
+          "route": "GET /api/cart",
+          "ts": "2026-10-22T16:28:59.047Z"
+        },
+        {
+          "model": "Session",
+          "op": "findUnique",
+          "ms": 338.4,
+          "route": "GET /api/chat/unread",
+          "ts": "2026-10-22T16:29:55.172Z"
+        }
+      ]
+    },
+    "prismaMetrics": {
+      "available": true,
+      "pool": {
+        "active_queries": 0,
+        "prisma_pool_connections_busy": 0,
+        "prisma_pool_connections_idle": 10,
+        "prisma_pool_connections_open": 10
+      },
+      "waitP95Ms": null,
+      "waitMaxMs": null
+    }
+  }
+}

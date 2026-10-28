@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { productCardInclude, toProductCard, minVariant, cardStyleFor, type ProductWithRelations } from "../../../../_shared/product-card";
+import { trackProductView } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/sf/[slug]/products/[pSlug] — full product detail page payload.
-export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
   const { slug, pSlug } = await ctx.params;
 
   const store = await db.store.findUnique({ where: { slug } });
@@ -19,6 +20,11 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     },
   });
   if (!product || product.status !== "active") throw new ApiError(404, "PRODUCT_NOT_FOUND", "Product not found");
+
+  // Seller Insights — product_view (once per session per product per hour).
+  // Only THIS route counts: catalogue grids and the related-products payload below
+  // are not product views.
+  await trackProductView(req, store.id, product.id);
 
   const related = await db.product.findMany({
     where: { storeId: store.id, status: "active", id: { not: product.id } },

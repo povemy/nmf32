@@ -191,3 +191,76 @@ password re-prompt; (3) advise what to check/do next on the platform.
 - Test-control keys (recon.fault, lt.seed.state) stay hidden from the friendly UI.
 - Regression: finance-regression + deployment-smoke must stay green afterwards; PASS/
   FAIL only for executed checks; browser-verify the golden paths before reporting done.
+
+---
+
+# ADDENDUM #7 — 2026-10-28 (Seller Store Insights + Sales & Market Insights — unified mission)
+
+Mission (trace 1a182c544c761a81): implement the combined Seller Store Insights spec
+AND the Sales & Market Insights addendum as ONE feature. Audit first (no code changes),
+produce a consolidated plan, then implement incrementally with tests per phase.
+
+## Ground rules (binding; inherited + additions)
+- Unified-scope rule: shared models/events/APIs/metric-definitions/authorization must be
+  designed once — no duplicated analytics infrastructure between the base spec and addendum.
+- Authoritative-data rule: purchase/refund/revenue metrics come ONLY from
+  Order/OrderItem/Refund/ledger records (paidAt, PAID_ORDER_STATUSES, processed refunds);
+  browser events are never authoritative for money. begin_checkout is derived from
+  Order.createdAt (authoritative), not a client event.
+- Analytics must never break checkout/payment/cart/refund paths: collection is
+  fire-and-forget via a bounded in-memory queue (drop-oldest, counted), never awaited on
+  the storefront hot path, never inside checkout transactions.
+- No new pool pressure: event writes batched via single createMany (skipDuplicates) flush;
+  dashboard queries bounded (indexes + paged + 30–60s globalThis TTL cache, `?fresh=1` bypass).
+- Schema changes ONLY additive via the established `db:push` workflow + row-count snapshots.
+- Privacy: pseudonymous first-party cookies only (visitor 365d / session 30-min sliding,
+  httpOnly, SameSite=None+Secure to match app cookie posture); NO IP, NO UA/fingerprinting,
+  referrer stored as host-only, no PII in event rows; shopperId only when authenticated.
+- Geo honesty: Order has NO country field today. Add `shippingCountryCode` snapshot at
+  checkout ("checkout" source). Historical backfill to 'MY' ONLY when the frozen
+  shippingAddressJson contains a 5-digit postcode + known MY state (source='backfill'),
+  else 'ZZ' Unspecified. Billing country: NOT RECORDED → dimension documented as
+  unavailable. Never infer country from IP.
+- Currency: single-currency MYR verified — no conversion logic; document the rule.
+- Authorization: every insights route uses requireActiveSellerStore(); storeId comes from
+  session, never client input; negative seller-A→seller-B tests mandatory.
+- Multi-vendor: metrics computed from OrderItem/ CartItem lines scoped to the seller's own
+  store; PaymentGroup totals never duplicated across sellers.
+- PASS/FAIL/NOT TESTED/BLOCKED labels only for executed tests; worklog appended per phase;
+  finance-regression + deployment-smoke must stay green; browser-verify before reporting done.
+- Deferred-with-justification: daily rollup tables NOT built (event volume does not justify
+  heavyweight infra; documented threshold + design note). Retention purge rides the
+  scheduler tick + `analytics.retention_days` setting.
+
+## Phase checklist
+- [x] P0 AUDIT (DONE — 4 parallel read-only agents): performance/seller-insights-audit.md
+- [x] P1 PLAN: consolidated implementation plan + API contract (agent-ctx/SI-PLAN.md)
+- [x] P2 SCHEMA: AnalyticsEvent + Order.shippingCountryCode/Source + additive indexes
+      (Order(storeId,paidAt), Order(paidAt), OrderItem(orderId), ProductVariant(productId),
+      CartItem(cartId)) via db:push; row-count snapshot before/after — IDENTICAL
+      (order 1051 / orderItem 1071 / cart 106 / cartItem 103 / productVariant 5106);
+      backfill executed 1051/1051 → MY/backfill (0 ZZ), idempotent re-run verified
+- [x] P3 COLLECTION: src/lib/analytics/* + instrumentation on sf/cart routes +
+      checkout-create country snapshot + backfill script + settings-registry keys +
+      /api/cron/analytics-tick + expiry-scheduler 3rd endpoint (service restarted,
+      ticking: analytics lastSuccessAt verified; scheduler holds 0 persistent DB conns)
+- [x] P4 QUERIES+API: queries.ts + 7 seller-scoped routes — live-verified with real
+      data; auth negatives 401 (unauth + invalid bearer)
+- [x] P5 UI: seller view 'insights' (1 919 lines) — browser-verified: all tabs,
+      window-switch refetch, drill-down Dialog, sorting/pagination, CSV export,
+      mobile 390px + desktop 1280px, zero console errors on clean reload; VLM review
+      "professional and polished, no visual glitches"
+- [x] P6 TESTS: scripts/readiness/seller-insights.ts — 56/56 ALL PASS (found + fixed a
+      real defect: shared rate-limit bucket mixed limits → export now separate bucket);
+      finance-regression 37/0 PASS; deployment-smoke 23/23 ALL PASS; remediation-live
+      ALL PASS on re-run (first run F1-c 14/15 = the documented P2034 storm flake,
+      money exactly-once both runs); browser golden path: storefront+PDP visit →
+      Insights showed 2 visits / 1 product view / authoritative RM174 sales
+- [x] P7 DOCS: metric-definitions.md + implementation-report.md + this checklist +
+      worklog appended
+
+## Prior-session note
+ADDENDUM #6 (Admin Settings form + Activity Log purge) was verified implemented in the
+current tree during this audit (settings-registry.ts with friendly fields + "Not wired"
+badges; /api/admin/activity-logs/purge with superadmin cap + scrypt password re-verify +
+batched delete). Not re-done; no duplication.

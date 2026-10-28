@@ -43,7 +43,7 @@ const ALERT_RING = 50;
 const STATE_FILE = `${import.meta.dir}/state.json`;
 const PROJECT_ENV = "/home/z/my-project/.env";
 
-type Kind = "expiry" | "refund";
+type Kind = "expiry" | "refund" | "analytics";
 type EndpointState = {
   lastTickAt: string | null;
   lastSuccessAt: string | null;
@@ -91,7 +91,7 @@ function freshState(): State {
     service: "expiry-scheduler",
     startedAt: new Date().toISOString(),
     intervalMs: INTERVAL_MS,
-    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint() },
+    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint() },
     alerts: [],
   };
 }
@@ -100,8 +100,16 @@ let state: State = freshState();
 try {
   const raw = JSON.parse(readFileSync(STATE_FILE, "utf8")) as State;
   if (raw && raw.endpoints && raw.endpoints.expiry && raw.endpoints.refund) {
-    // carry over durable fields; startedAt/interval reflect THIS process
-    state = { ...raw, service: "expiry-scheduler", startedAt: new Date().toISOString(), intervalMs: INTERVAL_MS, alerts: raw.alerts ?? [] };
+    // carry over durable fields; startedAt/interval reflect THIS process.
+    // analytics endpoint joined later — backfill a fresh state if absent.
+    state = {
+      ...raw,
+      service: "expiry-scheduler",
+      startedAt: new Date().toISOString(),
+      intervalMs: INTERVAL_MS,
+      alerts: raw.alerts ?? [],
+      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint() },
+    };
   }
 } catch {
   /* first boot (or unreadable state) — start fresh */
@@ -128,6 +136,7 @@ function alert(type: string, detail: string) {
 const ROUTES: Record<Kind, string> = {
   expiry: `${APP_BASE}/api/cron/expiry-sweep`,
   refund: `${APP_BASE}/api/cron/refund-reconcile`,
+  analytics: `${APP_BASE}/api/cron/analytics-tick`,
 };
 
 async function tick(kind: Kind) {
@@ -156,13 +165,15 @@ async function tick(kind: Kind) {
       if (kind === "expiry") {
         const backlog = Number(st.lastOutcome?.remainingBacklog ?? 0);
         if (backlog > BACKLOG_ALERT_THRESHOLD) alert("BACKLOG_HIGH", `expiry backlog ${backlog} > ${BACKLOG_ALERT_THRESHOLD}`);
-      } else {
+      } else if (kind === "refund") {
         const failed = Number(st.lastOutcome?.failed ?? 0);
         const unknown = Number(st.lastOutcome?.unknown ?? 0);
         if (failed + unknown >= REFUND_STUCK_ALERT_THRESHOLD) {
           alert("REFUND_STUCK", `refund cases failed=${failed} unknown=${unknown} — operator review (docs/late-payment-refund-runbook.md)`);
         }
       }
+      // analytics tick: no special alerting — outcome (purged/remaining/queue)
+      // is visible in lastOutcome + the tick records cron.analytics.last.
     }
   } catch (e) {
     st.consecutiveFailures++;
@@ -174,7 +185,7 @@ async function tick(kind: Kind) {
 
 function monitor() {
   const now = Date.now();
-  for (const kind of ["expiry", "refund"] as Kind[]) {
+  for (const kind of ["expiry", "refund", "analytics"] as Kind[]) {
     const st = state.endpoints[kind];
     if (st.lastSuccessAt) {
       const age = now - Date.parse(st.lastSuccessAt);
@@ -197,15 +208,18 @@ function monitor() {
       alert("MISSED_INTERVAL", `scheduler was down ~${Math.round(missedFor / 1000)}s (last success ${prev}) — catch-up tick starting now`);
       await tick("expiry");
       await tick("refund");
+      await tick("analytics");
     }
   } else {
     // First boot ever — establish the recurring invocation immediately.
     await tick("expiry");
     await tick("refund");
+    await tick("analytics");
   }
   setInterval(() => {
     tick("expiry");
     tick("refund");
+    tick("analytics");
     monitor();
     saveState();
   }, INTERVAL_MS);
@@ -223,7 +237,7 @@ Bun.serve({
           // persisted state copies (TS2783: duplicate-key overwrite warning)
           ...state,
           service: "expiry-scheduler",
-          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile",
+          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile + /api/cron/analytics-tick",
           appBase: APP_BASE,
           intervalMs: INTERVAL_MS,
           secretConfigured: Boolean(CRON_SECRET), // the secret itself is never exposed

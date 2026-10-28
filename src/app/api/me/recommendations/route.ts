@@ -13,7 +13,7 @@ const PAYLATER_MIN_MINOR = 10_000; // RM100+
 // boosted first; the rest of the feed fills with the most popular live products.
 // Supports ?sort=popular|sales|new and pagination (?page&size).
 export const GET = handle(async (req: Request) => {
-  await requireShopper();
+  const me = await requireShopper();
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url, 40);
   const sort = url.searchParams.get("sort") ?? "popular";
@@ -28,7 +28,10 @@ export const GET = handle(async (req: Request) => {
         : [{ ratingCount: "desc" as const }, { salesCount: "desc" as const }, { id: "asc" as const }];
 
   // Personalisation seeds — most recent 30 activities, categories + product ids.
+  // (Fixed: previously unscoped — every shopper's personalisation pulled the
+  // GLOBAL activity feed; now scoped to the authenticated shopper.)
   const acts = await db.userActivity.findMany({
+    where: { userId: me.id },
     orderBy: { createdAt: "desc" },
     take: 30,
     select: { productId: true, activityType: true, product: { select: { categoryId: true } } },

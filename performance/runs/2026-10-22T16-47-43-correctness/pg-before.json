@@ -1,0 +1,4 @@
+{
+  "ts": "2026-10-22T16:47:44.822Z",
+  "fatal": "JSON.stringify cannot serialize BigInt."
+}

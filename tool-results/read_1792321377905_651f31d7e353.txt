@@ -1,0 +1,585 @@
+     1→// ============================================================================
+     2→// FINANCIAL PRECISION TEST SUITE (M-FIN-1, POLICY P1) — pure unit verification
+     3→// ============================================================================
+     4→// User directive #5: automated tests for rounding boundaries, fractional-cent
+     5→// results, large transaction volumes, refunds, and split payments.
+     6→// Directive #3: no binary floating-point anywhere in payable math — every
+     7→// expectation below is computed with an INDEPENDENT BigInt oracle, never by
+     8→// calling the function under test twice.
+     9→//
+    10→// Run: bun scripts/fin-tests.ts   (exit 0 = all invariants hold)
+    11→// ============================================================================
+    12→import { strict as assert } from "node:assert";
+    13→import {
+    14→  bpsOf,
+    15→  divHalfUp,
+    16→  mulDivRoundHalfUp,
+    17→  allocateProportionally,
+    18→  parsePercentToBps,
+    19→  formatBps,
+    20→  formatMinor,
+    21→  toMinor,
+    22→  percentToBpsExact,
+    23→  minorToDecimalString,
+    24→  parseBpsRateInput,
+    25→  parsePercentRateInput,
+    26→  BPS_DENOM,
+    27→  BPS_PER_PERCENT_POINT,
+    28→  BPS_DECIMALS,
+    29→} from "../src/lib/money";
+    30→import { applyFeeHoliday } from "../src/lib/commission";
+    31→import {
+    32→  effectiveRateFromSnapshot,
+    33→  snapshotToCsv,
+    34→  SNAPSHOT_SCHEMA_VERSION,
+    35→} from "../src/lib/commission-export";
+    36→
+    37→let passed = 0;
+    38→let failed = 0;
+    39→const failures: string[] = [];
+    40→
+    41→function test(name: string, fn: () => void) {
+    42→  try {
+    43→    fn();
+    44→    passed += 1;
+    45→    console.log(`  ✓ ${name}`);
+    46→  } catch (e) {
+    47→    failed += 1;
+    48→    const msg = e instanceof Error ? e.message : String(e);
+    49→    failures.push(`${name}: ${msg}`);
+    50→    console.error(`  ✗ ${name}\n    ${msg}`);
+    51→  }
+    52→}
+    53→
+    54→/** INDEPENDENT ORACLE — exact (a × b) / d with ROUND_HALF_UP, pure BigInt. */
+    55→function oracleMulDivHalfUp(a: bigint, b: bigint, d: bigint): bigint {
+    56→  const p = a * b * 2n;
+    57→  return p >= 0n ? (p + d) / (2n * d) : -((-p + d) / (2n * d));
+    58→}
+    59→
+    60→/** Mulberry32 — deterministic PRNG so runs are reproducible. */
+    61→function rng(seed: number) {
+    62→  let t = seed >>> 0;
+    63→  return () => {
+    64→    t = (t + 0x6d2b79f5) >>> 0;
+    65→    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    66→    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    67→    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    68→  };
+    69→}
+    70→
+    71→// ===========================================================================
+    72→console.log("\n[1] ROUNDING BOUNDARIES — ROUND_HALF_UP at exact .5 sen edges");
+    73→// ===========================================================================
+    74→test("exact .5 sen rounds AWAY FROM ZERO (half-up): 1000 sen × 8.05% = 80.5 → 81", () => {
+    75→  assert.equal(bpsOf(1000, 805), 81);
+    76→  assert.equal(oracleMulDivHalfUp(1000n, 805n, 10000n), 81n);
+    77→});
+    78→test("exact .5 sen at 1 sen base: 1 × 50% = 0.5 → 1", () => {
+    79→  assert.equal(bpsOf(1, 5000), 1);
+    80→});
+    81→test("below .5 rounds down: 3 sen × 50% = 1.5 → 2 (half) · 1250 × 8.35% = 104.375 → 104", () => {
+    82→  assert.equal(bpsOf(3, 5000), 2);
+    83→  assert.equal(bpsOf(1250, 835), 104);
+    84→});
+    85→test("whole-percent exactness: 1234 sen × 8% = 98.72 → 99 (half-up on .72)", () => {
+    86→  assert.equal(bpsOf(1234, 800), 99);
+    87→  assert.equal(oracleMulDivHalfUp(1234n, 800n, 10000n), 99n);
+    88→});
+    89→test("exact product stays exact: 8900 × 8% = 712 (no rounding at all)", () => {
+    90→  assert.equal(bpsOf(8900, 800), 712);
+    91→});
+    92→test("10000 bps (100%) returns the base unchanged", () => {
+    93→  assert.equal(bpsOf(7777, BPS_DENOM), 7777);
+    94→});
+    95→test("zero base / zero rate → 0 (and negative base guarded to 0)", () => {
+    96→  assert.equal(bpsOf(0, 800), 0);
+    97→  assert.equal(bpsOf(5000, 0), 0);
+    98→  assert.equal(bpsOf(-5000, 800), 0);
+    99→});
+   100→test("divHalfUp sign symmetry: 2.5 → 3 and −2.5 → −3 (away from zero)", () => {
+   101→  assert.equal(divHalfUp(250, 100), 3);
+   102→  assert.equal(divHalfUp(-250, 100), -3);
+   103→});
+   104→test("Math.floor-trap regression: floor((a*2+b)/(b*2)) never mis-rounds at scale", () => {
+   105→  // 0.5 boundary products where naive float division would give x.4999999
+   106→  for (const [a, b, expected] of [
+   107→    [5, 10, 1], // 0.5
+   108→    [15, 10, 2], // 1.5
+   109→    [25, 10, 3], // 2.5
+   110→    [50005, 10000, 5], // 5.0005
+   111→    [74999, 10000, 7], // 7.4999 → 7
+   112→    [75001, 10000, 8], // 7.5001 → 8
+   113→  ] as const) {
+   114→    assert.equal(divHalfUp(a, b), expected, `divHalfUp(${a},${b})`);
+   115→  }
+   116→});
+   117→
+   118→// ===========================================================================
+   119→console.log("\n[2] FRACTIONAL-CENT RESULTS — 5,000 randomized cases vs BigInt oracle");
+   120→// ===========================================================================
+   121→test("bpsOf matches the exact-BigInt oracle on 5,000 random (base, bps) pairs", () => {
+   122→  const rand = rng(20261018);
+   123→  for (let i = 0; i < 5000; i++) {
+   124→    const base = 1 + Math.floor(rand() * 50_000_000); // up to RM 500,000.00
+   125→    const bps = 1 + Math.floor(rand() * (BPS_DENOM - 1));
+   126→    const got = bpsOf(base, bps);
+   127→    const expected = Number(oracleMulDivHalfUp(BigInt(base), BigInt(bps), BigInt(BPS_DENOM)));
+   128→    assert.equal(got, expected, `bpsOf(${base}, ${bps}) = ${got}, oracle says ${expected}`);
+   129→    // distance from the exact real value must be ≤ 0.5 sen
+   130→    const exactNum = (BigInt(base) * BigInt(bps) * 2n + BigInt(BPS_DENOM)) / (2n * BigInt(BPS_DENOM));
+   131→    void exactNum;
+   132→    assert.ok(got >= 0 && got <= base, "result within [0, base]");
+   133→  }
+   134→});
+   135→test("mulDivRoundHalfUp matches the oracle on arbitrary denominators", () => {
+   136→  const rand = rng(77);
+   137→  for (let i = 0; i < 2000; i++) {
+   138→    const a = 1 + Math.floor(rand() * 1_000_000_000);
+   139→    const b = 1 + Math.floor(rand() * 20_000);
+   140→    const d = 1 + Math.floor(rand() * 1_000_000);
+   141→    assert.equal(mulDivRoundHalfUp(a, b, d), Number(oracleMulDivHalfUp(BigInt(a), BigInt(b), BigInt(d))));
+   142→  }
+   143→});
+   144→
+   145→// ===========================================================================
+   146→console.log("\n[3] OVERFLOW SAFETY — BigInt path beyond Number.MAX_SAFE_INTEGER");
+   147→// ===========================================================================
+   148→test("base ≈ 8.5e15 sen (RM 85 trillion) × 99.99% never loses precision", () => {
+   149→  const base = 8_500_000_000_000_000;
+   150→  const bps = 9999;
+   151→  const got = bpsOf(base, bps);
+   152→  const expected = Number(oracleMulDivHalfUp(BigInt(base), BigInt(bps), 10000n));
+   153→  assert.equal(got, expected);
+   154→  assert.ok(Number.isSafeInteger(got), "result itself is a safe integer");
+   155→});
+   156→test("mulDivRoundHalfUp at MAX_SAFE_INTEGER operand (product ≈ 9e19)", () => {
+   157→  const a = Number.MAX_SAFE_INTEGER; // 9_007_199_254_740_991
+   158→  const b = 9999;
+   159→  const got = mulDivRoundHalfUp(a, b, 10_000);
+   160→  assert.equal(got, Number(oracleMulDivHalfUp(BigInt(a), BigInt(b), 10000n)));
+   161→});
+   162→test("non-integer / unsafe inputs are rejected loudly (MONEY_INT_VIOLATION)", () => {
+   163→  assert.throws(() => bpsOf(12.5, 800), /MONEY_INT_VIOLATION/);
+   164→  assert.throws(() => bpsOf(Number.MAX_SAFE_INTEGER + 1, 800), /MONEY_INT_VIOLATION/);
+   165→  assert.throws(() => mulDivRoundHalfUp(10, 0.1, 100), /MONEY_INT_VIOLATION/);
+   166→  assert.throws(() => mulDivRoundHalfUp(10, 5, 0), /division by zero/);
+   167→});
+   168→test("allocateProportionally with amount×weight ≈ 9e15 still splits exactly", () => {
+   169→  const amount = 4_000_000_000_000_000; // 4e15
+   170→  const parts = allocateProportionally(amount, [1_000_000_000, 999_999_999, 1]);
+   171→  assert.equal(parts.reduce((s, p) => s + p, 0), amount, "Σ parts ≡ amount at 4e15 scale");
+   172→});
+   173→
+   174→// ===========================================================================
+   175→console.log("\n[4] LARGE TRANSACTION VOLUMES — 10,000 allocations, Σ ≡ amount");
+   176→// ===========================================================================
+   177→test("10,000 randomized allocations: Σ parts ≡ amount, all parts ≥ 0, deterministic", () => {
+   178→  const rand = rng(424242);
+   179→  for (let i = 0; i < 10_000; i++) {
+   180→    const amount = Math.floor(rand() * 1_000_000_000);
+   181→    const n = 1 + Math.floor(rand() * 50);
+   182→    const weights = Array.from({ length: n }, () => Math.floor(rand() * 100_000));
+   183→    const parts = allocateProportionally(amount, weights);
+   184→    const sum = parts.reduce((s, p) => s + p, 0);
+   185→    assert.equal(sum, amount, `allocation #${i}: Σ=${sum} ≠ ${amount}`);
+   186→    assert.ok(parts.every((p) => p >= 0));
+   187→    // determinism
+   188→    const again = allocateProportionally(amount, weights);
+   189→    assert.deepEqual(again, parts);
+   190→  }
+   191→});
+   192→test("1,000,000 sen across 1,000 equal lines splits to exactly 1000 each", () => {
+   193→  const parts = allocateProportionally(1_000_000, Array.from({ length: 1000 }, () => 7));
+   194→  assert.deepEqual(parts.reduce((s, p) => s + p, 0), 1_000_000);
+   195→  assert.ok(parts.every((p) => p === 1000));
+   196→});
+   197→test("remainder cents go to the LARGEST lines (largest-remainder policy)", () => {
+   198→  // 100 sen over weights [50, 25, 25]: floor shares 50/25/25 exact; try 101
+   199→  const parts = allocateProportionally(101, [50, 25, 25]);
+   200→  assert.equal(parts[0], 51, "extra cent lands on the highest-weight line");
+   201→  assert.equal(parts.reduce((s, p) => s + p, 0), 101);
+   202→});
+   203→test("zero total weight / zero amount → all zeros (no NaN, no throw)", () => {
+   204→  assert.deepEqual(allocateProportionally(500, [0, 0, 0]), [0, 0, 0]);
+   205→  assert.deepEqual(allocateProportionally(0, [5, 5]), [0, 0]);
+   206→});
+   207→test("negative amount or negative weights are policy violations", () => {
+   208→  assert.throws(() => allocateProportionally(-1, [5, 5]), /MONEY_INT_VIOLATION/);
+   209→  assert.throws(() => allocateProportionally(100, [5, -5]), /MONEY_INT_VIOLATION/);
+   210→});
+   211→
+   212→// ===========================================================================
+   213→console.log("\n[5] REFUNDS — commission reversal + T5 ledger balance invariants");
+   214→// ===========================================================================
+   215→test("reversal = round_half_up(refund × frozen bps / 10,000); seller share never negative", () => {
+   216→  const rand = rng(9001);
+   217→  for (let i = 0; i < 3000; i++) {
+   218→    const refund = 1 + Math.floor(rand() * 5_000_000);
+   219→    const bps = Math.floor(rand() * (BPS_DENOM + 1));
+   220→    const reversal = bpsOf(refund, bps);
+   221→    const sellerShare = refund - reversal;
+   222→    assert.ok(reversal >= 0 && reversal <= refund, `reversal ${reversal} ∈ [0, ${refund}]`);
+   223→    assert.ok(sellerShare >= 0, "seller share never negative");
+   224→    // T5 ledger balance: DR sellerShare + DR reversal ≡ CR refund
+   225→    assert.equal(sellerShare + reversal, refund, "T5 debit sum ≡ credit");
+   226→  }
+   227→});
+   228→test("fee-holiday line (0 bps) reverses nothing: seller bears the full refund", () => {
+   229→  assert.equal(bpsOf(45_00, 0), 0);
+   230→});
+   231→test("full refund at 100% platform rate reverses everything", () => {
+   232→  assert.equal(bpsOf(12_345, BPS_DENOM), 12_345);
+   233→});
+   234→test("reversal precision bound: |reversal − refund×bps/10000| ≤ 0.5 sen", () => {
+   235→  const rand = rng(31337);
+   236→  for (let i = 0; i < 2000; i++) {
+   237→    const refund = 1 + Math.floor(rand() * 10_000_000);
+   238→    const bps = 1 + Math.floor(rand() * (BPS_DENOM - 1));
+   239→    const reversal = bpsOf(refund, bps);
+   240→    const exact = (BigInt(refund) * BigInt(bps)) / 10000n;
+   241→    const rem = (BigInt(refund) * BigInt(bps)) % 10000n;
+   242→    const lo = Number(exact);
+   243→    const hi = rem === 0n ? lo : lo + 1;
+   244→    assert.ok(reversal === lo || reversal === hi, `reversal ${reversal} not within one sen of exact ${lo}/${hi}`);
+   245→  }
+   246→});
+   247→
+   248→// ===========================================================================
+   249→console.log("\n[6] SPLIT PAYMENTS — Option B: Σ seller nets + Σ commission ≡ buyer total");
+   250→// ===========================================================================
+   251→test("3-seller cart, randomized: Σ(sellerNet) + Σ(commission) ≡ subtotal − discount + shipping", () => {
+   252→  const rand = rng(8080);
+   253→  for (let iter = 0; iter < 2000; iter++) {
+   254→    const sellers = 1 + Math.floor(rand() * 3);
+   255→    let subtotal = 0;
+   256→    const lines: { seller: number; lineSubtotal: number }[] = [];
+   257→    for (let s = 0; s < sellers; s++) {
+   258→      const nItems = 1 + Math.floor(rand() * 4);
+   259→      for (let j = 0; j < nItems; j++) {
+   260→        const unit = 100 + Math.floor(rand() * 50_000);
+   261→        const qty = 1 + Math.floor(rand() * 5);
+   262→        lines.push({ seller: s, lineSubtotal: unit * qty });
+   263→        subtotal += unit * qty;
+   264→      }
+   265→    }
+   266→    const discount = Math.floor(rand() * Math.floor(subtotal / 3));
+   267→    const shipping = Math.floor(rand() * 2_500) * sellers;
+   268→    const bps = 1 + Math.floor(rand() * (BPS_DENOM - 1));
+   269→
+   270→    // POLICY P1 pipeline (mirrors computeOrderCommissions): allocate, round once.
+   271→    const discounts = allocateProportionally(discount, lines.map((l) => l.lineSubtotal));
+   272→    const shippingAlloc = allocateProportionally(shipping, lines.map((l) => l.lineSubtotal));
+   273→    let commission = 0;
+   274→    let sellerNet = 0;
+   275→    for (let i = 0; i < lines.length; i++) {
+   276→      const base = lines[i].lineSubtotal - discounts[i];
+   277→      const c = bpsOf(base, bps);
+   278→      commission += c;
+   279→      sellerNet += base + shippingAlloc[i] - c;
+   280→    }
+   281→    const buyerTotal = subtotal - discount + shipping;
+   282→    assert.equal(
+   283→      sellerNet + commission,
+   284→      buyerTotal,
+   285→      `iter ${iter}: nets+commission ${sellerNet + commission} ≠ buyer total ${buyerTotal}`
+   286→    );
+   287→  }
+   288→});
+   289→test("min-commission floor bump moves money commission↔seller 1:1 (identity preserved)", () => {
+   290→  // base 1000 sen × 8% = 80; floor forces 200 → seller net drops by exactly 120
+   291→  let base = 1000;
+   292→  let commission = bpsOf(base, 800);
+   293→  const sellerNetBefore = base - commission;
+   294→  const floor = 200;
+   295→  const bump = floor - commission;
+   296→  commission += bump;
+   297→  const sellerNetAfter = base - commission;
+   298→  assert.equal(sellerNetBefore - sellerNetAfter, bump);
+   299→  assert.equal(commission, 200);
+   300→});
+   301→
+   302→// ===========================================================================
+   303→console.log("\n[7] INPUT & OUTPUT EXACTNESS — digit-exact parsing, integer rendering");
+   304→// ===========================================================================
+   305→test("parsePercentToBps is digit-exact: 8.35% → 835, 8.3% → 830, 0.01% → 1", () => {
+   306→  assert.equal(parsePercentToBps("8.35"), 835);
+   307→  assert.equal(parsePercentToBps("8.3"), 830);
+   308→  assert.equal(parsePercentToBps("8"), 800);
+   309→  assert.equal(parsePercentToBps("0.01"), 1);
+   310→  assert.equal(parsePercentToBps("100"), 10_000);
+   311→  assert.equal(parsePercentToBps("8.351"), null, ">2 decimals rejected by policy");
+   312→  assert.equal(parsePercentToBps("abc"), null);
+   313→  assert.equal(parsePercentToBps(""), null);
+   314→  assert.equal(parsePercentToBps(null), null);
+   315→  assert.equal(parsePercentToBps(8.35), 835, "number path uses exact decimal string form");
+   316→});
+   317→test("formatBps renders from integers without float division: 835 → \"8.35\"", () => {
+   318→  assert.equal(formatBps(835), "8.35");
+   319→  assert.equal(formatBps(800), "8.00");
+   320→  assert.equal(formatBps(0), "0.00");
+   321→  assert.equal(formatBps(7), "0.07");
+   322→  assert.equal(formatBps(-1234), "-12.34");
+   323→  assert.equal(formatBps(10_000), "100.00");
+   324→});
+   325→test("toMinor string path is digit-exact: \"12.50\" → 1250, \"0.3\" → 30", () => {
+   326→  assert.equal(toMinor("12.50"), 1250);
+   327→  assert.equal(toMinor("0.3"), 30);
+   328→  assert.equal(toMinor("999"), 99_900);
+   329→  assert.equal(toMinor("-4.20"), -420);
+   330→  assert.equal(toMinor(12.5), 1250);
+   331→});
+   332→test("percentToBpsExact flags sub-bps precision instead of silently rounding", () => {
+   333→  assert.deepEqual(percentToBpsExact(8.35), { bps: 835, lossy: false });
+   334→  assert.deepEqual(percentToBpsExact(8), { bps: 800, lossy: false });
+   335→  const lossy = percentToBpsExact(8.333);
+   336→  assert.equal(lossy.lossy, true, "8.333% cannot be represented at 0.01% scale — must be flagged");
+   337→});
+   338→test("formatMinor presentation: 123456 → \"RM 1,234.56\" (negative: sign before symbol)", () => {
+   339→  assert.equal(formatMinor(123456), "RM 1,234.56");
+   340→  assert.equal(formatMinor(-199), "-RM 1.99"); // pre-existing presentation format
+   341→});
+   342→
+   343→// ===========================================================================
+   344→console.log("\n[8] FLOAT-FREE GUARDRAIL — known float traps produce integer results");
+   345→// ===========================================================================
+   346→test("0.1 + 0.2 class traps: bpsOf never emits a float", () => {
+   347→  const rand = rng(606);
+   348→  for (let i = 0; i < 1000; i++) {
+   349→    const r = bpsOf(1 + Math.floor(rand() * 1e9), 1 + Math.floor(rand() * 9999));
+   350→    assert.ok(Number.isSafeInteger(r), `bpsOf returned ${r} — not a safe integer`);
+   351→  }
+   352→});
+   353→test("legacy commissionOf shim converts through bps and matches bpsOf", () => {
+   354→  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   355→  const { commissionOf } = require("../src/lib/money") as { commissionOf: (b: number, p: number) => number };
+   356→  assert.equal(commissionOf(8900, 8), bpsOf(8900, 800));
+   357→  assert.equal(commissionOf(1000, 8.05), bpsOf(1000, 805));
+   358→});
+   359→
+   360→// ===========================================================================
+   361→console.log("\n[9] FEE-HOLIDAY SEMANTICS (ISSUE A) — configured charged rate, clamped, auditable");
+   362→// ===========================================================================
+   363→test("no-holiday equivalence: holiday bps == normal bps applies unchanged, no flag", () => {
+   364→  const r = applyFeeHoliday(800, 800);
+   365→  assert.deepEqual(r, { applies: true, bps: 800, flags: [] });
+   366→});
+   367→test("zero-percent holiday (0 bps charged) = FULL fee holiday → commission 0", () => {
+   368→  const r = applyFeeHoliday(0, 800);
+   369→  assert.equal(r.applies, true);
+   370→  assert.equal(r.bps, 0);
+   371→  assert.equal(bpsOf(100_000, r.bps), 0, "RM 1,000.00 base → RM 0.00 commission");
+   372→});
+   373→test("partial holiday: holiday rate REPLACES the normal rate (500 bps of base, not 500 bps off)", () => {
+   374→  const r = applyFeeHoliday(500, 800);
+   375→  assert.deepEqual(r, { applies: true, bps: 500, flags: [] });
+   376→  // RM 100.00 base, normal 8% → RM 5.00 charged during a 5% holiday
+   377→  assert.equal(bpsOf(10_000, r.bps), 500);
+   378→});
+   379→test("holiday can NEVER raise commission: above-normal rates clamp to normal + flag", () => {
+   380→  const r = applyFeeHoliday(5_000, 800);
+   381→  assert.equal(r.applies, true);
+   382→  assert.equal(r.bps, 800);
+   383→  assert.ok(r.flags.includes("holiday_rate_above_normal"));
+   384→  const full = applyFeeHoliday(BPS_DENOM, 800);
+   385→  assert.equal(full.bps, 800, "100% holiday on an 8% seller clamps to 8%");
+   386→  assert.ok(full.flags.includes("holiday_rate_above_normal"));
+   387→});
+   388→test("invalid stored rates (<0, >10,000, non-integer) IGNORE the holiday — corrupt data never grants max waiver", () => {
+   389→  for (const bad of [-500, BPS_DENOM + 1, 500.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+   390→    const r = applyFeeHoliday(bad as number, 800);
+   391→    assert.equal(r.applies, false, `holiday ${bad} must not apply`);
+   392→    assert.equal(r.bps, 800, "normal chain applies");
+   393→    assert.ok(r.flags.some((f) => f.startsWith("invalid_fee_holiday_ignored")), `flag present for ${bad}`);
+   394→  }
+   395→});
+   396→test("boundary rounding under partial holidays: half-sen rounds AWAY FROM ZERO", () => {
+   397→  // 1000 sen × 5 bps = 0.5 sen → 1 sen (the single ROUND_HALF_UP point)
+   398→  assert.equal(bpsOf(1000, applyFeeHoliday(5, 800).bps), 1);
+   399→  // 999 sen × 5 bps = 0.4995 sen → 0
+   400→  assert.equal(bpsOf(999, applyFeeHoliday(5, 800).bps), 0);
+   401→});
+   402→test("refunds on holiday orders use the FROZEN holiday bps — T5 always balances", () => {
+   403→  const rand = rng(20261101);
+   404→  for (let i = 0; i < 2000; i++) {
+   405→    const refund = 1 + Math.floor(rand() * 2_000_000);
+   406→    const normal = Math.floor(rand() * (BPS_DENOM + 1));
+   407→    const holiday = Math.floor(rand() * (BPS_DENOM + 1));
+   408→    const applied = applyFeeHoliday(holiday, normal);
+   409→    const frozenBps = applied.applies ? applied.bps : normal; // ignored holiday → frozen normal
+   410→    const reversal = bpsOf(refund, frozenBps);
+   411→    const sellerShare = refund - reversal;
+   412→    assert.ok(reversal >= 0 && reversal <= refund);
+   413→    assert.equal(sellerShare + reversal, refund, "T5: DR seller share + DR reversal ≡ CR refund");
+   414→    if (frozenBps === 0) assert.equal(reversal, 0, "full-holiday order: platform reverses nothing, seller bears the refund");
+   415→  }
+   416→});
+   417→test("seller earnings + payout identity holds under any holiday: sellerNet ≡ base + shipping − commission", () => {
+   418→  const rand = rng(20261102);
+   419→  for (let i = 0; i < 2000; i++) {
+   420→    const base = 1 + Math.floor(rand() * 5_000_000);
+   421→    const shipping = Math.floor(rand() * 50_000);
+   422→    const normal = Math.floor(rand() * (BPS_DENOM + 1));
+   423→    const holiday = Math.floor(rand() * (BPS_DENOM + 1));
+   424→    const applied = applyFeeHoliday(holiday, normal);
+   425→    const bps = applied.applies ? applied.bps : normal;
+   426→    const commission = bpsOf(base, bps);
+   427→    const sellerNet = base + shipping - commission;
+   428→    assert.equal(sellerNet + commission, base + shipping, "earnings identity");
+   429→    assert.ok(commission <= bpsOf(base, normal) + 1, "holiday commission never exceeds normal (± half-sen rounding)");
+   430→  }
+   431→});
+   432→test("scale canary: BPS_DENOM is the single source (helpers derive, nothing hardcodes)", () => {
+   433→  assert.equal(BPS_DENOM, 10_000);
+   434→  assert.equal(BPS_PER_PERCENT_POINT, 100);
+   435→  assert.equal(BPS_DECIMALS, 2);
+   436→});
+   437→
+   438→// ===========================================================================
+   439→console.log("\n[10] LEGACY COMMISSION EXPORTS (ISSUE B) — explicit formats, byte-stable, no double conversion");
+   440→// ===========================================================================
+   441→type SnapshotLike = Parameters<typeof snapshotToCsv>[0];
+   442→const LEGACY_SNAPSHOT = {
+   443→  // Exact shape of the live pre-M-FIN-1 export row (CommissionExport cmvc52axb…).
+   444→  periodFrom: "2026-09-18T08:32:41.000Z",
+   445→  periodTo: "2026-10-17T08:32:42.000Z",
+   446→  generatedAt: "2026-10-17T08:32:42.191Z",
+   447→  createdByEmail: "admin@nomofee.io",
+   448→  summary: { commissionMinor: 20304, salesMinor: 279000, effectiveRatePct: 7.3, orderCount: 13, refundsReversalMinor: 405 },
+   449→  weekly: [] as unknown[],
+   450→  stores: [{ walletId: "w1", storeName: "Lumina Living", orderCount: 5, commissionMinor: 12000 }],
+   451→} as unknown as SnapshotLike;
+   452→test("legacy effectiveRatePct = 8.35 reads as 8.35% — label verbatim, bps equivalent 835 derived exactly ONCE", () => {
+   453→  const r = effectiveRateFromSnapshot({ summary: { effectiveRatePct: 8.35 } });
+   454→  assert.equal(r.format, "legacy_pct");
+   455→  assert.equal(r.label, "8.35");
+   456→  assert.equal(r.bpsEquivalent, 835);
+   457→  assert.equal(r.bps, null, "legacy record never pretends to carry bps");
+   458→});
+   459→test("new effectiveRateBps = 835 reads as 8.35% — identical human-readable output", () => {
+   460→  const r = effectiveRateFromSnapshot({ schemaVersion: 2, summary: { effectiveRateBps: 835 } });
+   461→  assert.equal(r.format, "bps");
+   462→  assert.equal(r.label, "8.35");
+   463→  assert.equal(r.bps, 835);
+   464→});
+   465→test("legacy 7.3% and v2 730 bps are numerically equivalent (no ×100/÷100 twice)", () => {
+   466→  const legacy = effectiveRateFromSnapshot({ summary: { effectiveRatePct: 7.3 } });
+   467→  const modern = effectiveRateFromSnapshot({ schemaVersion: SNAPSHOT_SCHEMA_VERSION, summary: { effectiveRateBps: 730 } });
+   468→  assert.equal(legacy.label, "7.3");
+   469→  assert.equal(modern.label, "7.30");
+   470→  assert.equal(Number(legacy.label), Number(modern.label), "same rate, era-appropriate rendering");
+   471→  assert.equal(legacy.bpsEquivalent, modern.bps);
+   472→});
+   473→test("zero and maximum rates export correctly in both eras", () => {
+   474→  assert.equal(effectiveRateFromSnapshot({ summary: { effectiveRatePct: 0 } }).label, "0");
+   475→  assert.equal(effectiveRateFromSnapshot({ schemaVersion: 2, summary: { effectiveRateBps: 0 } }).label, "0.00");
+   476→  assert.equal(effectiveRateFromSnapshot({ schemaVersion: 2, summary: { effectiveRateBps: 10_000 } }).label, "100.00");
+   477→});
+   478→test("malformed / ambiguous records produce explicit problems — never a fabricated 0", () => {
+   479→  const none = effectiveRateFromSnapshot({});
+   480→  assert.equal(none.format, "unknown");
+   481→  assert.equal(none.label, "RATE_FORMAT_UNKNOWN");
+   482→  assert.match(none.problem ?? "", /no effective-rate field/);
+   483→  const both = effectiveRateFromSnapshot({ summary: { effectiveRateBps: 835, effectiveRatePct: 8.35 } });
+   484→  assert.equal(both.format, "unknown");
+   485→  assert.match(both.problem ?? "", /ambiguous/);
+   486→  const badVersion = effectiveRateFromSnapshot({ schemaVersion: 3, summary: { effectiveRateBps: 835 } });
+   487→  assert.equal(badVersion.format, "unknown");
+   488→  assert.match(badVersion.problem ?? "", /schemaVersion/);
+   489→  const badBps = effectiveRateFromSnapshot({ schemaVersion: 2, summary: { effectiveRateBps: 730.5 } });
+   490→  assert.equal(badBps.format, "unknown");
+   491→  const badPct = effectiveRateFromSnapshot({ summary: { effectiveRatePct: -1 } });
+   492→  assert.equal(badPct.format, "unknown");
+   493→});
+   494→test("historical CSV rendering: legacy row renders EXACTLY as it did before this change (byte-stable)", () => {
+   495→  const csv1 = snapshotToCsv(LEGACY_SNAPSHOT);
+   496→  const csv2 = snapshotToCsv(LEGACY_SNAPSHOT);
+   497→  assert.equal(csv1, csv2, "repeated exports are byte-identical");
+   498→  assert.ok(csv1.includes("# effective_rate_pct,7.3\n"), `legacy percent verbatim: ${csv1.split("\n").find((l) => l.includes("effective_rate"))}`);
+   499→  assert.ok(csv1.includes("# total_commission_myr,203.04\n"));
+   500→  assert.ok(csv1.includes("# gross_sales_myr,2790.00\n"));
+   501→  assert.ok(csv1.includes("# refund_commission_reversals_myr,4.05\n"));
+   502→  assert.ok(csv1.includes("Lumina Living,5,120.00\n"));
+   503→});
+   504→test("v2 CSV rendering: canonical bps label + JSON round-trip stability", () => {
+   505→  const v2 = {
+   506→    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+   507→    ...LEGACY_SNAPSHOT,
+   508→    summary: { commissionMinor: 20304, salesMinor: 279000, effectiveRateBps: 730, orderCount: 13, refundsReversalMinor: 405 },
+   509→  } as unknown as SnapshotLike;
+   510→  const throughJson = JSON.parse(JSON.stringify(v2));
+   511→  assert.equal(snapshotToCsv(v2), snapshotToCsv(throughJson as SnapshotLike), "persist→read→render is stable");
+   512→  assert.ok(snapshotToCsv(v2).includes("# effective_rate_pct,7.30\n"));
+   513→});
+   514→test("CSV money rendering is float-free and byte-identical to the historical toFixed renderer", () => {
+   515→  const rand = rng(555);
+   516→  for (let i = 0; i < 5000; i++) {
+   517→    const minor = Math.floor(rand() * 100_000_000); // up to RM 1,000,000.00
+   518→    assert.equal(minorToDecimalString(minor), (minor / 100).toFixed(2), `parity at ${minor}`);
+   519→  }
+   520→  assert.equal(minorToDecimalString(0), "0.00");
+   521→  assert.equal(minorToDecimalString(5), "0.05");
+   522→  assert.equal(minorToDecimalString(-7), "-0.07");
+   523→  assert.equal(minorToDecimalString(123456789), "1234567.89");
+   524→  assert.throws(() => minorToDecimalString(12.5), /MONEY_INT_VIOLATION/);
+   525→});
+   526→
+   527→// ===========================================================================
+   528→console.log("\n[11] RATE PRECISION ENFORCEMENT (ISSUE C) — reject, never silently round");
+   529→// ===========================================================================
+   530→test("parseBpsRateInput: valid integers accepted (0, 835, 10,000), all other shapes rejected", () => {
+   531→  assert.deepEqual(parseBpsRateInput(835), { ok: true, value: 835, kind: "bps" });
+   532→  assert.deepEqual(parseBpsRateInput("835"), { ok: true, value: 835, kind: "bps" });
+   533→  assert.equal(parseBpsRateInput(0).ok, true);
+   534→  assert.equal(parseBpsRateInput(BPS_DENOM).value, BPS_DENOM);
+   535→  for (const bad of [835.5, -1, BPS_DENOM + 1, "NaN", "abc", Number.NaN, Number.POSITIVE_INFINITY, {}, true]) {
+   536→    const r = parseBpsRateInput(bad as unknown);
+   537→    assert.equal(r.ok, false, `${String(bad)} rejected`);
+   538→    if (!r.ok) assert.match(r.reason, /integer 0..10000 bps/);
+   539→  }
+   540→});
+   541→test("parseBpsRateInput absent/clear contract: undefined=absent, null|\"\"=explicit clear", () => {
+   542→  assert.deepEqual(parseBpsRateInput(undefined), { ok: true, value: undefined, kind: "absent" });
+   543→  assert.deepEqual(parseBpsRateInput(null), { ok: true, value: null, kind: "clear" });
+   544→  assert.deepEqual(parseBpsRateInput(""), { ok: true, value: null, kind: "clear" });
+   545→});
+   546→test("parseBpsRateInput honours a custom ceiling (maxBps)", () => {
+   547→  assert.equal(parseBpsRateInput(500, 400).ok, false);
+   548→  assert.equal(parseBpsRateInput(400, 400).ok, true);
+   549→});
+   550→test("parsePercentRateInput: 8.35% → 835 bps digit-exact; 8.355% REJECTED (cannot be represented at 1 bps = 0.01%)", () => {
+   551→  assert.deepEqual(parsePercentRateInput("8.35"), { ok: true, value: 835, kind: "bps" });
+   552→  assert.deepEqual(parsePercentRateInput(8.35), { ok: true, value: 835, kind: "bps" });
+   553→  const tooFine = parsePercentRateInput("8.355");
+   554→  assert.equal(tooFine.ok, false, "8.355% is not representable — rejected, never rounded to 8.35% or 8.36%");
+   555→  if (!tooFine.ok) assert.match(tooFine.reason, /rejected/);
+   556→  assert.equal(parsePercentRateInput("0").value, 0);
+   557→  assert.equal(parsePercentRateInput("100").value, BPS_DENOM);
+   558→  assert.equal(parsePercentRateInput("100.01").ok, false, "above the 100% ceiling");
+   559→  assert.equal(parsePercentRateInput("-1").ok, false);
+   560→  assert.equal(parsePercentRateInput("abc").ok, false);
+   561→  assert.deepEqual(parsePercentRateInput(null), { ok: true, value: null, kind: "clear" });
+   562→  assert.deepEqual(parsePercentRateInput(undefined), { ok: true, value: undefined, kind: "absent" });
+   563→});
+   564→test("float-trap inputs never round into a different rate: 0.1+0.2-style percent noise is rejected or digit-exact", () => {
+   565→  assert.equal(parsePercentRateInput(String(0.1 + 0.2)).ok, false, "0.30000000000000004 has >2 decimals → rejected");
+   566→  assert.equal(parsePercentRateInput(0.3).value, 30);
+   567→  assert.equal(parsePercentRateInput(8.05).value, 805);
+   568→});
+   569→test("formatBps/parsePercentToBps derive from BPS_DENOM — raise-ready without call-site changes", () => {
+   570→  // At the current scale these are exact round-trips for every representable rate.
+   571→  for (let bps = 0; bps <= BPS_DENOM; bps += 7) {
+   572→    const label = formatBps(bps);
+   573→    assert.equal(parsePercentToBps(label), bps, `round-trip ${bps} bps via "${label}"`);
+   574→  }
+   575→});
+   576→
+   577→// ===========================================================================
+   578→console.log(`\n=== RESULT: ${passed} passed, ${failed} failed ===`);
+   579→if (failed > 0) {
+   580→  console.error("\nFailed invariants:");
+   581→  for (const f of failures) console.error(`  ✗ ${f}`);
+   582→  process.exit(1);
+   583→}
+   584→console.log("All financial-precision invariants hold (POLICY P1). ✓");
+   585→

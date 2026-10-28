@@ -75,6 +75,7 @@ export type BankAccount = {
 
 export type SellerViewName =
   | "dashboard"
+  | "insights" // Task 6 — Seller Store Insights (traffic / cart / sales / markets)
   | "imports"
   | "products"
   | "orders"
@@ -241,7 +242,9 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  sub?: string;
+  /** Task 6 — widened to ReactNode so Insights cards can pass delta chips
+   *  (spans/badges) as the sub line; plain strings keep working. */
+  sub?: React.ReactNode;
   icon?: React.ReactNode;
   tone?: "default" | "warn" | "bad";
   /** R2-UI — optional click target (e.g. Pending → release schedule). When

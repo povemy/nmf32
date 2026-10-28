@@ -85,11 +85,18 @@ export const SETTING_GROUPS: SettingGroup[] = [
     order: 5,
   },
   {
+    id: "analytics",
+    label: "Analytics",
+    description: "Seller Insights event retention and maintenance.",
+    icon: "activity",
+    order: 6,
+  },
+  {
     id: "system",
     label: "System",
     description: "Read-only runtime state written by schedulers and workers.",
     icon: "activity",
-    order: 6,
+    order: 7,
   },
   {
     id: "advanced",
@@ -283,6 +290,27 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
     description: "Outcome of the most recent refund-reconciliation tick (written by the scheduler).",
     field: { kind: "readonly" },
     wired: true,
+  },
+  {
+    key: "cron.analytics.last",
+    group: "system",
+    label: "Analytics retention — last run",
+    description: "Outcome of the most recent Seller-Insights retention tick (written by the scheduler).",
+    field: { kind: "readonly" },
+    wired: true,
+  },
+
+  // ----------------------------------------------------------- Analytics
+  {
+    key: "analytics.retention_days",
+    group: "analytics",
+    label: "Analytics event retention (days)",
+    description:
+      "Seller Insights browsing/cart events older than this are permanently deleted by the scheduled retention tick. Order, payment and refund records are NEVER deleted by this rule — sales history is authoritative and permanent.",
+    field: { kind: "integer", default: 180, min: 7, max: 730 },
+    wired: true,
+    wiredNote: "Enforced by /api/cron/analytics-tick (called by the expiry scheduler service).",
+    danger: true,
   },
 
   // ---------------------------------------------- hidden internal keys

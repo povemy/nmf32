@@ -1,0 +1,1356 @@
+==================================================================
+PLATFORM COMPLETE BLUEPRINT — NOMOFEE MULTI-VENDOR MARKETPLACE
+Single-file concatenation of the E-Commerce System Blueprint
+Canonical source: docs/blueprint/ECOMMERCE_SYSTEM_BLUEPRINT.md (+ supporting docs 01-10)
+Regenerated: 2026-10-18 (next round — override fee/hold semantics, session rotation, rate-limit store, PSP adapter, resume-payment CTA, CI runbook)
+==================================================================
+
+### FILE: docs/blueprint/ECOMMERCE_SYSTEM_BLUEPRINT.md
+
+# ECOMMERCE_SYSTEM_BLUEPRINT.md
+## NOMOFEE Multi-Vendor Marketplace — Complete System Blueprint (Discovery & Documentation, Read-Only)
+
+**Prepared for**: independent architectural review.
+**Method**: evidence-based static inspection of the actual repository (no implementation changes; no scripts executed; live DB read via read-only SQLite connection).
+**Evidence labels**: **[VERIFIED]** directly established from code/schema/config or safe read-only DB inspection · **[INFERRED]** reasonable interpretation needing confirmation · **[PARTIAL]** some components verified, full behaviour not · **[MISSING]** not found after appropriate search · **[UNVERIFIED]** cannot be confirmed with available access.
+**Scope note**: all findings reflect the repository as inspected; secrets are redacted by policy; financial examples are anonymised.
+
+---
+
+## 0. Document map
+
+This is the master index. Detailed material lives in ten supporting documents (same directory, `docs/blueprint/`); a single-file concatenation exists as `PlatformCompleteBlueprint.txt` at the repository root.
+
+| # | Supporting document | Blueprint parts covered |
+|---|---|---|
+| 1 | `01-architecture-repository.md` | **B** repository/file map · **C** architecture & dependency map (diagrams) |
+| 2 | `02-frontend-ux.md` | **D** frontend & user experience (all three portals) |
+| 3 | `03-backend-api.md` | **E** backend, API & business logic (~120 routes + end-to-end traces) |
+| 4 | `04-database-model.md` | **F** database schema & data model (76 models, money storage map, seeds, live DB spot-check) |
+| 5 | `05-domain-marketplace-lifecycle.md` | **G** order lifecycle · **I** multi-vendor architecture · **S** system flows (sequence diagrams) |
+| 6 | `06-financial-engine.md` | **H** financial engine & money precision · **V** master financial data-flow map |
+| 7 | `07-security-auth.md` | **J** authN/authZ/tenancy · **K** security review (findings register F-01…F-18) |
+| 8 | `08-integrations-reliability-performance.md` | **L** integrations · **M** performance · **N** reliability & recovery |
+| 9 | `09-testing-config-admin.md` | **O** testing & QA · **P** configuration/deployment · **Q** administration & ops |
+| 10 | `10-unwired-techdebt-openquestions.md` | **R** hard-coded/mocked/unwired · **T** technical debt · **W** open questions |
+
+Part **A** (executive inventory) is below; part **U** (feature matrix) is §7 here.
+
+## 1. Table of contents
+
+1. Document map (§0)
+2. Executive system inventory — Part A (§2)
+3. Architecture & repository map — Parts B, C (Support 01)
+4. Frontend & UX — Part D (Support 02)
+5. Backend & API — Part E (Support 03)
+6. Database & data model — Part F (Support 04)
+7. Master feature & requirement matrix — Part U (§7)
+8. Order lifecycle, marketplace & flows — Parts G, I, S (Support 05)
+9. Financial engine & integrity map — Parts H, V (Support 06)
+10. Authentication, authorization & security — Parts J, K (Support 07)
+11. Integrations, performance, reliability — Parts L, M, N (Support 08)
+12. Testing, configuration, administration — Parts O, P, Q (Support 09)
+13. Unwired functionality, technical debt, open questions — Parts R, T, W (Support 10)
+14. Glossary (§8)
+15. Important source files for review (§9)
+16. Limitations & verification checklist (§10)
+
+---
+
+## 2. PART A — Executive system inventory
+
+### 2.1 What the product is (plain English)
+
+NOMOFEE (formerly branded SHOPMESH; rebrand completed including DB email sweep via `scripts/rebrand-db.ts`) is a **multi-vendor marketplace platform demo** for the Malaysian market (MYR, en-MY copy): shoppers buy from multiple independent sellers in one cart/checkout; sellers onboard through KYC, run storefronts built with a drag-and-drop page builder, manage products/orders/wallets; admins operate the whole platform (moderation, commission engine, wallets/ledger/payouts, campaigns, support). **Payment is deliberately a sandbox mock** of a licensed-PSP split model (Option B): one buyer charge per checkout, platform commission as the PSP application fee, sellers settled via an internal double-entry ledger and payout batches. Chat is realtime via a tiny socket.io sidecar. Everything runs as **one Next.js app + one SQLite database + one chat micro-service**, behind a single Caddy port.
+
+### 2.2 Confirmed facts vs inferences
+
+| Dimension | Finding | Label |
+|---|---|---|
+| Application type | Modular monolith: single Next.js 16 App Router app (UI + ~120 API route handlers) + separate 90-line chat relay service + Caddy gateway. Not microservices, not serverless. | [VERIFIED] |
+| Languages/frameworks | TypeScript 5 strict-ish (`noImplicitAny:false`; build TS gate disabled), Next.js 16.1.1, React 19, Tailwind 4 (+legacy v3-style config), shadcn/ui New York, Prisma 6.11.1 + SQLite, zustand 5, socket.io 4.8.4, bun runtime/toolchain | [VERIFIED] |
+| Frontend tech | Single-route SPA (`/`), three client-side portals switched by zustand; no URL routing except `?sf/?sp/?claim_*`; all data client-fetched; framer-motion, recharts, dnd-kit; **no dark mode mounted, no i18n wired** | [VERIFIED] |
+| Backend tech | Route handlers only (zero server actions); business logic in `src/lib` (money, commission, ledger, vouchers, shipping mock, PSP mock, marketplaces, import, chat relay client); `{data}` envelope; manual validation (zod in 3 routes) | [VERIFIED] |
+| Database | SQLite (`db/custom.db`, journal_mode=delete) via Prisma; **76 models, 0 enums** (String + app validation); **no migration ledger** — schema synced by `db push --accept-data-loss`; money = Int sen, rates = Int bps post-M-FIN-1 | [VERIFIED] |
+| AuthN/AuthZ | Custom cookie+Bearer dual-channel sessions (scrypt passwords, CSPRNG tokens, 7-day DB sessions); RBAC cap matrix for admin (11 caps); ownership scoping app-level; **no MFA, no email verification, no password reset, no rate limiting** | [VERIFIED] |
+| Payments | Mock PSP ("NomoPay Checkout (sandbox)"); PaymentGroup = one PSP session; webhook HMAC with **hardcoded demo secret**; stripe_my/curlec/ipay88 documented stubs; auto-settle hard-blocked 409 | [VERIFIED] |
+| External services | Shopee/TikTok import connectors (real network clients, env-gated, inactive in sandbox), fixture connector (works), nothing else — no email/SMS/storage/AI SDK usage | [VERIFIED] |
+| Background processing | **None** — simulated inline workers (webhook fan-out writes success rows; notifications are DB rows; mock shipments advance lazily on buyer reads); no cron/queue | [VERIFIED] |
+| Environments | Sandbox/dev only; standalone build exists (`next build` + `bun .next/standalone/server.js`); harness scripts in `.zscripts/`; **no CI/CD, no staging/prod distinction** | [VERIFIED] |
+| Test posture | No test runner/CI; financial unit suite (56 tests) + live-DB reconcile suite (25 invariants) exist as manual bun scripts; results not re-executed during this blueprint | [VERIFIED posture / UNVERIFIED results] |
+| Intended-for-production notes | Worklog declares single-route SPA as sandbox adaptation; production intent = separate hosts; PSP swap documented as config-level at 4 plug-in points | [INFERRED from code comments/worklog] |
+
+### 2.3 Major internal modules
+
+`src/lib/money.ts` (POLICY P1 arithmetic) · `commission.ts` (rate resolution + fee holidays) · `ledger.ts` (double-entry T1–T6 + wallet truth) · `psp.ts` (PSP abstraction/scaffold) · `vouchers.ts` · `shipping.ts` (mock courier) · `api.ts` (envelope/audit/notify/transition) · `auth.ts`/`password.ts`/`secretbox.ts` · `marketplaces/*` + `import/*` (catalogue import/claim) · `campaigns.ts` · `sections.ts` (15 builder sections) · `chat.ts` — all cited file:line in the support documents.
+
+### 2.4 Headline architectural conclusions
+
+1. The **financial core is disciplined and centralised** (integer sen/bps, single rounding point, frozen commission snapshots, ledger-derived statements, independent reconcile suite) — but carries **10 ranked residual risks** (Support 06 §H.11), the top being dead admin override config (FIN-01) and non-atomic, status-only-idempotent webhook posting (FIN-02).
+2. **Security is demo-grade by intent in payment paths** (hardcoded webhook secret, public simulate) and missing baseline controls elsewhere (rate limiting, CSRF protection with SameSite=None cookies, security headers, git-tracked DB/PII) — 18-item register (Support 07 §K.1).
+3. **Marketplace isolation is solid at the request layer** (70/70 admin guards, zero IDOR found in store/me routes, portal escalation blocked) while DB-level constraints are minimal (SQLite reality).
+4. **Operational completeness gaps**: no real notifications, no background jobs, no backups, no CI, unwired endpoints, one broken admin button — all catalogued with evidence (Support 10).
+
+---
+
+## 7. PART U — Master feature and requirement matrix
+
+Status legend: ✅ Verified implemented · 🟡 Partially implemented · 🎨 UI only · ⚙️ Backend only · 🧪 Mocked/hardcoded (intentional sandbox) · ❓ Referenced but unverified · ❌ Not found.
+
+| Feature | Frontend location | Backend implementation | Database | External | Validation/permissions | Test coverage | Status |
+|---|---|---|---|---|---|---|---|
+| Shopper register/login/session | `shopper-shell.tsx` auth dialog | `auth/shopper/*` | ShopperUser, Session | — | cross-portal email check; suspended 403 | none | ✅ |
+| Seller register/onboarding/KYC | `seller-shell`, `onboarding.tsx` | `auth/register`, `store/onboarding`, `admin/sellers/*` | Seller, Store, KycDocument, BankAccount | — | RBAC caps; audited | none | ✅ |
+| Admin RBAC back office | `admin/*` (26 views) | `admin/**` 70 routes | full model set | — | 70/70 guarded; audited mutations | none | ✅ |
+| Catalogue browsing/search/sort | `market.tsx` | `market/*` | Product, Category, Store | — | live-store scope | none | ✅ |
+| Product detail/variants/reviews | `pdp.tsx` | `sf/[slug]/products/[pSlug]` | Product, ProductVariant, Review | — | live+published only | none | ✅ (reviews POST unauthenticated — 🟡) |
+| Page-builder storefronts (15 sections) | `builder.tsx`, `builder-render.tsx`, `storefront.tsx` | `store/pages*`, `store/theme`, `sf/[slug]` | CmsPage (draft/published versions), Store.themeJson | — | owner-scoped | none | ✅ (renderer duplicated — see T) |
+| Cart (multi-store) | `shopper-shell` CartDrawer | `cart/*` | Cart, CartItem | — | session; stock guards | none | ✅ |
+| Checkout quote (shipping/coupon/voucher) | `checkout.tsx` phases 1–2 | `checkout/quote`, `checkout/pricing.ts` | read-only | — | server-truth pricing | fin-tests (primitives) | ✅ |
+| Multi-store order creation + frozen commission | `checkout.tsx` phase 3 | `checkout/create` ($transaction) | Order, OrderItem, PaymentGroup, CouponRedemption, InventoryLog | — | Idempotency-Key; hard voucher mode; stock re-check | reconcile B/C/E | ✅ |
+| Payment (mock PSP) + webhook + ledger T1 | `checkout.tsx` PayView | `payments/[ref]/*`, `webhooks/payments/*`, `psp.ts`, `ledger.ts` | PaymentGroup/Intent, PaymentWebhookLog, LedgerTransaction | mock | HMAC (hardcoded secret); status idempotency | reconcile D/M; fin-tests T5/splits | 🧪 core ✅ (FIN-02 race) |
+| Seller order fulfilment + mock logistics | `seller/orders.tsx` + dialogs | `store/orders/*`, `lib/shipping.ts` | Order, Shipment, ShipmentEvent | mock courier | store-scoped | none | ✅/🧪 |
+| Vouchers & coupons (platform/store scope) | me-hub vouchers, seller vouchers/coupons | `me/vouchers*`, `store/vouchers|coupons`, `lib/vouchers.ts`, `pricing.ts` | Voucher, UserVoucher, Coupon, CouponRedemption | — | atomic redemption; quota; region | fin-tests (discount math) | ✅ |
+| Commission engine (chain + fee holidays) | admin finance/commission | `lib/commission.ts`, `admin/commission/*` | CommissionSetting, OrderItem.commissionBps, FeeHoliday | — | rateBpsFrom reject-don't-round | fin-tests §9; reconcile A/K | ✅ |
+| Admin commission overrides | `finance.tsx` OverridesView | `admin/commission/overrides` | CommissionOverride | — | RBAC; audited | — | ⚙️ (engine never reads it — FIN-01) |
+| Commission exports (historical snapshots) | admin commission Reports tab | `admin/commission/exports*`, `lib/commission-export.ts` | CommissionExport.snapshotJson (v1 pct/v2 bps) | — | RBAC; byte-stable downloads | fin-tests §10; reconcile L | ✅ |
+| Ledger & wallets (seller) | seller wallet, admin wallets-ledger | `lib/ledger.ts`, `store/wallet*`, `admin/wallets*` | LedgerAccount/Transaction/Line, Wallet | — | ownership-scoped reads | reconcile D/I | ✅ |
+| Payout batches + statements | admin payouts | `admin/payout-batches`, `admin/payouts/*`, `ledger.ts` statements | PayoutBatch, Payout | — | dry-run; RBAC; audited | reconcile H | ✅ (loop non-transactional — FIN-08) |
+| Refunds (seller→admin) | admin refunds/orders | `store/orders/[id]/refund-request`, `admin/refunds/*` | Refund, Order, Ledger T5 | — | RBAC; status guards | reconcile D/G | ✅ (attribution heuristic FIN-05) |
+| Disputes/returns | me-hub, admin disputes | `me/orders/[n]/return-request`, `admin/disputes` | Dispute | — | open-dispute guard | none | 🟡 (no money movement; no exchange flow) |
+| Realtime chat | shopper/seller messages | `chat/*`, `lib/chat.ts`, mini-service | ChatThread, ChatMessage | socket.io hub | thread XOR ownership; **no socket auth** | none | ✅ |
+| Catalogue import (Shopee/TikTok/fixture) + claim | `generate.tsx`, `imports.tsx` | `import/*`, `marketplaces/*`, `claim/bind` | ImportJob(+Items), MarketplaceConnection, StoreClaim | real clients env-gated | SSRF guard; hashed claim tokens | none | 🟡 (fixture works; real platforms need env) |
+| Campaigns (themed marketplace takeovers) | admin marketing, market.tsx layer | `admin/campaigns`, `campaigns/active`, `lib/campaigns.ts` | Campaign, MarketplaceBanner | — | RBAC; cache invalidation | none | ✅ (cosmetic layer) |
+| Notifications (in-app) | bell, me-hub | `me/notifications*`, `lib/api.ts notify` | Notification, NotificationLog, templates | **no email/SMS** | owner-scoped | none | 🟡 (DB rows only) |
+| Guest order lookup/receipt | checkout Orders/Lookup views | `orders/lookup`, `orders/receipt` | Order (+pdf-lib) | — | email+orderNumber pair | none | ✅ (enumeration risk F-08) |
+| NomoPay buyer wallet/coins/PayLater | me-hub (hidden UI) | `me/wallet`, `me/coins/claim` | ShopperWallet | — | feature-flag dormant; 403 | none | 🎨/⚙️ dormant (licensing gate) |
+| Feature flags / settings / audit logs / health | admin system | `admin/feature-flags|settings|audit-logs|activity-logs|system/health` | Setting, FeatureFlag, AdminAuditLog, ActivityLog | — | RBAC; audited | none | ✅ |
+| Membership tiers | me-hub profile | `me/profile` auto-upgrade | ShopperUser.membershipLevel | — | never downgrades | none | 🟡 (display tier only) |
+| SEO/sitemap | layout, pdp JSON-LD | `sitemap.ts`, `lib/seo.ts` | SeoMeta, Store/Product slugs | — | — | none | 🟡 (client-injected meta only) |
+| Storefront domains | seller domains UI | `store/domains/*` (verify simulated) | StoreDomain | none | owner-scoped | none | 🧪 |
+| Outbound store webhooks + API keys | seller integrations | `store/webhooks*`, `store/integrations`, `lib/api.ts dispatch` | WebhookEndpoint, WebhookDelivery, ApiKey | **simulated** | secrets plaintext (F-15) | none | 🧪 |
+| Shipping tick cron | — | `shipping/tick` | Shipment | — | intentionally open | none | ⚙️ (no caller) |
+| Exchange workflows / partial-return lines | — | — | — | — | — | — | ❌ (Dispute text only) |
+| Vendor staff/roles | — | — | — | — | — | — | ❌ (ApiKey scaffold only) |
+| MFA / email verification / password reset | — | — | — | — | — | — | ❌ |
+
+---
+
+## 8. Glossary (project-specific terms)
+
+| Term | Meaning |
+|---|---|
+| **NOMOFEE / SHOPMESH** | Platform name now / former brand (DB rebrand via `scripts/rebrand-db.ts`; residue listed in Support 10) |
+| **Portal / surface** | Shopper, Seller, or Admin client-side SPA surface switched on `/` by zustand |
+| **NomoPay Checkout (sandbox)** | Label of the mock PSP provider; also the brand of the dormant buyer-wallet suite behind `NOMO_FINANCE_ENABLED=false` |
+| **Option B** | Approved payment architecture: licensed PSP split — PSP collects, deducts commission as application fee, settles sellers; platform never custodies funds (FSA 2013 s.17 note in `psp.ts`) |
+| **PaymentGroup / PaymentIntent** | One PSP checkout session covering N per-store orders / legacy single-order charge |
+| **M-FIN-1** | Executed one-off migration (2026-10-18): Float percent columns → integer bps; guarded by frozen script + `FinMigrationBackup` + dropped columns; verified by `scripts/verify-migration-freeze.ts` |
+| **POLICY P1** | Money policy in `money.ts`: integer sen storage, integer bps rates, single ROUND_HALF_UP rounding point via `bpsOf`, largest-remainder splits, BigInt overflow path, digit-exact input parsing, display-only formatting |
+| **sen / minor units** | 1/100 MYR; all money stored as integers |
+| **bps** | Basis points; 10,000 = 100% (`BPS_DENOM`); 835 = 8.35% |
+| **FeeHoliday** | Commission promotion window; `bps` = rate CHARGED during window (0 = full waiver); clamped ≤ normal; invalid ⇒ ignored with audit flag |
+| **Frozen commission snapshot** | Per-OrderItem `commissionBps` + `breakdownJson` fixed at checkout; never recomputed; refunds reverse from it |
+| **CommissionOverride (dead config)** | Admin-managed override table the engine never reads (FIN-01) |
+| **T1…T6** | Ledger posting recipes: order paid / gateway settlement / payout initiated / confirmed / failed / refund / admin adjustment |
+| **Ledger mirror** | T1 is bookkeeping of PSP sub-balances, not custody |
+| **Wallet cache / wallet truth** | Denormalised pending/available columns vs ledger-derived `walletTruth()`; refreshed on write; drift checked by invariants |
+| **Payout statement** | `Payout.statementJson` built by `buildLedgerStatementFromLedger` — ledger-derived with balancing "retained" line (post-fix; pre-fix seed decorated numbers) |
+| **Caddy XTransformPort** | Gateway query param routing internal service ports through the single exposed port |
+| **mini-service** | Independent bun process under `mini-services/` (chat hub :3003/:3103) |
+| **Fixture connector** | Local demo marketplace source used by the import wizard |
+| **Claim token** | SHA-256-hashed single-use token binding an imported store to a seller |
+| **fin-tests / fin-reconcile** | Manual financial unit suite (56) / live-DB invariant suite (25, sections A–M) |
+| **FIN-xx / F-xx** | Financial risk register (Support 06 §H.11) / security findings register (Support 07 §K.1) |
+
+## 9. Important source files for subsequent review
+
+**Money & finance**: `src/lib/money.ts` · `src/lib/commission.ts` · `src/lib/ledger.ts` · `src/lib/psp.ts` · `src/lib/commission-export.ts` · `src/lib/vouchers.ts` · `src/app/api/checkout/pricing.ts` · `src/app/api/checkout/create/route.ts` · `src/app/api/webhooks/payments/process.ts` · `src/app/api/admin/refunds/[id]/process/route.ts` · `src/app/api/admin/payout-batches/route.ts`
+**Identity & security**: `src/lib/auth.ts` · `src/lib/password.ts` · `src/lib/secretbox.ts` · `src/lib/session-client.ts` · `src/app/api/auth/**` · `src/app/api/admin/_helpers.ts`
+**Data**: `prisma/schema.prisma` · `prisma/seed.ts` · `scripts/migrate-money-bps.ts` (frozen) · `scripts/verify-migration-freeze.ts` · `scripts/fin-tests.ts` · `scripts/fin-reconcile.ts` · `db/backup/fin-migration-2026-10-18T08-25-00-334Z.json`
+**Architecture keystones**: `src/components/app-root.tsx` · `src/lib/app-store.ts` · `src/app/page.tsx` · `next.config.ts` · `Caddyfile` · `mini-services/chat-service/index.ts` · `src/lib/shipping.ts` · `src/lib/import/runner.ts` · `src/lib/marketplaces/shopee.ts`
+**Debt hotspots**: `src/components/shopper/checkout.tsx` · `src/components/shopper/me-hub.tsx` · `src/components/admin/stores.tsx:64` (broken call) · `src/lib/marketplaces/callback.ts` (dead/duplicated)
+
+## 10. Limitations & verification checklist
+
+**Verified in this engagement**: all 76 models read from schema; all ~120 API routes inventoried with guards; financial/security/auth/config code read in full; live DB spot-checked read-only (row counts, rate formats, export snapshot v1/v2, FinMigrationBackup 31 rows, PO-100001 statement); frontend portals mapped with endpoint cross-greps; 18 security findings + 10 financial risks registered with file:line evidence; no application file modified; only documentation artifacts created (`docs/blueprint/*` + `PlatformCompleteBlueprint.txt`).
+
+**Not verified (read-only mandate)**: execution of fin-tests/fin-reconcile/lint/tsc; runtime behaviours (races, locking, performance); real PSP/connector behaviour; production env/infra; `bun audit` dependency posture. See Support 10 §W (W1–W13).
+
+**Checklist confirmation** (per task instructions): actual repository inspected beyond top level ✅ · major modules and business-critical flows represented ✅ · financial storage types and calculation paths documented ✅ · authN/authZ/vendor isolation mapped ✅ · payment/webhook handling traced ✅ · incomplete/hardcoded functionality documented with evidence ✅ · no secret values in the report ✅ · diagrams match inspected implementation ✅ · unverified claims labelled ✅ · only documentation files created ✅.
+
+### FILE: docs/blueprint/01-architecture-repository.md
+
+# Blueprint Support 01 — Architecture & Repository Map (Parts B & C)
+
+Evidence labels: **[V]** verified, **[I]** inferred, **[P]** partial, **[M]** missing, **[U]** unverified. All paths relative to repo root `/home/z/my-project`.
+
+---
+
+## PART B — Complete repository and file map
+
+### B.1 Application shape (plain English first)
+
+NOMOFEE is a **single Next.js 16 application** (App Router, Turbopack dev) that contains three logically separate products — a shopper marketplace, a seller portal and an admin back office — mounted as **client-side view machines on the single user-visible route `/`** (`src/app/page.tsx:1-5` → `src/components/app-root.tsx:14-46`). All server logic lives in ~120 API route handlers under `src/app/api/**`; there are **no server actions** (zero `'use server'` matches) and no RSC data fetching. A second, deliberately tiny process (`mini-services/chat-service`, socket.io on :3003) relays chat messages. Persistence is one SQLite file via Prisma. A Caddy gateway (:81) is the only externally exposed port and forwards `?XTransformPort=` requests to internal services. [V]
+
+The codebase grew task-by-task under an orchestrator/worklog regime (Tasks 1–19 per `worklog.md`); layering is clean in the API layer but the frontend contains several very large multi-concern client files (see hotspots in Support 10).
+
+### B.2 Directory inventory by functional responsibility
+
+| Path | Responsibility | Notes |
+|---|---|---|
+| `src/app/` | App Router root | `layout.tsx` (static metadata, fonts), `page.tsx` (only route → `<AppRoot/>`), `sitemap.ts` (force-dynamic; emits `/`, `/?sf={slug}`, `/?sf&sp=`), `globals.css` (Tailwind v4 `@import`, teal brand remap, inert `.dark` block) [V] |
+| `src/app/api/**` | **All backend logic** (route handlers) | Modules: `auth`, `me`, `cart`, `checkout`, `orders`, `market`, `sf`, `store`, `admin`, `chat`, `import`, `img`, `shipping/tick`, `claim`, `campaigns`, `webhooks/payments`, `stores/[slug]/follow`, `health`. Shared helpers: `api/admin/_helpers.ts`, `api/_shared/product-card.ts`, `api/checkout/{pricing,owner}.ts`, `api/cart/cart.ts`, `api/webhooks/payments/process.ts` [V] |
+| `src/components/` | Three client portals | `app-root.tsx` (keystone switch), `portal-fab.tsx` (demo surface switcher), `shopper/*` (11 files incl. 2,569-line `checkout.tsx`), `seller/*` (21 files), `admin/*` (29 files), `ui/*` (49 shadcn components, 20 unused) [V] |
+| `src/lib/` | Business services & shared policy | `money.ts` (POLICY P1 money/rate math), `commission.ts` (M09 engine), `ledger.ts` (double-entry + wallet cache), `psp.ts` (mock PSP + Option-B scaffold), `vouchers.ts`, `shipping.ts` (mock courier), `auth.ts`/`password.ts`/`secretbox.ts` (identity/crypto), `api.ts` (envelope/audit/notify/webhook-sim/transitionOrder), `commission-export.ts` (snapshot/CSV), `marketplaces/*` (Shopee/TikTok/fixture connectors), `import/*` (runner/normalise/summary), `chat.ts` (relay client), `campaigns.ts`, `membership.ts`, `feature-flags.ts`, `json.ts`, `seo.ts`, `sections.ts` (15 builder section types), `store-lifecycle.ts`, `shopper-merge.ts`, `notify-shopper.ts` (dead), `chat-quick-replies.ts`, `app-store.ts`, `session-client.ts`, `db.ts` (Prisma singleton) [V] |
+| `src/hooks/` | `use-mobile`, `use-toast` | [V] |
+| `prisma/` | `schema.prisma` (1,215 lines, 76 models) + 4 seed scripts | `seed.ts` (destructive full demo), `seed-me.ts` (shopper wallet/vouchers), `seed-vouchers.ts`, `seed-campaigns.ts` [V] |
+| `db/` | `custom.db` (SQLite, 1,261,568 B, journal_mode=delete) + `db/backup/fin-migration-2026-10-18T08-25-00-334Z.json` | M-FIN-1 audit backup; both git-tracked (security finding F-02) [V] |
+| `scripts/` | One-off operational scripts | `migrate-money-bps.ts` (FROZEN, must-not-rerun), `verify-migration-freeze.ts` (read-only re-run guard proof), `rollback-money-bps.ts` (emergency), `fin-tests.ts` (56 unit tests), `fin-reconcile.ts` (25 live-DB invariants), `fix-payout-statements.ts`, `rebrand-db.ts` (SHOPMESH→NOMOFEE), `e2e-fin-issues.sh` [V] |
+| `mini-services/chat-service/` | Independent bun project, socket.io hub | `index.ts` (:3003 public socket + :3103 internal HTTP relay), own `package.json`/`bun.lock`; started via `.zscripts/dev.sh` scan with `bun --hot` [V] |
+| `tests/` | Sandbox deploy-infra shell scripts | `database-runtime-build.sh`, `python-runtime-{container,build}.sh` — **not app tests** [V] |
+| `docs/` | Prior documentation | `codebase-inventory.md` (stale, pre-Task-13), `handover.md` (stale, post-Task-12), `implementation-plan.md` (import feature planning), `recovery/RECOVERY.md` (historical rebuild brief), `research-raw/*` (Shopee/TikTok API research artifacts) [V] |
+| `upload/` | Original platform blueprints (PART0–PART6) the code was built from | Intent documents, not runtime evidence [V] |
+| `public/` | Static assets | `products/*` (30 PNGs), `stores/*`, `banners/*`, `logo.svg`, `robots.txt`; runtime uploads land in `public/uploads/{storeId}/` (import image copier) [V] |
+| `examples/websocket/` | Socket.io reference demo | Not imported by the app [V] |
+| `agent-ctx/`, `tool-results/` | Agent working notes & screenshots | Process artifacts [V] |
+| Config files | `next.config.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.mjs`, `eslint.config.mjs`, `components.json`, `Caddyfile`, `.env` (DATABASE_URL only), `.gitignore` | See Support 09 §P for contents/implications [V] |
+| **Missing infrastructure** | No `prisma/migrations/`, no CI/CD (`.github/`, Dockerfile, vercel.json), no middleware.ts, no i18n routing, no Docker | [M] |
+
+### B.3 Legacy / suspicious files
+
+- **Dead modules**: `src/lib/marketplaces/util.ts` (0 importers), `src/lib/marketplaces/callback.ts` (logic re-implemented inline in `api/auth/callback/[platform]/route.ts:10-55` — drift risk). [V]
+- **Dead exports**: `ledger.buildPayoutStatement` (superseded), `money.commissionOfBps`, `auth.requireAdminRole`, `secretbox.safeEqual`, `notify-shopper.notifyShopperShipped` (duplicate of `shipping.pushBuyerNotificationForShipped`), `commission.snapshotToJson`, `store-lifecycle.isImportTerminal`. [V]
+- **Unwired endpoints** (no frontend caller): `GET /api/store/payouts`, `/api/admin/announcements*`, `/api/admin/webhook-deliveries(+replay)`, `POST /api/shipping/tick`. One **broken caller**: `admin/stores.tsx:64` POSTs `/api/admin/domains/{id}/verify` — route does not exist (404). [V]
+- **Rebrand residue** (SHOPMESH→NOMOFEE): `demo.shopmesh.fixture` host (`shopper/generate.tsx:142`), `ShopMeshImport` UA (`marketplaces/util.ts:8`), `shopmesh-dev-key` seed for secretbox dev fallback (`secretbox.ts:21`), "SM-100017" lookup copy (`checkout.tsx:2522,2537`). [V]
+
+---
+
+## PART C — System architecture and dependency map
+
+### C.1 High-level system architecture
+
+```mermaid
+graph TB
+  subgraph Browser
+    SPA["Single-route SPA '/'<br/>AppRoot → Shopper/Seller/Admin shells<br/>zustand + client fetch"]
+  end
+  subgraph Gateway["Caddy :81 (only exposed port)"]
+    GW{"?XTransformPort<br/>matcher"}
+  end
+  subgraph NextApp["Next.js 16 :3000 (standalone build)"]
+    PAGES["app/page.tsx + layout (SSR shell)"]
+    API["~120 API route handlers<br/>(auth, checkout, orders, store, admin,<br/>chat persistence, import, webhooks)"]
+    LIB["src/lib business services<br/>money · commission · ledger · vouchers ·<br/>shipping(mock) · psp(mock) · marketplaces"]
+    DB[("SQLite db/custom.db<br/>76 models via Prisma")]
+  end
+  subgraph ChatHub["mini-services/chat-service :3003"]
+    SOCK["socket.io (path '/')<br/>rooms thread:{id}"]
+    RELAY["HTTP relay :3103 /broadcast"]
+  end
+  subgraph External["External services (all env-gated or mocked)"]
+    SHOPEE["Shopee OpenPlatform<br/>(OAuth + API, needs env keys)"]
+    TIKTOK["TikTok Shop API<br/>(needs env keys)"]
+    MOCKPSP["Mock PSP = simulate endpoint<br/>(production: Stripe MY/Curlec/iPay88 scaffold)"]
+    IMG["/api/img/{seed}<br/>deterministic SVG"]
+  end
+  SPA -->|HTTPS :81| GW
+  GW -->|default| PAGES
+  GW -->|default| API
+  GW -->|"XTransformPort=3003"| SOCK
+  SPA -.->|"io('/?XTransformPort=3003')"| SOCK
+  PAGES --> SPA
+  API --> LIB --> DB
+  API -->|"broadcastToThread POST :3103"| RELAY --> SOCK
+  API -.->|fixture/real| SHOPEE
+  API -.->|fixture/real| TIKTOK
+  SPA -->|simulate/success| API
+  API --> IMG
+```
+
+### C.2 Communication paths (verified)
+
+1. **Browser → frontend**: one SSR'd shell page; everything after load is client state machines. Deep links honoured: `?sf={store}&sp={product}` (SEO/sitemap contract, `shopper-shell.tsx:163-170`) and `?claim_job=&claim_token=` (import claim, :153-162). [V]
+2. **Frontend → backend**: `fetch('/api/…')` with per-portal helpers — shopper `fetchJson/postJson` attaches **device headers only** (`X-Cart-Token`, `X-Shopper-Token`; cookie does session) (`shopper/ui-bits.tsx:214-276`); seller `withAuth` adds `Authorization: Bearer` (`seller/ui-bits.tsx:98-126`); admin `use-api.ts` adds Bearer. Session validation is server-side dual-channel: Bearer header **or** `sm_session` cookie (`src/lib/auth.ts:53-76`). [V]
+3. **Backend → services**: route handlers import `src/lib` directly; `src/lib` imports `db.ts` (Prisma). No service layer between routes and lib; no DI. [V]
+4. **Backend → database**: Prisma Client (singleton, global-cached in dev, `db.ts:13`), SQLite file, journal_mode=delete, foreign_keys enforced by Prisma per-session. `$transaction` used in only **7 route files** (checkout/create, auth/register, claim/bind, checkout/addresses ×2, store/inventory/adjust, store/collections/[id]/products). [V]
+5. **Realtime**: Next API persists `ChatMessage` then POSTs `http://127.0.0.1:3103/broadcast {room:"thread:<id>", event:"chat:message"}` (`src/lib/chat.ts:7-20`, 1.5s timeout, failure non-fatal); hub emits to room. Clients `io("/?XTransformPort=3003")`. **No auth on socket join** (rooms are client-claimable; risk R-RT1 in Support 07). [V]
+6. **Asynchronous processing**: **none exists**. Simulated workers: `dispatchStoreWebhooks` writes success rows without network calls (`src/lib/api.ts:127-144`); notifications are inline `NotificationLog` rows (`api.ts:113-124`); mock shipments advance lazily on buyer order reads (45s guard, `me/orders/route.ts:146`) or via uncalled `POST /api/shipping/tick`. No cron/queue/BullMQ anywhere. [V]
+7. **File/image storage**: local `public/` only; import copier writes `public/uploads/{storeId}/{sha256-16}.{ext}` with SSRF-guarded fetch (`src/lib/import/runner.ts:52-77`); no S3/OSS. Image "generation" = deterministic SVG service `/api/img/{seed}` + client-side seed reshuffling. [V]
+8. **Caching**: 60s active-campaign memo on `globalThis` (`src/lib/campaigns.ts:462-524`), wallet denormalised cache refreshed **on write** from ledger truth (`src/lib/ledger.ts:136-149`), per-process import-summary Map, device-token memo, shipping-tick 1.5s throttle. [V]
+9. **Observability**: `/api/health` (public; counts + `runLedgerInvariants()`), `/api/admin/system/health` (admin; same + last 5 audit rows; 30s UI poller), `AdminAuditLog`+`ActivityLog` dual-write via `auditAdmin` (45 admin route files), `PaymentWebhookLog` for every webhook delivery. No structured logger (11 `console.*` total), no error reporting, no metrics/tracing. [V]
+
+### C.3 Request lifecycle (checkout example)
+
+```mermaid
+sequenceDiagram
+  participant U as Shopper (SPA)
+  participant API as Next API :3000
+  participant DB as SQLite/Prisma
+  participant PSP as Mock PSP (simulate)
+  participant L as ledger.ts
+  U->>API: POST /api/checkout/quote (items, coupon, vouchers, state)
+  API->>DB: price items, evaluateCoupon, buildVoucherOutcomes, computeOrderCommissions (preview)
+  API-->>U: per-group totals + shipping options (soft voucher verdicts)
+  U->>API: POST /api/checkout/create  (Idempotency-Key header REQUIRED)
+  API->>API: requireShopper → replay by idemKey → recompute pricing FROM SCRATCH → hard voucher mode
+  API->>DB: $transaction: stock re-check, PaymentGroup, Orders(payment_pending), atomic voucher redemption,<br/>OrderItems (frozen commissionBps snapshot), stock decrement, CouponRedemption
+  API-->>U: {orderNumbers, paymentRef, redirectUrl:'/pay/<ref>'}
+  U->>PSP: PayView → POST /simulate {result:succeeded}
+  PSP->>API: signs webhook payload → processPaymentWebhook
+  API->>API: verify HMAC (hardcoded demo secret) → duplicate? status-guard
+  API->>DB: group.succeeded → orders→paid (transitionOrder)
+  API->>L: T1 postOrderPaid: DR GATEWAY total / CR SELLER:PAYABLE net (availableAt=hold) / CR REVENUE_COMMISSION
+  API->>DB: wallet cache refresh, simulated store webhooks, notifications, cart cleared
+  API-->>U: duplicate:false → poll GET /payments/{ref} → success redirect
+```
+
+Note the flagged hazard: the webhook success path is **not transactional** and the duplicate guard is a status check made **before** the ledger posting — see Support 06 §7 and finding FIN-02. [V]
+
+### C.4 Module boundaries and bypasses
+
+- Intended boundary "UI → API → lib → Prisma" holds; no frontend talks to SQLite, no API route bypasses lib for money math **in the authoritative path** (client totals are display-only and re-derived server-side — `checkout/create/route.ts:108-114` "never trust client numbers"). [V]
+- Boundary exceptions: (1) `Order.commissionBps` snapshot logic lives in `checkout/create` + `webhooks/process` + `refunds/process` consuming `commission.ts` — consistent single engine; (2) seller dashboard earnings derive from frozen OrderItem snapshots **on read** while admin analytics derive from ledger lines — two deliberate but divergent read models (Support 06 §5); (3) status labels & order-status arrays duplicated ≥5× across client files (no central state machine — `transitionOrder` validates nothing). [V]
+
+### C.5 Data-flow diagram (core write paths)
+
+```mermaid
+graph LR
+  Cart["Cart (session/token)"] -->|quote| Q["Quote preview"]
+  Q -->|create| ORD["Order + OrderItems<br/>FROZEN commissionBps"]
+  ORD -->|webhook paid| PG["PaymentGroup succeeded"]
+  PG -->|T1| LED[("LedgerTransaction + Lines<br/>GATEWAY / PAYABLE / COMMISSION")]
+  LED -->|refreshWalletCache| W["Wallet cache<br/>pending/available"]
+  W -->|batch run| PB["PayoutBatch → Payout → T3/T4"]
+  PB -->|statement| ST["Payout.statementJson<br/>(ledger-derived)"]
+  ORD -->|refund process| T5["T5 refund posting<br/>+ Refund row + OrderItem.refundedMinor"]
+  T5 --> LED
+```
+
+### FILE: docs/blueprint/02-frontend-ux.md
+
+# Blueprint Support 02 — Frontend & UX Blueprint (Part D)
+
+All findings from static inspection of `src/components/**` (labels: [V] verified / [I] inferred / [P] partial). Portal surfaces are **client-side state machines on the single route `/`**; there is no URL routing except `?sf=`, `?sp=`, `?claim_job=`, `?claim_token=`.
+
+## D.1 Shell, navigation & state
+
+| Aspect | Implementation | Evidence |
+|---|---|---|
+| Mount chain | `app/page.tsx` → `AppRoot` → loading gate until `refreshMe()` → `ShopperShell / SellerShell / AdminShell` by zustand `surface` | `app-root.tsx:14-46` [V] |
+| Surface store | `{surface, activeStoreSlug, me (5-arm union), shopperAuthOpen, afterShopperAuth}`; `setSurface` persists `localStorage.sm_surface`; `hydrateSurface` re-applies after mount (SSR default shopper) | `app-store.ts:19-80` [V] |
+| Identity channels | localStorage `sm_session_token` → `Authorization: Bearer`; `sm_cart_token` → `X-Cart-Token`; `sm_shopper_token` → `X-Shopper-Token`; in-memory `memoryTokens` memo; cookie `sm_cart` fallback. **Shopper view calls send device headers only — session rides the cookie exclusively** (cookie-blocked iframe ⇒ guest degradation) | `session-client.ts:1-117`, `shopper/ui-bits.tsx:214-276` [V] |
+| Refresh behaviour | Shopper view persisted (`sm_shopper_view`, 25-deep in-memory back stack); **seller/admin nav is useState only — refresh lands on Dashboard**; browser back exits app | `shopper-shell.tsx:75,141-219`, `seller-shell.tsx:86`, `admin-shell.tsx:195` [V] |
+| Cross-portal handoff | `setActiveStoreSlug` ("view store" from seller portal) consumed by shopper shell | `app-store.ts`, `seller-shell.tsx:441` [V] |
+| SEO | Single static metadata block; per-product `<meta>`+JSON-LD injected client-side (invisible to non-JS crawlers); sitemap emits query-param URLs | `layout.tsx:16-36`, `pdp.tsx:106-139`, `sitemap.ts` [V] |
+| Realtime | socket.io `io("/?XTransformPort=3003")`, rooms `thread:{id}`; `chat:message` payloads deduped client-side; `nomofee:*` window events for badge sync | `shopper-shell.tsx:894-921`, `seller/messages.tsx:111-135` [V] |
+
+## D.2 Shopper portal (11 components)
+
+| View | Purpose | Backend calls | Gaps / mock |
+|---|---|---|---|
+| `shopper-shell.tsx` (1,476 ln) | Header, bottom nav (cart+chat badges), auth dialog, cart drawer, messages | `/api/market/home`, `/api/cart*`, `/api/chat/*`, `/api/auth/shopper/*` | 15s unread poller; auth stores token (unused by view calls) [V] |
+| `market.tsx` (613) | Home (banners/categories/featured/latest/topStores), search/category results with sort+pagination | `/api/market/home`, `/api/market/products`, `/api/campaigns/active` (60s, cosmetic accent layer) | Category icon map is decorative regex→icon [V] |
+| `pdp.tsx` (574) | Product detail, variant picker, qty stepper, likes, contact-seller, reviews (seeded DB rows), SEO JSON-LD | `/api/sf/{slug}/products/{pSlug}`, `/api/cart/items`, `/api/me/activity`, `/api/chat/threads` | — [V] |
+| `storefront.tsx` (1,285) | Renders builder `publishedJson` via 15-type `SectionRenderer`; follow toggle w/ optimistic update; newsletter | `/api/sf/{slug}[/pages|/products]`, `/api/stores/{slug}/follow`, newsletter | Owner-controlled `href`/`src` not scheme-allow-listed (XSS risk F-13) [V] |
+| `checkout.tsx` (2,569) | 3-phase checkout (Information→Delivery→Payment), vouchers per store group, mock pay page, order status/orders/lookup views | `/api/checkout/quote|create|addresses|payments/{ref}(+simulate,retry)`, `/api/me/orders*`, `/api/orders/lookup`, `/api/orders/receipt` | See D.3 [V] |
+| `me-hub.tsx` (2,241) | Account dashboard, purchases (buckets, receive, reorder), vouchers (mine+claim centre), addresses CRUD, likes/viewed, recommendations, coins check-in, profile | `/api/me/*` (12 endpoints) | NomoPay wallet & coins UI dormant behind `NOMO_FINANCE_ENABLED=false`; 4 toast-only "coming soon" tiles; Help Center misroutes to Purchases [V] |
+| `generate.tsx` (1,446) | Store-generation import wizard (input→authorisation→progress→result) + claim view | `/api/import/resolve|jobs|resume|claim/validate`, `/api/claim/bind`, `/api/auth/*` | Shopee/TikTok need server env; only `fixture` works end-to-end [V] |
+| `notification-bell.tsx` | 30s-polled badge + popover, mark-read, click-through | `/api/me/notifications*` | — [V] |
+| `ui-bits.tsx` (769) | fetch layer, product cards, status badges, shipment timeline, `sm_order_refs` device-local order list (≤25) | — | Guest "Orders" is localStorage-fan-out via lookup API (by design) [V] |
+
+## D.3 Checkout flow detail
+
+- **Phases**: draft state machine with `sessionStorage.sm_checkout_draft`; contact prefill from `sm_shopper_*` localStorage; client validation (email/phone/MY-postcode regex, 16 hardcoded MY_STATES). [V] `checkout.tsx:86-89,161-186`
+- **Quote sequencing (recently hardened)**: `quoteSeq` ref — only newest response may write quote state; `voucherKey` stable string dep + `voucherEntriesRef` break the quote→groups→voucherEntries→refreshQuote render cycle that previously hung checkout on "Updating prices from server…". Coupon apply joins the same sequence. [V] `checkout.tsx:569-617`
+- **Totals authority**: all totals rendered from server quote; create recomputes from scratch (`create/route.ts:108-114`). Client-side fallback subtotal sum is display-only. [V]
+- **Payment methods are a hardcoded client constant** `PROVIDERS = fpx_toyyibpay | tng | grabpay | card_stripe` (`checkout.tsx:91-96`); server accepts 5 (`KNOWN_PROVIDERS` incl. `fpx_curlec`, `create/route.ts:13`). **No NomoPay/Later option at checkout.** [V]
+- **Free-shipping copy duplicates the server rule** (RM100 threshold magic number, `checkout.tsx:1156-1169` vs `pricing.ts:12`). [V]
+- **Mock pay page**: in-shell `pay` view polling `/api/checkout/payments/{ref}` (3s), 10:00 countdown, Pay Now → `simulate {result:"succeeded"}`, decline/retry paths, auto-redirect on success. [V] `checkout.tsx:1494-1732`
+- **Idempotency**: stable draft `idemKey` sent as `Idempotency-Key` header (create route honours it server-side). [V] `checkout.tsx:792`, `create/route.ts:33-57`
+- Guest order history: `sm_order_refs` + `Promise.allSettled` over `/api/orders/lookup`. [V] `checkout.tsx:2394-2414`
+
+## D.4 Seller portal (21 components)
+
+- **Shell** (`seller-shell.tsx`, 674): status router — auth → onboarding wizard → `pending_review` (polls) → blocked screens → active dashboard; demo credential card rendered in UI (`:607-616`). 14-item nav. [V]
+- **Onboarding** (4 steps: identity/theme, KYC docs, bank account, submit): `/api/store/settings|theme|bank-accounts|onboarding`. [V]
+- **Dashboard**: KPIs + quick restock **fixed at delta +10** (`dashboard.tsx:50`). [V]
+- **Products**: list/create/edit/archive; images are client-generated `/api/img/{seed}` URLs (no upload API); nested create is atomic via Prisma. [V]
+- **Orders** (`orders.tsx` + `ship-order-dialog`/`deliver-dialog`/`shipment-panel`): tabs, fulfil → platform ship (rate card + AWB/label) or manual tracking, deliver with proof ≤1.2MB, refund-request (amount ≤ refundable). [V]
+- **Wallet**: truth-refreshed balance + 20 ledger lines + payouts + activity drill-down. (Dedicated `/api/store/payouts` page unused — wallet view covers it.) [V]
+- **Builder** (`builder.tsx` 1,042 + `builder-render.tsx` 387): 15 section types (announcement_bar, header, hero, image_banner, product_grid, collection_list, rich_text, image_with_text, testimonials, faq, newsletter, countdown, whatsapp_floating, footer, marketplace_strip), @dnd-kit drag/drop, draft/publish/revert versioning, theme editor. [V] `sections.ts:74-364`
+- **Imports**: connections (Shopee/TikTok/fixture), job progress 8s poll, resume, publish blockers. [V]
+- **Integrations**: provider config KV, webhook endpoints CRUD + "test" (simulated delivery labelled as such), API-key generator UI. [V]
+- **Domains** (verify is a server simulation), **SEO**, **Settings** (identity/social/marketplace opt-in), **Messages** (socket room + static quick-reply chips). [V]
+
+## D.5 Admin portal (29 components; 26 nav views)
+
+- **Shell** (`admin-shell.tsx`): login card with **hardcoded demo-account chips incl. plaintext demo passwords** (`:434-438`); `VIEW_MAP` + param views (`seller-detail`, `order-detail`, `payout-detail`). [V]
+- **Command centre**: KPIs + recharts GMV area chart + `/api/admin/system/health` poll. [V]
+- **Sellers**: list/detail, approve/reject/suspend/activate/terminate, risk tier, notes, KYC doc review, bank verify/reject, KYC queue. [V]
+- **Moderation**: product approve/reject/ban grid. **Categories** CRUD w/ commission bps. **Orders** list + full dossier. **Refunds** approve/process/reject. **Disputes** PATCH. [V]
+- **Finance**: `finance.tsx` (Overrides CRUD + Fee Holidays CRUD w/ "Commission % during holiday · 0 = full fee holiday" hint at `:576-578`), `wallets-ledger.tsx` (wallets, per-wallet ledger drill-down, adjustments T6), `payouts.tsx` (dry-run preview → run; mark-paid/fail; statement expansion w/ reconciliation-sum honesty check). [V]
+- **Commission** (`commission.tsx`, 2 tabs): Settings (diff dialog before apply) and **Reports & exports** (analytics incl. weekly trend + top stores; export history + download; dormant PSP split scaffold toast-blocked by `PSP_ADAPTER_REQUIRED`). Simulator is a separate nav view (raw JSON mode). [V]
+- **Marketing**: banners, featured slots, coupons, campaigns (RBAC `campaigns.manage`; festive presets auto-fill dates/theme; published campaign themes shopper market home). [V]
+- **Stores**: directory + **broken "retry domain verify" button** calling non-existent `/api/admin/domains/{id}/verify` (`stores.tsx:64`). [V]
+- **Support**: tickets (status/priority/reply). **Reports**: 4 canned reports + CSV export via full-page nav. **System**: settings, feature flags, audit logs, activity logs, notification log, health (ledger invariants). **No UI for webhook-deliveries/replay or announcements** (backend-only endpoints). [V]
+
+## D.6 Cross-cutting UX observations
+
+- **Responsive**: mobile-first throughout; shopper app-like bottom nav + safe-area insets; admin/seller desktop sidebar + mobile Sheet; long lists in max-h scroll containers. Touch targets ≥44px widely used. [V]
+- **Accessibility**: ~250+ `aria-label`s, Radix primitives for keyboard/focus, `role=tablist` segmented tabs, `aria-current` nav; weaknesses: some colour-only transitions. [V]
+- **Theming**: teal-led token system (`globals.css:45-62` brand remap), `bg-brand-gradient` utilities; `next-themes` installed but **no ThemeProvider mounted — light-only in practice**, inert `.dark` block. [P]
+- **Feedback**: sonner toasts (position top-center), consistent `EmptyState`/`Skeleton` patterns, framer-motion view transitions (7 files), recharts confined to admin. [V]
+- **Images**: deliberate plain `<img>` against `/api/img/{seed}` deterministic SVGs; `next/image` used twice, unoptimized. [V]
+- **i18n**: `next-intl` installed, **zero imports** — hardcoded en-MY copy. [M]
+- **Pollers inventory**: chat unread 15s, notifications 30s, pay status 3s, order status 12s, import 8s, campaigns 60s, admin health 30s, seller `/api/store/me` 20s. [V]
+
+## D.7 UI-only / mock / unwired inventory (file:line)
+
+1. Hardcoded payment providers — `checkout.tsx:91-96`. 2. Dormant NomoPay/coins scaffold behind `NOMO_FINANCE_ENABLED=false` — `me-hub.tsx:84,260,942-981`, `feature-flags.ts:30`. 3. Toast-only service tiles (NomoPay App, Money+ 4.1% p.a., Cash Financing, Insurance) — `me-hub.tsx:598-603`. 4. Help Center → Purchases misroute — `me-hub.tsx:428`. 5. RM100 free-ship magic number duplicated client-side — `checkout.tsx:1156-1169`. 6. Hardcoded `MY_STATES` + validators — `checkout.tsx:86-89`. 7. Decorative category icon map — `market.tsx:55-68`. 8. Demo credentials rendered in client bundles — `admin-shell.tsx:434-438`, `seller-shell.tsx:607-616`. 9. Backend-only webhook-deliveries/replay — no admin view. 10. Simulated confirmations labelled as real ("Test delivery sent (simulated)", domain verify) — `integrations.tsx:132`, `domains.tsx:46`. 11. Marketplace connect buttons surface env-not-configured toasts; only fixture platform works — `imports.tsx:123-132`. 12. Image "generation" = new `/api/img/{seed}` seed strings — `products.tsx:302`, `builder.tsx:732,751`, `marketing.tsx:68-76`. 13. Fixed +10 restock — `dashboard.tsx:50`. 14. Static quick replies — `messages.tsx:287-300`. 15. Device-local guest order list — `ui-bits.tsx:293-316`. 16. Campaign accent layer silently no-ops on failure — `market.tsx:88-105`. 17. Shopper Bearer gap (cookie-less contexts degrade to guest) — `ui-bits.tsx:214-243`. 18. No URL routing for seller/admin; refresh → dashboard. [V]
+
+### FILE: docs/blueprint/03-backend-api.md
+
+# Blueprint Support 03 — Backend, API & Business Logic Blueprint (Part E)
+
+Evidence from full static inspection of `src/app/api/**` (~120 route files). Guard shorthand: **A**=requireAdmin, **C(cap)**=requireCap, **S**=requireSeller, **SAS**=requireActiveSellerStore, **Sh**=requireShopper, **Ses**=getSession, **—**=public. Envelope: `{data}` / paged `{data, meta}` / errors `{error:{code,message,details}}` via `ApiError`+`handle` (`src/lib/api.ts:7-46`). No server actions exist. No zod except 3 `me/*` routes; validation is manual per-route. No rate limiting anywhere.
+
+## E.1 Auth & session foundation
+
+| Function | Location | Semantics |
+|---|---|---|
+| `createSession(userType,userId)` | `lib/auth.ts:28-44` | Session row (token = 64-hex CSPRNG, TTL 7d) + cookie `sm_session` `httpOnly, SameSite=None, Secure, path=/, maxAge=604800` |
+| `getSession()` | `lib/auth.ts:53-76` | Bearer header (regex-validated) **or** cookie → Session row, expired→null. No status re-check here (guards do it) |
+| `requireAdmin / requireAdminRole / requireCap` | `lib/auth.ts:78-144` | userType=admin + isActive; 11-cap RBAC matrix `ADMIN_CAPS` (unknown cap ⇒ superadmin-only) |
+| `requireSeller / requireActiveSellerStore / requireShopper` | `lib/auth.ts:92-124` | Seller includes store (status passthrough); Shopper requires `status==="active"` |
+| `hashPassword/verifyPassword` | `lib/password.ts:4-20` | scrypt (64B key, random salt), timing-safe compare |
+| `claimGuestStateForShopper` | `lib/shopper-merge.ts:13-21` | On shopper login/register: legacy guest orders with matching email claimed into account (risk F-11) |
+| `transitionOrder` | `lib/api.ts:147-167` | read→update status+timestamp→history row. **No from-status legality check, non-transactional** |
+| `nextOrderNumber()` | `lib/api.ts:183-190` | Counter upsert `NM-<n>`; atomic per-row but called outside the create transaction (gaps possible) |
+| `auditAdmin / logActivity / notify` | `lib/api.ts:57-124` | Dual-write AdminAuditLog+ActivityLog; notifications are inline NotificationLog rows (no worker) |
+| `dispatchStoreWebhooks` | `lib/api.ts:127-144` | **Simulated** outbound webhook fan-out (pre-marked success rows, no HTTP) |
+
+## E.2 Route inventory
+
+### auth (7 files)
+| Route | Method | Guard | Notes |
+|---|---|---|---|
+| `/api/auth/login` | POST | — | portal∈{admin,seller}; terminated seller 403; returns Bearer token + sets cookie |
+| `/api/auth/register` | POST | — | seller signup; **$transaction**: Seller(onboarding)+draft Store+Wallet+4 CMS pages |
+| `/api/auth/logout` | POST | — | revoke + cookie delete |
+| `/api/auth/me` | GET | Ses | whoami; `{userType:null}` anon |
+| `/api/auth/shopper/login|register` | POST | — | cross-portal email-collision check; suspended 403 |
+| `/api/auth/callback/[platform]` | GET | — | OAuth redirect; 10-min single-use `state` nonce (Setting table); inline handler never consumes the stored sellerId binding (F-07) |
+
+### me (14 files — all requireShopper)
+`GET /orders` (buckets + **lazy auto-complete** delivered>14d→completed 60s-throttled + **lazy mock-tracking tick**), `GET /orders/[orderNumber]` (shopperId-scoped 404), `POST .../receive` (shipped/delivered→completed; fast-forwards mock shipment), `POST|GET .../return-request` (creates **Dispute**; no Refund, no money), `POST .../reorder`, `GET|POST /notifications (+/unread)`, `GET /vouchers + POST /vouchers/claim`, `GET|PATCH /profile` (auto membership upgrade; zod here), `GET /wallet` (**dormant** — `disabled:true` envelope), `POST /coins/claim` (403 `FEATURE_DORMANT`), `GET /recommendations`, `GET|POST|DELETE /activity`.
+
+### cart (4 files)
+`GET /` (guest → 200 empty + requiresAuth), `POST /items` (Sh; stock/active guards; merge-dup capped at stock), `PATCH|DELETE /items/[id]` (Sh). Carts are account-scoped; legacy token path read-only (`cart/cart.ts:1-6`).
+
+### checkout (8 files)
+`POST /quote` (public when no vouchers; session only to resolve voucher wallet), `GET|POST /addresses (+[id])` (guests 401), `POST /create` (Sh; **Idempotency-Key required**; full trace in E.3), `GET /payments/[ref]` (public status; no ownership check), `POST /payments/[ref]/simulate` (public mock-PSP), `POST /payments/[ref]/retry` (public; failed→requires_payment).
+
+### orders (public)
+`GET /lookup?email&orderNumber` (uniform 404; sequential numbers ⇒ guessable pair, F-08), `GET /receipt` (pdf-lib PDF; PII inside; unpaid 409).
+
+### market (3, public) — `home`, `products` (search/category/sort, okPaged), `stores` (live directory; marketplaceOptIn filter).
+### sf (6, public) — live stores only, publishedJson only. **`POST /sf/{slug}/products/{pSlug}/reviews` is unauthenticated, auto-published, rewrites rating aggregates** (abuse flag). `POST /sf/{slug}/newsletter` unbounded log rows.
+### img / health / shipping-tick / campaigns
+`GET /img/[seed]` (deterministic SVG, 1y immutable), `GET /health` (**publicly exposes ledger invariant problems**), `POST /shipping/tick` (intentionally unauthenticated global mock-shipment advancer, 1.5s throttle; **no caller in repo**), `GET /campaigns/active` (published campaign or null).
+### claim / follow / chat / import
+`POST /claim/bind` (seller session; SHA-256-hashed single-use claim token; guarded tx) [V]. `GET|POST /stores/[slug]/follow` (Sh). `chat/threads*` (Sh/Ses; thread access shopper-XOR-store-owner; broadcast via hub; dormant auto-reply scaffold). `import/resolve|jobs|jobs/[id]|resume|claim/validate` — **job creation unauthenticated** (trackingToken-gated reads; abuse flag F-10). `webhooks/payments/[provider]` (public; HMAC w/ hardcoded demo secret — see E.3).
+
+### store (50 files — seller portal)
+All session-guarded (43 `requireActiveSellerStore`, 1 `requireSeller`, 6 inline seller checks); **no unscoped bare-id query found** — every `[id]` route filters by `storeId` or post-checks ownership (`ownProduct`/`ownVariant`/`ownCoupon`/`ownCollection`/`ownEndpoint`). Coverage: `me`, `dashboard`, `products(+[id],variants)`, `inventory/adjust` ($transaction), `orders(+fulfill|ship|deliver|label|refund-request)`, `shipping/quote`, `wallet(+activity/[id])`, `payouts` (uncalled), `coupons*`, `vouchers`, `collections*` (membership $transaction), `pages(+draft|publish|revert)`, `theme`, `settings`, `seo`, `domains*` (verify simulated), `webhooks*`, `integrations`, `connections*` (OAuth begin/disconnect), `imports`, `publish` (canPublish gate), `onboarding`, `bank-accounts`, `chat/*`.
+
+### admin (70 files — back office)
+**Guard coverage 70/70** (`requireAdmin` or `requireCap`); **audit coverage: every DB-mutating admin route calls `auditAdmin`** (45 files; the 25 without are read-only GETs or pure-compute `simulate`). Capability matrix: `sellers.approve/suspend`, `products.moderate`, `commission.manage`, `payouts.manage`, `refunds.manage`, `disputes.manage`, `settings.manage`, `impersonate` (unused), `logs.view`, `campaigns.manage`. Coverage: dashboard, sellers(+lifecycle/kyc/notes), kyc-queue, banks(+verify/reject), products(+approve/reject/ban), categories, orders(+[id]), refunds(+approve|process|reject), disputes, coupons, banners, featured, campaigns, announcements (uncalled), stores, wallets(+adjust T6), ledger/accounts+transactions, payout-batches, payouts(+mark-paid|fail), commission/* (see E.4), tickets, reports/[type], export, settings, feature-flags, audit-logs, activity-logs, notifications, webhook-deliveries(+replay, uncalled), system/health.
+
+## E.3 End-to-end trace A — checkout → paid order → ledger
+
+1. **Quote** `POST /checkout/quote` (`quote/route.ts`): `priceItems` (server price from variants; qty/active/live validation) → `computeGroupPricing` (per-store groups, per-group free-ship threshold RM100 standard/express RM15 non-East-MY, coupon applies to exactly ONE highest-subtotal eligible group) → `buildVoucherOutcomes` soft mode → aggregate. Nothing persisted. [V] `checkout/pricing.ts:12-17,78-330`
+2. **Create** `POST /checkout/create` (`create/route.ts`): requireShopper → **replay by idemKey** (PaymentGroup then legacy Order; 403 cross-user) → validation (provider ∈ KNOWN_PROVIDERS, address, email/phone) → **recompute pricing from scratch** → **hard voucher mode** (unusable selection ⇒ 409) → commission via `computeOrderCommissions` on voucher-adjusted totals → `nextOrderNumber()` per group (**outside tx**) → **single `$transaction`**: stock re-check (check-then-act decrement, no `stock >= qty` conditional), PaymentGroup, Orders(payment_pending), **atomic voucher redemption** (guarded `updateMany AVAILABLE→USED` + quota increment), OrderItem.createMany **with frozen commission snapshots**, stock decrement + InventoryLog + salesCount, history row, CouponRedemption+timesUsed → post-commit notify+audit. [V] `:33-350`
+3. **Pay** `GET /payments/[ref]` (public status; computed `expired`), **simulate** (server signs payload with `WEBHOOK_SECRET` and calls the exact production processor), **retry** (failed→requires_payment). [V]
+4. **Webhook** `POST /webhooks/payments/[provider]` → `processPaymentWebhook` (`webhooks/payments/process.ts`): always log `PaymentWebhookLog` first (incl. bad signatures) → HMAC-SHA256 over `"{ref}.{event}.{amountMinor}.{ts}"`, **hardcoded demo secret** (`:26`), non-timing-safe compare (`:63`), **no replay window** → amount guard 409 → **duplicate handling = status check** (`group.status==="succeeded"` ⇒ no-op `duplicate:true`, `:98-110`; intent `:210-221`) → success: `group.succeeded` → per order `transitionOrder(→paid)` → **T1** `postOrderPaid` (DR GATEWAY total / CR SELLER:PAYABLE net w/ `availableAt=holdUntil` / CR REVENUE_COMMISSION) + `refreshWalletCache` → simulated store webhooks + notifications + **cart cleared server-side**. [V]
+5. **Known hazards** (detailed in Support 06): non-transactional success path (status flip before ledger; crash ⇒ paid order never credited, retries return duplicate), status-only idempotency ⇒ TOCTOU double-T1 under concurrency, T1 silently skipped if seller/wallet missing (`:151,268`). [V]
+
+## E.4 Commission endpoints
+
+| Endpoint | Guard | Behaviour |
+|---|---|---|
+| `GET|PUT /admin/commission/settings` | A / C(commission.manage) | `rateBpsFrom` digit-exact validation; payoutHoldDays 0..60; basePriceRule enum; upsert singleton id=1; audited |
+| `GET|POST|PATCH|DELETE /admin/commission/overrides(+[id])` | A / C | scope∈{category,seller,product}; `rateBpsFrom`; validity window; audited. **Table is never read by the engine** (FIN-01) |
+| `GET|POST|PATCH|DELETE /admin/commission/holidays(+[id])` | A / C | startsAt<endsAt required; `rateBpsFrom ?? 0`; audited |
+| `GET|POST /admin/commission/exports` (+`GET /[id]/download`) | A / C | POST: days 7..730, `aggregateCommission`, 409 `EMPTY_PERIOD`, snapshot stored; download **regenerates CSV from frozen snapshotJson — never recomputed** (byte-stable), `Cache-Control: no-store` |
+| `POST /admin/commission/simulate` | A | pure computation, no write/audit |
+| `GET /admin/commission/analytics` | A | ledger-truth aggregation + recent exports + PSP scaffold state |
+| `GET|PUT /admin/commission/psp-settings` | A / C | PUT autoSettle:true ⇒ **409 PSP_ADAPTER_REQUIRED**; provider must have `awaitingAdapter:false` (only `mock`); audited |
+
+## E.5 Trace B — refunds; Trace C — payouts (summaries; full detail Support 06 §5–6)
+
+**Refunds**: shopper `return-request` creates a **Dispute** (no money); seller `refund-request` is the **only `db.refund.create`** (amount ≤ total−Σnon-rejected); admin approve/reject; **process** = Refund(processed) + `commissionReversalMinor = bpsOf(amount, frozen item bps)` + **T5** + order→`partially_refunded|refunded` + OrderItem.refundedMinor (whole amount charged to first item with remaining balance — heuristic) + restock (**full item qty regardless of partial amount**) + paymentIntent→refunded. **No `$transaction`**; idempotency = status check-then-act. [V]
+
+**Payouts**: `POST /admin/payout-batches {dryRun}` → eligibility = ledger-truth `availableMinor ≥ payout.min_minor` → real run: batch(running) → per wallet: counter `PO-<n>`, statement period since last **paid** payout, `buildLedgerStatementFromLedger` (ledger-derived, balancing "retained" line), Payout(processing) + **T3**; batch→completed. `mark-paid` ⇒ **T4** (clearing→bank) + paidAt/providerRef; `fail` ⇒ **T4f** (reverse to payable, immediately available). Non-transactional loop; small check-then-act races. [V]
+
+## E.6 Cross-cutting anomalies
+
+- **Uncalled endpoints**: `GET /api/store/payouts`, `/api/admin/announcements*`, `/api/admin/webhook-deliveries(+replay)`, `POST /api/shipping/tick`. **Broken caller**: `admin/stores.tsx:64` → non-existent `/api/admin/domains/[id]/verify` (404). [V]
+- **Business rules in multiple places**: free-ship threshold (pricing.ts + checkout copy), order-status arrays ≥5×, payment providers (client 4 vs server 5), status label maps ≥5× (Support 10 §4).
+- **Frontend-only logic**: none financially authoritative (server recomputes everything at create/webhook); client quote math is display-only.
+- **Input validation**: manual everywhere except zod in 3 `me/*` routes; webhook `amountMinor = Math.round(Number(...))` coerces instead of rejecting (`process.ts:55`).
+- **Unauthenticated mutation surface**: simulate, retry, webhook, reviews, newsletter, shipping/tick, import jobs — all flagged in Support 07 §5.
+
+### FILE: docs/blueprint/04-database-model.md
+
+# Blueprint Support 04 — Database Schema & Data Model (Part F)
+
+Source: full read of `prisma/schema.prisma` (1,215 lines) + live read-only DB verification (Python sqlite3 `mode=ro`; `sqlite3` CLI unavailable). Labels [V]/[I]/[P].
+
+## F.1 Overview
+
+- **76 models, 0 enums** (SQLite+Prisma: enums are Strings + app-level validation). IDs: `String @id @default(cuid())` except `CommissionSetting.id Int` and `Counter.key String`. Every model has `createdAt`; most `updatedAt`. JSON = `String` columns (helpers `json.ts`; 21 files still raw-`JSON.parse`). [V]
+- **Money columns are Prisma `Int`** (int32, ceiling 2^31−1 sen ≈ RM 21.47M; SQLite itself stores 64-bit). Since 2026-10-18 (Task 3-a, FIN-09) every write boundary is guarded by `assertInt32Safe` (`money.ts`): all ledger posting recipes (T1–T6 line + txn totals) and checkout order/group/item totals throw `Money overflow: <field>=<n> sen exceeds Int32 max` (checkout surfaces 400 `MONEY_OVERFLOW`) instead of persisting an out-of-range value. Widening to BigInt columns is deferred to the PostgreSQL migration plan — no schema change this round. [V]
+- **Live DB**: 77 tables (76 + `sqlite_sequence`); `_prisma_migrations` **absent** (no migration ledger — workflow is `prisma db push`, `package.json:10` with `--accept-data-loss`). [V]
+- Row counts at inspection: Store 5, Seller 5, Product 27, Order 15, OrderItem 21, LedgerTransaction 19, LedgerLine 52, Wallet 5, PaymentIntent 14, PaymentGroup 1, Refund 1, PayoutBatch 1, Payout 1, CommissionExport 2, FeeHoliday 1, FinMigrationBackup 31, Session 7, ShopperUser 3, Voucher/Campaign/Shipment/ShopperWallet 0 (seed-me/vouchers/campaigns outputs absent from live DB). [V]
+
+## F.2 Model catalogue (grouped; key fields only — full DDL in schema.prisma)
+
+### Identity & Access (10)
+| Model | Purpose | Key fields/constraints |
+|---|---|---|
+| `AdminUser` | Back-office login | email @unique; role dft "ops" (superadmin/ops/finance/moderator); passwordHash; isActive |
+| `Seller` | Vendor account | email @unique; status lifecycle `onboarding→pending_review→active|rejected|suspended|terminated`; riskTier; **commissionOverrideBps Int?**; holdDaysOverride; kycStatus; planCode dft "free" |
+| `ShopperUser` | Buyer account | email/username @unique; membershipLevel dft "SILVER"; status |
+| `Session` | DB-backed sessions | token @id (cuid per schema; runtime uses 64-hex), userType(admin/seller/shopper), userId **polymorphic no-FK**, expiresAt |
+| `KycDocument` / `SellerNote` | KYC + admin notes | FK sellerId (no onDelete) |
+| `BankAccount` | Payout destination | accountNumberMasked + **accountNumberEnc (enc-prefixed last-4 only)**; verified |
+| `Address` | Shopper addresses | ownerToken + shopperId? (Cascade) |
+| `ApiKey` | Store API keys | hash + scopesJson; revokedAt |
+| `Wallet` / `ShopperWallet` | Balances | sellerId/userId @unique 1-1; **pending/available/reserved/lifetimeEarned/lifetimeCommissionMinor Int dft 0** (derived caches); payLater* dormant scaffold; coinBalance Int (coins ≠ money) |
+
+### Catalogue (10)
+| Model | Key fields/constraints |
+|---|---|
+| `Store` | sellerId? @unique 1-0..1; slug @unique; status draft/live/suspended; currency MYR; themeJson; **fsPriceAdjustMinor Int** (seller FS cost-recovery display) |
+| `Category` | parentId self-FK; slug @unique; **commissionBps Int?** |
+| `Product` | storeId FK (NO ACTION); slug; status `draft/pending_review/active/rejected/banned`; **priceMinor Int**; **commissionBpsOverride Int?**; ratingAvg **Float** (only non-audit Float; non-money); sourcePlatform/sourceShopId/sourceProductId (import provenance); **@@unique([storeId,slug], [storeId,sourcePlatform,sourceProductId])** |
+| `ProductVariant` | productId Cascade; **priceMinor Int** (no default); compareAtPriceMinor?; stock; lowStockThreshold |
+| `ProductImage` / `InventoryLog` / `Review` (orderId no FK) / `Collection`+`CollectionProduct` / `CmsPage` (draftJson/publishedJson + draftVersion/publishedVersion) / `SeoMeta` (polymorphic @@unique) |
+
+### Cart / Checkout / Orders (13)
+| Model | Key fields/constraints |
+|---|---|
+| `Cart`/`CartItem` | token @unique; shopperId? @unique; storeId no-FK |
+| **`Order`** | storeId FK (NO ACTION → store delete strands orders); **orderNumber @unique**; status `payment_pending/paid/processing/shipped/delivered/completed/cancelled/refunded/partially_refunded`; **subtotal/discount/shipping/tax/totalMinor Int**; idemKey? @unique; paidAt..cancelledAt; **holdDays Int? — payout hold resolved by the commission engine at checkout (CommissionOverride.holdDays > Seller.holdDaysOverride > global; null = legacy order → webhook keeps the old fallback)** (FIN-01 R1, additive 2026-10-18); voucherId? FK; paymentGroupId? FK; @@index([shopperId],[paymentGroupId]) |
+| **`OrderItem`** | orderId Cascade; productId?/variantId? nullable no-cascade (survives deletion); **unitPriceMinor/lineSubtotalMinor/discountMinor/shippingMinor/commissionBps (Int, FROZEN snapshot per schema comment :595-597)/commissionMinor/fixedFeeMinor/sellerNetMinor/refundedMinor**; breakdownJson |
+| `OrderStatusHistory` | from/to status + actor |
+| `PaymentIntent` | orderId Cascade; **providerRef @unique**; amountMinor; status |
+| `PaymentGroup` | ref @unique; shopperId Cascade; **idemKey? @unique**; subtotal/discount/shipping/totalMinor; expiresAt; redirectUrl |
+| `PaymentWebhookLog` | provider/providerRef/eventType; payloadJson; signatureValid/processed; orderId no-FK; **no unique key** |
+| `Shipment`/`ShipmentEvent` | orderId @unique; status literal set incl. `PENDING_BOOKING…RETURNED`; awbNumber |
+| `Coupon`/`CouponRedemption` | code @unique; type percent/fixed/freeship; **percentBps Int?** (converted from legacy `percent`); amountMinor/minSpendMinor; redemption stores discountMinor + customerEmail (denormalised) |
+
+### Payments / Finance (9)
+| Model | Key fields/constraints |
+|---|---|
+| `Plan` | code @unique; monthlyFeeMinor; **commissionBps Int?** (schema comment :15) |
+| `CommissionSetting` | singleton id Int=1; **defaultBps Int dft 800**; appliesToShipping dft false; basePriceRule paid_price/list_price; fixedFeeMinor; minCommissionMinor; payoutHoldDays dft 7; holdReleaseRule; graceDaysAfterDelivered |
+| `CommissionOverride` | scope; categoryId?/sellerId?/productId? (loose strings, **no FKs**); **bps Int?**; **fixedFeeMinor? / holdDays? — APPLIED by the winning row since FIN-01 R1 (2026-10-18): fee replaces the per-order global fixed fee, hold wins over Seller.holdDaysOverride; out-of-range stored values are IGNORED with audit flags (`applyOverrideFields`), the admin API validates 0..MONEY_INT_MAX / 0..3650**; validFrom/To; isActive |
+| **`FeeHoliday`** | name; scope all/categories/sellers; scopeIds?; **bps Int dft 0 — the commission rate CHARGED during the window (0 = full fee holiday)**; startsAt/endsAt; isActive. ~~Stale schema comment claimed engine grants full holiday~~ **FIN-07 RESOLVED 2025-10-18**: comment corrected to charged-rate semantics, matching `commission.ts:79-92` (engine applies h.bps clamped ≤ normal) |
+| **`CommissionExport`** | periodFrom/To; totalMinor; orderCount/lineCount; format csv; **snapshotJson** (v1 rows carry `summary.effectiveRatePct` percent-float; v2 rows carry `schemaVersion:2` + bps — discriminator **inside** snapshotJson, no columns) |
+| `LedgerAccount` | **code String @id**; type; walletId? (per-wallet subaccounts) |
+| `LedgerTransaction` | txnType `order_paid/gateway_settlement/refund/admin_adjustment/payout_initiated/payout_confirmed/payout_failed`; refType?/refId? — **no unique on (txnType,refType,refId) ⇒ idempotency is app-level only** |
+| `LedgerLine` | txnId Cascade; accountCode (**no FK to LedgerAccount**); direction debit/credit; **amountMinor**; walletId?; availableAt? (hold maturity) |
+| `PayoutBatch`/`Payout` | batch: runType/status/totalMinor/payoutCount; payout: **referenceNo @unique** (`PO-…`); amountMinor; status processing/paid/failed; method manual_csv; bankAccountId?; **statementJson** |
+| `Refund` | orderId Cascade; amountMinor; status requested/approved/rejected/processed; requestedBy; restock dft true; **commissionReversalMinor** |
+
+### Marketing / Support / Platform (18)
+`Campaign` (no unique name), `Voucher` (code @unique; kind discount/freeshipping/coinsback; **discountMinor**; **percentOff Int? — residual whole-percent unit, deliberately not bps**; scope PLATFORM|STORE; regionLimit; quota), `UserVoucher` (@@unique; AVAILABLE/USED/EXPIRED), `MarketplaceBanner`, `FeaturedSlot`, `Notification`, `UserActivity` (@@unique LIKE/VIEWED), `StoreFollow` (@@unique), `SupportTicket`+`SupportMessage` (storeId no-FK), `Announcement`, `ChatThread` (@@unique([shopperId,storeId])) + `ChatMessage`, `NotificationTemplate` (@@unique event+channel) + `NotificationLog`, `Setting` (key @id), `FeatureFlag` (key @id, rolloutPercent), `AdminAuditLog`, `ActivityLog`, `Counter` (key @id; order_number, payout_number), **`FinMigrationBackup`** (migration/table/rowId/field @@unique; **oldValue Float (legacy percent) / newValue Int (bps)** — audit anchor, intentional Float), `ExportJob`, `MarketplaceConnection` (@@unique platform+shopId; accessTokenEnc/refreshTokenEnc sealed), `ImportJob` (trackingToken @unique; isFixture) + `ImportJobItem`, `StoreClaim` (**tokenHash @unique**), `StoreDomain` (domain @unique), `StoreIntegration`, `WebhookEndpoint` (**secret plaintext**) / `WebhookDelivery`.
+
+## F.3 Money & rate storage map (complete)
+
+**Post M-FIN-1: zero Float/Decimal money or rate columns remain** in live tables. Convention: money = Int sen (minor units); rates = Int bps (`BPS_DENOM=10_000`, `src/lib/money.ts:53`). [V]
+
+| Field(s) | Unit | Note |
+|---|---|---|
+| `Plan.monthlyFeeMinor` / `Plan.commissionBps` | sen / bps | |
+| `CommissionSetting.defaultBps/fixedFeeMinor/minCommissionMinor` | bps / sen / sen | singleton |
+| `CommissionOverride.bps/fixedFeeMinor` | bps / sen | dead config (FIN-01) |
+| `FeeHoliday.bps` | bps | **rate charged during window**; 0 = full waiver |
+| `Seller.commissionOverrideBps`, `Category.commissionBps`, `Product.commissionBpsOverride` | bps | engine chain (product→category→seller→global) |
+| `Order.{subtotal,discount,shipping,tax,total}Minor` | sen | 5 columns |
+| `OrderItem.{unitPrice,lineSubtotal,discount,shipping,commission,fixedFee,sellerNet,refunded}Minor` | sen | frozen at create |
+| `OrderItem.commissionBps` | bps | frozen snapshot, never recomputed |
+| `PaymentIntent.amountMinor`, `PaymentGroup.{subtotal,discount,shipping,total}Minor` | sen | |
+| `Refund.amountMinor/commissionReversalMinor` | sen | |
+| `Wallet.{pending,available,reserved,lifetimeEarned,lifetimeCommission}Minor` | sen | **derived caches** of ledger truth |
+| `LedgerLine.amountMinor`, `Payout.amountMinor`, `PayoutBatch.totalMinor` | sen | |
+| `Coupon.percentBps/amountMinor/minSpendMinor`, `CouponRedemption.discountMinor` | bps / sen | |
+| `Voucher.discountMinor/maxDiscountMinor/minSpendMinor` | sen | |
+| **`Voucher.percentOff`** | **whole percent 1..90** | the only percent-typed rate left; guarded ×100 conversion (`vouchers.ts:122`) |
+| `ShopperWallet.balanceMinor/payLater*/coinBalance` | sen / coins | dormant |
+| `Store.fsPriceAdjustMinor` | sen | display only |
+| `CommissionExport.snapshotJson` | mixed | v1 percent-float vs v2 bps, discriminator inside JSON |
+| `FinMigrationBackup.oldValue/newValue` | percent Float / bps Int | audit-only |
+| `Product.ratingAvg` | Float | non-money |
+
+## F.4 Seeds
+
+| Seed | Destructive? | Contents |
+|---|---|---|
+| `prisma/seed.ts` (866 ln) | **YES — wipes 60+ models children-first** (deliberately preserves FinMigrationBackup; **omits CommissionExport**, so export snapshots survive reseeds) | Plan free (800 bps); CommissionSetting id=1; 7 settings + 5 flags; 4 AdminUsers (admin@nomofee.io superadmin + demo password — not reproduced); 8 categories (bps 600–1000); 5 sellers/stores + wallets + CMS pages + KYC + banks; 27 products; **14 orders NM-100001..NM-100014** (13 with ledger); **1 Refund RM4,500 status requested** (Glow Theory) + 1 Dispute; **PayoutBatch + Payout referenceNo "PO-100001"** amount = min(available, RM2,000.00)=55,660 with **ledger-derived statement**; FeeHoliday "Merdeka F&B" (categories, bps 0); CommissionOverride (seller, 1000 bps); templates/integrations/webhooks/tickets/announcement/audit logs; Counter |
+| `seed-me.ts` | no (upserts) | 8 platform vouchers (**uses `percentOff`**), demo shopper aisyah@nomofee.test wallet (balance RM128.40, coins 1,250, dormant payLater), UserVouchers/activity; **skips silently if shopper absent** (seed.ts never creates shoppers) |
+| `seed-vouchers.ts` | no (repair-only) | 4 STORE vouchers (LUMINAFS/LUMINA12/BYTE15/GLOWRM10); never resets claimedCount/holders |
+| `seed-campaigns.ts` | no (upsert by name) | Raya Mega Sale (published) + 12.12 (draft) |
+
+**PO-100001 provenance (resolved)**: the historic "Refunds −RM 30.00" line was **hard-coded decoration in the OLD seed** with no Refund row behind it; `scripts/fix-payout-statements.ts:4-8` documents the lie; statements are now ledger-derived (`buildLedgerStatementFromLedger`), and the live PO-100001 statement (`Sales +60,500 / Platform commission −4,840 / retained 0`, Σ=55,660 ≡ payout) contains **no refunds line**. Current seed creates exactly one Refund (RM45, unrelated to the payout, status `requested`, no T5). [V]
+
+## F.5 Integrity & anomaly observations
+
+1. **No DB CHECK constraints** (SQLite+Prisma): bps ranges 0..10,000 and `direction ∈ {debit,credit}` enforced only app-level (`fin-reconcile` section A polices live data). [V]
+2. **FK actions mostly NO ACTION** — deleting a Store strands Orders; `LedgerLine.accountCode` has **no FK**; polymorphic refs (Session, SeoMeta, Review.orderId, PaymentWebhookLog.orderId, LedgerAccount.walletId) unenforceable; CouponRedemption has no FKs. Cascades exist on the shopper-side graph. Product deletion is "archive" (isActive=false) in practice, which mitigates. [V]
+3. **Good business-key uniqueness**: orderNumber, Payout.referenceNo, PaymentIntent.providerRef, PaymentGroup.ref/idemKey, Order.idemKey, voucher/coupon codes, claim tokenHash, FinMigrationBackup natural key. **Missing**: LedgerTransaction idempotency key; Campaign.name. [V]
+4. **Transaction boundaries**: `$transaction` in only **7 route files** (checkout/create, auth/register, claim/bind, checkout/addresses ×2, store/inventory/adjust, store/collections/[id]/products). **Non-transactional**: webhook success (status→T1→notifications), refund process (T5+order+item+restock+refund), payout batch loop, mark-paid/fail, variant+price recompute. Ledger postings themselves are atomic (nested create) with in-app balance validation (`ledger.ts:63-72`). [V]
+5. **Secrets at rest**: passwordHash (scrypt), ApiKey.hash, BankAccount.accountNumberEnc (enc-prefixed last-4 only), MarketplaceConnection tokens AES-256-GCM sealed, WebhookEndpoint.secret **plaintext**, Session tokens **plaintext**. [V]
+6. **Integer-width caveat**: all money columns are Prisma `Int` (nominally 32-bit ≈ RM21.47M) though SQLite stores 64-bit; engine math is BigInt-safe in memory but persistence past 2^31 sen is untested (FIN-09). [P]
+7. `db push --accept-data-loss` + no migration ledger ⇒ schema history lives only in worklog + FinMigrationBackup (Support 09 §P). [V]
+
+### FILE: docs/blueprint/05-domain-marketplace-lifecycle.md
+
+# Blueprint Support 05 — Order Lifecycle, Marketplace Architecture & System Flows (Parts G, I, S)
+
+## PART G — E-commerce domain and order lifecycle
+
+### G.1 Lifecycle diagram (implemented statuses)
+
+```mermaid
+stateDiagram-v2
+  [*] --> payment_pending: checkout/create ($transaction)
+  payment_pending --> paid: webhook payment.succeeded (HMAC, amount guard)
+  payment_pending --> payment_pending: payment.failed / retry (stays)
+  paid --> processing: seller fulfill
+  processing --> shipped: seller ship (platform rate+AWB / manual tracking)
+  shipped --> delivered: seller deliver (proof ≤1.2MB) OR buyer receive
+  delivered --> completed: buyer receive / lazy auto-complete >14d
+  paid --> cancelled: (admin/seller paths where guarded)
+  processing --> cancelled
+  paid --> partially_refunded: refund.process (totalRefunded < total)
+  paid --> refunded: refund.process (totalRefunded ≥ total)
+  partially_refunded --> refunded
+  completed --> partially_refunded: refund window
+```
+
+### G.2 Status transition authority table
+
+| Transition | Trigger code | Authority | DB fields written | Financial/inventory effect |
+|---|---|---|---|---|
+| → `payment_pending` | `checkout/create/route.ts:222-246` (in `$transaction`) | shopper (session) | Order.status, idemKey, paymentGroupId, voucherId | stock decrement + InventoryLog + salesCount; voucher AVAILABLE→USED atomic; CouponRedemption |
+| → `paid` | `webhooks/payments/process.ts:140-146,274+` via `transitionOrder` | verified webhook (HMAC) | status, paidAt | **T1 ledger**; wallet credit (hold); cart cleared; simulated store webhooks; notifications |
+| → `processing` | `store/orders/[id]/fulfill` | seller (store-scoped) | status, fulfilledAt, history | — |
+| → `shipped` | `store/orders/[id]/ship` | seller | status, shippedAt; Shipment+events, awbNumber | buyer notification (`shipping.ts:313-329`) |
+| → `delivered` | `store/orders/[id]/deliver` (seller, proof) or `me/orders/[n]/receive` (buyer) | seller XOR buyer | status, deliveredAt; Shipment POD | — |
+| → `completed` | `me/orders/[n]/receive` or **lazy sweep** `me/orders/route.ts:107-113` (delivered >14d, 60s throttle) | buyer / system | status, completedAt | — |
+| → `partially_refunded` / `refunded` | `admin/refunds/[id]/process:55-67` | admin (`refunds.manage`) | status; Refund.processed; OrderItem.refundedMinor; paymentIntent→refunded | **T5** (seller share + commission reversal / gateway); restock **full item qty** |
+| → `cancelled` | guarded per-route (unpaid only in shopper paths) | per-route guards | status, cancelledAt | none observed (no auto stock restore found) |
+
+**Central state machine: none.** `transitionOrder` (`lib/api.ts:147-167`) performs read→update→history with **no from-status legality validation**; legality is enforced by per-route guards using **duplicated status arrays** (≥5 sites — Support 10 §4). Concurrent transitions are racy (check-then-act). [V]
+
+### G.3 Stage-by-stage lifecycle (implemented vs missing)
+
+| Stage | Status | Evidence |
+|---|---|---|
+| Product creation/publishing | **Implemented** | seller products CRUD + admin moderation (pending_review→active) |
+| Pricing/variants | **Implemented** | variant priceMinor; compareAtPrice not surfaced in checkout math |
+| Stock reservation | **Deduct-at-checkout** (not reservation) | create `$transaction` re-check + decrement; two-phase reservation absent [V] |
+| Cart | **Implemented** (account-scoped; guest read-only) | `cart/cart.ts:1-6` |
+| Checkout validation | **Implemented** (server recompute, hard voucher mode, shipping assert) | `create/route.ts:102-165` |
+| Shipping calculation | **Mocked but consistent** | 2 rates (standard RM8 free≥RM100; express RM15 non-East-MY) `pricing.ts:12-21` |
+| Discounts/vouchers | **Implemented** (coupon single-group; voucher per-store atomic redemption) | `pricing.ts:313-330`, `create:251-269` |
+| Payment initiation | **Implemented** (mock PSP; redirectUrl `/pay/{ref}`; 30-min expiry) | `create:167-213` |
+| Payment confirmation/webhook | **Implemented** (HMAC demo secret; status-idempotent) | `process.ts` (hazards in Support 06) |
+| Order creation | **Implemented** (multi-store groups, frozen commission) | |
+| Seller processing | **Implemented** (fulfill→ship→deliver + label SVG + POD) | `store/orders/*`, `lib/shipping.ts` |
+| Delivery confirmation | **Implemented** (buyer receive + lazy auto-complete) | |
+| Cancellation | **Partial** (unpaid paths only; no auto stock restore) | per-route guards |
+| Partial/full refunds | **Implemented** (admin-processed; first-item attribution heuristic) | Support 06 §6 |
+| Returns/exchanges | **Dispute row only** — no exchange workflow | `me/orders/[n]/return-request` [V] |
+| Notifications | **Implemented as DB rows** (no email/SMS dispatch) | `lib/api.ts:113-124` |
+| Seller earnings/settlement | **Implemented** (frozen snapshots + ledger truth + payout batches) | Support 06 |
+| Reconciliation | **Scripts, not runtime** | `scripts/fin-reconcile.ts` A–M |
+
+### G.4 Double-execution / race inventory (order domain)
+
+1. Webhook duplicate ⇒ status-guard no-op (safe single-threaded; TOCTOU under concurrency — FIN-02). 2. Stock check-then-act inside tx without conditional decrement (`create:296`). 3. Coupon `timesUsed` re-check absent inside tx. 4. Voucher redemption race-safe (guarded `updateMany`). 5. `nextOrderNumber` outside tx ⇒ number gaps on rollback. 6. `transitionOrder` concurrent double-fire possible. 7. Refund process + payout mark-paid check-then-act. All [V] with runtime behaviour untested ([I] for actual exploitability under SQLite single-writer).
+
+---
+
+## PART I — Multi-vendor and marketplace architecture
+
+| Capability | Status | Evidence |
+|---|---|---|
+| Vendor registration & approval | **Implemented**: seller register (tx: seller+draft store+wallet+4 pages) → onboarding wizard (identity/KYC/bank) → submit → `pending_review` → admin approve/reject/suspend/activate/terminate | `auth/register`, `store/onboarding`, `admin/sellers/*` [V] |
+| Vendor identity & ownership | Store 1-0..1 Seller; all store queries scoped by `storeId`; **zero IDOR found in request paths** (Support 07 §2) | [V] |
+| Store creation/configuration | Store settings/theme/SEO/domains(simulated verify)/collections | [V] |
+| Storefront claiming (imports) | **Implemented**: public import job (fixture platform fully working; Shopee/TikTok real network clients gated on env) → provenance fields → single-use SHA-256 claim token (14-day) → seller binds job → guarded tx retires placeholder & binds | `import/*`, `claim/bind`, `StoreClaim.tokenHash @unique` [V] |
+| Import pipeline internals | URL resolve is **parse-only** (no fetch of pasted URL); `assertPublicHost` blocks private ranges; image copier SSRF-guarded **per redirect hop** (`redirect:"manual"` + re-validation + 3-hop cap — F-06 resolved 2025-10-18); normaliser regex-sanitises HTML; duplicate detection via `@@unique([storeId,sourcePlatform,sourceProductId])`; errors persisted on ImportJob; ownership deferred to claim | `import/resolver.ts:25-79`, `runner.ts` [V] |
+| Vendor staff/roles | **Not found** (single seller login; `ApiKey` scopes scaffold exists) | [M] |
+| Multi-vendor carts & orders | **Implemented**: one cart, per-store groups at checkout, one PaymentGroup charge covers N orders, per-order commission + ledger | `pricing.ts:228-330`, `create/route.ts` [V] |
+| Order splitting & fulfilment | Per-store order fulfilment independent | [V] |
+| Commission rules | Global bps → product → category-ancestor → seller; **admin CommissionOverride table is dead config** (FIN-01); fee holidays replace rate (clamped) | `commission.ts:113-193` [V] |
+| Payment collection & allocation | Option-B split model (PSP collects; platform fee = commission); mock PSP; ledger mirror | `psp.ts:1-36` [V] |
+| Seller balances & payouts | Ledger-truth wallets; hold days; payout batches (manual_csv); statements ledger-derived | [V] |
+| Vendor disputes & refunds | Dispute lifecycle (open→under_review→resolved/rejected, no money movement); seller-initiated refunds admin-processed | [V] |
+| Vendor suspension | Seller.status suspended/terminated blocks login (403) & portal screens | `auth/login:32`, `seller-shell` [V] |
+| Data isolation | App-level scoping only (no RLS possible on SQLite); admin override is by design (RBAC caps) | [V] |
+| Cross-vendor access attempt paths | Store routes 100% scoped; shopper routes owner-scoped; portal escalation blocked at userType checks | Support 07 §2 [V] |
+
+## PART S — System flows (sequence diagrams for critical flows)
+
+### S.1 Customer registration & login
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant A as /api/auth/shopper/*
+  participant DB as Prisma
+  B->>A: POST register {email,password,fullName}
+  A->>DB: email-collision check (ShopperUser/Seller/AdminUser)
+  A->>DB: create ShopperUser (scrypt hash) + Session + cookie
+  A->>DB: claimGuestStateForShopper(email) — claims legacy guest orders
+  A-->>B: {token} → localStorage sm_session_token (Bearer channel)
+```
+Login mirrors register minus creation; suspended ⇒ 403. [V]
+
+### S.2 Discovery → variant selection
+Market home/PDP fetch public `market/sf` APIs → variant picker bounded by stock → activity tracking (VIEWED/LIKE upsert) → recommendations feed from recent 30 activities. [V]
+
+### S.3 Add to cart → checkout
+See C.3 sequence diagram (Support 01) and E.3 trace — quote (soft voucher verdicts) → create (hard mode, tx, frozen commission) → pay view → simulate/webhook → paid + T1. Crosses transaction boundaries at: create (`$transaction`), webhook (NO tx), refund (NO tx), payout batch (NO tx). [V]
+
+### S.4 Payment creation & confirmation
+PaymentGroup = one PSP session (`ref_`+16hex, 30-min expiry) → public status polling → simulate signs webhook server-side → `processPaymentWebhook` (log-first, HMAC, amount guard, status idempotency) → T1 → notifications → cart clear. Payment failure keeps orders payment_pending; retry re-opens. [V]
+
+### S.5 Order creation & seller fulfilment
+Per-store orders created in one tx → seller fulfill → ship (platform: quote+rateId→AWB SVG "MOCK LABEL — DEMO USE ONLY"; manual: provider+tracking) → deliver (proof data-URL ≤1.2MB) → buyer receive or lazy auto-complete (>14d, 60s throttle). Mock shipments advance lazily on buyer order reads (45s guard). [V]
+
+### S.6 Commission calculation & seller payout
+```mermaid
+sequenceDiagram
+  participant Admin
+  participant PB as /api/admin/payout-batches
+  participant L as ledger.ts
+  Admin->>PB: POST {dryRun:true}
+  PB->>L: refreshWalletCache (all wallets)
+  PB-->>Admin: eligible preview (availableMinor ≥ min)
+  Admin->>PB: POST {dryRun:false}
+  PB->>PB: batch(running) → per wallet: PO-<n>, statement period since last paid payout
+  PB->>L: buildLedgerStatementFromLedger → Payout(processing) → T3 (payable→clearing)
+  PB->>PB: batch completed (NO tx around loop)
+  Admin->>PB: payouts/[id]/mark-paid → T4 (clearing→bank)
+  Admin->>PB: payouts/[id]/fail → T4f (reverse to payable, immediately available)
+```
+Commission itself is computed once at checkout/create from the resolution chain and **frozen** per line; refunds reverse from frozen bps; exports/analytics aggregate stored data (never recomputed against current rules). [V]
+
+### S.7 Refund / cancellation
+Shopper Dispute → seller Refund(requested) → admin approve/reject → process (T5 + status + restock). See E.5. [V]
+
+### S.8 Vendor onboarding & storefront management
+Register (tx) → onboarding wizard (settings/theme → KYC docs → bank → submit) → admin review (approve/reject + notes + KYC doc verdicts + bank verify) → active → full portal (products, builder draft/publish/revert, domains simulated, webhooks simulated, integrations KV). [V]
+
+### S.9 Catalogue import & claim
+resolve (parse-only, platform detect + authStatus) → POST jobs (public; real platforms ⇒ `awaiting_authorisation` until OAuth env keys; fixture works) → runner: authorise → fetch (connector) → normalise (HTML sanitise, price→minor, variant map) → items + summary (cached) → trackingToken polling (8s UI) → claim token (hashed, single-use, 14d) → seller claim/bind (guarded tx, retires placeholder store). [V]
+
+### S.10 Chat (realtime)
+Shopper POST thread/message → persist → `broadcastToThread` POST hub :3103 → hub emits `chat:message` to room → both clients dedupe by id + mark read; hub failure non-fatal (poll fallback). Auto-reply scaffold dormant. [V]
+
+### FILE: docs/blueprint/06-financial-engine.md
+
+# Blueprint Support 06 — Financial Engine & Money Precision (Part H) + Financial Integrity Map (Part V)
+
+The most audit-critical document in this blueprint. Labels [V]/[I]/[P]. Key claims cross-verified by direct reads of `src/lib/money.ts`, `src/lib/commission.ts`, `src/lib/psp.ts`, `prisma/schema.prisma` and the live DB snapshot (Support 04 §F.1).
+
+## H.1 Money & rate primitives — POLICY P1 (`src/lib/money.ts:1-118`)
+
+One documented policy governs every module [V]:
+
+1. **Storage**: integer minor units (sen) for money; integer bps for rates (`BPS_DENOM = 10_000`, `money.ts:53`; derived `BPS_PER_PERCENT_POINT`, `BPS_DECIMALS` — scale raise to 1,000,000 is a documented one-line change). No FLOAT/DOUBLE money columns remain (only `Product.ratingAvg Float`, non-money, and `FinMigrationBackup.oldValue Float`, audit anchor).
+2. **Rounding**: exactly ONE rounding point per payable amount — **ROUND_HALF_UP away from zero on exact integer arithmetic** (`divHalfUp`/`mulDivRoundHalfUp` with automatic BigInt beyond `MAX_SAFE_INTEGER/2`); never `Math.round(a/b)`, never `toFixed` on money.
+3. **Splits**: largest-remainder allocation (`allocateProportionally`) — Σ(parts) ≡ amount exactly, deterministic tie-break.
+4. **Nets**: pure integer add/sub of already-rounded amounts.
+5. **Overflow**: BigInt fallback paths; `assertSafeInt` throws `MONEY_INT_VIOLATION`.
+6. **Display**: formatting divides for presentation only, never feeds back.
+7. **Input**: digit-exact parsing (`parsePercentToBps` "8.35"→835; >2dp **rejected**, not rounded); legacy shim `percentToBpsExact` flags lossy values.
+
+**Commission engine** (`src/lib/commission.ts`): settings singleton (`defaultBps` 800, `appliesToShipping` false, `basePriceRule paid_price`, `fixedFeeMinor`, `minCommissionMinor`, `payoutHoldDays` 7, hold rules) → `resolveRate` chain **CommissionOverride table row → product → nearest category ancestor (cycle-guarded) → seller → global**, then an active fee holiday **replaces** the rate (clamped ≤ normal); per-line `base = lineSubtotal − discount` (+ shipping only when `appliesToShipping`); `percentPart = bpsOf(base, rate)` (`:286` — the single rounding point); `commission = percentPart + fixedFeeAlloc`; `sellerNet = base + shippingAlloc − commission` (`:288`); per-order min-commission floor (skipped on any holiday, `:319-332`); results snapshotted per line (`commissionBps` + `breakdownJson`) **and never recomputed**.
+
+**CommissionOverride table — fee/hold semantics (FIN-01 R1, 2026-10-18)** [V]: the TABLE winner (specificity product 3 > category 2 > seller 1; ties by latest validFrom then createdAt) applies **ALL of its non-null fields**, not just `bps`: `bps` → rate (source `override`); `fixedFeeMinor` → the per-order fixed fee; `holdDays` → the payout hold, **winning over the static `Seller.holdDaysOverride`** (step 4 beats step 0 — a time-boxed admin tool beats coarse columns). A `bps=null` row with fee/hold set is therefore NOT dead. Validation mirrors `applyFeeHoliday` (`applyOverrideFields`): a stored `fixedFeeMinor` outside [0, MONEY_INT_MAX] or `holdDays` outside [0, 3650] (only possible via direct DB edits — the admin API rejects them with 400s) is **IGNORED** with flags `invalid_override_fixed_fee_ignored:<rowId>` / `invalid_override_hold_days_ignored:<rowId>`; a valid value that actually CHANGES a field adds `override_fixed_fee_applied` / `override_hold_days_applied` to the frozen snapshot. **First-item convention**: the fixed fee is a per-order quantity allocated proportionally across items, so `computeOrderCommissions` takes it from `rates[0]` (same convention as `holdDays`) — scope fee/hold overrides at seller/category level for multi-item predictability. **Fee holidays are rate promotions only**: the holiday branch returns `{...normal, bps}` so override-sourced fee/hold survive a holiday. The resolved `holdDays` is frozen onto **`Order.holdDays` at checkout** and the payment webhook posts T1 with `order.holdDays ?? seller.holdDaysOverride ?? global` — the ledger hold equals the hold quoted at checkout (null = legacy order → old fallback).
+
+## H.2 Rate representation map (pct vs bps)
+
+Canonical = integer bps everywhere; `BPS_DENOM` is imported (never re-hardcoded) at all rate sites (`commission.ts:38`, `commission-export.ts:21,221`, `admin/_helpers.ts:24`, `admin/categories.tsx:31,122`, `store/coupons/route.ts:4,47`, `admin/reports/[type]/route.ts:5,173`). One canonical write gate for admin rates: `rateBpsFrom` (`admin/_helpers.ts:20-40`) — reject-don't-round, explicit 400s. Residual percent-typed values:
+
+| Value | Location | Unit | Conversion | Risk |
+|---|---|---|---|---|
+| `Voucher.percentOff` (1..90) | `schema.prisma:859`, `vouchers.ts:122` | whole percent | ×100 exact, clamped 1..90 | low (fail-safe direction) |
+| Legacy `effectiveRatePct` float | **inside frozen v1 `CommissionExport.snapshotJson`** only | percent | one boundary: `effectiveRateFromSnapshot` (`commission-export.ts:71-148`) — verbatim render + digit-exact `bpsEquivalent` | handled; byte-stable v1 CSV (B1) |
+| FeatureFlag.rolloutPercent | non-money | percent | — | none |
+| Display-only floats | `admin/reports.tsx:143`, `commission.tsx:99-100,707,756`, `checkout.tsx:884`, `seo.ts:36`, `receipt:82` | percent | never authoritative | none |
+| Seed literals ×100 | `seed.ts:129,158,268` | whole percent→bps | exact | none |
+
+## H.3 Fee holidays — semantics verdict [V]
+
+**`FeeHoliday.bps` = the commission RATE CHARGED during the window (bps of order base); 0 = full waiver; a partial holiday is APPLIED, not a full waiver.** Established from converging evidence (not assumed):
+
+1. Engine (authoritative): `commission.ts:79-92` `applyFeeHoliday` — invalid rate (non-safe-int, <0, >10,000) ⇒ holiday **ignored** with flag `invalid_fee_holiday_ignored:<id>`; `holidayBps > normalBps` ⇒ clamped to normal with flag `holiday_rate_above_normal`; otherwise `bps = holidayBps`. Header `commission.ts:10-35` documents the semantics rationale ("the 'percentage waived' reading is ruled out because it contradicts '0 = full fee holiday'").
+2. Schema comment `schema.prisma:76`: "informational holiday rate in bps (**0 = full fee holiday**)".
+3. Seed `seed.ts:490-497`: "0% for a week" → `bps: 0`.
+4. Admin UI hint (`finance.tsx:576-578`): "**Commission % during holiday** · 0 = full fee holiday · e.g. 5 charges 5% commission during the window".
+5. E2E script `scripts/e2e-fin-issues.sh:21-29`: 300bps ⇒ RM120.00 × 3% = 360 sen exact.
+
+Operational rules [V]: window test inclusive both ends (`startsAt ≤ now ≤ endsAt`, `:167`); overlaps allowed — **earliest-starting matching holiday wins** (`orderBy startsAt asc`, first match, `:166-175`); scheduled/expired/disabled excluded by the where clause; **rate fixed at order creation** (frozen snapshot; no retroactive change; refunds reverse from frozen bps); min-commission floor skipped for the whole order under any holiday (`:319`). Timezone: UTC server-time comparisons; no MYT normalisation [P].
+
+✅ **Documentation drift (FIN-07) — RESOLVED 2025-10-18 (post-blueprint fix round)**: the stale comments at `schema.prisma:77` and `admin/commission/holidays/route.ts:30-32` ("the engine currently grants a FULL holiday (rate→0) when active") have been corrected to describe the actual charged-rate semantics. Engine code was NOT modified — it was already correct. Resolution evidence: `fin-tests.ts` **56/56 passed** (section 9 fee-holiday semantics: partial rate applied, clamped ≤ normal, invalid ignored + flagged) and `fin-reconcile.ts` **25/25 passed** (section K re-derives holiday snapshots from the configured charged rate) — both executed during the fix round. The earlier external warning that "the calculation engine always grants a full waiver" applied to pre-M-FIN-1 behaviour / the stale comments, not to the current engine.
+
+## H.4 Ledger architecture (`src/lib/ledger.ts`)
+
+- **Accounts** (`:17-31`): `PLATFORM:BANK_MAIN` (asset), `PLATFORM:PAYOUT_CLEARING` (liability), `PLATFORM:REVENUE_COMMISSION`, `PLATFORM:REVENUE_ADJUST` (revenue), `GATEWAY:{provider}` (asset), `SELLER:{walletId}:PAYABLE` (liability, wallet-linked). Sign convention: wallet balance = Σcredit − Σdebit on PAYABLE.
+- **Posting helper** `postTransaction` (`:59-94`): computes debit/credit sums, **throws `LEDGER_UNBALANCED` pre-write** if unbalanced or zero; txn+lines atomic via nested create; `ensureAccount` upserts; **no idempotency key** (no DB unique on `(txnType, refType, refId)`).
+- **Postings lifecycle** [V]: **T1** `postOrderPaid` (webhook success): DR GATEWAY total / CR SELLER:PAYABLE net (`availableAt = paidAt + holdDays`) / CR REVENUE_COMMISSION → `refreshWalletCache`. **T2** `postGatewaySettlement` (bank↔gateway; no runtime caller — seed only). **T3** `postPayoutInitiated`: payable→clearing. **T4** `postPayoutConfirmed`: clearing→bank. **T4f** `postPayoutFailed`: reversal to payable (`availableAt=now`). **T5** `postRefund`: DR payable (seller share) + DR commission (reversal) / CR gateway. **T6** `postAdminAdjustment`: payable ↔ REVENUE_ADJUST.
+- **Wallet truth** `walletTruth` (`:106-134`): pending = credits with `availableAt > now`; available = matured credits − debits (**can go negative** — no floor); denormalised into `Wallet` cache columns **on every write**; drift detectable via `runLedgerInvariants` (`:303-320`) — invoked only by `/api/health` and `/api/admin/system/health` (**no scheduler despite "nightly" comment**, `ledger.ts:302`).
+
+## H.5 Wallets, earnings, payouts
+
+- **Seller wallet reads** (`store/wallet/route.ts:12-28`): truth-refreshed wallet + last 20 PAYABLE lines + payouts; full journal drill-down ownership-checked. **Buyer wallet dormant**: `me/wallet` returns `disabled:true` envelope; coins claim 403 `FEATURE_DORMANT` (`NOMO_FINANCE_ENABLED=false`); seller-payout wallet explicitly outside the flag (`feature-flags.ts:26-30`).
+- **Seller earnings** (`store/dashboard/route.ts:32-47`): derived **on read from frozen OrderItem snapshots**. **Admin analytics** (`commission/analytics`): derived **from ledger commission lines**. Two deliberate read models that can diverge cosmetically (dashboard counts shipping in revenue). [V]
+- **Payout batch** (`admin/payout-batches`): eligibility = ledger-truth `availableMinor ≥ payout.min_minor` (default RM10.00); mode `manual_csv`; dry-run preview; real run creates batch + per-wallet payout + T3 with **ledger-derived statements** (`buildLedgerStatementFromLedger`, `:379-452`: sales/commission/refund/adjustment lines + balancing `retained` line so Σ ≡ payout always). Loop **not transactional**. `mark-paid` (T4) and `fail` (T4f) guard `status==="processing"` (check-then-act). [V]
+- **PO-100001 (historic integrity question — resolved)**: the original seed decorated `statementJson` with hard-coded lines including "Refunds −RM 30.00" that **never existed as a Refund record or T5**; `scripts/fix-payout-statements.ts:4-8` documents this. Statements are now ledger-derived everywhere (runtime + seed); the live PO-100001 statement reconciles (`Sales +60,500 / Commission −4,840 / Σ = 55,660 ≡ payout`, no refunds line). Under current code a "Refunds" statement line **must** map 1:1 to `refund`-typed ledger txns posted only by `admin/refunds/[id]/process`, which requires a Refund row. [V]
+
+## H.6 Vouchers, coupons, coins & funding
+
+- `voucherDiscountMinor` (`vouchers.ts:118-129`): `bpsOf(subtotal, percentOff×100)` capped by `maxDiscountMinor` and subtotal (never negative); freeshipping zeroes group shipping; **coinsback invalid platform-wide** (`:140-143`); verdict order kind→active→window→quota→scope→minSpend→region (peninsular normaliser `:33-72`).
+- **Commission base is voucher-adjusted** (`create:143-165`) — the discount reaches the ledger. **Economic funding: there is NO ledger posting for voucher/coupon funding** — no platform-funding expense account exists; platform revenue in the ledger is commission only. A platform-scope discount therefore reduces sellerNet (seller effectively funds it), with the explicit `Store.fsPriceAdjustMinor` display field for FS cost recovery. [V]
+- Redemption atomic & idempotent (guarded `updateMany` + quota increment) inside checkout tx. [V]
+- **Coins**: dormant scaffold (`ShopperWallet.coinBalance`; claim 403); never money-like. [V]
+
+## H.7 PSP layer & webhook idempotency (`src/lib/psp.ts`, `webhooks/payments/process.ts`) [V]
+
+- **Option B (licensed-PSP split) is the documented model** (`psp.ts:1-36`): buyer pays once per checkout; a licensed PSP collects, deducts commission as application fee, settles sellers; **platform never takes custody** (FSA 2013 s.17 note). Sandbox has only `mock` ("NomoPay Checkout (sandbox)"); `PaymentGroup` = one PSP session; the **4 production plug-in points** are: (1) implement+register `PspProvider`, (2) replace simulate with hosted checkout, (3) point the webhook route at the real gateway with per-provider verification, (4) `PaymentGroup.provider` already stores the provider id; commission rate becomes the application fee. Candidates `stripe_my`/`curlec`/`ipay88` are documented stubs with `awaitingAdapter: true` (`PSP_SPLIT_CANDIDATES`, `:87-92`); `psp-settings` PUT `autoSettle:true` is **hard-blocked 409 `PSP_ADAPTER_REQUIRED`**. T2 `postGatewaySettlement` exists for the future settlement mirror.
+- **Webhook verification**: HMAC-SHA256 hex over `"{ref}.{event}.{amountMinor}.{ts}"`; **secret hardcoded in source** (`process.ts:26`, demo value; production swap is a documented plug-in point but nothing enforces it); signature from header or body; **plain `===` compare** (`:63`); **no timestamp freshness check**. Every delivery logged to `PaymentWebhookLog` (log-first, incl. invalid signatures).
+- **Idempotency = status check**: succeeded group/intent ⇒ no-op `duplicate:true` (`:98-110`, `:210-221`); second delivery creates one more log row only. Amount guard 409. **Not DB-enforced** (no unique on refType/refId) and the success path is **not transactional**: status flips **before** T1 ⇒ crash window = paid order never credited (retries return duplicate); concurrency ⇒ TOCTOU double-T1; T1 silently skipped if seller/wallet missing (`:151`, `:268`). Policed post-hoc by reconcile section M (order_paid postings ↔ paidAt 1:1).
+- **P1 race hardening (2025-10-18)** — the two bullets above describe the **pre-P0** state and are superseded by the FIN-02 register row: P0-1 rewired verification (env `PAYMENT_WEBHOOK_SECRET` + timing-safe compare + 15-min replay window) and made success paths ONE `$transaction` with DB-enforced idempotency (P2002 → `duplicate:true`). P1 adds **concurrency survival**: interactive-tx options `{maxWait:15s, timeout:30s}` + `withTxRetry` for transient SQLite contention (P1008/P2024/P2028/P2034, "database is locked") — retry-safe because the CAS gate + P2002 make re-execution a clean duplicate; a tx retry also resets the post-commit fan-out buffer; `db.ts` pins `connection_limit=1&socket_timeout=15` (single-writer serialization, the documented Prisma+SQLite practice). Evidence: `scripts/fin-concurrency.ts` live race suite — 8-way simulate race + mixed webhook/simulate race → ALL HTTP 200 with graceful duplicates, **exactly ONE `order_paid` per order**, ledger balanced; payout double-race → `PAYOUT_RACE` guard fired, losing batch failed cleanly, zero orphan T3s.
+
+## H.8 Precision sweep (every money/rate conversion site)
+
+| Site | Expression | Rounding | Risk |
+|---|---|---|---|
+| `money.ts:100-107` `bpsOf` | (minor,bps)→minor | half-up exact, auto-BigInt | none |
+| `money.ts:114-118` `percentToBpsExact` | float pct→bps | Math.round + `lossy` flag | legacy shim only |
+| `money.ts:124-139` `parsePercentToBps` | "8.35"→835 | digit-exact | rejects >2dp [V] |
+| `money.ts:251` `toMinor` numeric fallback | float→minor | `Math.round(n*100)` | documented legacy tolerance; prefer string path |
+| `money.ts:225` `formatMinor` | minor→display | /100 float | display-only |
+| `commission.ts:286` | base×bps | **the single rounding point** | — |
+| `commission.ts:288` sellerNet | ints | none | ⚠ latent double-count if `appliesToShipping=true` (FIN-03) |
+| `vouchers.ts:122-128`, `pricing.ts:150-153` | pct/bps→minor | half-up + caps | percentOff whole-percent unit |
+| `refunds/process` reversal (FIN-05) | Σ per-item part×own frozenBps | half-up per portion (same rule) | proportional attribution across remaining balances (was: first-item heuristic) |
+| `money.ts assertInt32Safe` (FIN-09) | persistence ceiling | throws, never rounds | every ledger line/total + checkout order-total writes |
+| `money.ts parseMinorIntStrict/parsePriceInputStrict` (FIN-10) | amount inputs | reject 400 | webhook amountMinor, refund-request, product/variant price, coupon amounts, wallet adjust |
+| `process.ts` webhook amount (FIN-10) | body→minor | `parseMinorIntStrict` | strict: exact integer sen or 400 `INVALID_AMOUNT` (was Math.round coercion) |
+| `commission-export.ts:221`, `reports/[type]:173` | commission/sales→bps | half-up | — |
+| Client display | `checkout.tsx:883-895` etc. | float | display-only; server recomputes [V] |
+
+**Overflow**: engine paths BigInt-safe (tested to RM 85T bases, `fin-tests` §[3]); all money columns are Prisma `Int` (≈2^31 sen ≈ RM21.47M nominal) though SQLite stores 64-bit — since 2026-10-18 (Task 3-a, FIN-09) the WRITE boundary is guarded: `assertInt32Safe` runs on every ledger line/txn total (T1–T6 recipes) and on checkout order/group/item totals (`MONEY_OVERFLOW` 400), so overflow surfaces as a clear error instead of a driver failure. **Residual float usage**: display-only sites listed above; `toMinor` numeric fallback; `Product.ratingAvg`.
+
+## H.9 Reconciliation & test coverage
+
+- `scripts/fin-tests.ts` (818 ln; `bun scripts/fin-tests.ts`): **78 unit tests / 15 sections** (P1: +12 — `assertInt32Safe` bounds, strict-input parsers, **proportional refund allocator** incl. a 5,000-case BigInt-oracle check and the multi-rate identity Σ per-item reversals ≡ expected; R1 2026-10-18: +10 — **override fee/hold semantics** `applyOverrideFields`: fee-only/hold-only/both, bps-null row still applies, exact applied/ignored flags, boundary matrix 0/MONEY_INT_MAX/3650 accepted vs −1/1.5/NaN/3651 rejected, pure end-to-end per-order allocation contract) — half-up boundaries; 5,000 randomized bpsOf vs **independent BigInt oracle**; overflow (RM85T, MAX_SAFE); 10,000 largest-remainder allocations Σ≡amount; refunds ×3,000 (T5 balance, reversal bound ≤0.5 sen); split payments ×2,000 (ΣsellerNet+Σcommission ≡ buyer total); digit-exact parse/format round-trips; float-trap guardrails; **fee-holiday semantics** (partial replaces/clamped/invalid-ignored, refunds on holiday, earnings identity ×2,000); **legacy exports** (v1 byte-stable "7.3", v2 round-trip); rate-precision reject-never-round matrix. Executed 2026-10-18: **78/78 PASS**. [V]
+- `scripts/fin-concurrency.ts` (P1 2025-10-18; `bun scripts/fin-concurrency.ts`, needs dev server on :3000): **live race suite** — API-driven only, read-only Prisma oracle — [R1] 8-way parallel `/simulate` settles → all 200, exactly ONE `order_paid`; [R2] mixed 3 signed webhooks + 3 simulates → exactly ONE `order_paid`; [R3] parallel payout batches → every payout 1:1 T3, no raced wallet negative, batches completed|partial|failed (SKIP-with-INFO when no eligible wallet); [S1] global debit≡credit + unique idempotency keys. Executed: **10/10 PASS** (R3 guard live-proven in run 1). [V]
+- `scripts/fin-reconcile.ts` (660 ln): **26 live-DB invariant checks, sections A–N, independent inline oracle, imports nothing from src/lib** — A bps ranges; B order header ≡ line sums; C per-item commission re-derivation from frozen bps; D all txns balanced + T1 identities (gateway≡total, seller≡Σnet, **Σnets+Σcommission ≡ buyer total**) + T5 re-derived; E group ≡ Σ orders; F coupon ≡ oracle+redemptions; G refund bounds; H batch totals + statement Σ≡payout + T3; I wallet caches ≡ ledger truth; J FinMigrationBackup 31/31 round-trip; K holiday snapshots re-derived; L export integrity era-correct; M webhook idempotency 1:1; **N T1 holdUntil re-derived from the order — seller-payable credit availableAt == paidAt + Order.holdDays days (checkout-frozen, R1) with the seller-override/global fallback for legacy orders** (seed-era rows posted with the global hold are tolerated + noted). [V]
+- **No test runner** (`package.json` has no `test` script; no vitest/jest/playwright). **CI added P1 2025-10-18** (`.github/workflows/ci.yml`: lint + fin-tests + fin-reconcile hard gates, informational tsc; requires a GitHub runner to activate). Automated coverage remains financial-only; auth/RBAC/cart/checkout/shipping/chat/campaigns/imports untested (Support 09 §O).
+
+## H.10 Anonymised worked example (actual code arithmetic)
+
+RM100.00 order (10,000 sen), global 800 bps, standard shipping (free ≥ RM100 ⇒ 0; commission excludes shipping anyway), RM20.00 platform voucher (2,000), then RM30.00 refund:
+
+1. `lineTotalMinor = 10,000` (`pricing.ts:108`). 2. Voucher: `discount = min(2000, 10000) = 2000`; `total = max(0, 10000−2000+0) = 8,000` (`vouchers.ts:264-266`). 3. Commission: no overrides/holiday ⇒ `base = 10,000−2,000 = 8,000`; `percentPart = bpsOf(8,000, 800) = 640` exact; `commission = 640`; `sellerNet = 7,360` (`commission.ts:283-288`); frozen to OrderItem (`create:271-292`). 4. PaymentGroup total 8,000; webhook amount 8,000 passes guard. 5. **T1**: DR GATEWAY 8,000 / CR PAYABLE 7,360 (`availableAt = paidAt+7d`) / CR REVENUE_COMMISSION 640 — balanced. Wallet: pending 7,360. 6. After hold: available 7,360 ≥ min ⇒ payout 7,360; T3 payable→clearing; mark-paid T4 clearing→bank; statement `Sales 8,000 / Commission −640 / Retained 0`. 7. **Refund 3,000**: `commissionReversal = bpsOf(3,000, 800) = 240` exact (`refunds/process:42`); **T5** DR PAYABLE 2,760 + DR COMMISSION 240 / CR GATEWAY 3,000; order → `partially_refunded`; `refundedMinor += 3,000`. ⚠ If payout already occurred, PAYABLE goes **−2,760** (no clawback workflow — FIN-04). Every step traced to code. [V]
+
+## H.11 Top financial risks (ranked)
+
+| ID | Risk | Evidence | Class |
+|---|---|---|---|
+| FIN-01 | ~~Admin `CommissionOverride` table is dead config~~ **RESOLVED 2025-10-18 (P0-2) + R1 2026-10-18 (Task 22-a)** — `resolveRate` reads override rows: fee holiday > override row (product > category > seller specificity; tie-break latest validFrom/createdAt) > product/category/seller columns > global. **R1: the winner now applies ALL non-null fields — fixedFeeMinor (per-order fee, replaces the global fixed fee while the row wins) and holdDays (payout hold, wins over Seller.holdDaysOverride) are APPLIED, not "reserved"; a bps=null row with fee/hold set applies them; out-of-range stored values ignored with `invalid_override_*_ignored:<rowId>` flags; applied changes flagged `override_fixed_fee_applied` / `override_hold_days_applied`; perOrderFixed = rates[0].fixedFeeMinor (first-item convention); Order.holdDays frozen at checkout → webhook T1 posts the SAME hold (E2E: fee=150/hold=2 order → T1 availableAt = paidAt + 2d exactly)** | `commission.ts resolveRate/applyOverrideFields`, `checkout/create`, `webhooks/payments/process.ts` | RESOLVED [V] |
+| FIN-02 | ~~Webhook T1 non-atomicity + status-only idempotency~~ **RESOLVED 2025-10-18 (P0-1)** — success paths are ONE `$transaction` (CAS status flip via `updateMany where status!="succeeded"` → `transitionOrder(tx)` → T1 with tx client → cart clear → log), post-commit notification fan-out; DB-enforced idempotency via `LedgerTransaction.idempotencyKey @unique` (`order_paid:order:<id>`, payout keys likewise) with Prisma P2002 catch → `duplicate:true`; concurrent/duplicate delivery can no longer double-post. Browser E2E: NM-100019 paid → exactly 1 T1, balanced | `process.ts`, `ledger.ts`, `schema.prisma` | RESOLVED [V] |
+| FIN-03 | ~~Latent sellerNet double-count when `appliesToShipping=true`~~ **RESOLVED 2025-10-18 (P0-2)** — `sellerNet = (appliesToShipping ? base : base + shippingAlloc) − commission`; shipping counted exactly once; unused `appliesShippingToItem` param removed (zero callers). Flag remains default-false | `commission.ts` | RESOLVED [V] |
+| FIN-04 | ~~Post-payout refunds have no clawback~~ **MITIGATED 2025-10-18 (P0-2)** — clawback-by-netting made explicit and visible: negative `availableMinor` is documented as intentional (`walletTruth`), blocks payouts (eligibility `available ≥ min`), and future sales net the deficit down; admin Wallets + seller wallet UIs now surface "Owes platform" badge on negative balances; manual repair via existing T6 admin adjustment (UI affordance already present). No forced collection workflow (by design — documented) | `ledger.ts walletTruth`, `wallets-ledger.tsx`, `seller/wallet.tsx` | MITIGATED [V] |
+| FIN-05 | ~~Refund reversal attribution heuristic — whole refund charged to first item with remaining balance at that item's frozen bps~~ **RESOLVED 2026-10-18 (P1, Task 3-a)** — refund is split across every item with remaining balance, proportional to remaining net amounts (largest-remainder, single rounding point `allocateRefundByRemaining` in money.ts; leftover sen → stable item-id order); each portion reversed at ITS OWN frozen commissionBps via bpsOf, Σ per-item reversals = T5 commission debit; item refundedMinor credited per share (atomic increment); order-level 409 REFUND_EXCEEDS_BALANCE guard; restock targets the largest-share item. E2E proof: NM-100020 (2 items, 1200/800 bps via product override), RM100 refund → split 3921/6079, reversal 471+486=957 (old heuristic: 1200) — audit `attribution` trail; reconcile section D re-derives with the SAME new algorithm (live replay 1/1) | `money.ts`, `refunds/[id]/process/route.ts`, `fin-reconcile.ts §D` | RESOLVED [V] |
+| FIN-06 | ~~PSP webhook security is demo-grade~~ **RESOLVED 2025-10-18 (P0-1)** — secret now `PAYMENT_WEBHOOK_SECRET` env (demo fallback documented, sandbox-only), constant-time compare (`safeEqualHex`), ±15-min replay window (`STALE_TIMESTAMP`), `/simulate` + webhook gated to the sandbox-only mock adapter via the PSP registry (`PSP_SIMULATE_DISABLED` 409 for any future production adapter) + rate limits (30/min simulate, 120/min webhook) | `process.ts:26`, `simulate/route.ts` | RESOLVED [V] |
+| FIN-07 | ~~Documentation drift inverting fee-holiday semantics~~ **RESOLVED 2025-10-18** — stale comments corrected to charged-rate semantics; engine untouched (verified by 56/56 fin-tests + 25/25 fin-reconcile) | `schema.prisma:76-79`, `holidays/route.ts:30-33` | RESOLVED [V] |
+| FIN-08 | ~~Payout batch loop not transactional~~ **RESOLVED 2025-10-18 (P0-2)** — per-wallet atomic `$transaction` (payout row + T3 with tx client), per-wallet try/catch never aborts the batch, stranded rows flipped to `failed`+reason, batch ends `completed\|partial\|failed` with `lastErrorJson` audit, totals from successes only; re-run is naturally idempotent (T3 debits drop the wallet below minimum) | `payout-batches/route.ts` | RESOLVED [V] |
+| FIN-09 | ~~Int-column persistence ceiling unguarded~~ **MITIGATED 2026-10-18 (P1, Task 3-a)** — guard-only, no arithmetic change: `MONEY_INT_MAX = 2^31−1` + `assertInt32Safe(amount, field)` in money.ts (throws `Money overflow: <field>=<n> sen exceeds Int32 max`); applied at ALL persistence boundaries — ledger postTransaction (every line + txn total) and T1/T2/T3/T4/T4f/T5/T6 recipe inputs with descriptive field names, plus checkout create (paymentGroup/order header + per-item line amounts → 400 `MONEY_OVERFLOW`). Unit-tested (fin-tests §[12], incl. ±(2^31−1) pass / 2^31, −2^31, 1.5, NaN, ∞ throw). Remaining: actual schema change to BigInt columns deferred to the PostgreSQL migration plan | `money.ts`, `ledger.ts`, `checkout/create/route.ts` | MITIGATED [V] |
+| FIN-10 | ~~Input coercion instead of rejection on amount paths~~ **RESOLVED 2026-10-18 (P1, Task 3-a)** — strict parsers in money.ts: `parseMinorIntStrict` (exact integer sen only; integer number or integer string) and `parsePriceInputStrict` (integer sen, or ≤2dp decimal digit-exact "12.34"→1234; "12.345" rejected). Applied: webhook amountMinor (400 `INVALID_AMOUNT`, live-verified), seller refund-request amountMinor (400, live-verified 12.5/"abc"), product/variant priceMinor+compareAtPriceMinor (seller product create/update helpers + both variant routes; 400 live-verified "69.005"), coupon amountMinor/minSpendMinor (store + admin create/update), admin wallet T6 adjust. NOTE: the blueprint's "admin product create/update" site actually lives in the seller store product routes (admin/products has no price write); `me/orders/return-request` carries no amount (Dispute-only) — nothing to guard. Display-only rounding and non-money counts (stock/qty/rating/redemption caps) intentionally untouched | `money.ts`, `process.ts:80`, 9 route files | RESOLVED [V] |
+
+## PART V — Master financial data flow map
+
+```mermaid
+graph TB
+  subgraph Origin
+    P["ProductVariant.priceMinor<br/>(source of truth: seller)"]
+  end
+  subgraph Quote["Checkout quote (preview only)"]
+    PR["pricing.ts: priceItems → computeGroupPricing<br/>(shipping rules, coupon bpsOf)"]
+    VO["vouchers.ts: verdicts + discountMinor"]
+    CP["commission.ts: computeOrderCommissions preview"]
+  end
+  subgraph Frozen["Order creation ($transaction) — SOURCE OF TRUTH"]
+    O["Order.{subtotal,discount,shipping,total}Minor"]
+    OI["OrderItem: commissionBps (FROZEN), commissionMinor,<br/>fixedFeeMinor, sellerNetMinor, breakdownJson"]
+  end
+  subgraph Settle["Settlement"]
+    PG["PaymentGroup.totalMinor<br/>(one PSP charge)"]
+    T1["Ledger T1: GATEWAY / PAYABLE(net, hold) / COMMISSION"]
+    W["Wallet cache (derived)"]
+    PB["PayoutBatch → Payout → T3/T4/T4f + statementJson"]
+  end
+  subgraph Reverse["Reversal"]
+    R["Refund.amountMinor → commissionReversal (frozen bps) → T5 → OrderItem.refundedMinor"]
+  end
+  subgraph Reporting["Reporting (read-only derivatives)"]
+    EX["CommissionExport.snapshotJson (v1 pct / v2 bps)"]
+    AN["analytics (ledger truth) + dashboard (snapshot truth) + reports"]
+  end
+  P --> PR --> O
+  VO --> O
+  CP --> OI
+  O --> PG --> T1 --> W --> PB
+  OI --> T1
+  OI --> R --> W
+  OI --> AN
+  OI --> EX
+  T1 --> AN
+```
+
+**Source-of-truth hierarchy** [V]: variant price → server-priced quote (preview) → **Order/OrderItem frozen snapshot (authoritative for commission)** → ledger (authoritative for balances/statements) → wallet cache (derived, refreshed on write) → payout statements (ledger-derived). **Competing read models**: seller dashboard (snapshot truth) vs admin analytics (ledger truth) — cosmetic divergence documented. **Modification paths**: overrides/holidays affect only *future* orders (rate fixed at creation); refunds use frozen bps; exports immutable snapshots. **Failure/duplication handling**: webhook duplicate ⇒ log-only no-op; reconcile sections B–M police consistency; **P0/P1 runtime protections now in place** — webhook atomicity + DB idempotency (FIN-02 resolved), per-wallet atomic payouts with failure isolation + `PAYOUT_RACE` guard (FIN-08), transient-contention tx retry (`withTxRetry`).
+
+### FILE: docs/blueprint/07-security-auth.md
+
+# Blueprint Support 07 — Authentication, Authorization, Tenancy & Security (Parts J & K)
+
+Documentation-based, non-intrusive review. Classifications: **CONFIRMED ISSUE / POTENTIAL RISK / UNVERIFIED CONTROL**.
+
+## PART J — Authentication, authorization & tenant isolation
+
+### J.1 Registration, login, sessions
+
+- **Flows** [V]: seller `/api/auth/register` (tx: Seller onboarding + draft Store + Wallet + 4 CMS pages, auto-login); shopper `/api/auth/shopper/register|login` (cross-portal email-collision check vs Seller/Admin; suspended 403; claims legacy guest orders by email — F-11); admin/seller shared `/api/auth/login` with `portal` switch; terminated **and suspended** seller 403 (the suspended-seller block landed with Task 22-b so suspend-revocation cannot be bypassed by re-login). **No email/phone verification; no MFA; no email-based password reset flow [M]**; self-service password CHANGE exists since Task 22-b (`POST /api/me/password` — verifies current password, rotates the session, returns the new token in the login JSON shape); no OAuth social login (the only OAuth is *seller→marketplace* connections).
+- **Passwords** [V]: scrypt (`scryptSync`, 64-byte key, random 16-byte salt, `s1:salt:hash`), `timingSafeEqual` compare (`lib/password.ts:4-20`).
+- **Sessions** [V]: DB `Session` row, token = 32-byte CSPRNG hex (`randomToken(32)`), fixed 7-day TTL, DB-revocable; cookie `sm_session`: `httpOnly, SameSite=None, Secure, path=/, maxAge=604800` (`lib/auth.ts`). **Stored sha256-hashed at rest (F-09, P1)**: `Session.token` = hex(sha256(raw)); every lookup goes through the hash-first `getSessionByToken()` helper — live-verified (lookup by raw finds nothing; digest-as-Bearer rejected). **Rotated + revocable since Task 22-b (R2, 2025-10-18)**: `rotateSession()` retires the presented token (cookie or Bearer, delete-first so the old token dies immediately) and issues a fresh one for the same principal — wired at `POST /api/me/password` (live proof: old token → 401 on guarded routes / `userType:null` on the session probe, new token → 200, DB row count for the old digest = 0); `revokeUserSessions(userType, userId)` deletes every live session for a principal and is wired on admin seller **suspend / terminate / reject** (audit `after.sessionsRevoked`) — live proofs: approved-then-suspended seller's Bearer token 401s immediately, terminated/rejected likewise, suspended re-login → `403 ACCOUNT_SUSPENDED`, terminated → `403 ACCOUNT_TERMINATED`. Admin role/isActive changes and a shopper-ban endpoint do not exist in this build — `requireAdmin` re-checks `isActive` and `requireShopper` re-checks `status==="active"` on every request, so deactivation is enforced without revocation. `destroySession()` (logout) honours the Bearer bridge as well as the cookie since Task 22-b. No per-device session list / no "logout everywhere" UI exists (helper ready if one is built). Residual **accepted**: the raw token still travels once in login JSON and is persisted in localStorage (`sm_session_token`) + Bearer for the sandbox iframe workaround — see F-09.
+- **Dual-channel** [V]: `getSession()` accepts Bearer (regex `^[a-f0-9]{16,128}$`) **or** cookie; **no auth path trusts a client-supplied user id** — identity is always token→DB row; `X-Cart-Token`/`X-Shopper-Token` are device tokens used only for data reconciliation, never authorization (`checkout/owner.ts:20-40`, `cart/cart.ts:61-66`).
+- **Suspension/recovery**: shopper suspended 403; seller lifecycle statuses gate login and portal UI; admin `isActive`. [V]
+
+### J.2 Authorization matrix
+
+| Guard | Location | Semantics |
+|---|---|---|
+| `requireAdmin` | `lib/auth.ts:78-86` | userType=admin + isActive → 401 |
+| `requireCap(cap)` | `lib/auth.ts:139-144` + `ADMIN_CAPS :125-137` | 11-cap RBAC matrix; unknown cap ⇒ superadmin-only |
+| `requireSeller / requireActiveSellerStore` | `lib/auth.ts:92-115` | seller + store present (NO_STORE 400) |
+| `requireShopper` | `lib/auth.ts:116-124` | shopper + status active |
+
+**Enforcement coverage** [V]:
+- **Admin: 70/70 route files call a guard** (163 references; every file ≥2). RBAC caps separate superadmin/ops/finance/moderator (e.g. `payouts.manage` = superadmin+finance).
+- **Store scoping: no IDOR found** — all 50 store routes session-guarded; every `[id]` route filters `storeId` or post-checks ownership (`ownProduct`, `ownVariant`, `ownCoupon`, `ownCollection`, `ownEndpoint`); inventory/variants verify `product.storeId === store.id`; wallet activity verified via `lines.some(l => l.walletId === wallet.id)`.
+- **Shopper scoping**: `/api/me/orders*` scoped `shopperId: me.id` (404 otherwise); receive/return-request identical.
+- **Portal escalation: blocked** — userType checked before any DB access; shopper token on seller/admin endpoints 401s; chat threads enforce shopper-XOR-store-owner.
+- **Public routes**: `sf/**` (live stores, publishedJson only), `market/**`, `orders/lookup` (email+orderNumber pair; uniform 404; **sequential numbers ⇒ guessable**, F-08), `orders/receipt` (same pair; **PDF exposes full PII**), `checkout/payments/[ref]` status (random 16-hex ref), `img`, `health` (**exposes ledger problems**), `shipping/tick` (intentional, unauthenticated), `campaigns/active`, `webhooks/payments` (HMAC — see K.4), `import/**` (unauthenticated job creation — F-10), `sf/.../reviews` (**unauthenticated auto-published reviews**, E.2).
+
+### J.3 Frontend vs server enforcement
+All protection is **server-side** (route guards); frontend "protection" is UX only (portal shells, disabled buttons). Single-route SPA has no route-level auth middleware (no `middleware.ts` [M]). Deep links `?sf/?sp` are public by design. [V]
+
+## PART K — Security & data protection review
+
+### K.1 Findings register
+
+| ID | Sev | Area | Finding | Evidence | Class |
+|---|---|---|---|---|---|
+| F-01 | High | Webhooks | ~~Hardcoded demo HMAC secret~~ **RESOLVED 2025-10-18 (P0-1)** — secret reads `PAYMENT_WEBHOOK_SECRET` env (demo fallback documented as sandbox-only), constant-time `safeEqualHex` compare, ±15-min replay window (`STALE_TIMESTAMP`), simulate/webhook gated to the mock PSP adapter + rate-limited. Remaining note: demo fallback still active until env is set in a real deployment | `process.ts` | RESOLVED (sandbox fallback documented) |
+| F-02 | High | Secrets hygiene | ~~`.env`, `db/custom.db` git-tracked~~ **RESOLVED 2025-10-18 (P0-3)** — both untracked (commit `4440b89`), `.gitignore` now covers `db/*.db`, `db/*.db-journal`, `db/backup/`; all 7 demo Session rows purged (token revocation). Flagged-not-untracked: `upload/`, `download/`, `tool-results/` (future hygiene commit). No production secrets existed (`.env` = DATABASE_URL only) | git index | RESOLVED |
+| F-03 | High | CSRF | ~~No CSRF token / Origin check~~ **RESOLVED 2025-10-18 (P0-3)** — `handle()` enforces an Origin gate on all mutating methods: cross-site browser requests (which always carry a mismatched Origin) get `403 CSRF_ORIGIN`; non-browser callers (no Origin header — PSP callbacks, curl) and same-origin/iframe traffic pass; localhost variants allowed for dev. Cookie stays SameSite=None for the preview iframe — this gate is the compensating control | `lib/api.ts originAllowed` | RESOLVED |
+| F-04 | Medium | Abuse | ~~No rate limiting~~ **RESOLVED 2025-10-18 (P0-3)** — fixed-window limiter (`lib/rate-limit.ts`) wired on 14 endpoints: auth ×4 (20/min), order lookup + receipt (15/min), reviews + newsletter (30/min), import ×2 (20/min), simulate (30/min), payment webhook (120/min). Live-verified 429 with retryAfterSeconds. **Store made pluggable 2025-10-18 (Task 22-b / R4)** — `RateLimitStore { hit(key, windowMs) → {count, resetAt} }` with `InMemoryRateLimitStore` (default, original semantics + sweep) and `RedisRateLimitStore` (single INCR per hit + PEXPIRE on window open, selected lazily on first call when `RATE_LIMIT_REDIS_URL` is set; local aligned-window shadow keeps the hot path synchronous so `rateLimit()`'s signature and 429 envelope are byte-identical with zero call-site changes; ioredis is loaded lazily via a runtime-only createRequire handle — a variable-specifier `await import()` breaks the Turbopack route compile — and is deliberately NOT in package.json). Any Redis failure (module absent / connect error / command error) logs ONCE and permanently degrades to the in-memory store — a Redis outage can never take the API down (verified live: with `RATE_LIMIT_REDIS_URL` set and no ioredis installed, the limiter warns once and keeps returning identical 429s). Residual: the Redis path needs a real Redis in staging to be proven end-to-end | `lib/rate-limit.ts` + routes, `RATE_LIMIT_REDIS_URL` | RESOLVED (single-instance default; multi-instance via Redis adapter, staging-pending) |
+| F-05 | Medium | Webhooks | ~~Public unauthenticated `simulate` endpoint~~ **MITIGATED 2025-10-18 (P0-1)** — endpoint stays public by design for the sandbox mock flow, but is now (a) gated to the sandbox-only mock PSP adapter via the registry — any future production adapter gets `409 PSP_SIMULATE_DISABLED`, (b) rate-limited 30/min, (c) the only signing authority remains server-side (secret never reaches the client), (d) replay-window + timing-safe verification shared with the webhook route. Residual: in a real deployment the mock provider itself must be disabled | `simulate/route.ts` | MITIGATED |
+| F-06 | Medium | SSRF | ~~Image copier follows redirects **after** the DNS-only guard~~ **RESOLVED 2025-10-18 (P1)** — fetch switched to `redirect:"manual"`: every redirect target re-passes the full `assertPublicHost` guard (scheme/credentials/ports + fresh DNS) before being followed, hard cap 3 hops, missing/malformed `Location` rejected; the response is only read from the last guarded URL (final-response IP check runs on the URL actually fetched). 5MB cap + content-type whitelist unchanged. Residual (documented in code): DNS-rebinding TOCTOU between guard lookup and fetch resolution — closing it needs a pinned-IP undici Agent | `import/runner.ts fetchPublicImage`, `resolver.ts:60-79` | RESOLVED (residual documented) |
+| F-07 | Medium | Tenancy/OAuth | ~~`state` optional + stored sellerId never consumed; `claim/bind` rebinds **all** unbound platform connections~~ **RESOLVED 2025-10-18 (P1)** — callback: `state` REQUIRED (`400 MISSING_STATE` / `400 INVALID_STATE`), nonce atomically consumed delete-first so replays fail (`400`), TTL (10 min) + platform checked, attached seller session ≠ nonce seller → `403` (fail-closed), and the resulting connection is bound to the nonce seller's current store; `claim/bind`: connection bind scoped to the single verified connection id (only while unbound **or** already the claiming seller's) / fixture `shopId` — the blanket `updateMany storeId:null` sweep is gone. Live-verified: no-state 400, bogus-state 400, replayed-state 400. Dead duplicate `lib/marketplaces/callback.ts` confirmed unused, left unwired | `auth/callback/[platform]/route.ts`, `claim/bind` | RESOLVED |
+| F-08 | Medium | Data protection | Guessable sequential order numbers + email ⇒ guest lookup/receipt enumeration; receipt PDF exposes full customer PII; unthrottled | `lib/api.ts:183-190`, `orders/lookup:15-39`, `orders/receipt:16-42` | POTENTIAL RISK |
+| F-09 | Medium | AuthN | ~~Session tokens plaintext in DB~~ **RESOLVED/MITIGATED 2025-10-18 (P1 at-rest hashing + Task 22-b rotation/revocation)** — `Session.token` stores hex(sha256(raw)) (schema comment only, no migration); all lookups route through the hash-first `getSessionByToken()` helper; pre-existing plaintext rows purged. Live-verified: DB row holds the digest, raw token authenticates via cookie/Bearer, digest-as-Bearer rejected. **Task 22-b (R2)**: `rotateSession()` wired at the new `POST /api/me/password` (old token 401 / new token 200, live-proven); `revokeUserSessions()` wired on seller suspend/terminate/reject (live-proven: suspended seller's token 401s immediately, re-login 403). Residual **accepted by design**: raw token still returned once in login JSON and persisted in localStorage (`sm_session_token`) + Bearer for the sandbox iframe workaround — documented sandbox adaptation, migration to cookie-only deliberately deferred; no per-device session management | `lib/auth.ts`, `schema.prisma:150-153`, `session-client.ts:94-116`, `api/me/password/route.ts` | MITIGATED (rotation live; localStorage bridge accepted) |
+| F-10 | Medium | Abuse | Import jobs created/executed **unauthenticated** ⇒ resource exhaustion, claim-token spam (reads are trackingToken-gated) | `import/jobs/route.ts:13-25`, `runner.ts:85-122` | POTENTIAL RISK |
+| F-11 | Low | ATO | No email verification; registering a victim's email claims their legacy guest orders into the attacker account | `shopper/register:10-42`, `shopper-merge.ts:18-21` | POTENTIAL RISK |
+| F-12 | Low | Webhooks | Non-timing-safe signature compare; no replay window (ts signed but never checked) | `process.ts:63,56` | CONFIRMED ISSUE |
+| F-13 | Low | XSS | Store-owner-controlled `href`/`img src` in builder props not scheme-allow-listed (`javascript:` URLs possible); no `dangerouslySetInnerHTML` anywhere (React-escaped) | `builder-render.tsx:31-49`, `storefront.tsx:1029` | POTENTIAL RISK (low) |
+| F-14 | Low | Info disclosure | Public `/api/health` exposes ledger invariant problems + row counts | `health/route.ts:12-18` | POTENTIAL RISK |
+| F-15 | Low | Secrets | Outbound webhook endpoint secrets plaintext + returned on every GET/PATCH; integration configs raw JSON | `store/webhooks/route.ts:23,49` | POTENTIAL RISK |
+| F-16 | Low | Crypto | `secretbox` dev fallback key derived deterministically from hostname/cwd when `IMPORT_TOKEN_ENC_KEY` unset (startup warn) | `secretbox.ts:12-27` | UNVERIFIED CONTROL |
+| F-17 | Info | Validation | No zod/schema layer except 3 routes; manual per-route validation (present on sensitive fields; webhook amount coerced not rejected) | repo-wide | UNVERIFIED CONTROL |
+| F-18 | Info | Transport | No TLS block in Caddyfile (:81 plain HTTP); no `middleware.ts`, no CSP/HSTS/X-Frame-Options headers; no CORS config (same-origin only) | `Caddyfile:1-23`, `next.config.ts` | CONFIRMED (sandbox-scoped) |
+
+### K.2 Injection / XSS posture [V]
+Zero `$queryRaw/$executeRaw` — 100% parameterised Prisma. No `dangerouslySetInnerHTML`/`srcDoc`/`document.write`. Page-builder content rendered via React text interpolation; imported HTML regex-sanitised at ingest (`import/normalise.ts:65-77`); `/api/img` sanitises label into a text node. Residual: F-13 scheme gap.
+
+### K.3 Webhook integrity & replay
+Covered in Support 06 §H.7 (F-01/F-05/F-12). Positive: log-first recording incl. rejected deliveries, amount guard, status-idempotent duplicates, admin replay is simulated-only (no network, audited). [V]
+
+### K.4 Rate limiting & abuse [V → COVERED]
+Fixed-window `rateLimit()` guards the 14 sensitive public endpoints (F-04) on top of the original shipping-tick 1.5s / auto-complete 60s throttles. Pagination capped (maxSize=100). Image copy 10s/5MB. Limiter store is pluggable since Task 22-b (in-memory default; Redis adapter via `RATE_LIMIT_REDIS_URL` with warn-once in-memory fallback).
+
+### K.5 Secrets & configuration hygiene [V]
+Env inventory (names only): `DATABASE_URL` (set in .env, only entry), `PUBLIC_APP_ORIGIN`, `IMPORT_TOKEN_ENC_KEY`, `SHOPEE_ENV/PARTNER_ID/PARTNER_KEY`, `TIKTOK_SHOP_APP_KEY/SECRET/SERVICE_ID`, `SHOPEE_REDIRECT_URI`, `TIKTOK_SHOP_REDIRECT_URI`, `NODE_ENV`, `HOSTNAME`. Hardcoded material: webhook HMAC literal (F-01), demo credentials in seed + **rendered in client bundles** (`admin-shell.tsx:434-438`, `seller-shell.tsx:607-616`). `.gitignore` covers `.env*`/logs but DB+backup are tracked (F-02). `typescript.ignoreBuildErrors: true` (`next.config.ts:6-8`) — build-time TS gate bypassed (hygiene note). No sensitive module imported client-side; secretbox/password/auth server-only.
+
+### K.6 Data protection & audit [V]
+PII: shopper identities + addresses + orders; seller bank data minimised (masked + enc-prefixed last-4 only, `store/bank-accounts/route.ts:32-43`); admin seller serialization strips `passwordHash` (`admin/_helpers.ts:131-134`). **Audit**: `auditAdmin` dual-writes AdminAuditLog+ActivityLog — 45 admin files; **every DB-mutating admin route is audited**; gaps: checkout create + voucher redemption not activity-logged. No PII deletion workflow (GDPR-style) [M]. No console logging of tokens/secrets found.
+
+### K.7 Positive controls verified [V]
+scrypt+timingSafeEqual passwords; 256-bit CSPRNG session tokens; sha256-hashed session tokens at rest (F-09); DB-revocable expiring sessions; session rotation on credential change + principal-wide revocation hooks on seller state transitions (Task 22-b, F-09); 100% admin guard coverage; consistent store/owner scoping (zero IDOR found); portal escalation blocked; AES-256-GCM sealed marketplace tokens (single-use refresh rotation); hashed single-use claim tokens in guarded transactions; fully parameterised DB access; no HTML injection sinks; SSRF private-range guard on the resolve path + per-redirect-hop re-validation on the image copier (F-06); webhook log-first; idempotent webhook status handling; required single-use seller-bound OAuth state (F-07); pluggable rate-limit store with outage-safe Redis fallback (Task 22-b, F-04).
+
+### K.8 Not verifiable by source inspection
+Dependency vulnerability posture (no `bun audit` run); runtime WAF/TLS at any real deployment edge; actual exploitability of race windows under SQLite single-writer; clickjacking exposure without headers (F-18); session-fixation via cookie injection on shared devices. All [U].
+
+### FILE: docs/blueprint/08-integrations-reliability-performance.md
+
+# Blueprint Support 08 — Integrations, Performance & Reliability (Parts L, M, N)
+
+## PART L — Integrations and external services
+
+| Service | Purpose | Integration points | Config (names only) | Status |
+|---|---|---|---|---|
+| **Mock PSP ("NomoPay Checkout (sandbox)")** | Simulates licensed-PSP split rails: PaymentGroup = one charge; `simulate` endpoint signs & emits the exact production webhook; ledger T1 is the accounting mirror | `src/lib/psp.ts` (registry, `PspProvider` interface, 4 production plug-in points), `checkout/payments/[ref]/simulate`, `webhooks/payments/[provider]` + `process.ts` | HMAC secret env-driven with demo fallback (`process.ts`); candidates stripe_my/curlec/ipay88 documented — **R5: `stripe_my` adapter scaffold now exists** (see addendum below), lazily registered, unconfigured in sandbox | **Mocked by design**; R5 adapter surface added, mock path byte-identical [V] |
+| **Shopee OpenPlatform** | Seller catalogue import + OAuth connection | `src/lib/marketplaces/shopee.ts` (real network client: sandbox/live host by env, OAuth begin/exchange/refresh, token sealing via secretbox) | `SHOPEE_ENV`, `SHOPEE_PARTNER_ID`, `SHOPEE_PARTNER_KEY`, `SHOPEE_REDIRECT_URI`, `PUBLIC_APP_ORIGIN` | **Inactive without env** — `authStatus()` reports unconfigured; imports park `awaiting_authorisation`; fixture connector is the working demo [V] |
+| **TikTok Shop API** | Same as Shopee | `src/lib/marketplaces/tiktok.ts` | `TIKTOK_SHOP_APP_KEY/SECRET/SERVICE_ID`, `TIKTOK_SHOP_REDIRECT_URI` | Same posture [V] |
+| **Fixture connector** | Local demo marketplace source (`demo.shopmesh.fixture`) | `src/lib/marketplaces/fixture.ts` | none | Fully working demo path [V] |
+| **socket.io chat hub** | Realtime relay | `mini-services/chat-service` (:3003 socket + :3103 internal relay); Next persists then broadcasts (`lib/chat.ts:7-20`, 1.5s timeout, non-fatal failure) | none (no auth) | Operational in sandbox [V] |
+| **z-ai-web-dev-sdk** | AI features (search/image-gen/LLM) | **zero imports anywhere** [V] | — | Installed-but-unused |
+| Email / SMS / push | Notifications | **None** — `notify()` writes NotificationLog rows only (`lib/api.ts:113-124`) | — | **Missing** (by sandbox design) [M] |
+| Cloud storage (S3/OSS) | Uploads | **None** — local `public/uploads/{storeId}/` via SSRF-guarded copier | — | Missing [M] |
+| pdf-lib | Receipt PDF generation | `orders/receipt/route.ts` | — | Used [V] |
+| Error reporting / APM | Observability | None | — | Missing [M] |
+
+**Webhook posture summary** [V]: inbound payment webhook = HMAC demo secret, log-first, status-idempotent, amount-guarded, no replay window; outbound store webhooks = **simulated** (`dispatchStoreWebhooks` writes success rows, no HTTP — `lib/api.ts:127-144`); admin replay = simulated success bump, audited. Rate limits: none external. Retries: none (no queue). Fallbacks: chat broadcast failure non-fatal; connector failures recorded on ImportJob.
+
+## PART M — Performance and scalability
+
+| Area | Implementation | Assessment |
+|---|---|---|
+| Indexing | @@index on hot filters: `[storeId,status]` products, `[shopperId]`+`[paymentGroupId]` orders, `[status]` shipments, `[isPublished,startAt,endAt]` campaigns | Reasonable for scale; no EXPLAIN QUERY PLAN evidence [P] |
+| N+1 risks | `resolveRate` queries per item (product→category chain→seller→holidays) inside checkout create; category ancestor chain is sequential awaits | Bounded by cart size; acceptable at demo scale, measurable at scale [I] |
+| Pagination | `getPagination(maxSize=100)` everywhere paged; cursor pagination on ledger transactions | [V] |
+| Caching | Campaign 60s memo; wallet cache on-write; per-process summary Map; device token memo; `/api/img` 1y immutable | [V] |
+| Search/filter | DB `contains` queries (SQLite LIKE) — no full-text/Meili (worklog: intentionally omitted) | Fine at demo scale [V] |
+| SSR/CSR | Single SSR shell; **100% client-fetch data**; 92 `'use client'` files; large client bundles (checkout 2,569 ln, me-hub 2,241 ln) | Bundle weight unmeasured [U] |
+| Background work | None; everything synchronous in-request except simulated workers | Checkout create does pricing+commission+tx in-request (acceptable); webhook success does T1+notifications+webhook-sim synchronously [V] |
+| Connection management | Prisma singleton (global-cached in dev); SQLite single-writer (journal_mode=delete) | **Concurrency ceiling = SQLite**; multi-vendor write contention untested; Postgres migration path noted in worklog [V/I] |
+| Reporting | Aggregation queries on read (analytics, reports, dashboards); export snapshotting avoids recompute | [V] |
+| Image delivery | Deterministic SVG service, immutable cache; plain `<img>` (no next/image optimization) | [V] |
+
+**No benchmark/throughput evidence exists** — no claims about capacity are made. [M]
+
+## PART N — Reliability, observability & recovery
+
+- **Logging**: Next dev output tee'd to `dev.log` (prod: `server.log`); 11 `console.*` calls; no structured logger, no tracing, no metrics. [V]
+- **Health**: `GET /api/health` (public; counts + `runLedgerInvariants()` incl. every-txn balance + wallet-cache drift) and `GET /api/admin/system/health` (admin; + last audit rows; 30s UI poller). **No scheduler invokes the invariants** despite the "nightly" comment (`ledger.ts:302`) — who runs them in production is an open question. [V]
+- **Audit/recovery records**: AdminAuditLog+ActivityLog (every mutating admin op), PaymentWebhookLog (every delivery incl. rejected), OrderStatusHistory (every transition), FinMigrationBackup (schema migration audit). [V]
+- **Backup/DR**: none configured in-repo (SQLite file only; sandbox harness copies `db/custom.db` into build artifacts — `.zscripts/database-runtime-build.sh`). **No backup schedule, no restore runbook** [M].
+- **Failure behaviour of key dependencies**:
+  - *Mock PSP down*: N/A (in-process).
+  - *Chat hub down*: broadcasts fail non-fatally after 1.5s; clients fall back to polling/next load. [V]
+  - *DB down*: all routes 500 via `handle` (raw message leaked — minor info disclosure). [V]
+  - *Crash windows*: webhook success (status→T1 gap ⇒ paid order uncredited, FIN-02); payout batch loop (partial T3s, FIN-08); refund process sequence (T5 without status flip etc.); mark-paid (ledger/status desync). All non-transactional, no compensation/retry workers. [V]
+- **Idempotency inventory**: checkout create = `Idempotency-Key` + unique idemKey (DB-enforced); webhook = status check (no DB key — FIN-02); voucher redemption = guarded updateMany; claim token = hashed single-use; payout referenceNo = counter (unique); **refund process & mark-paid = check-then-act only**. [V]
+- **UI/DB/PSP/ledger disagreement scenarios**: (1) crash between webhook status flip and T1 ⇒ PSP/DB paid, ledger missing; (2) TOCTOU double-T1 ⇒ ledger double-credit; (3) partial refund after payout ⇒ negative payable, platform out-of-pocket (FIN-04); (4) simulated outbound webhook rows always "success" ⇒ delivery logs overstate reality (by design, labelled). [V]
+- **Retry safety**: replaying checkout create is safe (idemKey); replaying webhook is status-idempotent single-threaded but racy concurrent; replaying `shipping/tick` is throttled & idempotent-ish (advances state); replaying refund-process is blocked by status guard (racy). [V/I]
+
+## R5 ADDENDUM — real-PSP adapter scaffold (Task 22-c)
+
+Additive, env-gated scaffold so a licensed gateway can be dropped in without touching the mock
+or `webhooks/payments/process.ts`. With no `STRIPE_*` env keys the sandbox behaviour is
+byte-identical to pre-R5 (fin-tests green, mock simulate/webhook/live E2E unchanged).
+
+**Adapter interface extension** (`src/lib/psp.ts`):
+
+- `PspProvider` gains a REQUIRED `isConfigured(): boolean` (env gate, read at call time, secrets
+  never hardcoded; mock ⇒ `true`) and two OPTIONAL capabilities with documented contracts:
+  - `createCheckoutSession?(input): Promise<{redirectUrl, providerRef}>` — hosted checkout
+    (toggle point 2). CONTRACT: use only server-computed numbers; stamp the canonical internal
+    ref (`input.groupRef` = `PaymentGroup.ref`) onto the remote session (metadata) and ECHO it
+    back as `providerRef` so the adapter's own webhook verifier reports a resolvable ref; be
+    idempotent per groupRef; throw typed `PspAdapterError("PSP_NOT_CONFIGURED")` instead of
+    calling the network unconfigured. Input carries the Option B split (group amount, currency,
+    `commissionMinor` application-fee total, per-seller `{sellerId, amountMinor,
+    commissionMinor, pspAccountId?}` lines).
+  - `verifyWebhookSignature?(req, rawBody): Promise<PspWebhookVerdict>` — native verification
+    (toggle point 3). CONTRACT: constant-time compare only; NEVER trust unverified body fields
+    (parse only after the compare); enforce a replay window; return `{valid, providerRef?,
+    eventId?}` plus OPTIONAL normalized fields (`eventType` in the internal
+    `payment.succeeded|payment.failed` vocabulary, `amountMinor`, `ts`) so the dispatch route
+    can run the unchanged pipeline.
+- New typed error `PspAdapterError(status, code, message)`; routes convert it to the standard
+  error envelope.
+
+**Lazy registry** (`src/lib/psp.ts` — the static `PSP_PROVIDERS` + `PSP_SPLIT_CANDIDATES` + the 4
+plug-in-point notes stay intact): `getPspProvider(id)` returns the adapter from
+`PSP_LAZY_ADAPTERS` ONLY while `isConfigured()`, else falls back to the static map (mock for
+unknown ids). `getPspProviderForMethod(method)` maps the checkout payment METHOD
+(`card_stripe → stripe_my`; Curlec/iPay88 pending) to its adapter. The static-only
+`resolvePspProvider` (used by the `/simulate` gate) is deliberately untouched.
+
+**`src/lib/psp-adapters/stripe-my.ts`** — Stripe Malaysia + Connect skeleton (NO SDK, raw
+fetch; never executes in this sandbox):
+
+- Env: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (both required; `sandboxOnly` getter is
+  `false` exactly when both are present, `true` otherwise).
+- `createCheckoutSession`: `POST /v1/checkout/sessions` form-encoded — `mode=payment`, one line
+  item for the whole group, `payment_intent_data[transfer_group]` = canonical group ref,
+  `metadata[nomo_ref]` + `client_reference_id` stamping, Stripe `Idempotency-Key:
+  checkout:<groupRef>`; when exactly ONE seller with a known `pspAccountId` → destination
+  charge with `payment_intent_data[application_fee_amount]` = commission (the Option B note
+  verbatim); otherwise separate-charges-and-transfers (platform retains commission, per-seller
+  Transfers issued on webhook confirmation — production follow-up: `Seller.pspAccountId`
+  column + Transfer issuance). `PSP_NOT_CONFIGURED` guard before any fetch.
+- `verifyWebhookSignature`: the real Stripe scheme — `stripe-signature: t=…,v1=…` header,
+  HMAC-SHA256 over `` `${t}.${rawBody}` ``, every v1 candidate compared constant-time
+  (reuses `safeEqualHex` → `timingSafeEqual`), 5-minute replay tolerance, body parsed only
+  after the compare; maps `checkout.session.completed`/`async_payment_succeeded`/
+  `payment_intent.succeeded` → `payment.succeeded` and
+  `checkout.session.expired`/`payment_intent.payment_failed`/`charge.failed` →
+  `payment.failed`; returns `providerRef` from `metadata[nomo_ref]` →
+  `client_reference_id` → object id, `amountMinor` from `amount_total`/`amount`, `ts` from the
+  authenticated signing timestamp. Proven offline (Task 22-c: 16/16 cases — valid, uppercase
+  hex, tampered, stale 6 min, fresh 4 min, wrong secret, missing header, body-swap,
+  unconfigured throws, registry/sandboxOnly gating).
+
+**Per-provider webhook dispatch** (`webhooks/payments/[provider]/route.ts`, additive branch at
+the top; the mock branch below it is byte-identical — only the import line and header comment
+grew): if `[provider]` resolves to an adapter with `verifyWebhookSignature`, the adapter
+verifies first; invalid → log-first (`PaymentWebhookLog signatureValid=0`, unverified body
+fields NOT parsed out) then 400 `BAD_SIGNATURE`; valid-but-unmapped event types → 200
+`{ignored:true}` (no PSP retry storm); valid + normalized → the route re-signs the normalized
+internal event with the platform's `PAYMENT_WEBHOOK_SECRET` (never leaves the server) and calls
+the UNCHANGED `processPaymentWebhook` with the RAW PSP body preserved as the log payload — so
+the 15-min replay window, atomic T1, DB-enforced idempotency and fan-out apply to real gateways
+exactly as to the mock.
+
+**Checkout hook** (`checkout/create/route.ts`, single additive branch where the payment ref is
+built): when the method's adapter exposes `createCheckoutSession` and is configured, the
+adapter's `redirectUrl`/`providerRef` replace the mock `/pay/{ref}` default; adapter errors
+surface as `PSP_NOT_CONFIGURED` / `PSP_UPSTREAM_ERROR` / `PSP_SESSION_FAILED`. Unconfigured →
+byte-identical mock flow. Note: the SPA still navigates by `orderPaymentRef` (client-side pay
+surface) — wiring the hosted redirect into the shopper UI is a frontend follow-up.
+
+**Residual (flagged)**: with a lazily-registered adapter, `/simulate`'s mock-only gate still
+resolves to the mock for payment-METHOD ids (by design — `resolvePspProvider` is static-only),
+so once real keys are set, prod must deregister the mock / env-gate `/simulate` (runbook §d.3
+control stands). `PSP_SIMULATE_DISABLED` never fires for method ids today.
+
+### FILE: docs/blueprint/09-testing-config-admin.md
+
+# Blueprint Support 09 — Testing & QA, Configuration & Deployment, Administration (Parts O, P, Q)
+
+## PART O — Testing and quality assurance
+
+### O.1 Test inventory (executed? NO — read-only mandate; results are worklog claims [U])
+
+| Artifact | Type | Runner | Contents |
+|---|---|---|---|
+| `scripts/fin-tests.ts` (585 ln) | Pure unit suite (own harness on `node:assert/strict`, no DB) | manual `bun scripts/fin-tests.ts` | **56 tests / 11 sections**: half-up boundaries; 5,000 randomized bpsOf vs independent BigInt oracle; overflow (RM85T / MAX_SAFE_INTEGER); 10,000 largest-remainder allocations Σ≡amount; refunds ×3,000 (T5 balance, reversal bound); split payments ×2,000 (ΣsellerNet+Σcommission ≡ buyer total); digit-exact parse/format round-trips; float-trap guardrails; fee-holiday semantics (partial/clamped/invalid-ignored, refunds-on-holiday, earnings identity ×2,000); legacy export byte-stability (v1 "7.3") + v2 round-trip; rate-precision reject-never-round matrix incl. boolean-smuggling regression |
+| `scripts/fin-reconcile.ts` (543 ln) | Live-DB invariant suite (independent inline oracle; imports nothing from src/lib; read-only) | manual `bun scripts/fin-reconcile.ts` | **25 checks A–M**: bps ranges; order header≡lines; commission re-derivation from frozen bps; all txns balanced + T1 identities (gateway≡total, seller≡Σnet, Σnets+Σcommission≡buyer total) + T5 re-derived; group≡Σorders; coupon≡oracle+redemptions; refund bounds; batch totals + statement Σ≡payout + T3; wallet caches≡ledger truth; FinMigrationBackup 31/31 round-trip; holiday snapshots re-derived; export integrity era-correct; webhook idempotency (order_paid↔paidAt 1:1) |
+| `scripts/e2e-fin-issues.sh` | Live-API E2E (curl) | manual; **not CI-safe** (restarts dev server, hardcoded credentials/IDs, assumes seeded rows) | fee-holiday partial/clamp/overlap/scheduled + export byte-stability |
+| `scripts/verify-migration-freeze.ts` | Read-only freeze proof | manual, safe anytime | legacy columns absent (PRAGMA + DMMF reflection); bps columns present; ≥31 backups round-trip; JSON↔table 1:1; no npm script references frozen script; migrations dir absent |
+| `tests/*.sh` (3) | Sandbox deploy-infra harness checks | n/a | **Not app tests** (docker runner/fake-bun plumbing) |
+
+### O.2 Posture conclusion
+
+- **No test runner, no CI**: `package.json` has no `test` script; zero vitest/jest/playwright/cypress configs or files. [V]
+- **Covered (manually runnable)**: money/rate/CSV primitives; DB financial invariants; migration freeze. Worklog records fin-tests 56/56 and fin-reconcile 25/25 passes plus browser E2E — **not re-executed for this blueprint** [U].
+- **Zero automated coverage**: auth/session lifecycle, RBAC caps, cart, checkout quote/create, webhook processing, refunds flow, seller fulfilment, mock-shipping, chat/socket, campaigns, voucher claim, import pipeline, storefront render, notifications, membership, guest lookup/receipt, admin CSV export. [I from inventory]
+
+## PART P — Configuration, dependencies and deployment
+
+### P.1 Runtime & build
+
+- **Toolchain**: bun; Next.js **16.1.1** (App Router, Turbopack dev), React 19, TypeScript 5 (`strict: true` but `noImplicitAny: false`, `next.config.ts` sets `typescript.ignoreBuildErrors: true` — build gate bypassed), Tailwind **v4** PostCSS with a legacy v3-style `tailwind.config.ts` alongside (hybrid; v4 auto content detection does the real work), ESLint 9 (next preset, ~25 rules disabled incl. `no-explicit-any`, `no-console`). [V]
+- **Scripts** [V]: `dev` (`next dev -p 3000 | tee dev.log`), `build` (standalone + copy static/public), `start` (`NODE_ENV=production bun .next/standalone/server.js | tee server.log`), `lint`, `db:generate`, **`db:push` (`prisma db push --accept-data-loss`)**, `db:migrate`/`db:reset` (reference non-existent migrations dir — vestigial).
+- **Key deps** [V]: @prisma/client+prisma 6.11.1, socket.io(-client) 4.8.4, zod 4, zustand 5, framer-motion 12, recharts 2.15.4, pdf-lib, date-fns, @dnd-kit, sonner, lucide-react. **Installed-but-unused majors**: next-auth, next-intl, @tanstack/react-query, @tanstack/react-table, @mdxeditor/editor, react-markdown, react-syntax-highlighter, react-hook-form(+resolvers), sharp, uuid, z-ai-web-dev-sdk, @reactuses/core; 20 of 49 shadcn ui components unused (Support 10 §3).
+- **No CI/CD, no Dockerfile/compose, no vercel.json** [M]. Deployment = sandbox harness: `.zscripts/dev.sh` (bun install → db:push → next dev + mini-services scan) and `.zscripts/start.sh` (production layout: NODE_ENV=production, `DATABASE_URL=file:/app/db/custom.db`, bun server.js + mini-services, **caddy as PID 1**). Staging/prod distinction: none beyond NODE_ENV [V].
+
+### P.2 Environment variables (names & purpose only — no values)
+
+| Var | Consumer | Purpose | State |
+|---|---|---|---|
+| `DATABASE_URL` | `prisma/schema.prisma:8` | SQLite file URL | set (.env sole entry) |
+| `PUBLIC_APP_ORIGIN` | sitemap, seo, OAuth begin/callback | canonical origin / redirect base | unset → localhost fallback |
+| `IMPORT_TOKEN_ENC_KEY` | `secretbox.ts:12` | AES-256-GCM key for marketplace tokens | unset → dev fallback key (F-16) |
+| `SHOPEE_ENV/PARTNER_ID/PARTNER_KEY`, `SHOPEE_REDIRECT_URI` | `marketplaces/shopee.ts` | sandbox/live API + OAuth | unset → connector parked |
+| `TIKTOK_SHOP_APP_KEY/SECRET/SERVICE_ID`, `TIKTOK_SHOP_REDIRECT_URI` | `marketplaces/tiktok.ts` | same | unset |
+| `NODE_ENV`, `HOSTNAME` | db.ts singleton guard; secretbox fallback entropy | env mode / dev-key entropy | harness-set |
+
+### P.3 Gateway & routing
+
+Caddyfile (:81, verbatim mechanism): any request with query `XTransformPort=<n>` → `reverse_proxy localhost:<n>`; everything else → `localhost:3000`. Chat clients use `io("/?XTransformPort=3003")`; the internal relay :3103 is localhost-only by usage. Single externally exposed port. **No TLS block** (F-18). [V]
+
+### P.4 Database workflow
+
+No `prisma/migrations/` directory, no `_prisma_migrations` table — **schema-sync workflow via `db:push`** (forward-only; `--accept-data-loss` standing hazard). The M-FIN-1 bps migration was a one-off bun script (frozen; see Support 04 §F.4 + `verify-migration-freeze.ts`). Schema history lives in worklog + `FinMigrationBackup` + `db/backup/fin-migration-*.json`. [V]
+
+## PART Q — Administration and operational controls
+
+| Domain | Capability | Safeguards |
+|---|---|---|
+| Users/vendors | Seller lifecycle (approve/reject/suspend/activate/terminate), risk tier, notes, KYC queue + doc verdicts, bank verify/reject | `sellers.approve`/`sellers.suspend` caps; audited [V] |
+| Product moderation | pending_review queue; approve/reject/ban | `products.moderate`; audited [V] |
+| Orders | Full dossier viewer; refunds (approve/process/reject `refunds.manage`); disputes (`disputes.manage`; no money movement) | audited; no impersonation wired (`impersonate` cap unused) [V] |
+| Payments/payouts | Batch dry-run + run; mark-paid/fail; wallet adjustments (T6); ledger viewer (accounts/transactions) | `payouts.manage` (superadmin+finance); audited [V] |
+| Commission | Settings (diff dialog), overrides CRUD (dead config — FIN-01), fee holidays, exports + downloads, simulator, analytics, PSP scaffold (409-blocked) | `commission.manage`; audited [V] |
+| Marketing | Banners, featured, coupons, campaigns (presets; publish gates shopper theme) | `campaigns.manage` [V] |
+| Platform | Settings KV (`settings.manage` superadmin-only), feature flags (incl. dormant NomoPay finance suite), announcements (backend-only), audit/activity/notification logs (`logs.view`), system health | [V] |
+| **Gaps** | No audit-log tamper-evidence/retention policy; separation of duties relies on role matrix only; destructive `db:reset` script present; webhook-deliveries replay has no UI; domain verify button broken (admin/stores.tsx:64); no operational runbooks [M] | |
+
+---
+
+## P1 ops round (addendum)
+
+The "no CI/CD" (§P.1) and "no operational runbooks" (§Part Q gaps) findings were partially closed
+by the P1 ops round:
+
+- **Backup script + npm script**: `scripts/backup-db.ts` / `bun run db:backup [label]` →
+  `db/backup/custom.db.<label>-<UTC ts>`; prefers the SQLite backup API via the `sqlite3` CLI
+  (`.backup`), falls back to `fs.copyFileSync` with a live-copy WARNING; refuses overwrites.
+- **CI workflow**: `.github/workflows/ci.yml` — bun install → prisma generate → `db push` +
+  seed against a throwaway `db/custom.db` in the runner workspace (absolute `DATABASE_URL` via
+  `${{ github.workspace }}`) → gates: `bun run lint`, `bun scripts/fin-tests.ts` (56),
+  `bun scripts/fin-reconcile.ts` (25, seeded DB). `bunx tsc --noEmit` is INFORMATIONAL
+  (`continue-on-error: true`) for the pre-existing type-error baseline (measured ~31 at the
+  time of writing — `src/lib/app-store.ts`, `prisma/seed.ts`, `skills/*`, several admin routes;
+  historically ~57 — tracked separately). No `bun run build` in CI by design.
+- **Ops docs**: `docs/ops/postgresql-migration-plan.md` (SQLite→PostgreSQL strategy, type
+  mapping incl. the Int-sen RM21.47M ceiling and the 35 JSON-in-String columns; answers §W5 of
+  Support 10) and `docs/ops/production-readiness.md` (full `process.env.*` inventory — 11 static
+  refs in `src/` + `DATABASE_URL` + 2 dynamically-read `*_REDIRECT_URI` = 14, staging-vs-prod
+  table, backup/restore drill, monitoring incl. `/api/health` auth-gating note, known
+  limitations, go-live checklist). The two docs cross-link each other.
+
+Note: this blueprint originally referred to a "09-operational-limitations" doc; no such file
+exists — this file (09, Configuration & Deployment / Administration) and Support 10
+(§R.1 sandbox infrastructure) are the operational-limitation records, so this addendum lives here.
+
+---
+
+## Next-round addendum (Task 22, 2025-10-18)
+
+The six "next-round candidates" from the P1 round were executed:
+
+- **R1 — override fixedFee/holdDays semantics (FIN-01 completion)**: CommissionOverride
+  rows now apply ALL non-null fields (bps → rate; fixedFeeMinor → per-order fixed fee;
+  holdDays → payout hold; a bps-null row is no longer dead). Table wins over the static
+  seller hold override; fee holidays still replace the rate only. `Order.holdDays Int?`
+  freezes the resolved hold at checkout and BOTH webhook T1 sites use
+  `order.holdDays ?? seller.holdDaysOverride ?? settings.payoutHoldDays`. Strict FIN-10
+  validation on the admin override routes (400 on non-integer/negative/out-of-range).
+  Suite counts moved 68→**78** (fin-tests, section [15]) and 25→**26** (fin-reconcile,
+  new section N: T1 `availableAt == paidAt + Order.holdDays` re-derivation).
+- **R2 — session rotation/revocation (F-09)**: `rotateSession()` (delete-first, cookie or
+  Bearer) wired at the new `POST /api/me/password`; `revokeUserSessions()` wired on seller
+  suspend/terminate/reject; logout honours the Bearer bridge. Live-proven: old token 401 /
+  new 200 after rotation; suspended seller re-login 403. See Support 07 F-04/F-09 rows.
+- **R3 — resume-payment CTA (UX gap from Task 21)**: `/api/me/orders` (+ detail) now carry
+  the live payment session (`{ref, status, expiresAt?, amountMinor?}`, status "expired"
+  server-computed) for unpaid orders; shopper **order detail** shows a "Resume payment"
+  button and the Me-hub **To Pay cards** show a "Pay now" chip — both navigate to the
+  hosted pay screen (`nav "pay"`), closing the abandoned-gateway loop. Browser E2E:
+  NM-100038 resumed and paid via the list chip (exactly one T1, no duplicate idempotency
+  keys); NM-100037 resumed via the detail button; paid orders show no resume affordance.
+- **R4 — pluggable rate-limit store (F-04)**: `RateLimitStore` interface with the original
+  in-memory store as default and a Redis adapter (`RATE_LIMIT_REDIS_URL`, lazy
+  createRequire load, warn-once in-memory fallback — verified live with no ioredis
+  installed: identical 429 behaviour). Zero call-site changes.
+- **R5 — real-PSP adapter scaffold**: extended `PspProvider` (optional
+  `createCheckoutSession`/`verifyWebhookSignature` + `isConfigured`), new
+  `src/lib/psp-adapters/stripe-my.ts` (raw-fetch Checkout Sessions + real Stripe webhook
+  signature scheme with 5-min replay window; 16/16 local verifier proofs), lazy registry,
+  additive branches in the webhook route + checkout create — mock path byte-identical
+  (race suite re-run green). See Support 08 R5 addendum.
+- **R6 — CI activation**: `.github/workflows/ci.yml` refreshed (78/26 counts,
+  `workflow_dispatch`, per-ref concurrency) + **`docs/ops/ci-activation.md`** runbook
+  (GitHub-hosted / self-hosted / non-GitHub paths; validation performed; failure triage).
+  Activation still requires a hosting remote — sandbox has none [M].
+- Verification: fin-tests **78/78**, fin-reconcile **26/26**, fin-concurrency **10/10**,
+  lint clean, tsc 31 = pre-existing baseline (zero new), admin Overrides tab renders the
+  now-real Fixed fee/Hold days columns.
+
+### FILE: docs/blueprint/10-unwired-techdebt-openquestions.md
+
+# Blueprint Support 10 — Hard-coded/Mocked/Unwired Functionality, Technical Debt & Open Questions (Parts R, T, W)
+
+## PART R — Hard-coded, mocked, unwired and incomplete functionality
+
+### R.1 Intentional sandbox infrastructure (documented, not defects — but prod-relevant)
+
+| Item | Location | Consequence if shipped as-is |
+|---|---|---|
+| Mock PSP + public `simulate` endpoint + hardcoded webhook HMAC secret | `psp.ts`, `simulate/route.ts`, `process.ts:26` | Forged payments (F-01/F-05); PSP swap is documented config-level (4 plug-in points) |
+| Mock courier network (AWB SVG "MOCK LABEL — DEMO USE ONLY", POD, lazy tracking, unauthenticated `shipping/tick`) | `lib/shipping.ts:4-14,277,295-300`, `shipping/tick` | No real logistics integration |
+| Deterministic SVG image service (no real uploads/AI imagery) | `api/img/[seed]`, `placeholder.ts` | No user uploads anywhere |
+| Notifications = DB rows only (no email/SMS dispatch) | `lib/api.ts:113-124` | Customers never actually notified off-platform |
+| Simulated outbound store webhooks + admin replay | `lib/api.ts:127-144`, `admin/webhook-deliveries/[id]/replay` | Delivery logs always "success" |
+| Dormant NomoPay finance suite (`NOMO_FINANCE_ENABLED=false`): buyer wallet, coins, payLater scaffold, 403 FEATURE_DORMANT | `feature-flags.ts:19-30`, `me/wallet`, `me/coins/claim` | Licensing gate (FSA/BNM) documented in flag comments |
+| Chat auto-reply scaffold (dormant) | `chat-quick-replies.ts:31-84` | — |
+| Domain verify + integration test-delivery are server simulations (labelled in UI) | `store/domains/[id]/verify`, `integrations.tsx:132` | No real DNS/HTTP checks |
+| Demo credentials (seeded; **rendered in client bundles**) | `seed.ts:440-444`, `admin-shell.tsx:434-438`, `seller-shell.tsx:607-616` | Must not reach production |
+
+### R.2 Zero TODO/FIXME markers
+`grep -i 'TODO\|FIXME\|HACK\|XXX'` across `src/` → **0 matches** [V] — incompleteness is expressed as dormant flags and simulated infrastructure rather than markers.
+
+### R.3 Unwired backend (endpoints with no frontend caller) [V]
+`GET /api/store/payouts` (sole consumer of `ledger.parseStatement`), `GET|POST /api/admin/announcements(+[id])`, `GET /api/admin/webhook-deliveries` + `POST /[id]/replay`, `POST /api/shipping/tick`, `GET /api/health` (ops-only). **Broken caller**: `admin/stores.tsx:64` → non-existent `/api/admin/domains/[id]/verify` (always 404 toast).
+
+### R.4 Dead code [V]
+Modules: `marketplaces/util.ts`, `marketplaces/callback.ts` (logic duplicated inline in the OAuth route — drift risk). Exports: `buildPayoutStatement`, `commissionOfBps`, `requireAdminRole`, `secretbox.safeEqual`, `notifyShopperShipped` (duplicate of wired `pushBuyerNotificationForShipped`), `snapshotToJson`, `isImportTerminal`, plus over-exported internal-only helpers; routes hardcode `"mock"` instead of `MOCK_PROVIDER_ID`.
+
+### R.5 Features that look complete but are UI/presentation-only
+Payment-method list (client constant), free-shipping progress copy (server rule duplicated), "coming soon" service tiles, Help Center misroute, campaign accent layer, category icons, quick replies, quick restock (+10 fixed), guest device-local order history. Detail: Support 02 §D.7.
+
+### R.6 DB writes without expected audit/ledger records
+Voucher/coupon redemption and checkout create are **not activity-logged** (only webhook `payment.succeeded` is); voucher funding has **no ledger posting** (no funding expense account — platform revenue = commission only, Support 06 §H.6). [V]
+
+## PART T — Technical debt and architectural dependencies
+
+| Observation | Evidence | Why it matters |
+|---|---|---|
+| **No central order state machine** — `transitionOrder` validates nothing; legality via duplicated status arrays (≥5 sites) | `lib/api.ts:147-167`; `membership.ts:15`, `seller/orders.tsx:283`, `me/orders/[n]/return-request:40`, `store/orders/[id]/refund-request:24`, `admin/orders.tsx:38`, `shopper ui-bits:668` | A new route can invent illegal transitions; drift |
+| **4 client fetch conventions** (shopper/seller/admin/storefront + dead server one) with different envelope handling | `shopper/ui-bits.tsx:214-276`, `seller/ui-bits.tsx:102-142`, `admin/use-api.ts:25-93`, `storefront.tsx:1114` | Inconsistent error handling; envelope drift |
+| **Duplicated section renderer** (builder preview vs live storefront implement the same 15-type switch) | `builder-render.tsx` vs `storefront.tsx:166-238` | Changes must be made twice |
+| **≥5 status-label maps**; ≥10 inline `(minor/100).toFixed(2)` display sites beside `money.ts` helpers; 22 `toLocale*` date formats across 13 files | listed in Support 10 source sweep | Formatting drift vs POLICY P1 display rule |
+| **Giant multi-concern client files**: checkout 2,569 ln (auth+cart+checkout+pay+orders), me-hub 2,241 ln, shopper-shell 1,476, generate 1,446, admin/marketing 1,300, storefront 1,285 | wc -l (top 15 in Support 10 sweep) | Hard to test/modify; bundle weight |
+| **JSON-in-String columns with mixed parsing** — `json.ts` helpers exist but 21 files raw-`JSON.parse` | grep | Corrupt-data robustness inconsistent |
+| **OAuth callback logic duplicated** (dead lib vs inline route) | `marketplaces/callback.ts` vs `auth/callback/[platform]/route.ts` | Security drift (F-07) |
+| **Hardcoded operational values**: webhook secret, admin notify email `admin@nomofee.io` in ≥3 routes, RM100 threshold duplicated, MY_STATES list | `process.ts:26`, `store/onboarding:28`, `refund-request:48`, `checkout/create:332` | Config not env-driven |
+| **Rebrand residue** (SHOPMESH→NOMOFEE): fixture host, UA string, dev-key seed, "SM-100017" copy, chat-service header comment | `generate.tsx:142`, `util.ts:8`, `secretbox.ts:21`, `checkout.tsx:2522,2537` | Confusion; cosmetic debt |
+| **Seed-dependent demos/evidence**: quick-login cards, e2e script IDs, reconcile assumptions | `seller-shell:607-616`, `e2e-fin-issues.sh` | Raw DB wipe breaks demos/evidence |
+| **Contract-tolerance fallbacks** masking API drift (`s.productCount ?? s._count?.products`) | `admin/stores.tsx:55-56` | Bugs hidden |
+| **tsc baseline**: worklog records 57/58 pre-existing type errors at HEAD; `ignoreBuildErrors: true` at build | worklog; `next.config.ts:6-8` | Type gate effectively manual [U — not re-run] |
+
+## PART W — Open questions and evidence limitations
+
+| # | Unknown | Why not establishable here | Needed to resolve |
+|---|---|---|---|
+| W1 | Actual test-script results (56/56, 25/25) and lint/tsc baseline today | Read-only mandate — scripts not executed; `ignoreBuildErrors` hides tsc | Run `bun scripts/fin-tests.ts`, `fin-reconcile.ts`, `tsc --noEmit` in a change-approved session |
+| W2 | Production values of all env vars (`PUBLIC_APP_ORIGIN`, Shopee/TikTok keys, `IMPORT_TOKEN_ENC_KEY`) | Only DATABASE_URL exists in .env | Deployment-time secrets plan |
+| W3 | Real-PSP behaviour parity — does any licensed gateway match the mock's exact webhook shape/signature model? | No adapter exists | PSP contracting + adapter build (4 documented plug-in points) |
+| W4 | Who invokes `/api/shipping/tick` and the "nightly" `runLedgerInvariants` in production | No scheduler exists in repo | Cron/worker decision |
+| W5 | Concurrency behaviour under multi-vendor load (SQLite single-writer; TOCTOU windows) | No runtime/lock testing possible read-only | Load test; Postgres migration assessment |
+| W6 | Performance/bundle cost of 2,200–2,600-line client shells | No measurements | Profiling |
+| W7 | Whether unwired endpoints (announcements, webhook-deliveries viewer, seller payouts page) are planned or orphans | Product intent not recorded | Product decision |
+| W8 | Whether `notifyShopperShipped`/`marketplaces/callback.ts` should be wired or deleted; central transition map adoption | Product/architecture decision | Review |
+| W9 | Fee-holiday realism: no engine-produced holiday order exists in live DB yet (seed holiday is bps 0 only) | Live data lacks an exercised partial-holiday order | First real occurrence + reconcile K |
+| W10 | Whether finer rate precision (sub-0.01%) is ever required (BPS_DENOM raise policy documented) | Business requirement unknown | Product decision |
+| W11 | e-money/licensing scope for the dormant NomoPay wallet suite (FSA 2013/BNM questions recorded in flag comments) | Legal question | Compliance review |
+| W12 | DB-level integrity beyond schema (e.g., `integrity_check`, index DDL audit) | Read-only conservatism; sqlite3 CLI absent (python sqlite3 used for row checks) | Maintenance window |
+| W13 | Whether the historic "Refunds RM30" discrepancy has any other occurrences (only PO-100001 was repaired) | Only ledger-reconciliation can prove globally | `bun scripts/fin-reconcile.ts` execution |
+
+### Search-scope limitations (whole blueprint)
+Static inspection only — no servers started, no requests sent, no scripts executed, no DB writes (live DB read via Python sqlite3 `mode=ro` only). Evidence derives from full reads of financial/security/auth/config code, structured inventories of all ~120 API routes and all 76 models, and cross-greps of frontend callers; worklog.md was treated as intent, not proof. Dynamic behaviours (locking, race exploitability, runtime performance) are labelled [I]/[U] accordingly.
+

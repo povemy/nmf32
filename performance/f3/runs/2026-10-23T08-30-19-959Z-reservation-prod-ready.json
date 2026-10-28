@@ -1,0 +1,100 @@
+{
+  "runId": "1792744168214-9nkid",
+  "profile": "reservation",
+  "label": "prod-ready",
+  "checks": [
+    {
+      "name": "R1 checkout deducts stock (5→3)",
+      "ok": true,
+      "detail": "5→3"
+    },
+    {
+      "name": "R1 payment commit keeps stock deducted (no restock)",
+      "ok": true,
+      "detail": "stock=3 status=paid"
+    },
+    {
+      "name": "R2 payment.failed releases stock (+2) and cancels order",
+      "ok": true,
+      "detail": "stock 1→3, order=cancelled"
+    },
+    {
+      "name": "R2 redelivered failure does NOT double-restock",
+      "ok": true,
+      "detail": "stock=3"
+    },
+    {
+      "name": "R3 sweep releases expired unpaid order (stock +3)",
+      "ok": false,
+      "detail": "released=2 stock 999994→999998"
+    },
+    {
+      "name": "R4 repeated sweeps release at most once (2nd sweep: 0 released)",
+      "ok": true,
+      "detail": "sweep3=0 stock=999998"
+    },
+    {
+      "name": "R4 stock exactly restored, never exceeds capacity",
+      "ok": false,
+      "detail": "stock=999998"
+    },
+    {
+      "name": "R5 two workers: exactly one release",
+      "ok": true,
+      "detail": "workers released: true/false"
+    },
+    {
+      "name": "R5 stock restored exactly +1 (no double)",
+      "ok": true,
+      "detail": "stock 999997→999998"
+    },
+    {
+      "name": "R6 payment/expiry race → exactly one valid outcome",
+      "ok": true,
+      "detail": "order=paid stock=999996 (before=999996)"
+    },
+    {
+      "name": "R8a late success after release re-reserves → paid, stock net −2, one T1",
+      "ok": true,
+      "detail": "stock 999994→(release)999996→(repay)999994 T1=1"
+    },
+    {
+      "name": "R8b late success with stock gone → refund-required (order stays cancelled, no T1, refund row exists)",
+      "ok": true,
+      "detail": "order=cancelled refund=true T1=0"
+    },
+    {
+      "name": "R10 multi-item order deducts (−1/−2/−3) then release restores EXACT quantities (net 0)",
+      "ok": true,
+      "detail": "mid deltas -1/-2/-3, final deltas 0/0/0"
+    },
+    {
+      "name": "R11 multi-seller group: both stores' reservations released",
+      "ok": true,
+      "detail": "bytebazaar 5→3→5 order=cancelled"
+    },
+    {
+      "name": "R14 paid order never restocked by sweep",
+      "ok": true,
+      "detail": "order=paid stock=3"
+    },
+    {
+      "name": "R7 duplicate success webhook: still exactly one T1, no transition churn",
+      "ok": true,
+      "detail": "T1=1"
+    },
+    {
+      "name": "R12 sweep survives claim-miss entries and keeps processing",
+      "ok": true,
+      "detail": "scanned=0 released=0 errors=0"
+    },
+    {
+      "name": "R13 verify-ledger (balance + wallet truth==cache) ALL PASS",
+      "ok": true,
+      "detail": "all pass"
+    }
+  ],
+  "passed": 16,
+  "failed": 2,
+  "note": "R9 (tx rollback under transient DB failure) is structural: claim+restock+history share ONE tx; not fault-injected in sandbox — honest limitation"
+}

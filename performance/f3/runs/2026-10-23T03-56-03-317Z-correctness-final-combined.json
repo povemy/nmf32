@@ -1,0 +1,64 @@
+{
+  "runId": "1792727748279-eseho",
+  "profile": "correctness",
+  "label": "final-combined",
+  "checks": [
+    {
+      "name": "G1 last-unit race: exactly 1×201 + 7×409",
+      "ok": true,
+      "detail": "201/409/409/409/409/409/409/409"
+    },
+    {
+      "name": "G1 stock never negative (0 left)",
+      "ok": true,
+      "detail": "stock=0"
+    },
+    {
+      "name": "G2 same idempotency key ×5 concurrent: exactly 1 payment group",
+      "ok": true,
+      "detail": "refs=1"
+    },
+    {
+      "name": "G2 exactly 1 order created",
+      "ok": true,
+      "detail": "orders=1"
+    },
+    {
+      "name": "G3 oversell 20→10: exactly 10×201 + 10×409",
+      "ok": true,
+      "detail": "201/201/201/201/201/409/201/201/409/409/201/409/201/201/409/409/409/409/409/409"
+    },
+    {
+      "name": "G3 stock exactly 0 (never negative)",
+      "ok": true,
+      "detail": "stock=0"
+    },
+    {
+      "name": "G4 confirmed [LT] order has exactly one T1 ledger posting",
+      "ok": true,
+      "detail": "simulate=200 T1=1"
+    },
+    {
+      "name": "G4 duplicate confirmation does NOT duplicate T1",
+      "ok": true,
+      "detail": "T1=1"
+    },
+    {
+      "name": "G5 verify-ledger (balance + wallet truth==cache) ALL PASS",
+      "ok": true,
+      "detail": "all pass"
+    },
+    {
+      "name": "G6 no [LT] order without payment group",
+      "ok": true,
+      "detail": "orphans=0"
+    },
+    {
+      "name": "G6 no negative [LT] stock",
+      "ok": true,
+      "detail": "negative=0"
+    }
+  ],
+  "passed": 11,
+  "failed": 0
+}

@@ -1,0 +1,90 @@
+[
+  {
+    "file": "pulse-anc-earbuds.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "pulse-anc-earbuds",
+    "prompt": "Hybrid active noise cancelling wireless earbuds with 28 hour battery life, sleek matte black earbuds floating beside their open charging case, USB-C charging port visible on the case, glossy touch surfaces, modern tech gadget, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "pulse-anc-earbuds-2.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "pulse-anc-earbuds",
+    "prompt": "Matte black wireless noise cancelling earbuds resting on a wooden desk next to a slim open laptop and a cup of latte, lifestyle workspace scene, modern tech gadget, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "mk65-tactile.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "mk65-tactile",
+    "prompt": "Compact 65 percent mechanical keyboard with gasket-mounted design and tactile switches, dense keycaps visible from a three-quarter angle, warm cozy desk setup with soft ambient light, premium typing peripheral, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "usbc-hub-8in1.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "usbc-hub-8in1",
+    "prompt": "Aluminum 8-in-1 USB-C hub adapter with visible HDMI port, gigabit ethernet port, USB-A ports and SD card slots, braided USB-C cable connected, lying on a minimal clean desk, sleek silver metal body, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "desk-mat-felt.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "desk-mat-felt",
+    "prompt": "Large natural felt desk mat with cork base, top-down flat lay view on a warm wooden desk, compact keyboard and wireless mouse placed neatly on the mat, soft textile texture, 90x40 desk pad proportions, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "bt-bookshelf-speakers.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "bt-bookshelf-speakers",
+    "prompt": "Pair of 4-inch powered bookshelf speakers with Bluetooth, warm wood veneer cabinets, front three-quarter view showing drivers and speaker grilles, hi-fi desktop audio, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "action-cam-lite.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "action-cam-lite",
+    "prompt": "Compact 4K action camera inside a clear waterproof protective case, two spare batteries placed beside it, adventurous mountain trail backdrop softly blurred, rugged sporty gadget, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "rgb-light-bars.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "rgb-light-bars",
+    "prompt": "Two smart RGB lighting bars mounted behind a widescreen monitor setup, emitting soft purple and teal glow onto a desk in a moody dark room, ambient gaming light, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "portable-espresso.png",
+    "kind": "product",
+    "entity": "ByteBazaar",
+    "productSlug": "portable-espresso",
+    "prompt": "Manual portable espresso maker with 18 bar pressure in use outdoors, pressing rich dark espresso into a small cup on a travel wooden table, outdoorsy camping scene, compact coffee gadget, professional e-commerce product photography, clean modern background with subtle teal accent, soft studio lighting, centered composition, photorealistic, no text, no watermark, no logo",
+    "status": "ok"
+  },
+  {
+    "file": "kuih-raya-tin.png",
+    "kind": "product",
+    "entity": "Warung Satu",
+    "productSlug": "kuih-raya-tin",
+    "prompt": "Assorted traditional Malay kuih raya cookies including golden pineapple tarts and round dusted kuih makmur arranged in an open reusable gift tin, festive Hari Raya setting with warm decorations, Malaysian home kitchen, appetizing professional food photography, natural daylight, Malaysian home kitchen setting, photorealistic, no text, no watermark",
+    "status": "ok"
+  },
+  {
+    "file": "sambal-bundle.png",
+    "kind": "product",
+    "entity": "Warung Satu",
+    "productSlug": "sambal-bundle",
+    "prompt": "Three glass jars of homemade Malaysian sambal lined up on a woven rattan mat, one red sambal biasa, one green sambal hijau, one extra spicy sambal pedas filled with red chilies, fresh red chilies and lime wedges beside the jars, appetizing professional food photography, natural daylight, Malaysian home kitchen setting, photorealistic, no text, no watermark",
+    "status": "ok"
+  }
+]

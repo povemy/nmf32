@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { createCartForShopper, findCartForShopper, loadAddableVariant, shapeCart } from "../cart";
+import { trackAddToCart } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,16 @@ export const POST = handle(async (req: Request) => {
     } else {
       if (capped < existing.qty + qty) notice = `Only ${variant.stock} in stock — quantity adjusted`;
       await db.cartItem.update({ where: { id: existing.id }, data: { qty: capped } });
+      // Seller Insights — add_to_cart with the APPLIED delta (post − pre).
+      await trackAddToCart({
+        storeId: variant.product.store.id,
+        productId: variant.product.id,
+        variantId: variant.id,
+        cartItemId: existing.id,
+        preQty: existing.qty,
+        postQty: capped,
+        shopperId: me.id,
+      });
     }
   } else {
     // Respect the seller's MOQ: a smaller ask is adjusted UP to the minimum
@@ -56,7 +67,17 @@ export const POST = handle(async (req: Request) => {
     const capped = Math.min(wanted, 99, variant.stock);
     if (capped < qty) notice = `Only ${variant.stock} in stock — quantity adjusted`;
     else if (capped > qty) notice = `Seller minimum is ${moq} — quantity adjusted`;
-    await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty: capped } });
+    const created = await db.cartItem.create({ data: { cartId: cart.id, variantId: variant.id, qty: capped } });
+    // Seller Insights — add_to_cart (new line; pre = 0).
+    await trackAddToCart({
+      storeId: variant.product.store.id,
+      productId: variant.product.id,
+      variantId: variant.id,
+      cartItemId: created.id,
+      preQty: 0,
+      postQty: capped,
+      shopperId: me.id,
+    });
   }
 
   const fresh = await findCartForShopper(me.id);
