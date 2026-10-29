@@ -1,20 +1,24 @@
 "use client";
 // Task 2-d — SD-01 seller dashboard: period cards, low stock with inline restock,
 // latest orders, pending actions with jump links.
-import { apiGet, apiSend, CardsSkeleton, RowsSkeleton, StatCard, StatusChip, ageOf, formatMinor, runMutation, useApi, type SellerNav, type StoreMe } from "./ui-bits";
+import { apiGet, apiSend, CardsSkeleton, RowsSkeleton, StatCard, StatusChip, ageOf, formatMinor, runMutation, useApi, useSellerTerms, fmtCommissionPercent, holdAfterPayment, type SellerNav, type StoreMe } from "./ui-bits";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowRight,
   BadgeDollarSign,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   Package,
   ReceiptText,
   Timer,
   TrendingUp,
+  Undo2,
   Wallet2,
 } from "lucide-react";
 
@@ -47,6 +51,9 @@ type DashboardData = {
 export default function SellerDashboard({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
   const { data, loading, error, refetch } = useApi<DashboardData>("/api/store/dashboard");
   const { data: me } = useApi<StoreMe>("/api/store/me");
+  // ADDENDUM #8 — live platform terms (commission %, hold) from the admin
+  // settings via /api/store/terms; shared module cache means one fetch / 60 s.
+  const { terms } = useSellerTerms();
 
   const restock = async (variantId: string, title: string) => {
     const ok = await runMutation(
@@ -73,29 +80,92 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
     );
   }
 
-  const actions = [
+  // ---- Pending actions (ADDENDUM #8) — each action gets its own large,
+  // urgency-colored card so counts cannot be missed. Tiers:
+  //   urgent (rose):  unfulfilled ≥ 5 · refunds ≥ 3
+  //   warn   (amber): unfulfilled 1–4 · refunds 1–2 · products in review ≥ 1
+  //   ok     (emerald): zero — "All clear"
+  // Products-in-review never goes rose: it is an expected admin-side flow.
+  type Urgency = "ok" | "warn" | "urgent";
+  const URGENCY: Record<
+    Urgency,
+    { chip: string; number: string; bar: string; iconBg: string; badge: string; chipLabel: string; short: string }
+  > = {
+    ok: {
+      chip: "border-emerald-200 bg-emerald-100 text-emerald-800",
+      number: "text-emerald-600",
+      bar: "bg-emerald-500",
+      iconBg: "bg-emerald-100 text-emerald-700",
+      badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+      chipLabel: "All clear",
+      short: "All caught up",
+    },
+    warn: {
+      chip: "border-amber-200 bg-amber-100 text-amber-800",
+      number: "text-amber-600",
+      bar: "bg-amber-400",
+      iconBg: "bg-amber-100 text-amber-700",
+      badge: "border-amber-200 bg-amber-100 text-amber-800",
+      chipLabel: "Action needed",
+      short: "open",
+    },
+    urgent: {
+      chip: "border-rose-200 bg-rose-100 text-rose-800",
+      number: "text-rose-600",
+      bar: "bg-rose-500",
+      iconBg: "bg-rose-100 text-rose-700",
+      badge: "border-rose-200 bg-rose-100 text-rose-800",
+      chipLabel: "Urgent",
+      short: "needs urgent action",
+    },
+  };
+
+  const actionCards = [
     {
       key: "unfulfilled",
       label: "Orders to fulfill",
       count: data.pendingActions.unfulfilledPaidOrders,
-      hint: "Paid orders waiting for packing/shipping",
+      hint: "Paid orders waiting for packing & shipping",
+      icon: Package,
+      urgency: (data.pendingActions.unfulfilledPaidOrders >= 5 ? "urgent" : data.pendingActions.unfulfilledPaidOrders > 0 ? "warn" : "ok") as Urgency,
       go: () => onNavigate({ view: "orders", orderId: undefined }),
     },
     {
       key: "refunds",
-      label: "Open refund requests",
+      label: "Refund requests",
       count: data.pendingActions.openRefundRequests,
-      hint: "Awaiting admin decision",
+      hint: "Customers waiting on a refund decision",
+      icon: Undo2,
+      urgency: (data.pendingActions.openRefundRequests >= 3 ? "urgent" : data.pendingActions.openRefundRequests > 0 ? "warn" : "ok") as Urgency,
       go: () => onNavigate({ view: "orders", orderId: undefined }),
     },
     {
       key: "products",
       label: "Products in review",
       count: data.pendingActions.productsPendingReview,
-      hint: "New or flagged products pending moderation",
+      hint: "Awaiting moderation before going live",
+      icon: ClipboardCheck,
+      urgency: (data.pendingActions.productsPendingReview > 0 ? "warn" : "ok") as Urgency,
       go: () => onNavigate({ view: "products", productId: undefined }),
     },
   ];
+
+  const totalOpen = actionCards.reduce((s, a) => s + a.count, 0);
+  const maxUrgency: Urgency = actionCards.some((a) => a.urgency === "urgent")
+    ? "urgent"
+    : actionCards.some((a) => a.urgency === "warn")
+      ? "warn"
+      : "ok";
+
+  // Live commission copy — effective default rate for THIS seller (seller
+  // override ?? admin global), with fixed-fee / minimum noted when configured.
+  const commissionSub = (() => {
+    if (!terms) return "Syncing with platform settings…";
+    const bits: string[] = [terms.commissionSource === "seller_override" ? "Your negotiated rate" : "Default rate"];
+    if (terms.hasFixedFee) bits.push(`+ ${formatMinor(terms.fixedFeeMinor)} fixed fee/order`);
+    if (terms.hasMinCommission) bits.push(`min ${formatMinor(terms.minCommissionMinor)}/order`);
+    return `${bits.join(" · ")} — deducted at payment`;
+  })();
 
   return (
     <div className="space-y-6">
@@ -154,46 +224,60 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
                 {formatMinor(data.wallet?.availableMinor ?? 0)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatMinor(data.wallet?.pendingMinor ?? 0)} pending (held for grace period)
+                {formatMinor(data.wallet?.pendingMinor ?? 0)} pending · released {terms ? holdAfterPayment(terms) : "after the clearing hold"}
               </p>
             </div>
           </button>
         </div>
       </section>
 
-      {/* pending actions */}
+      {/* pending actions — ADDENDUM #8: one large urgency-colored card per
+          action (big count, color-coded severity) so nothing gets missed. */}
       <section aria-label="Pending actions">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <ClipboardList className="h-4 w-4 text-primary" /> Pending actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
-            {actions.map((a) => (
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <ClipboardList className="h-4 w-4 text-primary" /> Pending actions
+          </h2>
+          <Badge variant="outline" className={cn("border font-medium", URGENCY[maxUrgency].badge)}>
+            {totalOpen === 0 ? "All caught up" : `${totalOpen} open item${totalOpen === 1 ? "" : "s"}`}
+          </Badge>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {actionCards.map((a) => {
+            const s = URGENCY[a.urgency];
+            const Icon = a.icon;
+            const display = a.count > 99 ? "99+" : String(a.count);
+            return (
               <button
                 key={a.key}
+                type="button"
                 onClick={a.go}
-                className="flex items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/50"
+                aria-label={`${a.label}: ${display} — ${s.chipLabel}`}
+                className="group relative flex min-h-[44px] flex-col gap-3 overflow-hidden rounded-xl border bg-card p-5 text-left shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <span
-                  className={
-                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold " +
-                    (a.count > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground")
-                  }
-                >
-                  {a.count}
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1 text-sm font-medium">
-                    {a.label} <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1", s.bar)} />
+                <span className="flex items-center justify-between gap-2">
+                  <span className={cn("flex h-10 w-10 items-center justify-center rounded-lg", s.iconBg)}>
+                    <Icon className="h-5 w-5" />
                   </span>
-                  <span className="block text-xs text-muted-foreground">{a.hint}</span>
+                  <Badge variant="outline" className={cn("border font-medium", s.chip)}>
+                    {a.urgency === "ok" ? "All clear" : s.chipLabel}
+                  </Badge>
+                </span>
+                <span>
+                  <span className={cn("block text-4xl font-bold leading-none tabular-nums sm:text-5xl", s.number)}>
+                    {display}
+                  </span>
+                  <span className="mt-2.5 flex items-center gap-1 text-sm font-medium">
+                    {a.label}
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{a.hint}</span>
                 </span>
               </button>
-            ))}
-          </CardContent>
-        </Card>
+            );
+          })}
+        </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -311,8 +395,8 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
         />
         <StatCard
           label="Platform commission"
-          value="8%"
-          sub="Flat rate — deducted automatically at payment"
+          value={terms ? fmtCommissionPercent(terms.commissionPercent) : "—"}
+          sub={commissionSub}
           icon={<BadgeDollarSign className="h-4 w-4" />}
         />
       </section>

@@ -264,3 +264,85 @@ ADDENDUM #6 (Admin Settings form + Activity Log purge) was verified implemented 
 current tree during this audit (settings-registry.ts with friendly fields + "Not wired"
 badges; /api/admin/activity-logs/purge with superadmin cap + scrypt password re-verify +
 batched delete). Not re-done; no duplication.
+
+---
+
+# ADDENDUM #8 — 2026-10-28 (Seller dashboard: live platform terms + pending-actions urgency)
+
+Mission (trace 1a18557d1b1a4809, user request, 2 parts): (1) the Seller Dashboard
+"Platform commission" card (and every other seller-backend surface showing platform
+parameters — fee, payment hold / grace period, moderation window, payout minimum) must
+be LINKED to the live admin settings so every change reflects automatically; (2) each
+pending action gets its OWN card with a large count and urgency colors/sizing.
+
+## Ground rules (binding; inherited)
+- Authority rule: seller-facing numbers come from the DB (CommissionSetting singleton +
+  Seller overrides + Setting rows) — never hardcoded literals. Per-item snapshots
+  (order_item.commissionMinor) stay authoritative for money math; the dashboard card
+  shows the seller's effective DEFAULT rate, honestly labeled ("default rate" when
+  product/category/holiday overrides can apply).
+- Honesty rule: runtime hold = paidAt + (seller.holdDaysOverride ?? payoutHoldDays) at
+  both T1 sites in process.ts. holdReleaseRule="days_after_delivered" is stored but NOT
+  implemented → all display copy says "after payment".
+- Additive only: new read-only endpoints + UI wiring; NO changes to commission engine,
+  checkout, payment webhook, ledger, wallet math. finance-regression/deployment-smoke
+  must stay green (re-run deployment-smoke; business code untouched → full finance
+  suite not required, smoke is the guard).
+- /api/platform/terms is public but exposes ONLY business-policy values already shown
+  on the public seller landing (commission %, hold days, fixed-fee/min flags + amounts,
+  payout minimum, moderation first-N). No PII, 60 s TTL cache.
+- PASS/FAIL/NOT TESTED labels only for executed checks; browser-verify before done.
+
+## Audit findings (verified in code, this session)
+- [x] HARDCODED "8%": dashboard.tsx:314 (Platform commission card), wallet.tsx:215
+      (Commission paid sub), wallet.tsx:738 (activity detail note), settings.tsx:233
+      (marketplace opt-in copy), seller-shell.tsx:730 (pre-auth landing bullet),
+      seller-shell.tsx:845 (register terms alert).
+- [x] HARDCODED "7-day hold": wallet.tsx:202, onboarding.tsx:479, orders.tsx:395,
+      seller-shell.tsx:846; dashboard.tsx:157 "held for grace period" (no number).
+- [x] HARDCODED "first 5 products" (moderation.first_n, default 5, wired):
+      seller-shell.tsx:838.
+- [x] ALREADY SYNCED (verified, no change): payout minimum (wallet API reads Setting
+      payout.min_minor → UI + request guard), pending-releases view (holdDays per row),
+      period-card commission amounts + order detail commission (order_item snapshots),
+      low-stock thresholds (per-variant seller data).
+- [x] Pending actions today: ONE card, three small h-8 buttons, amber-only tint —
+      easy to miss (user confirmed they did not notice it).
+
+## Phase checklist
+- [x] P1 src/lib/seller-terms.ts — getSellerTerms(sellerId) / getPlatformTermsPublic()
+      (+60 s public TTL cache) reading CommissionSetting + Seller overrides +
+      Setting payout.min_minor + moderation.first_n.
+- [x] P2 GET /api/store/terms (seller-scoped, rate-limited; 401 unauth VERIFIED) +
+      GET /api/platform/terms (public, cached — live values verified: 0.5%, min RM1,
+      hold 7d, payout min RM10, first-5).
+- [x] P3 ui-bits.tsx — PlatformTerms type + fmtCommissionPercent/fmtHoldDays/
+      holdAfterPaymentLabel(holdAfterPayment) + useSellerTerms() (module 60 s cache +
+      in-flight dedupe).
+- [x] P4 Wire components: dashboard (commission card + wallet sub), wallet (3 spots),
+      orders detail note (also fixed factual error — the SELLER NET is held, not
+      "commission"), settings marketplace copy, onboarding bank hint. All 6 surfaces
+      browser-verified with live values.
+- [x] P5 Pending-actions redesign: 3 dedicated clickable cards, text-4xl/5xl counts
+      ("99+" cap), urgency tiers — rose (unfulfilled ≥5 / refunds ≥3), amber
+      (unfulfilled 1–4 / refunds 1–2 / review ≥1), emerald (0 = All clear) — chips +
+      accent borders + icon tiles, keyboard accessible, section total badge. VLM
+      desktop + mobile review PASS (cards 358×178 px stacked at 390px, no overflow).
+- [x] P6 seller-shell pre-auth: live landing bullet ("Flat 0.5% platform commission"),
+      register sub-copy (first N), terms alert — via public terms, graceful generic
+      copy while loading.
+- [x] P7 Verify: lint 0 err (14 pre-existing script warnings); dev.log clean (only
+      historical EADDRINUSE lines); agent-browser golden path — pre-auth screen, seller
+      login, dashboard cards incl. big pending-action cards ("5 — Urgent" rose,
+      "0 — All clear" emerald, total "5 open items"), wallet, order detail, settings
+      copy, onboarding hint (trail demo, wizard walked with dummy KYC filenames);
+      LIVE-SYNC test PASS — mutated defaultPercent 0.5→12.5 + payoutHoldDays 7→3 →
+      reload → "12.5%" + "released 3 days after payment" → reverted → 0.5%/7d;
+      seller-override test PASS — lumina 3%/2d → "3%" + "Your negotiated rate" +
+      "2 days" → reverted to null. deployment-smoke 22/22 ALL PASS (archived
+      performance/runs/2026-10-29-deployment-smoke.json). Zero console/page errors.
+      Not re-run: full finance-regression (no business-logic changes; additive
+      read-only endpoints + UI copy; smoke covers golden paths) — labeled.
+      NOT TESTED: days_after_delivered display variant (not implemented at runtime;
+      copy never claims it). Worklog appended. VLM's "N badge over sidebar" note =
+      pre-existing global portal-switcher FAB (fixed 10,10, draggable by design).

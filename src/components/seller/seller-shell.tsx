@@ -13,11 +13,13 @@ import {
   apiGet,
   apiSend,
   ageOf,
+  fmtCommissionPercent,
   runMutation,
   StoreMe,
   SellerNav,
   StatusChip,
   fmtDateTime,
+  PlatformTerms,
 } from "./ui-bits";
 import OnboardingWizard from "./onboarding";
 import SellerDashboard from "./dashboard";
@@ -644,6 +646,25 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [reg, setReg] = useState({ fullName: "", displayName: "", email: "", password: "", phone: "", storeName: "" });
 
+  // ADDENDUM #8 — the pre-auth screen renders LIVE platform terms (commission
+  // %, hold days, moderation window) from the public /api/platform/terms
+  // endpoint, so admin changes reflect on the landing + registration copy
+  // automatically. Failure keeps the graceful generic wording.
+  const [publicTerms, setPublicTerms] = useState<PlatformTerms | null>(null);
+  useEffect(() => {
+    let alive = true;
+    apiGet<PlatformTerms>("/api/platform/terms")
+      .then((d) => {
+        if (alive) setPublicTerms(d);
+      })
+      .catch(() => {
+        /* keep graceful generic copy — the pre-auth screen must never break */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const goMarket = () => setSurface("shopper");
 
   const login = async () => {
@@ -727,7 +748,9 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
             {[
               "Drag-and-drop page builder with 15 section types",
               "Ledger-true wallet: pending → available → payouts",
-              "Flat 8% platform commission, no hidden fees",
+              publicTerms
+                ? `Flat ${fmtCommissionPercent(publicTerms.commissionPercent)} platform commission, no hidden fees`
+                : "Transparent platform commission, no hidden fees",
             ].map((t) => (
               <li key={t} className="flex items-center gap-2.5">
                 <BadgeCheck className="h-4 w-4 shrink-0" /> {t}
@@ -835,15 +858,22 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create my free store"}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Free forever plan · first 5 products go through a quick review
+                Free forever plan ·{" "}
+                {publicTerms
+                  ? publicTerms.moderationFirstN > 0
+                    ? `first ${publicTerms.moderationFirstN} products go through a quick review`
+                    : "your products go live instantly"
+                  : "new products go through a quick review"}
               </p>
             </TabsContent>
           </Tabs>
 
           <Alert>
             <AlertDescription className="text-xs">
-              By continuing you agree to the NOMOFEE seller terms: 8% platform commission on paid orders,
-              payouts to a Malaysian bank account after a 7-day hold.
+              By continuing you agree to the NOMOFEE seller terms:{" "}
+              {publicTerms ? `${fmtCommissionPercent(publicTerms.commissionPercent)} platform commission` : "platform commission"} on paid
+              orders, payouts to a Malaysian bank account after{" "}
+              {publicTerms && publicTerms.holdDays > 0 ? `a ${publicTerms.holdDays}-day hold` : "the clearing hold"}.
             </AlertDescription>
           </Alert>
         </div>

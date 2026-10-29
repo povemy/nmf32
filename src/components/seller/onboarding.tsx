@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { motion } from "framer-motion";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
-import { apiGet, apiSend, runMutation, StoreMe, BankAccount, StatusChip } from "./ui-bits";
+import { apiGet, apiSend, runMutation, StoreMe, BankAccount, StatusChip, useSellerTerms } from "./ui-bits";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -472,11 +472,19 @@ function BankStep({
 }) {
   const digits = bank.accountNumber.replace(/\s+/g, "");
   const valid = !!(bank.holderName.trim() && bank.bankName && digits.length >= 4);
+  // ADDENDUM #8 — live hold window (was hardcoded "7-day").
+  const { terms } = useSellerTerms();
   return (
     <div className="space-y-4 rounded-2xl border bg-card p-5">
       <div>
         <h2 className="font-semibold">Bank account</h2>
-        <p className="text-xs text-muted-foreground">Payouts are transferred here after the 7-day clearing hold.</p>
+        <p className="text-xs text-muted-foreground">
+          {terms
+            ? terms.holdDays > 0
+              ? `Payouts are transferred here after the ${terms.holdDays}-day clearing hold.`
+              : "Payouts are transferred here once orders are paid (no clearing hold)."
+            : "Payouts are transferred here after the clearing hold."}
+        </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">

@@ -19,8 +19,10 @@ import {
   ageOf,
   fmtDateTime,
   formatMinor,
+  holdAfterPayment,
   runMutation,
   useApi,
+  useSellerTerms,
   type SellerNav,
 } from "./ui-bits";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -254,6 +256,8 @@ export default function SellerOrders({ focusOrderId, onNavigate }: { focusOrderI
 
 function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => void }) {
   const { data: order, loading, error, refetch } = useApi<OrderDetail>(`/api/store/orders/${orderId}`);
+  // ADDENDUM #8 — live hold window for the money-panel note (was "7 days").
+  const { terms } = useSellerTerms();
   const [shipOpen, setShipOpen] = useState(false);
   const [deliverOpen, setDeliverOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -391,8 +395,8 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
             <MoneyRow label="Net to you" value={net} tone="green" strong />
             <Separator className="my-2" />
             <p className="text-xs text-muted-foreground">
-              Paid via {order.paymentProvider ?? "—"}{order.latestPaymentRef ? ` · ref ${order.latestPaymentRef}` : ""}.
-              Commission is held for 7 days before it becomes available in your wallet.
+              Paid via {order.paymentProvider ?? "—"}{order.latestPaymentRef ? ` · ref ${order.latestPaymentRef}` : ""}. Your net is
+              held for {terms ? holdAfterPayment(terms) : "the clearing hold"} before it becomes available in your wallet.
             </p>
           </CardContent>
         </Card>

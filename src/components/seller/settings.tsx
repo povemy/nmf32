@@ -2,7 +2,7 @@
 // Task 2-d — SD-12 Store Settings: identity form, marketplace opt-in, social
 // links, storefront link, policies shortcut to the Page Builder.
 import { useEffect, useState } from "react";
-import { apiSend, CopyButton, runMutation, StatusChip, type SellerNav, type StoreMe } from "./ui-bits";
+import { apiSend, CopyButton, fmtCommissionPercent, runMutation, StatusChip, useSellerTerms, type SellerNav, type StoreMe } from "./ui-bits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,8 @@ export default function SellerSettings({
   const [optIn, setOptIn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [policyPageId, setPolicyPageId] = useState<string | null>(null);
+  // ADDENDUM #8 — live commission % for the marketplace opt-in copy (was "8%").
+  const { terms } = useSellerTerms();
   const setSurface = useApp((s) => s.setSurface);
   const setActiveStoreSlug = useApp((s) => s.setActiveStoreSlug);
 
@@ -230,7 +232,7 @@ export default function SellerSettings({
               <p className="text-sm font-medium">List products on the NOMOFEE marketplace</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 When on, your active products can appear in marketplace search and collections — free discovery,
-                same 8% commission. Your storefront stays live either way. Approval of your store is still
+                same {terms ? fmtCommissionPercent(terms.commissionPercent) : "platform"} commission. Your storefront stays live either way. Approval of your store is still
                 required before listings go out.
               </p>
             </div>

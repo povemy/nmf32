@@ -94,6 +94,42 @@ export type SellerViewName =
 
 export type SellerNav = { view: SellerViewName; pageId?: string; orderId?: string; productId?: string; activityId?: string };
 
+// ---------------------------------------------------------------- platform terms
+// Structural mirror of src/lib/seller-terms.ts PlatformTerms (the server lib
+// imports Prisma and must never enter the client bundle — same pattern as
+// StoreMe mirroring /api/store/me). Served by GET /api/store/terms.
+
+export type PlatformTerms = {
+  commissionPercent: number;
+  commissionSource: "seller_override" | "global_default";
+  fixedFeeMinor: number;
+  hasFixedFee: boolean;
+  minCommissionMinor: number;
+  hasMinCommission: boolean;
+  holdDays: number;
+  holdSource: "seller_override" | "global_default";
+  payoutMinMinor: number;
+  moderationFirstN: number;
+};
+
+/** "8" → "8%", "8.5" → "8.5%", "12.25" → "12.25%" (max 2 decimals, no trailing zeros). */
+export function fmtCommissionPercent(p: number): string {
+  const rounded = Math.round(p * 100) / 100;
+  return `${rounded}%`;
+}
+
+/** 7 → "7 days", 1 → "1 day", 0 → "0 days". */
+export function fmtHoldDays(days: number): string {
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** Hold-window phrase matching the RUNTIME rule (paidAt + holdDays):
+ *  "7 days after payment" — never "after delivery" (that setting is stored
+ *  but not implemented; see seller-terms.ts honesty note). */
+export function holdAfterPayment(t: PlatformTerms | null): string {
+  return t ? `${fmtHoldDays(t.holdDays)} after payment` : "after the clearing hold";
+}
+
 // ---------------------------------------------------------------- fetch helpers
 
 type Envelope<T> = { data?: T; error?: { code: string; message: string; details?: unknown } };
@@ -170,6 +206,53 @@ export function useApi<T>(url: string | null, deps: unknown[] = []) {
 
   const refetch = useCallback(() => setTick((t) => t + 1), []);
   return { data, loading, error, refetch, setData };
+}
+
+// ---------------------------------------------------------------- terms hook
+
+/** Module-level terms cache + in-flight dedupe: every seller view that needs
+ *  platform parameters (dashboard, wallet, orders, settings, onboarding)
+ *  shares ONE request per 60 s window instead of one per component mount.
+ *  A view switch never re-fires while the cache is warm; a failed fetch
+ *  clears nothing (components keep their graceful generic copy). */
+const TERMS_TTL_MS = 60_000;
+let termsCache: { at: number; data: PlatformTerms } | null = null;
+let termsInflight: Promise<PlatformTerms> | null = null;
+
+export function useSellerTerms(): { terms: PlatformTerms | null; loading: boolean } {
+  const [terms, setTerms] = useState<PlatformTerms | null>(termsCache ? termsCache.data : null);
+
+  useEffect(() => {
+    const cached = termsCache;
+    if (cached && Date.now() - cached.at < TERMS_TTL_MS) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cache-hit sync reset
+      setTerms(cached.data);
+      return;
+    }
+    if (!termsInflight) {
+      termsInflight = apiGet<PlatformTerms>("/api/store/terms")
+        .then((d) => {
+          termsCache = { at: Date.now(), data: d };
+          return d;
+        })
+        .finally(() => {
+          termsInflight = null;
+        });
+    }
+    let alive = true;
+    termsInflight
+      .then((d) => {
+        if (alive) setTerms(d);
+      })
+      .catch(() => {
+        /* keep graceful generic copy — never break a view over terms */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return { terms, loading: terms === null };
 }
 
 // ---------------------------------------------------------------- status chip

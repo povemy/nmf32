@@ -11,11 +11,14 @@ import {
   RowsSkeleton,
   StatCard,
   StatusChip,
+  fmtCommissionPercent,
   fmtDate,
   fmtDateTime,
   formatMinor,
+  holdAfterPayment,
   runMutation,
   useApi,
+  useSellerTerms,
   type BankAccount,
   type SellerNav,
   type SellerWallet,
@@ -109,6 +112,9 @@ export default function SellerWallet({ focusActivityId, onNavigate }: { focusAct
 function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void }) {
   const { data, loading, error, refetch } = useApi<WalletData>("/api/store/wallet");
   const { data: bankAccounts, refetch: refetchBanks } = useApi<BankAccount[]>("/api/store/bank-accounts");
+  // ADDENDUM #8 — live platform terms (hold window + commission %) so admin
+  // changes reflect here automatically (was hardcoded "7 days" / "8%").
+  const { terms } = useSellerTerms();
   const [addOpen, setAddOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
 
@@ -199,7 +205,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
         <StatCard
           label="Pending"
           value={formatMinor(w.pendingMinor)}
-          sub="Available 7 days after payment (hold)"
+          sub={terms ? `Available ${holdAfterPayment(terms)} (hold)` : "Available after the clearing hold"}
           icon={<Clock3 className="h-4 w-4" />}
           tone="warn"
           onClick={onNavigate ? () => onNavigate({ view: "pending" }) : undefined}
@@ -212,7 +218,12 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
           tone={w.availableMinor < 0 ? "bad" : undefined}
         />
         <StatCard label="Lifetime earned" value={formatMinor(w.lifetimeEarnedMinor)} sub="Gross seller net, all time" icon={<PiggyBank className="h-4 w-4" />} />
-        <StatCard label="Commission paid" value={formatMinor(w.lifetimeCommissionMinor)} sub="8% platform fee, all time" icon={<Coins className="h-4 w-4" />} />
+        <StatCard
+          label="Commission paid"
+          value={formatMinor(w.lifetimeCommissionMinor)}
+          sub={terms ? `${fmtCommissionPercent(terms.commissionPercent)} platform fee, all time` : "Platform fee, all time"}
+          icon={<Coins className="h-4 w-4" />}
+        />
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -605,6 +616,8 @@ function LedgerActivityDetail({
   onNavigate: (n: SellerNav) => void;
 }) {
   const { data, loading, error } = useApi<ActivityDetail>(`/api/store/wallet/activity/${activityId}`);
+  // ADDENDUM #8 — live commission % for the order_paid explainer note.
+  const { terms } = useSellerTerms();
 
   if (loading) return <RowsSkeleton rows={6} />;
   if (error || !data) {
@@ -735,7 +748,7 @@ function LedgerActivityDetail({
               {txn.txnType === "refund"
                 ? "This debit reduced your balance because the order was refunded to the shopper."
                 : txn.txnType === "order_paid"
-                  ? "This credit is the seller net from the order after the 8% platform commission and any clearing hold."
+                  ? `This credit is the seller net from the order after the ${terms ? fmtCommissionPercent(terms.commissionPercent) : ""} platform commission and any clearing hold.`
                   : "Follow the journal entries below for the full money movement."}
             </p>
           </CardContent>

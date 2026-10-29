@@ -1773,3 +1773,67 @@ ADDENDUM #7 to RX-CHECKLIST. Full audit (4 parallel read-only agents) → consol
   docs/seller-insights/implementation-report.md.
 - Dev env note: dev server restarted once (Prisma client regen after db:push) via
   scripts/dev-supervisor.sh durable pattern; all mini-services up (3000/3003/3005).
+
+## 2026-10-29 — ADDENDUM #8: Seller dashboard live platform terms + pending-actions urgency cards (trace 1a18557d1b1a4809)
+
+User report: (1) Dashboard "Platform commission" card not synced to webapp settings; check
+EVERYTHING on the seller backend for platform-fee / payment-hold linkage. (2) Pending
+actions need per-action cards, larger counts, urgency colors.
+
+AUDIT (read-only first): the live CommissionSetting is defaultPercent=0.5 + min RM1 +
+hold 7d — while the dashboard showed a HARDCODED "8% Flat rate" (user's bug confirmed:
+0.5% actual vs 8% displayed). Found 6 hardcoded "8%" spots (dashboard, wallet ×2,
+settings, seller-shell landing + register terms), 4 hardcoded "7-day hold" spots
+(wallet, onboarding, order detail, register terms), 1 hardcoded "first 5 products"
+(moderation window). Already-synced (no change): payout minimum (wallet API),
+pending-releases per-row holdDays, commission amounts (order_item snapshots),
+low-stock thresholds. Runtime hold = paidAt + (seller.holdDaysOverride ??
+payoutHoldDays) at both T1 sites; holdReleaseRule=days_after_delivered stored but NOT
+implemented → copy says "after payment" (honesty rule).
+
+IMPLEMENTATION (additive only, no business-logic changes):
+- src/lib/seller-terms.ts — getSellerTerms(sellerId) / getPlatformTermsPublic()
+  (CommissionSetting + Seller overrides + Setting payout.min_minor/moderation.first_n;
+  public variant behind 60s TTL globalThis cache).
+- GET /api/store/terms (seller-session-scoped, rate-limited) + GET /api/platform/terms
+  (public, business-policy values only, cached, rate-limited).
+- ui-bits.tsx: PlatformTerms type + fmtCommissionPercent/fmtHoldDays/holdAfterPayment +
+  useSellerTerms() hook (module 60s cache + in-flight dedupe — one request per minute
+  shared across all seller views).
+- Wired 6 surfaces: dashboard (commission card + e-wallet sub), wallet (Pending sub,
+  Commission-paid sub, activity-detail note), order-detail money note (also fixed the
+  factual error: the SELLER NET is held, not "commission"), settings marketplace copy,
+  onboarding bank-step hint, pre-auth landing bullet + register sub-copy + terms alert.
+- Pending actions redesign: section header with total badge; three dedicated clickable
+  cards (text-4xl/5xl counts, "99+" cap, accent bar, tinted icon tile, status chip);
+  urgency tiers rose ≥5 unfulfilled / ≥3 refunds ("Urgent"), amber 1–4 / 1–2 / ≥1
+  review ("Action needed"), emerald 0 ("All clear"); keyboard accessible; mobile stacks
+  full-width 178px tall.
+
+EVIDENCE:
+- API: /api/platform/terms returns live {0.5%, min RM1, hold 7d, payout min RM10,
+  first-5}; /api/store/terms 401 unauth, 200 with seller session.
+- Browser (agent-browser): pre-auth shows "Flat 0.5% platform commission" + terms alert;
+  dashboard commission card "0.5% — Default rate · min RM 1.00/order — deducted at
+  payment"; e-wallet "released 7 days after payment"; pending cards "5 — Urgent"
+  (rose), "0 — All clear" (emerald), total "5 open items"; wallet "0.5% platform fee,
+  all time" + "Available 7 days after payment (hold)"; order detail "Your net is held
+  for 7 days after payment…"; settings "same 0.5% commission"; onboarding (trail demo,
+  walked wizard w/ 3 dummy KYC filenames) "after the 7-day clearing hold".
+- LIVE-SYNC test (the point of the request): DB-mutated defaultPercent 0.5→12.5 and
+  payoutHoldDays 7→3 → page reload → card shows 12.5% + "released 3 days after
+  payment" → reverted → back to 0.5%/7d. Seller-override test: lumina override 3%/2d →
+  "3%" + "Your negotiated rate" + "2 days" → reverted to null → "Default rate"/7d.
+- VLM desktop review: pending-actions PASS on all criteria, 0.5% card correct; flagged
+  "N badge over sidebar" = the pre-existing draggable global portal-switcher FAB
+  (fixed 10,10, 48×48 — by design, all surfaces), not a defect of this change.
+  VLM mobile 390px: cards stacked full-width, no overflow/overlap.
+- Zero console/page errors (desktop + mobile). dev.log clean (only historical
+  EADDRINUSE lines 1–3 from a much older duplicate-start).
+- Regression: deployment-smoke 22/22 ALL PASS (archived
+  performance/runs/2026-10-29-deployment-smoke.json) — checkout/payment/ledger/
+  inventory protections intact. lint 0 errors (14 pre-existing script warnings only).
+- Not re-run: finance-regression full suite (no business-logic/money-path changes —
+  additive read-only endpoints + UI copy only; smoke covers the golden paths).
+- NOT TESTED: holdReleaseRule=days_after_delivered display variant (not implemented at
+  runtime — copy deliberately never claims it).

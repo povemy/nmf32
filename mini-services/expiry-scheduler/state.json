@@ -1,11 +1,11 @@
 {
   "service": "expiry-scheduler",
-  "startedAt": "2026-10-28T15:35:51.311Z",
+  "startedAt": "2026-10-29T01:31:35.427Z",
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-28T17:09:23.476Z",
-      "lastSuccessAt": "2026-10-28T17:09:23.655Z",
+      "lastTickAt": "2026-10-29T02:08:36.896Z",
+      "lastSuccessAt": "2026-10-29T02:08:37.063Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 127,
-        "at": "2026-10-28T17:09:23.609Z",
+        "durationMs": 97,
+        "at": "2026-10-29T02:08:37.000Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1138
+      "ticks": 1030
     },
     "refund": {
-      "lastTickAt": "2026-10-28T17:09:23.476Z",
-      "lastSuccessAt": "2026-10-28T17:09:23.905Z",
+      "lastTickAt": "2026-10-29T02:08:36.897Z",
+      "lastSuccessAt": "2026-10-29T02:08:37.008Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-28T17:09:23.820Z",
-        "durationMs": 334,
+        "at": "2026-10-29T02:08:36.958Z",
+        "durationMs": 52,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,28 +48,28 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1138
+      "ticks": 1030
     },
     "analytics": {
-      "lastTickAt": "2026-10-28T17:09:23.476Z",
-      "lastSuccessAt": "2026-10-28T17:09:24.014Z",
+      "lastTickAt": "2026-10-29T02:08:36.897Z",
+      "lastSuccessAt": "2026-10-29T02:08:37.107Z",
       "lastOutcome": {
-        "ranAt": "2026-10-28T17:09:23.938Z",
-        "durationMs": 446,
+        "ranAt": "2026-10-29T02:08:37.061Z",
+        "durationMs": 146,
         "retentionDays": 180,
-        "cutoff": "2026-05-01T17:09:23.491Z",
+        "cutoff": "2026-05-02T02:08:36.914Z",
         "purged": 0,
         "flush": {
-          "flushed": 29,
+          "flushed": 1,
           "pending": 0
         },
-        "remaining": 10,
+        "remaining": 11,
         "oldestEventAt": "2026-10-28T14:16:18.540Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 188
+      "ticks": 80
     }
   },
   "alerts": [
@@ -217,6 +217,11 @@
       "at": "2026-10-28T15:35:51.311Z",
       "type": "MISSED_INTERVAL",
       "detail": "scheduler was down ~5007s (last success 2026-10-28T14:12:23.930Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-29T01:31:35.428Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~35622s (last success 2026-10-28T15:37:53.786Z) — catch-up tick starting now"
     }
   ]
 }
