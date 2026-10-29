@@ -1936,3 +1936,16 @@ EVIDENCE:
   compiles) — durable restart pattern applied (bash -c nohup orphan-to-init;
   setsid& dies at tool-call boundaries per dev-supervisor.sh canary note);
   tsc/lint never run concurrently with compiles.
+
+## 2026-10-30 — Marketing Intelligence (Seller Insights phase 2 mission)
+- Gate: post-remediation verdict authorized start; F-20 was the one open finding touching this scope.
+- Shipped: campaign attribution end-to-end (validated UTM + nmcl campaign links, last-touch model,
+  nm_ins_attr cookie, event + Order attr* freeze), Campaigns tab (report + link generator), funnel
+  drop-off + authoritative payment sessions (PaymentGroup), session sliding-window fix, ?sf= deep-link
+  surface rule, Settings storefront URL fix, F-20 minimal fail-closed scoping (3 routes), ad-integration
+  design doc (design only). Schema additive via db:push.
+- Tests: seller-attribution NEW 52/52; seller-insights 55/55; finance-regression 37/0; smoke ALL PASS;
+  lint 0 errors; tsc src 0. Browser golden path incl. real campaign-link landing + attributed visit.
+  Production build NOT RUNNABLE in sandbox (CI/staging action, unchanged).
+- Docs: implementation-plan.md (audit + execution record), metric-definitions.md §11 + §2/§5 updates,
+  implementation-report.md (2026-10-30 section), ad-integration-design.md.

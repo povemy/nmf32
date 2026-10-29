@@ -9,6 +9,7 @@ import { findCartForShopper } from "../../cart/cart";
 import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
 import { withCheckoutAdmission } from "@/lib/checkout-gate";
 import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
+import { resolveAttribution } from "@/lib/analytics/attribution";
 
 export const dynamic = "force-dynamic";
 
@@ -188,6 +189,12 @@ export const POST = handle(async (req: Request) => {
   const shopperCart = await findCartForShopper(me.id);
   const cartToken = shopperCart?.token ?? null;
 
+  // Marketing Intelligence — resolve the shopper's validated attribution
+  // (last-touch cookie) BEFORE the transaction so it can be frozen onto every
+  // order as constant snapshot columns (same pattern as the country snapshot).
+  // Best-effort by design: an unreadable/absent cookie simply means untagged.
+  const attribution = await resolveAttribution().catch(() => null);
+
   const orderNumbers = await Promise.all(pricing.groups.map(() => nextOrderNumber()));
 
   const group = await db.$transaction(async (tx) => {
@@ -262,6 +269,16 @@ export const POST = handle(async (req: Request) => {
           // shippingAddressJson; never derived from the customer's later profile).
           shippingCountryCode: "MY",
           shippingCountrySource: "checkout",
+          // Marketing Intelligence — attribution snapshot frozen at checkout
+          // creation from the shopper's validated attribution cookie
+          // (last-touch; null = untagged). Constant columns exactly like the
+          // country snapshot above — never recomputed, never backfilled.
+          attrCampaignId: attribution?.campaignId ?? null,
+          attrSource: attribution?.utmSource ?? null,
+          attrMedium: attribution?.utmMedium ?? null,
+          attrCampaign: attribution?.utmCampaign ?? null,
+          attrTerm: attribution?.utmTerm ?? null,
+          attrContent: attribution?.utmContent ?? null,
           customerNote: body.customerNote != null ? String(body.customerNote) : null,
           paymentProvider: provider,
           cartToken,

@@ -17,6 +17,7 @@
 import { resolveInsightsIdentity } from "./identity";
 import { classifyReferrer } from "./referrer";
 import { enqueueAnalyticsEvent } from "./queue";
+import { resolveAttribution, channelFromAttribution, type Attribution } from "./attribution";
 
 function hourBucket(d = new Date()): string {
   return d.toISOString().slice(0, 13); // "2026-10-28T07" (UTC server time)
@@ -25,18 +26,36 @@ function minuteBucket(d = new Date()): string {
   return d.toISOString().slice(0, 16); // "2026-10-28T07:42"
 }
 
+/** Attribution fields attached to an event row (validated + clamped upstream). */
+function attrFields(attr: Attribution | null) {
+  return {
+    campaignId: attr?.campaignId ?? null,
+    utmSource: attr?.utmSource ?? null,
+    utmMedium: attr?.utmMedium ?? null,
+    utmCampaign: attr?.utmCampaign ?? null,
+    utmTerm: attr?.utmTerm ?? null,
+    utmContent: attr?.utmContent ?? null,
+  };
+}
+
 async function base(
   req: Request,
   opts: { shopperId?: string | null } = {}
-): Promise<{ visitorId: string; sessionId: string; shopperId: string | null; referrerHost: string | null; channel: string }> {
+): Promise<{ visitorId: string; sessionId: string; shopperId: string | null; referrerHost: string | null; channel: string; attr: Attribution | null }> {
   const identity = await resolveInsightsIdentity();
   const ref = classifyReferrer(req);
+  const attr = await resolveAttribution();
+  // Tagged visits classify their channel from the validated utm_source (the
+  // SPA's same-origin fetches make the Referer useless for external landings);
+  // untagged traffic keeps the legacy referrer classification.
+  const channel = channelFromAttribution(attr) ?? ref.channel;
   return {
     visitorId: identity.visitorId,
     sessionId: identity.sessionId,
     shopperId: opts.shopperId ?? null,
     referrerHost: ref.referrerHost,
-    channel: ref.channel,
+    channel,
+    attr,
   };
 }
 
@@ -44,14 +63,21 @@ async function base(
 export async function trackStoreView(req: Request, storeId: string): Promise<void> {
   try {
     const b = await base(req);
+    // Dedup: once per (session, store, hour) for UNTAGGED traffic — refreshes
+    // collapse. A landing attributed to a DIFFERENT campaign is a distinct
+    // traffic event and gets its own row (the campaign suffix keeps same-
+    // campaign refreshes deduped while different-campaign landings within the
+    // same session+hour are each counted for their own campaign).
+    const campaignSuffix = b.attr?.campaignId ? `:c${b.attr.campaignId}` : "";
     enqueueAnalyticsEvent({
-      dedupKey: `sv:${b.sessionId}:${storeId}:${hourBucket()}`,
+      dedupKey: `sv:${b.sessionId}:${storeId}:${hourBucket()}${campaignSuffix}`,
       eventType: "store_view",
       storeId,
       visitorId: b.visitorId,
       sessionId: b.sessionId,
       referrerHost: b.referrerHost,
       channel: b.channel,
+      ...attrFields(b.attr),
     });
   } catch { /* never break the host request */ }
 }
@@ -60,8 +86,12 @@ export async function trackStoreView(req: Request, storeId: string): Promise<voi
 export async function trackProductView(req: Request, storeId: string, productId: string): Promise<void> {
   try {
     const b = await base(req);
+    // Same campaign-suffix dedup rule as store_view: a re-view of the same
+    // product within the hour under a DIFFERENT campaign attribution is a
+    // distinct attributed view; same-campaign refreshes still collapse.
+    const campaignSuffix = b.attr?.campaignId ? `:c${b.attr.campaignId}` : "";
     enqueueAnalyticsEvent({
-      dedupKey: `pv:${b.sessionId}:${productId}:${hourBucket()}`,
+      dedupKey: `pv:${b.sessionId}:${productId}:${hourBucket()}${campaignSuffix}`,
       eventType: "product_view",
       storeId,
       productId,
@@ -69,6 +99,7 @@ export async function trackProductView(req: Request, storeId: string, productId:
       sessionId: b.sessionId,
       referrerHost: b.referrerHost,
       channel: b.channel,
+      ...attrFields(b.attr),
     });
   } catch { /* never break the host request */ }
 }
@@ -95,6 +126,7 @@ export async function trackViewCart(
         sessionId: b.sessionId,
         shopperId: shopperId ?? null,
         qty: s.itemCount,
+        ...attrFields(b.attr),
       });
     }
   } catch { /* never break the host request */ }
@@ -113,6 +145,9 @@ export async function trackAddToCart(input: {
   try {
     const delta = input.postQty - input.preQty;
     if (delta <= 0) return; // capped no-op — nothing was actually added
+    // Fire-and-forget context: cookies() resolves from the request's async
+    // context (captured at call time); any failure → untagged event.
+    const attr = await resolveAttribution().catch(() => null);
     enqueueAnalyticsEvent({
       dedupKey: `ac:${input.cartItemId}:${input.preQty}->${input.postQty}`,
       eventType: "add_to_cart",
@@ -121,6 +156,7 @@ export async function trackAddToCart(input: {
       variantId: input.variantId,
       shopperId: input.shopperId,
       qty: delta,
+      ...attrFields(attr),
     });
   } catch { /* never break the host request */ }
 }
@@ -135,6 +171,7 @@ export async function trackRemoveFromCart(input: {
   shopperId: string;
 }): Promise<void> {
   try {
+    const attr = await resolveAttribution().catch(() => null);
     enqueueAnalyticsEvent({
       dedupKey: `rc:${input.cartItemId}:${input.qty}`,
       eventType: "remove_from_cart",
@@ -143,6 +180,7 @@ export async function trackRemoveFromCart(input: {
       variantId: input.variantId,
       shopperId: input.shopperId,
       qty: input.qty,
+      ...attrFields(attr),
     });
   } catch { /* never break the host request */ }
 }

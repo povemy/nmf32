@@ -216,43 +216,76 @@ export default function ShopperShell() {
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
-    // claim deep-link wins over everything
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const cj = params.get("claim_job");
-      const ct = params.get("claim_token");
-      if (cj && ct) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link reset
-        setClaimLink({ jobId: cj, token: ct });
-        setReady(true);
-        return;
-      }
-      // SEO deep links (sitemap): /?sf={storeSlug} and /?sf={storeSlug}&sp={productSlug}
-      const sf = params.get("sf");
-      if (sf) {
-        const sp = params.get("sp");
-        setView(sp ? { name: "pdp", slug: sf, pSlug: sp } : { name: "storefront", slug: sf });
-        setReady(true);
-        return;
-      }
-    } catch {
-      /* ignore */
-    }
-    if (activeStoreSlug) {
-      setView({ name: "storefront", slug: activeStoreSlug });
-      setActiveStoreSlug(null);
-    } else {
+    const params = new URLSearchParams(window.location.search);
+
+    // Marketing attribution capture (once per landing): when the landing URL
+    // carries utm_* / nmcl parameters, fire the same-origin beacon so the
+    // server validates them and lands the `nm_ins_attr` cookie BEFORE the
+    // storefront fetch records the first store_view event (bounded wait — on
+    // beacon failure the visit proceeds untagged, never blocked).
+    const ATTR_PARAM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "nmcl"] as const;
+    const hasAttrParams = ATTR_PARAM_KEYS.some((k) => params.get(k) != null);
+    const fireLandingBeacon = async (): Promise<void> => {
       try {
-        const raw = window.localStorage.getItem(VIEW_KEY);
-        if (raw) {
-          const v = JSON.parse(raw) as ShopperView;
-          if (v && typeof v.name === "string") setView(v);
+        const payload: Record<string, string> = {};
+        for (const k of [...ATTR_PARAM_KEYS, "sf"]) {
+          const v = params.get(k);
+          if (v != null && v !== "") payload[k] = v.slice(0, 200);
+        }
+        await fetch("/api/analytics/landing", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        });
+      } catch {
+        /* attribution is best-effort — never block the landing */
+      }
+    };
+
+    const proceed = () => {
+      // claim deep-link wins over everything
+      try {
+        const cj = params.get("claim_job");
+        const ct = params.get("claim_token");
+        if (cj && ct) {
+          setClaimLink({ jobId: cj, token: ct });
+          setReady(true);
+          return;
+        }
+        // SEO deep links (sitemap): /?sf={storeSlug} and /?sf={storeSlug}&sp={productSlug}
+        const sf = params.get("sf");
+        if (sf) {
+          const sp = params.get("sp");
+          setView(sp ? { name: "pdp", slug: sf, pSlug: sp } : { name: "storefront", slug: sf });
+          setReady(true);
+          return;
         }
       } catch {
         /* ignore */
       }
+      if (activeStoreSlug) {
+        setView({ name: "storefront", slug: activeStoreSlug });
+        setActiveStoreSlug(null);
+      } else {
+        try {
+          const raw = window.localStorage.getItem(VIEW_KEY);
+          if (raw) {
+            const v = JSON.parse(raw) as ShopperView;
+            if (v && typeof v.name === "string") setView(v);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      setReady(true);
+    };
+
+    if (hasAttrParams) {
+      void Promise.race([fireLandingBeacon(), new Promise<void>((r) => setTimeout(r, 1500))]).then(() => proceed());
+    } else {
+      proceed();
     }
-    setReady(true);
   }, [activeStoreSlug, setActiveStoreSlug]);
 
   // ---- nav helper: persist + scroll to top ----------------------------------

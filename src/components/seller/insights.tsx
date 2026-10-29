@@ -1,6 +1,6 @@
 "use client";
-// Task 6 (Phase D — UI) — Seller Store Insights: one SPA view, five tabs
-// (Overview / Cart activity / Products / Sales / Markets) over the frozen
+// Seller Insights: one SPA view, six tabs (Overview / Cart activity /
+// Products / Sales / Markets / Campaigns) over the frozen
 // /api/store/insights/* contract. Every figure comes from the API — the
 // server's honesty notes are rendered verbatim; nothing is fabricated
 // client-side. Money fields are MYR minor units (formatMinor).
@@ -22,6 +22,7 @@ import {
 import { format, formatDistanceToNow, subDays } from "date-fns";
 import {
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowRight,
   ArrowUpDown,
@@ -29,18 +30,23 @@ import {
   Boxes,
   CalendarRange,
   ChartColumn,
+  Check,
   ChevronDown,
   ChevronRight,
   Coins,
+  Copy,
   Download,
   Eye,
   Globe,
   Info,
   Lightbulb,
+  Link2,
   Loader2,
   MapPin,
+  Megaphone,
   MousePointerClick,
   Package,
+  Plus,
   ReceiptText,
   RefreshCw,
   RotateCw,
@@ -64,6 +70,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   apiGetPaged,
+  apiSend,
+  runMutation,
   CardsSkeleton,
   EmptyState,
   RowsSkeleton,
@@ -108,8 +116,10 @@ type OverviewData = {
     truncated: boolean;
   };
   funnel: {
-    stages: { key: string; label: string; count: number; prev: number; stepRate: number | null }[];
+    stages: { key: string; label: string; count: number; prev: number; stepRate: number | null; dropOff: number | null; dropOffPct: number | null }[];
     basis: string[];
+    paymentAttempts: number;
+    paymentAttemptsPrev: number;
   };
   summary: {
     orders: number;
@@ -273,6 +283,72 @@ type MarketProductsData = {
   notes: string[];
 };
 
+// Marketing Intelligence — /api/store/insights/campaigns report mirror.
+type CampaignReportRow = {
+  campaignId: string;
+  name: string;
+  slug: string;
+  code: string;
+  status: string;
+  defaultSource: string | null;
+  defaultMedium: string | null;
+  createdAt: string;
+  visits: number;
+  visitSessions: number;
+  productViews: number;
+  addUnits: number;
+  attributedOrders: number;
+  paidOrders: number;
+  paidOrdersPrev: number;
+  grossSalesMinor: number;
+  grossProductSalesMinor: number;
+  aovMinor: number | null;
+  conversionPct: number | null;
+  firstEventAt: string | null;
+};
+
+type CampaignUtmRow = {
+  source: string;
+  medium: string | null;
+  campaign: string | null;
+  visits: number;
+  visitSessions: number;
+  productViews: number;
+  addUnits: number;
+  attributedOrders: number;
+  paidOrders: number;
+  grossSalesMinor: number;
+};
+
+type CampaignsData = {
+  window: InsightsWindowInfo;
+  generatedAt: string;
+  rows: CampaignReportRow[];
+  utmRows: CampaignUtmRow[];
+  totals: {
+    campaigns: number;
+    attributedVisits: number;
+    attributedPaidOrders: number;
+    attributedGrossSalesMinor: number;
+    unclaimedPaidOrders: number;
+    unclaimedGrossSalesMinor: number;
+  };
+  notes: string[];
+};
+
+// /api/store/campaigns list mirror (link management).
+type CampaignLinkRow = {
+  id: string;
+  name: string;
+  slug: string;
+  code: string;
+  status: string;
+  defaultSource: string | null;
+  defaultMedium: string | null;
+  createdAt: string;
+  linkPath: string;
+};
+
 // ---------------------------------------------------------------- constants + helpers
 
 type WindowKey = "today" | "7d" | "30d" | "custom";
@@ -284,7 +360,7 @@ const WINDOW_LABELS: Record<WindowKey, string> = {
   custom: "Custom range",
 };
 
-type TabKey = "overview" | "cart" | "products" | "sales" | "markets";
+type TabKey = "overview" | "cart" | "products" | "sales" | "markets" | "campaigns";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -292,6 +368,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "products", label: "Products" },
   { key: "sales", label: "Sales" },
   { key: "markets", label: "Markets" },
+  { key: "campaigns", label: "Campaigns" },
 ];
 
 const PRODUCT_SORTS = ["views", "adds", "cartQty", "purchases", "revenue", "conversion"] as const;
@@ -508,6 +585,7 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
     products: false,
     sales: false,
     markets: false,
+    campaigns: false,
   });
 
   const [winKey, setWinKey] = useState<WindowKey>("30d");
@@ -543,6 +621,7 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   const cart = useApi<CartData>(mkUrl("cart", visited.cart));
   const sales = useApi<SalesData>(mkUrl("sales", visited.sales, `&granularity=${salesGran}`));
   const markets = useApi<MarketsData>(mkUrl("markets", visited.markets, `&dimension=${marketDim}`));
+  const campaigns = useApi<CampaignsData>(mkUrl("campaigns", visited.campaigns));
   const products = usePagedApi<ProductsPayload>(mkUrl("products", visited.products, `&sort=${productSort}&page=${productPage}&size=20`));
 
   const refreshing =
@@ -550,7 +629,8 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
     (visited.cart && cart.loading) ||
     (visited.products && products.loading) ||
     (visited.sales && sales.loading) ||
-    (visited.markets && markets.loading);
+    (visited.markets && markets.loading) ||
+    (visited.campaigns && campaigns.loading);
 
   const generatedAt =
     tab === "overview"
@@ -561,7 +641,9 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
           ? sales.data?.generatedAt
           : tab === "markets"
             ? markets.data?.generatedAt
-            : null;
+            : tab === "campaigns"
+              ? campaigns.data?.generatedAt
+              : null;
 
   const windowLabel = winKey === "custom" ? `Custom · ${from} → ${to}` : WINDOW_LABELS[winKey];
 
@@ -714,6 +796,16 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
               exportHref={exportHref("markets", `&dimension=${marketDim}`)}
               windowQuery={windowQuery}
               windowLabel={windowLabel}
+            />
+          </TabsContent>
+
+          <TabsContent value="campaigns" className="mt-4">
+            <CampaignsSection
+              data={campaigns.data}
+              loading={campaigns.loading}
+              error={campaigns.error}
+              onRetry={campaigns.refetch}
+              onReportChanged={campaigns.refetch}
             />
           </TabsContent>
         </Tabs>
@@ -898,7 +990,7 @@ function OverviewSection({
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <span>Stage</span>
-              <span>Prev · step rate</span>
+              <span>Prev · step · drop-off</span>
             </div>
             {funnel.stages.map((s) => {
               const widthPct = funnelBase > 0 ? Math.min(100, (s.count / funnelBase) * 100) : s.count > 0 ? 100 : 0;
@@ -908,6 +1000,15 @@ function OverviewSection({
                     <p className="text-xs font-medium">{s.label}</p>
                     <p className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                       prev {fmtInt(s.prev)} · step {fmtPct(s.stepRate)}
+                      {s.dropOff != null ? (
+                        <span className={s.dropOff > 0 ? "text-rose-600" : s.dropOff < 0 ? "text-emerald-600" : ""}>
+                          {s.dropOff > 0
+                            ? ` · drop ${fmtInt(s.dropOff)}${s.dropOffPct != null ? ` (${s.dropOffPct}%)` : ""}`
+                            : s.dropOff < 0
+                              ? ` · gained ${fmtInt(-s.dropOff)}`
+                              : " · drop 0"}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -919,6 +1020,11 @@ function OverviewSection({
                 </div>
               );
             })}
+            <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              Payment sessions (authoritative): <span className="font-semibold text-foreground">{fmtInt(funnel.paymentAttempts)}</span> in this window
+              {funnel.paymentAttemptsPrev > 0 ? <> · {fmtInt(funnel.paymentAttemptsPrev)} in the previous window</> : null} — one record per checkout
+              payment attempt; a failed-session retry re-opens the same record and is not counted twice.
+            </p>
             <ul className="list-disc space-y-1 pl-5 text-[11px] leading-relaxed text-muted-foreground">
               {funnel.basis.map((b, i) => (
                 <li key={i}>{b}</li>
@@ -1919,6 +2025,467 @@ function MarketsSection({
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- campaigns tab
+// Marketing Intelligence — first-party campaign attribution + tracking-link
+// management. Every metric is server-computed; the honesty notes render
+// verbatim. No spend data exists here, so no ROAS/CPC/CPA is ever shown, and
+// ad-platform-reported conversions are explicitly out of scope.
+
+function CampaignsSection({
+  data,
+  loading,
+  error,
+  onRetry,
+  onReportChanged,
+}: {
+  data: CampaignsData | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onReportChanged: () => void;
+}) {
+  // Link management list (independent of the insights window — a campaign's
+  // link and code do not change with the selected date range).
+  const links = useApi<CampaignLinkRow[]>("/api/store/campaigns");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: "", source: "", medium: "" });
+  const [creating, setCreating] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyLink = async (row: CampaignLinkRow) => {
+    const url = `${window.location.origin}${row.linkPath}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard API can be unavailable (insecure context) — textarea fallback.
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      } catch {
+        return; // never toast an error for a copy affordance
+      }
+    }
+    setCopiedId(row.id);
+    setTimeout(() => setCopiedId((cur) => (cur === row.id ? null : cur)), 1600);
+  };
+
+  const createCampaign = async () => {
+    if (creating || form.name.trim() === "") return;
+    setCreating(true);
+    const done = await runMutation(
+      () =>
+        apiSend<CampaignLinkRow>("POST", "/api/store/campaigns", {
+          name: form.name.trim(),
+          source: form.source.trim() || undefined,
+          medium: form.medium.trim() || undefined,
+        }),
+      "Campaign link created — share it anywhere; visits through it are attributed automatically"
+    );
+    setCreating(false);
+    if (done) {
+      setShowCreate(false);
+      setForm({ name: "", source: "", medium: "" });
+      links.refetch();
+      onReportChanged();
+    }
+  };
+
+  const toggleArchive = async (row: CampaignLinkRow) => {
+    const next = row.status === "active" ? "archived" : "active";
+    const done = await runMutation(
+      () => apiSend<unknown>("PATCH", `/api/store/campaigns/${row.id}`, { status: next }),
+      next === "archived"
+        ? "Campaign archived — its link keeps resolving and past attribution keeps reporting"
+        : "Campaign reactivated"
+    );
+    if (done) {
+      links.refetch();
+      onReportChanged();
+    }
+  };
+
+  if (error) return <ErrorPanel message={error} onRetry={onRetry} />;
+  if (loading || !data) {
+    return (
+      <div className="space-y-4">
+        <CardsSkeleton count={4} />
+        <RowsSkeleton rows={4} />
+      </div>
+    );
+  }
+
+  const { totals, rows, utmRows, notes } = data;
+  const linkRows = links.data ?? [];
+  const hasAnyAttribution = totals.attributedVisits > 0 || totals.attributedPaidOrders > 0 || totals.unclaimedPaidOrders > 0 || utmRows.length > 0;
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      {/* tracking honesty callout */}
+      {!hasAnyAttribution ? (
+        <div className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900" role="note">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">Campaign attribution starts from zero — it begins accruing with the first tagged visit.</p>
+            <p className="mt-1 text-xs opacity-80">
+              Create a campaign link below and share it. Visits through tagged links and UTM parameters are attributed from that moment
+              on; earlier traffic and orders have no attribution and are never backfilled.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* totals */}
+      <section aria-label="Campaign totals">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Attributed visits"
+            value={fmtInt(totals.attributedVisits)}
+            sub={<span className="text-xs text-muted-foreground">tagged store views, all campaigns</span>}
+            icon={<Megaphone className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Attributed paid orders"
+            value={fmtInt(totals.attributedPaidOrders)}
+            sub={<span className="text-xs text-muted-foreground">last-touch association</span>}
+            icon={<ReceiptText className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Attributed sales"
+            value={formatMinor(totals.attributedGrossSalesMinor)}
+            sub={<span className="text-xs text-muted-foreground">authoritative order money</span>}
+            icon={<BadgeDollarSign className="h-4 w-4" />}
+          />
+          <StatCard
+            label="Other tagged orders (UTM only)"
+            value={fmtInt(totals.unclaimedPaidOrders)}
+            sub={
+              totals.unclaimedGrossSalesMinor > 0 ? (
+                <span className="text-xs text-muted-foreground">{formatMinor(totals.unclaimedGrossSalesMinor)} gross</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">no campaign token</span>
+              )
+            }
+            icon={<Link2 className="h-4 w-4" />}
+          />
+        </div>
+      </section>
+
+      {/* campaign links management */}
+      <Card className="gap-3">
+        <CardHeader className="pb-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Link2 className="h-4 w-4 text-primary" /> Campaign links
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Named tracking links for your storefront — share them on social, chat or ads
+              </CardDescription>
+            </div>
+            <Button size="sm" onClick={() => setShowCreate((s) => !s)} className="gap-1.5">
+              {showCreate ? <ChevronDown className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {showCreate ? "Close" : "New campaign link"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {showCreate ? (
+            <form
+              className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[1fr_150px_150px_auto]"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void createCampaign();
+              }}
+            >
+              <div className="space-y-1">
+                <label htmlFor="campaign-name" className="text-xs font-medium">
+                  Campaign name <span className="text-rose-600">*</span>
+                </label>
+                <Input
+                  id="campaign-name"
+                  value={form.name}
+                  maxLength={80}
+                  placeholder="e.g. Raya Mega Sale WhatsApp blast"
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="campaign-source" className="text-xs font-medium">
+                  utm_source <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <Input
+                  id="campaign-source"
+                  value={form.source}
+                  maxLength={100}
+                  placeholder="whatsapp"
+                  onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="campaign-medium" className="text-xs font-medium">
+                  utm_medium <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <Input
+                  id="campaign-medium"
+                  value={form.medium}
+                  maxLength={50}
+                  placeholder="social"
+                  onChange={(e) => setForm((f) => ({ ...f, medium: e.target.value }))}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" disabled={creating || form.name.trim() === ""} className="gap-1.5">
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Create
+                </Button>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground sm:col-span-4">
+                The generated link carries both standard UTM parameters and a platform campaign token — attribution survives even when a
+                network strips UTMs. The token resolves only against YOUR storefront.
+              </p>
+            </form>
+          ) : null}
+
+          {links.error ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+              <span className="min-w-0 truncate">{links.error}</span>
+              <Button variant="outline" size="sm" onClick={links.refetch}>
+                Retry
+              </Button>
+            </div>
+          ) : links.loading && linkRows.length === 0 ? (
+            <RowsSkeleton rows={2} />
+          ) : linkRows.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No campaign links yet — create one above to start attributing visits.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Campaign</TableHead>
+                    <TableHead scope="col">Shareable link</TableHead>
+                    <TableHead scope="col">Status</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {linkRows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="min-w-[180px]">
+                        <p className="text-sm font-medium">{r.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          utm_campaign={r.slug}
+                          {r.defaultSource ? ` · source=${r.defaultSource}` : ""}
+                          {r.defaultMedium ? ` · medium=${r.defaultMedium}` : ""}
+                        </p>
+                      </TableCell>
+                      <TableCell className="min-w-[220px] max-w-[320px]">
+                        <p className="truncate font-mono text-xs text-muted-foreground" title={`${window.location.origin}${r.linkPath}`}>
+                          {window.location.origin}
+                          {r.linkPath}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <StatusChip status={r.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="outline" size="sm" onClick={() => void copyLink(r)} className="gap-1.5">
+                            {copiedId === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                            {copiedId === r.id ? "Copied" : "Copy link"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void toggleArchive(r)}
+                            className="gap-1.5"
+                            title={r.status === "active" ? "Archive (link keeps resolving; attribution keeps reporting)" : "Reactivate"}
+                          >
+                            {r.status === "active" ? <Archive className="h-4 w-4" /> : <RotateCw className="h-4 w-4" />}
+                            {r.status === "active" ? "Archive" : "Restore"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* per-campaign performance */}
+      <Card className="gap-3">
+        <CardHeader className="pb-0">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Megaphone className="h-4 w-4 text-primary" /> Campaign performance
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Visits and cart activity from tagged events · orders and sales from authoritative attributed orders
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {rows.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No campaigns yet — create a campaign link above; performance appears with the first tagged visit.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Campaign</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Visits
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Sessions
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Product views
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Cart adds
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Orders
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Paid orders
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Gross sales
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      AOV
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Conversion*
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.campaignId} className={r.status === "archived" ? "opacity-60" : undefined}>
+                      <TableCell className="min-w-[180px]">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{r.name}</p>
+                          {r.status === "archived" ? <Badge variant="outline">archived</Badge> : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {r.firstEventAt
+                            ? `first tagged visit ${new Date(r.firstEventAt).toLocaleDateString("en-MY")}`
+                            : "no tagged visits yet"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.visits)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.visitSessions)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.productViews)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.addUnits)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.attributedOrders)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <span className="inline-flex items-center gap-1.5">
+                          {fmtInt(r.paidOrders)}
+                          <Delta value={r.paidOrders} prev={r.paidOrdersPrev} />
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMinor(r.grossSalesMinor)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMinor(r.aovMinor)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtPct(r.conversionPct)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                *Conversion = attributed paid orders ÷ attributed visit sessions — mixed bases, read as an indication. A tagged visit is
+                associated with the campaign; it is never claimed to have caused the sale.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* raw UTM-tagged traffic without a campaign token */}
+      {utmRows.length > 0 ? (
+        <Card className="gap-3">
+          <CardHeader className="pb-0">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Globe className="h-4 w-4 text-primary" /> Tagged traffic without a campaign link
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Visits that arrived with valid UTM parameters but no platform campaign token
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Source / medium / campaign</TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Visits
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Sessions
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Product views
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Cart adds
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Orders
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Paid orders
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      Gross sales
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {utmRows.map((r) => (
+                    <TableRow key={`${r.source}|${r.medium ?? ""}|${r.campaign ?? ""}`}>
+                      <TableCell className="min-w-[200px]">
+                        <p className="text-sm font-medium">{r.source}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[r.medium, r.campaign].filter(Boolean).join(" / ") || "no medium/campaign"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.visits)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.visitSessions)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.productViews)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.addUnits)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.attributedOrders)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmtInt(r.paidOrders)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMinor(r.grossSalesMinor)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <NotesCollapsible title="How campaign attribution is measured" notes={notes} />
     </div>
   );
 }

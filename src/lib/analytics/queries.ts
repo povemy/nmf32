@@ -303,8 +303,31 @@ export async function trafficSummary(storeId: string, win: InsightsWindow): Prom
   };
 }
 
-export type FunnelStage = { key: string; label: string; count: number; prev: number; stepRate: number | null };
-export type Funnel = { stages: FunnelStage[]; basis: string[] };
+export type FunnelStage = {
+  key: string;
+  label: string;
+  count: number;
+  prev: number;
+  /** Stage ÷ previous stage, same window (1-dp %). null when the previous
+   *  stage is 0 (never a division by zero). */
+  stepRate: number | null;
+  /** ABSOLUTE drop-off vs the previous stage (previous count − count; can be
+   *  NEGATIVE on mixed-basis steps — rendered as "gained", never clamped). */
+  dropOff: number | null;
+  /** Drop-off as % of the previous stage (1-dp; null when previous = 0). */
+  dropOffPct: number | null;
+};
+export type Funnel = {
+  stages: FunnelStage[];
+  basis: string[];
+  /** Authoritative payment sessions (PaymentGroup rows created in the window
+   *  covering this store's orders) — the platform's payment-attempt object.
+ *  A retry of a failed session re-opens the same group (not counted again);
+ *  legacy single-order PaymentIntent rows predate the group flow. Shown as an
+   *  annotated figure, NOT a funnel stage. */
+  paymentAttempts: number;
+  paymentAttemptsPrev: number;
+};
 
 export async function funnelFor(storeId: string, win: InsightsWindow): Promise<Funnel> {
   const [cur, prev, ordersCur, ordersPrev] = await Promise.all([
@@ -313,8 +336,12 @@ export async function funnelFor(storeId: string, win: InsightsWindow): Promise<F
     db.order.count({ where: { storeId, createdAt: { gte: win.from, lt: win.to } } }),
     db.order.count({ where: { storeId, createdAt: { gte: win.prevFrom, lt: win.prevTo } } }),
   ]);
-  const paidCur = await db.order.count({ where: { storeId, paidAt: { gte: win.from, lt: win.to } } });
-  const paidPrev = await db.order.count({ where: { storeId, paidAt: { gte: win.prevFrom, lt: win.prevTo } } });
+  const [paidCur, paidPrev, attemptsCur, attemptsPrev] = await Promise.all([
+    db.order.count({ where: { storeId, paidAt: { gte: win.from, lt: win.to } } }),
+    db.order.count({ where: { storeId, paidAt: { gte: win.prevFrom, lt: win.prevTo } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.from, lt: win.to }, orders: { some: { storeId } } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.prevFrom, lt: win.prevTo }, orders: { some: { storeId } } } }),
+  ]);
 
   const sessionSets = (rows: EventRow[]) => {
     const store = new Set<string>();
@@ -332,19 +359,34 @@ export async function funnelFor(storeId: string, win: InsightsWindow): Promise<F
   const s = sessionSets(cur.rows);
   const sp = sessionSets(prev.rows);
 
-  const stages: FunnelStage[] = [
+  const raw: Array<Omit<FunnelStage, "dropOff" | "dropOffPct">> = [
     { key: "store_visit", label: "Store visit (sessions)", count: s.store.size, prev: sp.store.size, stepRate: null },
     { key: "product_view", label: "Viewed a product", count: s.product.size, prev: sp.product.size, stepRate: rate(s.product.size, s.store.size) },
     { key: "add_to_cart", label: "Added to cart", count: s.cart.size, prev: sp.cart.size, stepRate: rate(s.cart.size, s.product.size) },
     { key: "begin_checkout", label: "Checkout started (orders)", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.cart.size) },
     { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
   ];
+  // Drop-off vs the PREVIOUS stage (computed here so every consumer gets the
+  // same numbers — never re-derived client-side).
+  const stages: FunnelStage[] = raw.map((st, i) => {
+    if (i === 0) return { ...st, dropOff: null, dropOffPct: null };
+    const prevCount = raw[i - 1]!.count;
+    const dropOff = prevCount - st.count;
+    return {
+      ...st,
+      dropOff,
+      dropOffPct: prevCount > 0 ? Math.round((dropOff / prevCount) * 1000) / 10 : null,
+    };
+  });
   return {
     stages,
+    paymentAttempts: attemptsCur,
+    paymentAttemptsPrev: attemptsPrev,
     basis: [
       "Visit → cart stages count DISTINCT pseudonymous sessions that performed each stage inside the window (estimates from first-party cookies; login not required).",
       "Checkout started = orders created in the window (authoritative Order.createdAt, any status). Paid orders = orders with paidAt in the window.",
-      "The cart → checkout step mixes bases (sessions vs orders) — read it as an indication, not an exact visitor conversion.",
+      "The cart → checkout step mixes bases (sessions vs orders) — read it as an indication, not an exact visitor conversion. Drop-off on that step (and the checkout → purchase step) can be negative when the bases disagree.",
+      `Payment attempts = authoritative payment sessions (PaymentGroup records created in the window for this store's checkouts — ${attemptsCur} now). A failed-session retry re-opens the same record and is not counted twice.`,
     ],
   };
 }
@@ -951,6 +993,262 @@ export async function marketProducts(
       "Product views and cart-add units are STORE-WIDE for the selected window — visitor geography is not tracked, so per-country view/cart attribution does not exist and is never invented (no per-country conversion rates are shown for this reason).",
       "Sales columns are attributed strictly by the order's recorded destination geography.",
     ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Campaign report (Marketing Intelligence — first-party attribution only)
+// ---------------------------------------------------------------------------
+export type CampaignRow = {
+  campaignId: string;
+  name: string;
+  slug: string;
+  code: string;
+  status: string;
+  defaultSource: string | null;
+  defaultMedium: string | null;
+  createdAt: string;
+  // Event-side metrics (window; attributed = campaignId on the event row)
+  visits: number; // attributed store_view events
+  visitSessions: number; // DISTINCT sessions over attributed store_views
+  productViews: number;
+  addUnits: number;
+  // Order-side metrics (authoritative money)
+  attributedOrders: number; // orders CREATED in window with attrCampaignId (createdAt basis)
+  paidOrders: number; // orders PAID in window with attrCampaignId (paidAt basis)
+  paidOrdersPrev: number;
+  grossSalesMinor: number; // Σ totalMinor over paid orders (paidAt basis)
+  grossProductSalesMinor: number;
+  aovMinor: number | null;
+  /** paidOrders ÷ visitSessions — MIXED bases (orders vs sessions), disclosed. */
+  conversionPct: number | null;
+  firstEventAt: string | null;
+};
+
+export type UtmSourceRow = {
+  source: string;
+  medium: string | null;
+  campaign: string | null;
+  visits: number;
+  visitSessions: number;
+  productViews: number;
+  addUnits: number;
+  attributedOrders: number;
+  paidOrders: number;
+  grossSalesMinor: number;
+};
+
+export type CampaignReport = {
+  rows: CampaignRow[];
+  utmRows: UtmSourceRow[];
+  totals: {
+    campaigns: number;
+    attributedVisits: number;
+    attributedPaidOrders: number;
+    attributedGrossSalesMinor: number;
+    unclaimedPaidOrders: number;
+    unclaimedGrossSalesMinor: number;
+  };
+  notes: string[];
+};
+
+const CAMPAIGN_EVENT_SCAN_CAP = 20_000;
+
+export async function campaignReport(storeId: string, win: InsightsWindow): Promise<CampaignReport> {
+  // (1) The seller's own campaigns (any status — archived ones keep reporting).
+  const campaigns = await db.sellerCampaign.findMany({
+    where: { storeId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, slug: true, code: true, status: true, defaultSource: true, defaultMedium: true, createdAt: true },
+  });
+
+  // (2) Attributed events in the window (campaign-tagged OR raw-UTM-tagged),
+  // bounded like every other event scan.
+  const eventRows = await db.analyticsEvent.findMany({
+    where: {
+      storeId,
+      createdAt: { gte: win.from, lt: win.to },
+      OR: [{ campaignId: { not: null } }, { utmSource: { not: null } }],
+    },
+    select: {
+      eventType: true, sessionId: true, shopperId: true, qty: true,
+      campaignId: true, utmSource: true, utmMedium: true, utmCampaign: true, createdAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+    take: CAMPAIGN_EVENT_SCAN_CAP + 1,
+  });
+  const truncatedEvents = eventRows.length > CAMPAIGN_EVENT_SCAN_CAP;
+  const events = truncatedEvents ? eventRows.slice(0, CAMPAIGN_EVENT_SCAN_CAP) : eventRows;
+
+  // (3) Authoritative attributed orders — created-in-window (attribution count)
+  // and paid-in-window (money), plus the previous period for paid deltas.
+  const [ordersCreated, ordersPaid, ordersPaidPrev] = await Promise.all([
+    db.order.findMany({
+      where: { storeId, createdAt: { gte: win.from, lt: win.to }, attrCampaignId: { not: null } },
+      select: { attrCampaignId: true, attrSource: true, attrMedium: true, attrCampaign: true },
+    }),
+    db.order.findMany({
+      where: { storeId, paidAt: { gte: win.from, lt: win.to }, attrCampaignId: { not: null } },
+      select: { attrCampaignId: true, totalMinor: true, items: { select: { lineSubtotalMinor: true } } },
+    }),
+    db.order.findMany({
+      where: { storeId, paidAt: { gte: win.prevFrom, lt: win.prevTo }, attrCampaignId: { not: null } },
+      select: { attrCampaignId: true },
+    }),
+  ]);
+
+  // Unclaimed tagged traffic (raw UTM, no campaign token): order side.
+  const [unclaimedCreated, unclaimedPaid] = await Promise.all([
+    db.order.findMany({
+      where: { storeId, createdAt: { gte: win.from, lt: win.to }, attrCampaignId: null, attrSource: { not: null } },
+      select: { attrSource: true, attrMedium: true, attrCampaign: true },
+    }),
+    db.order.findMany({
+      where: { storeId, paidAt: { gte: win.from, lt: win.to }, attrCampaignId: null, attrSource: { not: null } },
+      select: { attrSource: true, attrMedium: true, attrCampaign: true, totalMinor: true },
+    }),
+  ]);
+
+  // ---- per-campaign aggregation -------------------------------------------
+  type CampAgg = {
+    visits: number; visitSessions: Set<string>; productViews: number; addUnits: number;
+    attributedOrders: number; paidOrders: number; grossSalesMinor: number; grossProductSalesMinor: number;
+    firstEventAt: Date | null;
+  };
+  const campAgg = new Map<string, CampAgg>();
+  const camp = (id: string): CampAgg => {
+    let a = campAgg.get(id);
+    if (!a) {
+      a = { visits: 0, visitSessions: new Set(), productViews: 0, addUnits: 0, attributedOrders: 0, paidOrders: 0, grossSalesMinor: 0, grossProductSalesMinor: 0, firstEventAt: null };
+      campAgg.set(id, a);
+    }
+    return a;
+  };
+  for (const e of events) {
+    if (!e.campaignId) continue;
+    const a = camp(e.campaignId);
+    if (e.eventType === "store_view") {
+      a.visits += 1;
+      const sk = e.sessionId ?? (e.shopperId ? `u:${e.shopperId}` : null);
+      if (sk) a.visitSessions.add(sk);
+    }
+    if (e.eventType === "product_view") a.productViews += 1;
+    if (e.eventType === "add_to_cart") a.addUnits += e.qty ?? 0;
+    if (!a.firstEventAt || e.createdAt < a.firstEventAt) a.firstEventAt = e.createdAt;
+  }
+  for (const o of ordersCreated) if (o.attrCampaignId) camp(o.attrCampaignId).attributedOrders += 1;
+  for (const o of ordersPaid) {
+    const a = camp(o.attrCampaignId!);
+    a.paidOrders += 1;
+    a.grossSalesMinor += o.totalMinor;
+    for (const it of o.items) a.grossProductSalesMinor += it.lineSubtotalMinor;
+  }
+  const paidPrevMap = new Map<string, number>();
+  for (const o of ordersPaidPrev) paidPrevMap.set(o.attrCampaignId!, (paidPrevMap.get(o.attrCampaignId!) ?? 0) + 1);
+
+  const rows: CampaignRow[] = campaigns.map((c) => {
+    const a = campAgg.get(c.id) ?? {
+      visits: 0, visitSessions: new Set<string>(), productViews: 0, addUnits: 0,
+      attributedOrders: 0, paidOrders: 0, grossSalesMinor: 0, grossProductSalesMinor: 0, firstEventAt: null,
+    };
+    return {
+      campaignId: c.id,
+      name: c.name,
+      slug: c.slug,
+      code: c.code,
+      status: c.status,
+      defaultSource: c.defaultSource,
+      defaultMedium: c.defaultMedium,
+      createdAt: c.createdAt.toISOString(),
+      visits: a.visits,
+      visitSessions: a.visitSessions.size,
+      productViews: a.productViews,
+      addUnits: a.addUnits,
+      attributedOrders: a.attributedOrders,
+      paidOrders: a.paidOrders,
+      paidOrdersPrev: paidPrevMap.get(c.id) ?? 0,
+      grossSalesMinor: a.grossSalesMinor,
+      grossProductSalesMinor: a.grossProductSalesMinor,
+      aovMinor: a.paidOrders > 0 ? Math.round(a.grossSalesMinor / a.paidOrders) : null,
+      conversionPct: rate(a.paidOrders, a.visitSessions.size),
+      firstEventAt: a.firstEventAt ? a.firstEventAt.toISOString() : null,
+    };
+  });
+
+  // ---- unclaimed UTM-source aggregation -----------------------------------
+  type UtmAgg = { visits: number; visitSessions: Set<string>; productViews: number; addUnits: number; attributedOrders: number; paidOrders: number; grossSalesMinor: number };
+  const utmAgg = new Map<string, UtmAgg>();
+  const utmKey = (source: string, medium: string | null, campaign: string | null) =>
+    `${source}\u0000${medium ?? ""}\u0000${campaign ?? ""}`;
+  const utm = (source: string, medium: string | null, campaign: string | null): UtmAgg => {
+    const k = utmKey(source, medium, campaign);
+    let a = utmAgg.get(k);
+    if (!a) {
+      a = { visits: 0, visitSessions: new Set(), productViews: 0, addUnits: 0, attributedOrders: 0, paidOrders: 0, grossSalesMinor: 0 };
+      utmAgg.set(k, a);
+    }
+    return a;
+  };
+  for (const e of events) {
+    if (e.campaignId || !e.utmSource) continue; // campaign rows handled above; skip untagged
+    const a = utm(e.utmSource, e.utmMedium, e.utmCampaign);
+    if (e.eventType === "store_view") {
+      a.visits += 1;
+      const sk = e.sessionId ?? (e.shopperId ? `u:${e.shopperId}` : null);
+      if (sk) a.visitSessions.add(sk);
+    }
+    if (e.eventType === "product_view") a.productViews += 1;
+    if (e.eventType === "add_to_cart") a.addUnits += e.qty ?? 0;
+  }
+  for (const o of unclaimedCreated) utm(o.attrSource!, o.attrMedium, o.attrCampaign).attributedOrders += 1;
+  for (const o of unclaimedPaid) {
+    const a = utm(o.attrSource!, o.attrMedium, o.attrCampaign);
+    a.paidOrders += 1;
+    a.grossSalesMinor += o.totalMinor;
+  }
+  const utmRows: UtmSourceRow[] = [...utmAgg.entries()]
+    .map(([k, a]) => {
+      const [source, medium, campaign] = k.split("\u0000");
+      return {
+        source,
+        medium: medium || null,
+        campaign: campaign || null,
+        visits: a.visits,
+        visitSessions: a.visitSessions.size,
+        productViews: a.productViews,
+        addUnits: a.addUnits,
+        attributedOrders: a.attributedOrders,
+        paidOrders: a.paidOrders,
+        grossSalesMinor: a.grossSalesMinor,
+      };
+    })
+    .sort((x, y) => y.visits - x.visits || y.paidOrders - x.paidOrders)
+    .slice(0, 50);
+
+  const notes = [
+    "Attribution model: LAST-TOUCH first-party association — the most recent validated tagged landing within 30 days before the event/order. A tagged visit is ASSOCIATED with a campaign, never claimed to CAUSE a sale.",
+    "Attribution tracking started with this feature — orders and traffic before that date have no attribution and are never backfilled or guessed.",
+    "Attributed orders use Order.createdAt; paid orders and sales use paidAt (an order created just before the window can pay inside it — the two counts legitimately differ).",
+    "Conversion = attributed paid orders ÷ attributed visit sessions — mixed bases (orders vs cookie sessions), read as an indication.",
+    "No advertising spend exists in first-party data, so no ROAS / CPC / CPA is computed. Ad-platform-reported conversions are a DIFFERENT measurement and are not shown here.",
+    "Campaign-link tokens (nmcl) resolve only against your own storefront — a token from another store is ignored.",
+  ];
+  if (truncatedEvents) {
+    notes.push(`Attributed-event scan capped at ${CAMPAIGN_EVENT_SCAN_CAP.toLocaleString()} rows for this window — counts are partial for the window.`);
+  }
+
+  return {
+    rows,
+    utmRows,
+    totals: {
+      campaigns: rows.length,
+      attributedVisits: rows.reduce((s, r) => s + r.visits, 0),
+      attributedPaidOrders: rows.reduce((s, r) => s + r.paidOrders, 0),
+      attributedGrossSalesMinor: rows.reduce((s, r) => s + r.grossSalesMinor, 0),
+      unclaimedPaidOrders: utmRows.reduce((s, r) => s + r.paidOrders, 0),
+      unclaimedGrossSalesMinor: utmRows.reduce((s, r) => s + r.grossSalesMinor, 0),
+    },
+    notes,
   };
 }
 

@@ -1,4 +1,10 @@
 // DELETE /api/store/connections/disconnect?platform= — disconnect a marketplace (soft, audited).
+//
+// F-20 remediation (minimal, fail-closed): the mutation is scoped STRICTLY to
+// the session seller's own store rows. Global (storeId = null) rows are NEVER
+// mutated — previously one seller's "disconnect" flipped the shared row every
+// other store could see (audit finding F-20). Unclaimed handshake rows can no
+// longer be soft-disconnected by any seller; binding flows are unaffected.
 import { NextRequest } from "next/server";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -15,7 +21,7 @@ export const DELETE = handle(async function (req: NextRequest) {
     }
     const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
     const updated = await db.marketplaceConnection.updateMany({
-      where: { platform, OR: [{ storeId: seller?.store?.id ?? "__none__" }, { storeId: null }] },
+      where: { platform, storeId: seller?.store?.id ?? "__none__" },
       data: { status: "disconnected" },
     });
     await logActivity({

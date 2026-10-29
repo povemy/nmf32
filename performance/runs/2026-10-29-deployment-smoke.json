@@ -1,23 +1,23 @@
 {
   "suite": "deployment-smoke",
-  "runId": "mvswkb81",
+  "runId": "mvtbtznq",
   "base": "http://127.0.0.1:3000",
-  "startedAt": "2026-10-29T02:06:50.833Z",
+  "startedAt": "2026-10-29T09:14:16.646Z",
   "sections": {
     "A": {
       "rootStatus": 200,
       "nodeEnv": "development",
       "dbFingerprint": "aa338c2b6272e14c",
-      "ledgerTxns": 371
+      "ledgerTxns": 385
     },
     "B": {
       "ok": true
     },
     "C": {
       "checkoutStatus": 201,
-      "checkoutMs": 2593,
-      "ref": "ref_ccc51b109f3e55e6",
-      "orderNumber": "NM-103627",
+      "checkoutMs": 2485,
+      "ref": "ref_aa26a24eda545b39",
+      "orderNumber": "NM-103637",
       "t1Txns": 1,
       "dupStatus": 200
     },
@@ -30,5 +30,5 @@
       "mockGate": "dev-open"
     }
   },
-  "finishedAt": "2026-10-29T02:07:06.248Z"
+  "finishedAt": "2026-10-29T09:14:30.767Z"
 }

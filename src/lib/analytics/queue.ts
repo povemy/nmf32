@@ -26,6 +26,13 @@ export type AnalyticsEventInput = {
   qty?: number | null;
   referrerHost?: string | null;
   channel?: string | null;
+  // Marketing attribution state at event time (validated — see attribution.ts).
+  campaignId?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmTerm?: string | null;
+  utmContent?: string | null;
 };
 
 const QUEUE_CAP = 500;
@@ -67,6 +74,12 @@ function toRow(e: AnalyticsEventInput): Prisma.AnalyticsEventCreateManyInput {
     qty: e.qty ?? null,
     referrerHost: e.referrerHost ? e.referrerHost.slice(0, 100) : null,
     channel: e.channel ?? null,
+    campaignId: e.campaignId ?? null,
+    utmSource: e.utmSource ? e.utmSource.slice(0, 100) : null,
+    utmMedium: e.utmMedium ? e.utmMedium.slice(0, 50) : null,
+    utmCampaign: e.utmCampaign ? e.utmCampaign.slice(0, 100) : null,
+    utmTerm: e.utmTerm ? e.utmTerm.slice(0, 100) : null,
+    utmContent: e.utmContent ? e.utmContent.slice(0, 100) : null,
   };
 }
 

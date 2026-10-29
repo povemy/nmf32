@@ -47,6 +47,21 @@ export const useApp = create<AppState>((set, get) => ({
   },
   hydrateSurface: () => {
     if (typeof window === "undefined") return;
+    // A landing URL carrying a shopper deep link — `?sf=` storefront (sitemap,
+    // SEO and CAMPAIGN tracking links) or a claim landing — always shows the
+    // SHOPPER surface for this page load, regardless of the last-used portal.
+    // Plain state (no persistence) so the next plain load still returns to the
+    // user's preferred portal: a seller clicking their own campaign link sees
+    // the storefront a customer would see, and the visit is attributed.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("sf") || params.has("claim_job")) {
+        set({ surface: "shopper" });
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
     const s = window.localStorage.getItem("sm_surface");
     if (s === "seller" || s === "admin" || s === "shopper") set({ surface: s });
   },

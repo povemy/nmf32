@@ -505,6 +505,16 @@ model Order {
   // frozen shippingAddressJson (5-digit postcode + known MY state rule); code "ZZ" = unspecified.
   shippingCountryCode   String             @default("")
   shippingCountrySource String             @default("")
+  // Marketing attribution snapshot (Marketing Intelligence): frozen at checkout
+  // creation from the shopper's validated attribution cookie (last-touch UTM /
+  // campaign-link token). Null = unattributed (pre-feature history or untagged
+  // visit) — NEVER backfilled or guessed. Plain strings (no FK) by design.
+  attrCampaignId        String?
+  attrSource            String?
+  attrMedium            String?
+  attrCampaign          String?
+  attrTerm              String?
+  attrContent           String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   paymentGroupId      String?
@@ -525,6 +535,8 @@ model Order {
   // filters by store + payment date.
   @@index([storeId, paidAt])
   @@index([paidAt])
+  // Marketing Intelligence: campaign report filters orders by attributed campaign.
+  @@index([storeId, attrCampaignId])
 }
 
 model Shipment {
@@ -1411,8 +1423,42 @@ model AnalyticsEvent {
   // Referrer host only (≤100 chars) — full URLs are never stored.
   referrerHost String?
   channel      String? // direct | search | social | internal | other
+  // Marketing attribution state at event time (validated UTM values and/or a
+  // resolved seller campaign-link token — see lib/analytics/attribution.ts).
+  // All nullable: untagged traffic and pre-feature history stay null. Plain
+  // strings (no FK) by design — rows are purged by the retention rule.
+  campaignId   String?
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  utmTerm      String?
+  utmContent   String?
   createdAt    DateTime @default(now())
 
   @@index([storeId, eventType, createdAt])
   @@index([storeId, createdAt])
+  @@index([campaignId, createdAt])
+}
+
+// Seller-generated campaign tracking links (Marketing Intelligence).
+// A seller names a campaign → gets a shareable storefront URL carrying the
+// campaign token (`nmcl`) + validated UTM parameters. `code` is globally
+// unique (URL-safe short token); `slug` is unique per store and doubles as
+// the suggested `utm_campaign` value in generated links. Plain storeId (no
+// FK) matches the AnalyticsEvent style — ownership is enforced at query level.
+model SellerCampaign {
+  id            String   @id @default(cuid())
+  storeId       String
+  name          String
+  slug          String
+  code          String   @unique
+  // Suggested utm_source / utm_medium stamped into generated links (optional).
+  defaultSource String?
+  defaultMedium String?
+  status        String   @default("active") // active | archived
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([storeId, slug])
+  @@index([storeId, status])
 }

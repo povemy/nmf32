@@ -1,5 +1,11 @@
 // GET /api/store/connections — list the seller's marketplace connections.
 // Tokens are NEVER returned — only status, shop identity and expiry.
+//
+// F-20 remediation (minimal, fail-closed): the list is scoped STRICTLY to the
+// session seller's own store. Global (storeId = null) handshake rows are
+// invisible — they are pre-claim artifacts of the deferred OAuth binding flow
+// and were never this seller's to see (cross-store information disclosure,
+// audit finding F-20). Binding happens via the claim flow, not this list.
 import { NextRequest } from "next/server";
 import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -12,7 +18,7 @@ export const GET = handle(async function (_req: NextRequest) {
     if (!session || session.userType !== "seller") return fail(401, "UNAUTHENTICATED", "Seller session required.");
     const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
     const connections = await db.marketplaceConnection.findMany({
-      where: { OR: [{ storeId: seller?.store?.id ?? "__none__" }, { storeId: null }] },
+      where: { storeId: seller?.store?.id ?? "__none__" },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

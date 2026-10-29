@@ -1,4 +1,8 @@
 // GET /api/store/imports — import jobs + connection status for the seller import centre.
+// F-20 remediation (minimal, fail-closed): the connection list is scoped to the
+// session seller's own store — global (storeId = null) handshake rows are
+// invisible here exactly like /api/store/connections. The jobs query keeps the
+// claimedById OR-clause (a seller's own claim jobs — no cross-store leak).
 import { NextRequest } from "next/server";
 import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -18,7 +22,7 @@ export const GET = handle(async function (_req: NextRequest) {
       include: { _count: { select: { items: true } } },
     });
     const connections = await db.marketplaceConnection.findMany({
-      where: { OR: [{ storeId: seller?.store?.id ?? "__none__" }, { storeId: null }] },
+      where: { storeId: seller?.store?.id ?? "__none__" },
       select: { platform: true, status: true, shopName: true, expiresAt: true, envConfigured: true },
     });
     return ok({

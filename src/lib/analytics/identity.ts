@@ -66,15 +66,20 @@ export async function resolveInsightsIdentity(): Promise<InsightsIdentity> {
     }
 
     let sess = parseSessionCookie(store.get(SESSION_COOKIE)?.value);
-    let rotated = false;
     if (!sess || now - sess.mintedAt > SESSION_WINDOW_MS) {
+      // No prior session, or the 30-minute inactivity window elapsed → new id.
       sess = { token: randomToken(16), mintedAt: now };
-      rotated = true;
+    } else {
+      // Sliding window (documented semantics): a tracked event refreshes the
+      // inactivity window — the SAME visit token continues. (Audit fix: the
+      // previous code never re-set the cookie in this branch, so mintedAt
+      // never advanced and a continuously-active visitor was fragmented into
+      // a new session every 30 minutes of elapsed time.)
+      sess = { token: sess.token, mintedAt: now };
     }
-    // Sliding refresh: extend the cookie on every tracked event.
-    if (rotated || !store.get(SESSION_COOKIE)) {
-      store.set(SESSION_COOKIE, `${sess.token}.${sess.mintedAt}`, { ...cookieOptions, maxAge: SESSION_TTL_S });
-    }
+    // Cookie re-set on every tracked event: keeps mintedAt sliding and the
+    // 24 h cookie life refreshed for active visits.
+    store.set(SESSION_COOKIE, `${sess.token}.${sess.mintedAt}`, { ...cookieOptions, maxAge: SESSION_TTL_S });
 
     return { visitorId, sessionId: sess.token, sessionMintedAt: sess.mintedAt };
   } catch {

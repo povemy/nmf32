@@ -76,3 +76,57 @@ Tests: `scripts/readiness/seller-insights.ts` (new).
 Docs: `performance/seller-insights-audit.md`, `docs/seller-insights/metric-definitions.md`, this report, `agent-ctx/RX-CHECKLIST.md` (ADDENDUM #7), `agent-ctx/SI-PLAN.md`, `worklog.md`.
 
 Deployment steps for staging/production: (1) apply schema via the established `db:push` flow (or generate a migration from the diff in a maintenance window, ≤2 connections per topology §7); (2) run `scripts/backfill-order-country.ts` once (idempotent); (3) ensure the expiry-scheduler (or platform cron) hits `/api/cron/analytics-tick` — the scheduler service was restarted in this deployment and ticks all three endpoints; (4) no new env vars required (CRON_SECRET behavior unchanged).
+
+---
+
+# Marketing Intelligence — Implementation Report (2026-10-30)
+
+Mission: Seller Insights & Marketing Intelligence (combined spec). Post-remediation gate verdict authorized start (full-audit-report.md §"INDEPENDENT VERIFICATION"). Plan + audit: `implementation-plan.md` (§1 audit, §7 execution record).
+
+## 1. What shipped
+
+**Campaign attribution (Phase 1–3):**
+- Schema (additive, `db:push`): `AnalyticsEvent` + 6 attribution columns (`campaignId`, `utmSource/Medium/Campaign/Term/Content`) + `@@index([campaignId,createdAt])`; new `SellerCampaign` model (store-scoped, immutable `code`/`slug`, default source/medium, active/archived); `Order` + 6 frozen snapshot columns (`attrCampaignId`, `attrSource/Medium/Campaign/Term/Content`) + `@@index([storeId,attrCampaignId])`.
+- `src/lib/analytics/attribution.ts` (new): server-side UTM validation (control-char strip, length clamps, fail-closed), `nmcl` campaign-token resolution (active + store-matched — cross-store tokens ignored), `nm_ins_attr` httpOnly cookie (30-day, landing-defined window), channel derivation from validated `utm_source`, campaign-link path builder.
+- Landing beacon `POST /api/analytics/landing` (CSRF-proxy-gated same-origin POST + JSON-only, rate-limited 30/min/IP, idempotent no-op without valid params). Shopper-shell mount capture with bounded wait so the first `store_view` lands attributed.
+- Attribution stamped on every tracked event (cart events via fire-and-forget request context) and frozen onto every Order at checkout creation (constant columns — money path untouched, same pattern as the country snapshot).
+- APIs: `GET /api/store/insights/campaigns` (report; same envelope/window/cache/limit conventions) + `GET/POST /api/store/campaigns` + `PATCH /api/store/campaigns/[id]` (session-scoped CRUD, activity-logged, 100/store hygiene cap, slug/code immutable).
+- UI: new **Campaigns** tab in Insights (lazy fetch) — totals cards, campaign-link generator (name/source/medium) with copyable share URLs (`{origin}/?sf=…&utm_…&nmcl=…`), archive/restore, per-campaign performance table (visits, sessions, product views, cart adds, attributed orders, paid orders + prev delta, gross sales, AOV, conversion w/ mixed-basis disclosure, first-tagged-visit date), unclaimed UTM-source traffic table, honesty notes.
+- Defects fixed along the way (found by this mission's audit): session sliding-window fragmentation (identity.ts), SPA-degenerate channel classification (now utm_source-derived for tagged visits), seller Settings storefront URL 404 (`/${slug}` → `{origin}/?sf=${slug}`), `?sf=` deep links now always open the shopper surface for that page load (a seller clicking their own campaign link sees the storefront a customer sees).
+
+**Funnel (Phase 2):** per-stage absolute drop-off + drop-off % (server-computed; negative mixed-basis values displayed as "gained"); authoritative payment-sessions figure (PaymentGroup records — the current flow's payment-attempt object; PaymentIntent is legacy-only and is NOT used).
+
+**Advertising integration (Phase 4 — design only):** `docs/seller-insights/ad-integration-design.md` — separate `AdConnection` model (storeId REQUIRED from day one — the F-20 lesson), read-only `AdPlatformConnector` interface, generalized OAuth nonce helper, conversion-event gating (no consent regime → none may be sent), staged rollout checklist. No connectors, no SDKs, no fake states, no ROAS.
+
+**F-20 minimal fail-closed remediation:** `store/connections` + `store/imports` lists scoped strictly to the session seller's own store (global handshake rows invisible); `connections/disconnect` can no longer mutate global rows. Runtime-verified (H1–H3). The deeper root-cause refactor is specified in the design doc §4 and scheduled with the first real connector.
+
+## 2. Tests executed (all against the live dev deployment)
+
+| Suite | Result | Archive |
+|---|---|---|
+| `scripts/readiness/seller-attribution.ts` (NEW — 52 checks: campaign CRUD + cross-seller isolation, beacon validation/CSRF/405/rate-limit, cookie capture, cross-store token fail-closed, sanitation, attributed visit/event flow, channel derivation, session sliding fix, cart-event attribution, checkout freeze, paid-order retention, campaigns report correctness + isolation + honesty notes, unclaimed UTM traffic, funnel drop-off + payment sessions, F-20 runtime verification, money-path sanity) | **ALL PASS (52/52)** | `performance/runs/2026-10-29-seller-attribution.json` |
+| `scripts/readiness/seller-insights.ts` (regression) | **ALL PASS (55/55)** | `performance/runs/2026-10-29-seller-insights.json` |
+| `scripts/readiness/finance-regression.ts` | **37 PASS / 0 FAIL** | `performance/runs/2026-10-29-finance-regression.json` |
+| `scripts/readiness/deployment-smoke.ts` (`SMOKE_TARGET_CONFIRM=dev-sandbox-local`) | **ALL PASS** | `performance/runs/2026-10-29-deployment-smoke.json` |
+| Lint (`bun run lint`) | 0 errors (20 warnings, all pre-existing) | — |
+| `tsc --noEmit` | src 0 errors | — |
+| Browser (agent-browser) | Golden path: campaign link created via seller UI → link opened in a REAL browser → beacon 200 → campaign-attributed store_view recorded → seller Campaigns tab shows the attributed visit (1 visit / 1 session / first tagged visit date); campaign create form, copy-link, archive UI verified; funnel drop-off rows ("drop 1 (100%)", "gained N") + payment-sessions line render; raw-UTM landing shows in unclaimed tagged traffic; mobile 390 px + desktop 1280 px; **zero console errors** | screenshots `tool-results/mi-*.png` |
+
+**Production build: NOT TESTED (sandbox dev-only policy, unchanged from prior verdicts) — must run in CI/staging.**
+
+## 3. Honest limitations
+
+1. Attribution history begins at this release (2026-10-30) — never backfilled; the UI says so.
+2. Last-touch only (no first-touch capture); the attribution window is 30 days defined by landings.
+3. Same-session landings via DIFFERENT campaigns each count for their own campaign (campaign-suffix dedup) — total store views can exceed distinct sessions in that scenario; visits/sessions metrics are unaffected.
+4. Conversion is mixed-bases (orders vs cookie sessions) — labeled, an indication.
+5. No spend data → **no ROAS/CPC/CPA anywhere**; ad-platform-reported conversions are a different measurement and are not shown.
+6. `search` is defined in the event vocabulary but not collected (no honest store-scoped search datum).
+7. Payment attempts = PaymentGroup sessions (retry re-opens the same record — not double-counted); PaymentIntent is legacy-only.
+8. F-20 root-cause refactor (sellerId-stamped handshake rows, shopId-matched claim binding, runner/authStatus scoping) remains scheduled with the first advertising connector — the seller-visible leak sites are fixed and runtime-verified.
+
+## 4. Deployment steps (staging/production)
+
+1. Apply the schema diff via the established `db:push` flow (additive columns + one new model + 3 new indexes — no data migration; historical rows keep NULL attribution by design).
+2. No new env vars; no scheduler changes (analytics-tick already purges events including the new columns via the existing retention rule).
+3. Run CI/staging production build (not runnable in this sandbox) + re-run the four readiness suites there.

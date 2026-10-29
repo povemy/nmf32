@@ -169,7 +169,10 @@ function GeneralSettings({
     if (!ok) setOptIn(!next);
   };
 
-  const storefrontUrl = `/${storeMe.store.slug}`;
+  // The REAL shareable storefront URL is the SPA deep link `/?sf={slug}`
+  // (sitemap + canonical + campaign links all use this form — a bare
+  // /{slug} path has no route and would 404). Audit fix: was `/${slug}`.
+  const storefrontUrl = `${typeof window === "undefined" ? "" : window.location.origin}/?sf=${storeMe.store.slug}`;
 
   return (
     <div className="space-y-6">
