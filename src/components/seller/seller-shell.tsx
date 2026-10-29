@@ -805,23 +805,15 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
               </Button>
               <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs space-y-1.5">
                 <p className="flex items-center gap-1.5 font-medium">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Demo accounts (password Seller123!)
+                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Sandbox demo accounts
                 </p>
                 <p className="text-muted-foreground">lumina@nomofee.io — active store, full dashboard</p>
                 <p className="text-muted-foreground">trail@nomofee.io — onboarding wizard demo</p>
                 <p className="text-muted-foreground">warung@nomofee.io — pending review screen</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-1 h-8"
-                  onClick={() => {
-                    setLoginEmail("lumina@nomofee.io");
-                    setLoginPassword("Seller123!");
-                  }}
-                >
-                  Fill demo credentials
-                </Button>
+                {/* F-19/F-12 remediation: the shared demo password and one-click
+                    credential fill were removed from the client bundle. Seeded
+                    credentials are documented SERVER-side only (prisma/seed.ts
+                    + .env.example overrides). */}
               </div>
             </TabsContent>
 

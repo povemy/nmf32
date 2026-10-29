@@ -388,3 +388,57 @@ limited to read-only GETs on the running dev server. Report file:
       settings/site & sf/app-config consistent PASS; anonymous review publish
       FAIL (confirmed, probe deleted + aggregates restored); lookup unthrottled
       FAIL. Zero code changes; one probe review reverted (§6.2 of the report).
+
+---
+
+# Addendum #10 — Task G: CRITICAL security remediation + production build gate
+
+**User request (intent, verbatim structure):** "Use full-audit-report.md as the
+evidence-backed remediation backlog. Begin by resolving the four CRITICAL findings,
+then address the high-risk public entry points and production fail-closed
+requirements." — NO Sales Funnel / Seller Insights / advertising features in this task.
+
+**Phases:** P0 verify starting state → P1 four CRITICALs (F-04 webhook secret,
+F-01 CSRF, F-02/F-24 seller status + revocation, F-03 rotateSession/safeEqualHex) →
+P2 high-risk public entry points (shipping webhook auth, chat hub/relay auth, gateway
+port restriction, mock PSP fail-closed, login/register rate limits + demo creds) →
+P3 authorization boundaries (commission/policy mutations, settings writes, replay,
+KYC/banks/exports, analytics CSV) → P4 config linkage honesty (wire / label / remove)
+→ P5 targeted regressions + lint + type-check + build-blocker resolution (47 src
+errors = app build blockers; scripts/ = classified debt, not build path).
+
+**Ground rules (inherited):** PASS/FAIL/NOT TESTED/BLOCKED; documentation ≠
+implementation (blueprint claims rotateSession/revokeUserSessions exist — code
+proves otherwise); payment/authorization/financial changes stop-and-test at each
+boundary; production build NOT runnable in sandbox (env policy) → label honestly,
+CI must run it; runtime verification via curl probes + agent-browser (no new test
+files). Deliverables: performance/security-remediation.md (per-finding evidence),
+full-audit-report.md status updates (preserving historical findings), this checklist.
+
+**Phase checklist**
+- [x] G1 Register this task (this addendum) BEFORE any code change.
+- [x] G2 P0 verified: git clean @ 1c5bbd7 (main); all four CRITICALs re-confirmed in
+      source (process.ts:49 demo fallback; auth.ts sameSite none + no proxy.ts;
+      login/route.ts:32 terminated-only; suspend/terminate no session delete;
+      me/password rotateSession TS2724; stripe-my safeEqualHex TS2305);
+      tsc 173 errors (47 src = build blockers, 126 scripts/tool-results);
+      .env has NO PSP_WEBHOOK_SECRET/CRON_SECRET/METRICS_TOKEN; .env.example
+      documents none of them; next.config.ts ignoreBuildErrors:false → src errors
+      are hard build blockers. Blueprint (§943-945) claims rotation/revocation
+      shipped — FALSE (doc ≠ impl); blueprint's design adopted as the spec.
+- [ ] G3 P1 F-04 webhook secret fail-closed + .env.example placeholders.
+- [ ] G4 P1 F-01 CSRF: src/proxy.ts origin/Sec-Fetch-Site/content-type guard.
+- [ ] G5 P1 F-02/F-24: status enforcement + session revocation + login gate +
+      publish gate.
+- [ ] G6 P1 F-03: rotateSession + revokeUserSessions + safeEqualHex + psp.ts
+      adapter types.
+- [ ] G7 P2 shipping webhook HMAC + rewrite against Shipment model; chat
+      hub/relay auth; gateway port restriction; mockPspAllowed fail-closed;
+      login/register rate limits; demo creds removal.
+- [ ] G8 P3 capability-tier guards on the listed mutations/reads + negative
+      authorization probes.
+- [ ] G9 P4 linkage honesty decisions (wire/label/remove) per finding.
+- [ ] G10 P5 regressions, lint, tsc src-clean, dev-server + agent-browser
+      verification, honest build-gate labeling.
+- [ ] G11 Reports updated (security-remediation.md, full-audit-report.md,
+      worklog.md).

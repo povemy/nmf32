@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
-import { requireCap } from "@/lib/auth";
+import { requireCap, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, stripSeller } from "@/app/api/admin/_helpers";
 
@@ -19,6 +19,10 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.seller.update({ where: { id }, data: { status: "suspended" } });
   if (seller.store) await db.store.update({ where: { id: seller.store.id }, data: { status: "draft" } });
+  // F-02 remediation: suspension takes effect IMMEDIATELY — every live seller
+  // session is revoked so the suspended seller's next request 401s, and the
+  // login gate (F-24) refuses to mint a new one.
+  const sessionsRevoked = await revokeUserSessions("seller", id);
 
   await notify({
     event: "seller.suspended",
@@ -34,8 +38,8 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     entityType: "seller",
     entityId: id,
     before: { status: seller.status, storeStatus: seller.store?.status ?? null },
-    after: { status: "suspended", storeStatus: seller.store ? "draft" : null, reason },
+    after: { status: "suspended", storeStatus: seller.store ? "draft" : null, reason, sessionsRevoked },
   });
 
-  return ok(stripSeller(updated));
+  return ok({ ...stripSeller(updated), sessionsRevoked });
 });

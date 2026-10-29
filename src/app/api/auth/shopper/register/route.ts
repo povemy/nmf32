@@ -3,10 +3,14 @@ import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper } from "@/lib/shopper-merge";
+import { rateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/shopper/register { fullName, email, password, phone? } — buyer signup.
 // Legacy guest orders placed with this email (pre-guest-checkout removal) are claimed into the new account.
 export const POST = handle(async (req: Request) => {
+  // F-12 remediation: account-creation throttle — shared "auth-register"
+  // bucket (5/min/IP) with the seller register route.
+  rateLimit(req, "auth-register", 5);
   const body = (await req.json().catch(() => ({}))) as {
     email?: string; password?: string; fullName?: string; phone?: string;
   };

@@ -3,9 +3,14 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
+import { rateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/login { email, password, portal: "admin" | "seller" }
 export const POST = handle(async (req: NextRequest) => {
+  // F-12 remediation: bounded brute-force throttle — 10 credential attempts
+  // per minute per IP, shared with the shopper login route (one "auth-login"
+  // bucket). Uniform 429 for every email — no account-existence signal.
+  rateLimit(req, "auth-login", 10);
   const body = (await req.json()) as { email?: string; password?: string; portal?: "admin" | "seller" };
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
@@ -29,8 +34,17 @@ export const POST = handle(async (req: NextRequest) => {
   if (!seller || !verifyPassword(password, seller.passwordHash)) {
     return fail(401, "INVALID_CREDENTIALS", "Invalid seller credentials");
   }
+  // F-02/F-24 remediation: ineligible statuses are blocked at the login gate
+  // (documented policy: suspended/terminated ⇒ 403; a suspended seller must
+  // not be able to mint a fresh session and resume API access). Rejected
+  // sellers CAN sign in — the documented revision loop (fix issues →
+  // resubmit via /api/store/onboarding) requires it; store-operation routes
+  // still gate them through requireActiveSellerStore where appropriate.
   if (seller.status === "terminated") {
     return fail(403, "ACCOUNT_TERMINATED", "This account has been terminated");
+  }
+  if (seller.status === "suspended") {
+    return fail(403, "ACCOUNT_SUSPENDED", "This account has been suspended. Contact platform support.");
   }
   const token = await createSession("seller", seller.id);
   await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.login" });

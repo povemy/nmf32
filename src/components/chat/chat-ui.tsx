@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { ArrowLeft, Check, CheckCheck, Loader2, MessagesSquare, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getSessionToken } from "@/lib/session-client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -132,8 +133,13 @@ export function useChatHub(input: {
   const roomsKey = `${userRoom ?? ""}|${threadRooms.join(",")}`;
 
   useEffect(() => {
+    // F-06 remediation: the socket handshake carries the session token
+    // (localStorage Bearer bridge) — the hub validates it against the
+    // authoritative app and only authorizes own-user + participant-thread
+    // rooms. Signed-out surfaces get an inert socket (never joins anything).
     const socket = io("/?XTransformPort=3003", {
       transports: ["websocket", "polling"],
+      auth: { token: getSessionToken() ?? "" },
       // Long-lived preview tabs must NEVER give up: a hub restart (or a sleep /
       // network blip) can outlast a finite attempt budget, after which the tab
       // would silently stop receiving messages until a manual reload.

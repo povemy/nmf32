@@ -1,0 +1,11 @@
+const BASE = "http://localhost:3000";
+const j = (r: Response) => r.json().catch(() => ({}));
+const stamp = Date.now().toString(36);
+let res = await fetch(`${BASE}/api/auth/shopper/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `lt-hub-${stamp}@probe.local`, password: "ProbePass123!", fullName: "LT Hub Debug" }) });
+let body = await j(res);
+const tok = body?.data?.token; const uid = body?.data?.shopper?.id;
+console.log("token:", tok?.slice(0, 10), "uid:", uid);
+res = await fetch(`${BASE}/api/chat/hub-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: tok, rooms: [`user:${uid}`] }) });
+console.log("hub-auth status:", res.status, JSON.stringify(await j(res)).slice(0, 200));
+res = await fetch(`${BASE}/api/chat/hub-auth`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: tok, rooms: [] }) });
+console.log("hub-auth empty rooms:", res.status, JSON.stringify(await j(res)).slice(0, 150));

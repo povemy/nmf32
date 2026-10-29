@@ -416,12 +416,27 @@ async function main() {
   }
 
   // ------------------------------------------------ admin users
+  // F-12 remediation: production deployments MUST override the seeded admin
+  // passwords via env (SEED_ADMIN_PASSWORD etc. — documented in .env.example);
+  // the hardcoded values remain as documented DEV/sandbox-only fallbacks so
+  // the preview environment keeps its known logins. A loud warning fires when
+  // the fallbacks are used outside development.
+  const devFallback = (envKey: string, fallback: string): string => {
+    const fromEnv = process.env[envKey];
+    if (fromEnv && fromEnv.length >= 8) return fromEnv;
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        `[seed] SECURITY: ${envKey} not set — seeding the documented DEV password for ${fallback.length ? "an admin account" : ""}. Change it immediately or re-seed with the env override.`
+      );
+    }
+    return fallback;
+  };
   const admin = await db.adminUser.create({
-    data: { email: "admin@nomofee.io", name: "Aisyah Rahman", role: "superadmin", passwordHash: hashPassword("Admin123!"), lastLoginAt: daysAgo(0, 8) },
+    data: { email: "admin@nomofee.io", name: "Aisyah Rahman", role: "superadmin", passwordHash: hashPassword(devFallback("SEED_ADMIN_PASSWORD", "Admin123!")), lastLoginAt: daysAgo(0, 8) },
   });
-  await db.adminUser.create({ data: { email: "ops@nomofee.io", name: "Wani Operations", role: "ops", passwordHash: hashPassword("Ops12345!") } });
-  await db.adminUser.create({ data: { email: "finance@nomofee.io", name: "Kumar Finance", role: "finance", passwordHash: hashPassword("Finance123!") } });
-  await db.adminUser.create({ data: { email: "moderator@nomofee.io", name: "Rina Moderator", role: "moderator", passwordHash: hashPassword("Mod12345!") } });
+  await db.adminUser.create({ data: { email: "ops@nomofee.io", name: "Wani Operations", role: "ops", passwordHash: hashPassword(devFallback("SEED_OPS_PASSWORD", "Ops12345!")) } });
+  await db.adminUser.create({ data: { email: "finance@nomofee.io", name: "Kumar Finance", role: "finance", passwordHash: hashPassword(devFallback("SEED_FINANCE_PASSWORD", "Finance123!")) } });
+  await db.adminUser.create({ data: { email: "moderator@nomofee.io", name: "Rina Moderator", role: "moderator", passwordHash: hashPassword(devFallback("SEED_MODERATOR_PASSWORD", "Mod12345!")) } });
 
   await seedCategories();
 

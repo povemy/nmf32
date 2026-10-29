@@ -9,11 +9,26 @@
 //                       push so a brand-new conversation appears without reload)
 const CHAT_HUB_URL = "http://127.0.0.1:3103/broadcast";
 
+/** F-06 remediation: the relay rejects broadcasts without the shared secret.
+ *  Production without CHAT_RELAY_SECRET disables the relay call entirely
+ *  (fail closed — live push is unavailable, HTTP routes stay authoritative);
+ *  dev uses the documented public fallback so sandbox rails keep working. */
+function relaySecret(): string | null {
+  const s = process.env.CHAT_RELAY_SECRET;
+  if (s && s.length > 0) return s;
+  return process.env.NODE_ENV === "production" ? null : "sm_chat_relay_dev";
+}
+
 async function postBroadcast(rooms: string[], event: string, payload: unknown): Promise<void> {
+  const secret = relaySecret();
+  if (!secret) {
+    console.error("[chat] hub relay disabled: CHAT_RELAY_SECRET is not configured (fail closed)");
+    return;
+  }
   try {
     const res = await fetch(CHAT_HUB_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-chat-relay-secret": secret },
       body: JSON.stringify({ rooms, event, payload }),
       signal: AbortSignal.timeout(1500),
     });

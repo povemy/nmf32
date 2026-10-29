@@ -43,10 +43,28 @@ import { parseMaybeJson } from "@/app/api/admin/_helpers";
 import { toJson } from "@/lib/json";
 import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
 
-// Sandbox fallback keeps the mock rails working without env setup; production
-// MUST set PSP_WEBHOOK_SECRET (a real PSP secret) — the fallback is intentionally
-// public knowledge so it can never be trusted to authenticate real money events.
-const WEBHOOK_SECRET = process.env.PSP_WEBHOOK_SECRET ?? "sm_webhook_secret_demo";
+// F-04 remediation (2026-10-30): the signing secret resolves at CALL time, not
+// module-load time, and FAILS CLOSED in production:
+//   • production + PSP_WEBHOOK_SECRET unset → the protected endpoints reject
+//     with 503 WEBHOOK_SECRET_UNSET — a public demo constant can never
+//     authenticate real money events, so there is NO fallback in production.
+//   • sandbox/dev (NODE_ENV !== "production") keeps the documented public
+//     fallback so the mock rails (simulate endpoints, fin tests) work without
+//     env setup — the fallback is intentionally public knowledge there.
+// Startup validation: src/instrumentation-node.ts warns loudly in production
+// when the secret is missing; this call-site gate is the enforcement.
+export function webhookSecret(): string {
+  const secret = process.env.PSP_WEBHOOK_SECRET;
+  if (secret && secret.length > 0) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new ApiError(
+      503,
+      "WEBHOOK_SECRET_UNSET",
+      "PSP_WEBHOOK_SECRET is not configured — payment webhook processing is disabled (fail closed)"
+    );
+  }
+  return "sm_webhook_secret_demo";
+}
 
 /** Replay-acceptance window: a correct MAC over an out-of-window timestamp is
  *  still a replay — rejected with STALE_EVENT. Simulate endpoints stamp
@@ -54,7 +72,7 @@ const WEBHOOK_SECRET = process.env.PSP_WEBHOOK_SECRET ?? "sm_webhook_secret_demo
 export const WEBHOOK_TS_WINDOW_MS = 10 * 60_000;
 
 export function expectedSignature(providerRef: string, eventType: string, amountMinor: number, ts: number): string {
-  return hmacSha256Hex(WEBHOOK_SECRET, `${providerRef}.${eventType}.${amountMinor}.${ts}`);
+  return hmacSha256Hex(webhookSecret(), `${providerRef}.${eventType}.${amountMinor}.${ts}`);
 }
 
 export type ProcessResult = {

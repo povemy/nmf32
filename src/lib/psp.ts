@@ -37,14 +37,80 @@
 
 export type PspProviderId = string;
 
+/** F-03 remediation (TS2305s): the adapter contract types the Stripe-MY
+ *  scaffold (src/lib/psp-adapters/stripe-my.ts) was written against. They were
+ *  referenced but never defined — now they live HERE (psp.ts) so the whole PSP
+ *  layer shares one contract surface. NOTE: nothing in this block may import
+ *  Prisma or lib/api — this module is importable from client surfaces. */
+
+/** Error thrown by a PSP adapter on upstream/configuration failure. Deliberately
+ *  NOT ApiError (lib/api imports Prisma + Next server machinery): routes catch
+ *  it and map (status, code, message) onto the API envelope. */
+export class PspAdapterError extends Error {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "PspAdapterError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Input to a provider's hosted-checkout session creation (one PaymentGroup). */
+export type PspCheckoutSessionInput = {
+  /** Canonical internal ref (PaymentGroup.ref) — stamped onto the session. */
+  groupRef: string;
+  provider: PspProviderId;
+  /** App origin for success/cancel redirects. */
+  origin: string;
+  successPath?: string;
+  cancelPath?: string;
+  currency: string;
+  amountMinor: number;
+  description: string;
+  customerEmail?: string;
+  /** Per-seller settlement targets (pspAccountId = connected account id). */
+  sellers: { pspAccountId?: string | null }[];
+  /** Platform commission deducted at payment time (Option B application fee). */
+  commissionMinor: number;
+};
+
+/** Result of a provider's hosted-checkout session creation. */
+export type PspCheckoutSession = {
+  redirectUrl: string;
+  providerRef: string;
+};
+
+/** Result of a provider's webhook-signature verification. valid:false ⇒ the
+ *  delivery is unauthenticated and MUST be discarded (never throws). */
+export type PspWebhookVerdict = {
+  valid: boolean;
+  eventId?: string;
+  providerRef?: string;
+  eventType?: string;
+  amountMinor?: number;
+  /** Authenticated event timestamp (epoch ms) for replay-window checks. */
+  ts?: number;
+};
+
 /** Minimal surface a production PSP adapter must satisfy. Kept as scaffold:
- *  the mock provider conforms today so the production swap is config-level. */
+ *  the mock provider conforms today so the production swap is config-level.
+ *  The adapter capabilities are OPTIONAL — the sandbox mock provider needs
+ *  none of them (simulate plays the PSP), while a production adapter
+ *  registers all three. */
 export interface PspProvider {
   id: PspProviderId;
   /** True when this provider may only be used outside production. */
   sandboxOnly: boolean;
   /** Human label shown on the pay screen. */
   label: string;
+  /** True when the adapter's env keys are present (never selected otherwise). */
+  isConfigured?: () => boolean;
+  /** Create a hosted checkout session for one PaymentGroup. */
+  createCheckoutSession?: (input: PspCheckoutSessionInput) => Promise<PspCheckoutSession>;
+  /** Verify a provider webhook delivery (constant-time, replay-window aware). */
+  verifyWebhookSignature?: (req: Request, rawBody: string) => Promise<PspWebhookVerdict>;
 }
 
 export const PSP_PROVIDERS: Record<PspProviderId, PspProvider> = {
@@ -129,8 +195,11 @@ export const PSP_SPLIT_SETTING_KEYS = {
 export const PSP_MOCK_ENABLED_SETTING_KEY = "psp.mock.enabled";
 
 /** Whether the sandbox mock-PSP surface may run. Sandbox (NODE_ENV !==
- *  "production"): always true. Production: only when Setting
- *  psp.mock.enabled is explicitly true.
+ *  "production"): always true. Production: ONLY when Setting
+ *  psp.mock.enabled is EXPLICITLY true — F-13 remediation makes the default
+ *  FAIL CLOSED: a missing or malformed Setting row now denies the mock rails
+ *  in production (previously defaulted open). An operator must consciously
+ *  opt a demo deployment back in by writing the row.
  *  NOTE: db is imported lazily (inside the function) so this module stays
  *  server-light and importable from client surfaces that only want the
  *  provider registry — Prisma must never enter the client bundle. */
@@ -139,5 +208,7 @@ export async function mockPspAllowed(): Promise<boolean> {
   const { db } = await import("./db");
   const { parseJson } = await import("./json");
   const row = await db.setting.findUnique({ where: { key: PSP_MOCK_ENABLED_SETTING_KEY } });
-  return parseJson<boolean>(row?.valueJson, true) === true;
+  // Strict `=== true`: missing row → fallback false; malformed JSON → false;
+  // truthy non-boolean (e.g. "1", `"true"` string) → false. Fail closed.
+  return parseJson<boolean>(row?.valueJson, false) === true;
 }

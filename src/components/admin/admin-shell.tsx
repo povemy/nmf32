@@ -431,24 +431,17 @@ function AdminMenu({ admin }: { admin: { id: string; email: string; name: string
 
 /* --------------------------------------------------------------- login */
 
-const DEMO_ACCOUNTS: { role: string; email: string; password: string }[] = [
-  { role: "Superadmin", email: "admin@nomofee.io", password: "Admin123!" },
-  { role: "Ops", email: "ops@nomofee.io", password: "Ops12345!" },
-  { role: "Finance", email: "finance@nomofee.io", password: "Finance123!" },
-  { role: "Moderator", email: "moderator@nomofee.io", password: "Mod12345!" },
-];
+// F-19/F-12 remediation: the demo quick-fill panel (hardcoded superadmin/ops/
+// finance/moderator emails + PASSWORDS) was removed from the client bundle —
+// shipping credentials to every browser handed attackers half of every
+// seeded admin account. Credentials are documented SERVER-side only
+// (prisma/seed.ts + .env.example overrides) and are never sent to the client.
 
 function LoginCard({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const fill = (a: (typeof DEMO_ACCOUNTS)[number]) => {
-    setEmail(a.email);
-    setPassword(a.password);
-    setError(null);
-  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -529,20 +522,12 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
         </Card>
 
         <div className="rounded-xl border bg-muted/40 p-4">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Demo accounts — one-click fill</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {DEMO_ACCOUNTS.map((a) => (
-              <button
-                key={a.email}
-                type="button"
-                onClick={() => fill(a)}
-                className="rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:hover:border-teal-800 dark:hover:bg-teal-950/30"
-              >
-                <p className="text-xs font-semibold">{a.role}</p>
-                <p className="truncate font-mono text-[10px] text-muted-foreground">{a.email}</p>
-              </button>
-            ))}
-          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Access notice</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Administrator credentials are issued by the platform team and are never published in the application bundle. In the
+            sandbox, the seeded accounts documented in <span className="font-mono">prisma/seed.ts</span> (server-side) can be
+            entered manually.
+          </p>
         </div>
       </div>
     </div>

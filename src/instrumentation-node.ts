@@ -93,3 +93,29 @@ export async function registerNodeEnvGuard(): Promise<void> {
       `(checked vaults: ${candidates.join(", ")}). Database-backed routes will fail.`,
   );
 }
+
+/**
+ * F-04/F-23 remediation: production startup validation for security secrets.
+ * Each secret below is enforced FAIL-CLOSED at its protected endpoint when
+ * missing (503 WEBHOOK_SECRET_UNSET / CRON_SECRET_UNSET / metrics disabled /
+ * relay 401) — this check makes the misconfiguration LOUD at boot instead of
+ * waiting for the first rejected request. Dev/sandbox: informational only
+ * (documented public fallbacks keep the mock rails working).
+ */
+const PRODUCTION_SECRETS = [
+  { key: "PSP_WEBHOOK_SECRET", endpoint: "POST /api/webhooks/payments/[provider] (money events)" },
+  { key: "CRON_SECRET", endpoint: "POST /api/cron/* (scheduler ticks)" },
+  { key: "SHIPPING_WEBHOOK_SECRET", endpoint: "POST /api/shipping/webhook/[provider] (AWB state transitions)" },
+  { key: "CHAT_RELAY_SECRET", endpoint: "chat relay :3103 /broadcast (room broadcasts)" },
+  { key: "METRICS_TOKEN", endpoint: "GET /api/metrics (read-only, disabled when unset)" },
+] as const;
+
+export function warnProductionSecrets(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing = PRODUCTION_SECRETS.filter((s) => !process.env[s.key]);
+  for (const s of missing) {
+    console.error(
+      `[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.endpoint} will FAIL CLOSED (503/401) until it is configured.`,
+    );
+  }
+}

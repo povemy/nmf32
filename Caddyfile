@@ -1,23 +1,30 @@
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+        # F-06 remediation — the XTransformPort proxy is RESTRICTED to the two
+        # intended PUBLIC services:
+        #   :3000 — the Next.js webapp (also the default route below)
+        #   :3003 — the chat socket.io hub (browser clients connect via
+        #           /?XTransformPort=3003 with an authenticated handshake)
+        # Internal-only ports (:3103 chat relay, :3005 scheduler, :3002 dev)
+        # must NOT be publicly routable — previously ANY localhost port was
+        # proxied (audit F-06). A request carrying any other XTransformPort
+        # value falls through to the default handler (the webapp itself).
+        @chat query XTransformPort=3003
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle @chat {
+                reverse_proxy localhost:3003 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 }

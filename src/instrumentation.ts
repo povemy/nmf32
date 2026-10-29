@@ -12,6 +12,7 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { registerNodeEnvGuard } = await import("./instrumentation-node");
+  const { registerNodeEnvGuard, warnProductionSecrets } = await import("./instrumentation-node");
   await registerNodeEnvGuard();
+  warnProductionSecrets(); // F-04/F-23: loud boot-time validation (production only)
 }

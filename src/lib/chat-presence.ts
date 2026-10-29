@@ -19,6 +19,7 @@
 
 import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
+import { getSessionToken } from "@/lib/session-client";
 
 export type ChatPresenceMessage = {
   id: string;
@@ -46,8 +47,11 @@ let holders = 0;
 function acquire(): Socket {
   holders += 1;
   if (shared) return shared;
+  // F-06 remediation: authenticated handshake — the hub validates the session
+  // token against the authoritative app before authorizing any room join.
   shared = io("/?XTransformPort=3003", {
     transports: ["websocket", "polling"],
+    auth: { token: getSessionToken() ?? "" },
     // Same resilience contract as useChatHub: long-lived preview tabs must
     // never give up — a hub restart or sleep can outlast a finite budget.
     reconnection: true,

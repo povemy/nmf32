@@ -12,6 +12,16 @@ export const POST = handle(async function (_req: NextRequest) {
     if (!session || session.userType !== "seller") return fail(401, "UNAUTHENTICATED", "Seller session required.");
     const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
     if (!seller?.store) return fail(404, "NO_STORE", "No store found for this seller.");
+    // F-02 remediation: a suspended/terminated seller must not be able to
+    // self-un-suspend their storefront by re-publishing the draft store that
+    // suspension set. (The publish path is the import-claim flow's go-live
+    // gate — onboarding-tier statuses keep their documented access.)
+    if (seller.status === "suspended") {
+      return fail(403, "ACCOUNT_SUSPENDED", "This seller account is suspended — the store cannot be published.");
+    }
+    if (seller.status === "terminated") {
+      return fail(403, "ACCOUNT_TERMINATED", "This seller account is terminated — the store cannot be published.");
+    }
     const gate = await canPublish(seller.store.id);
     if (!gate.ok) return fail(422, "PUBLISH_BLOCKED", "Store cannot be published yet.", { blockers: gate.blockers });
     const current = seller.store.status;

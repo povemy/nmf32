@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
-import { requireCap } from "@/lib/auth";
+import { requireCap, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, stripSeller } from "@/app/api/admin/_helpers";
 
@@ -19,6 +19,8 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.seller.update({ where: { id }, data: { status: "terminated" } });
   if (seller.store) await db.store.update({ where: { id: seller.store.id }, data: { status: "draft" } });
+  // F-02 remediation: termination revokes every live session immediately.
+  const sessionsRevoked = await revokeUserSessions("seller", id);
 
   await notify({
     event: "seller.terminated",
@@ -34,8 +36,8 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     entityType: "seller",
     entityId: id,
     before: { status: seller.status, storeStatus: seller.store?.status ?? null },
-    after: { status: "terminated", storeStatus: seller.store ? "draft" : null, reason },
+    after: { status: "terminated", storeStatus: seller.store ? "draft" : null, reason, sessionsRevoked },
   });
 
-  return ok(stripSeller(updated));
+  return ok({ ...stripSeller(updated), sessionsRevoked });
 });

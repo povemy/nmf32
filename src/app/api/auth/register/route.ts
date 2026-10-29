@@ -8,10 +8,14 @@ import { handle, ok, fail, slugify, logActivity, notify } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { defaultHomeSections, defaultPageSections } from "@/lib/sections";
 import { ensureWalletAccounts } from "@/lib/ledger";
+import { rateLimit } from "@/lib/rate-limit";
 
 // POST /api/auth/register — seller self-service signup (M02)
 // Creates: seller (status=onboarding) + draft store w/ default template pages + wallet.
 export const POST = handle(async (req: NextRequest) => {
+  // F-12 remediation: account-creation throttle — 5 signups per minute per IP
+  // (shared "auth-register" bucket with the shopper register route).
+  rateLimit(req, "auth-register", 5);
   const body = (await req.json()) as {
     email?: string; password?: string; fullName?: string; displayName?: string;
     countryCode?: string; storeName?: string; storeSlug?: string; phone?: string;

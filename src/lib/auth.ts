@@ -44,10 +44,91 @@ export async function createSession(userType: "admin" | "seller" | "shopper", us
 }
 
 export async function destroySession(): Promise<void> {
+  // F-03 remediation: logout honours the Bearer bridge as well as the cookie —
+  // the presented token (Authorization header OR cookie) is retired, and when
+  // both exist (cookie + stale Bearer) BOTH session rows are deleted so a
+  // logout can never leave a second live token behind.
+  const tokens: string[] = [];
+  try {
+    const h = await headers();
+    const auth = h.get("authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) {
+      const t = auth.slice(7).trim();
+      if (/^[a-f0-9]{16,128}$/i.test(t)) tokens.push(t);
+    }
+  } catch {
+    /* headers unavailable in this execution context — fall through to cookie */
+  }
   const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  if (token) await db.session.deleteMany({ where: { token } });
+  const cookieToken = store.get(SESSION_COOKIE)?.value;
+  if (cookieToken) tokens.push(cookieToken);
+  for (const t of new Set(tokens)) {
+    await db.session.deleteMany({ where: { token: t } });
+  }
   store.delete(SESSION_COOKIE);
+}
+
+/** F-02 remediation: revoke EVERY live session for a principal. Wired on admin
+ * seller suspend / terminate / reject so an administrative action takes
+ * effect immediately — a suspended seller's existing tokens 401 on their very
+ * next request, and re-login is blocked at the login gate. Returns the number
+ * of sessions revoked (audited). */
+export async function revokeUserSessions(
+  userType: "admin" | "seller" | "shopper",
+  userId: string
+): Promise<number> {
+  const res = await db.session.deleteMany({ where: { userType, userId } });
+  return res.count;
+}
+
+/** F-03 remediation: rotate the PRESENTED session (Bearer or cookie).
+ * Delete-first — the old token dies before the new one is issued, so a stolen
+ * token cannot survive a credential change. Returns the fresh token (login
+ * JSON shape contract: { userType, <role>: {...}, token }) or null when no
+ * session was presented (caller should 401 → sign-in again). */
+export async function rotateSession(): Promise<string | null> {
+  let presented: string | null = null;
+  try {
+    const h = await headers();
+    const auth = h.get("authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) {
+      const t = auth.slice(7).trim();
+      if (/^[a-f0-9]{16,128}$/i.test(t)) presented = t;
+    }
+  } catch {
+    /* headers unavailable — fall through to cookie */
+  }
+  if (!presented) {
+    const store = await cookies();
+    presented = store.get(SESSION_COOKIE)?.value ?? null;
+  }
+  if (!presented) return null;
+
+  const existing = await db.session.findUnique({ where: { token: presented } });
+  // Delete-first: even when the row is missing/expired the presented token is
+  // treated as retired (idempotent), and no fresh session is minted for a
+  // session that no longer exists.
+  await db.session.deleteMany({ where: { token: presented } });
+  if (!existing || existing.expiresAt < new Date()) return null;
+
+  const fresh = randomToken(32);
+  await db.session.create({
+    data: {
+      token: fresh,
+      userType: existing.userType,
+      userId: existing.userId,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    },
+  });
+  const store = await cookies();
+  store.set(SESSION_COOKIE, fresh, {
+    httpOnly: true,
+    sameSite: "none",
+    secure: true,
+    path: "/",
+    maxAge: SESSION_TTL_MS / 1000,
+  });
+  return fresh;
 }
 
 export async function getSession(): Promise<SessionContext | null> {
@@ -103,9 +184,27 @@ export async function requireSeller(): Promise<SellerUserDTO> {
   };
 }
 
-/** Seller with an active store (approved / live). */
+/** Seller with a store — the STORE-OPERATIONS tier, now enforcing account
+ * status (F-02 remediation).
+ *
+ * Tier design (preserves the documented onboarding & approval process):
+ *   • identity tier — requireSeller(): any status; only /api/auth/me and
+ *     /api/store/onboarding use it (onboarding is separately status-gated to
+ *     onboarding|rejected, its documented pre-approval loop).
+ *   • THIS tier — every /api/store/** mutation route (56 routes): sellers
+ *     whose account was administratively SUSPENDED or TERMINATED are blocked
+ *     server-side (403), regardless of any client-side UI state. Onboarding-
+ *     tier statuses (onboarding / pending_review / rejected) remain allowed —
+ *     a rejected seller must still be able to revise their store and
+ *     resubmit for review (POST /api/store/onboarding allows rejected). */
 export async function requireActiveSellerStore() {
   const me = await requireSeller();
+  if (me.status === "suspended") {
+    throw new ApiError(403, "ACCOUNT_SUSPENDED", "This seller account is suspended — store operations are blocked.");
+  }
+  if (me.status === "terminated") {
+    throw new ApiError(403, "ACCOUNT_TERMINATED", "This seller account is terminated — store operations are blocked.");
+  }
   if (!me.storeId) throw new ApiError(400, "NO_STORE", "Store not created yet");
   const store = await db.store.findUnique({ where: { id: me.storeId } });
   if (!store) throw new ApiError(400, "NO_STORE", "Store not found");

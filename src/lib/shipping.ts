@@ -451,7 +451,7 @@ function shapeShipment(s: ShipmentWithRelations): ShipmentSnapshot {
 // Delivery side-effects (shared by courier sync + manual seller deliver)
 // ---------------------------------------------------------------------------
 
-async function deliverySideEffects(input: {
+export async function deliverySideEffects(input: {
   order: { id: string; orderNumber: string; customerEmail: string; shopperId: string | null; storeId: string };
   storeSlug: string | null;
   courierName: string | null;
