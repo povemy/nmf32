@@ -479,3 +479,27 @@ full-audit-report.md status updates (preserving historical findings), this check
       (DONE 2026-10-31 — remediation log Phases 4+5 written; audit report:
       remediation-status banner + per-finding status column (REMEDIATED P1–P5
       / OPEN-deferred for F-20/F-27/F-28 only); worklog session entry added.)
+
+## Addendum #10 — Task H: Post-Remediation Verification Gate (DONE)
+
+- [x] H1 Independent verification of Task G against full-audit-report.md and
+      the CURRENT repo (incl. post-remediation UI commits).
+      (DONE — 7 runtime probe suites, 144 checks, ALL PASS: A CSRF/webhooks/
+      gateway 26/26; B production fail-closed isolated 8/8; C suspension
+      lifecycle + rotation 23/23; D admin caps 33/33; E chat 18/18; G order
+      lifecycle + money invariants 45/45; F isolation + rate limits 14/14.
+      tsc src 0 errors; lint 0 errors/18 pre-existing warnings; browser E2E
+      clean (PDP copy, wallet RM 10.00, commission badges, moderator nav
+      gating, zero console errors). Probe files: tool-results/gate-probe-*.ts)
+- [x] H2 Criticals F-01/F-02+F-24/F-03/F-04 — all PASS at runtime.
+      (DONE — see security-remediation.md Task H section §1.)
+- [x] H3 High-risk + linkage findings verified; OPEN items classified, not
+      silently removed (F-20/F-27/F-28 OPEN-deferred, unchanged).
+      (DONE — Task H §2/§3.)
+- [x] H4 Reports updated (security-remediation.md Task H section,
+      full-audit-report.md verification banner, this register).
+      (DONE.)
+- [x] H5 Completion gate verdict recorded.
+      (DONE — READY for Seller Insights & Marketing Intelligence; production
+      deployment prerequisites (secrets + CI build + OPEN findings) remain
+      separate and scheduled. NOT a production-readiness claim.)

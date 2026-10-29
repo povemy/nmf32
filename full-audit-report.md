@@ -17,6 +17,10 @@
 > - **REMEDIATED:** F-01, F-02/F-24, F-03, F-04 (P1 — CRITICALs) · F-05, F-06, F-12/F-19, F-13 (P2) · F-09, F-18, F-22, F-25, F-26 (P3) · F-07 (removed), F-08 (wired), F-10 (labeled), F-11 (wired), F-14, F-15, F-16 (labeled), F-17 (P4) · F-21 (P5 addendum) · F-23 (.env.example P1 + boot warning P5; dev-fallback behaviour documented)
 > - **OPEN — deferred:** F-20 (marketplace-connections `OR storeId:null` cross-store visibility + global-row disconnect — out of Task G scope, unaddressed; recommend scheduling) · F-27 (anonymous auto-published reviews — LOW, unaddressed) · F-28 (un-throttled order lookup/receipt enumeration — LOW, unaddressed). These are the only audited findings without remediation; all are pre-existing and unchanged since the audit snapshot.
 > - **Build gate:** 47 src tsc build-blockers → **0** (P5); lint 0 errors; `next build` itself NOT RUNNABLE in this sandbox (dev-only policy) — must run in CI/staging.
+>
+> ## INDEPENDENT VERIFICATION (Task H — post-remediation gate)
+>
+> **All four CRITICAL findings re-verified at RUNTIME by an independent probe campaign (144 checks, 7 suites + production-mode isolated execution + browser E2E): F-01, F-02/F-24, F-03, F-04 = PASS.** All in-scope high-risk and linkage findings = PASS (F-20/F-27/F-28 remain OPEN-deferred, unchanged, not silently removed). Core money path (checkout → payment → inventory → wallet → ledger → refund → scheduler) regression-verified; seller isolation runtime-tested live (closing audit §6.3.8). tsc src 0 errors, lint 0 errors. Full per-finding evidence, honest limits and required production configuration: `performance/security-remediation.md` §"Post-Remediation Verification Gate (Task H)". **Verdict: repository READY to proceed to the Seller Insights & Marketing Intelligence implementation — not a production-readiness claim (deployment prerequisites remain separate).**
 
 ---
 

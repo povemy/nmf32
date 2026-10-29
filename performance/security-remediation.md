@@ -242,3 +242,138 @@ Baseline 47 src `tsc` errors (hard `next build` blockers per Phase 0 classificat
 - **Source-level gate: PASS** — `tsc` src-clean (0 errors), lint 0 errors, dev server runs every touched route without runtime errors, all probes green.
 - **`next build`: NOT RUN HERE** — the sandbox forbids production builds (dev server only, port 3000; environment policy). With `ignoreBuildErrors:false`, src-clean ⇒ no known TS build blockers remain, but the actual build must run in CI/staging before launch. Labeled NOT TESTED (environment), not PASS.
 - **Sandbox OOM note:** the 3.9 GB sandbox OOM-killed `next-server` 4× during this session (heavy admin-view compiles / concurrent tsc runs). Mitigation applied: never run `tsc`/lint concurrently with route compiles; dev server + mini-services restarted with the durable orphan pattern (`bash -c 'nohup … >> log 2>&1 &'`; `setsid &` is killed at tool-call boundaries — documented in `scripts/dev-supervisor.sh`).
+
+---
+
+# Post-Remediation Verification Gate (Task H — independent verification)
+
+| | |
+|---|---|
+| **Date executed** | 2026-10-29 (sandbox clock) / session 2026-10-31+ — Asia/Kuala_Lumpur |
+| **Mandate** | Independently verify the Task G remediation against `full-audit-report.md` and the CURRENT repository (including the two post-remediation UI commits `0da0b29`/`65a5eb2`/`d57414e`/`7612414` — dashboard restyle + Seller-Insights nav reorg + Markets API docs), and decide whether NOMOFEE may proceed to the Seller Insights & Marketing Intelligence feature. |
+| **Method** | Read-analyse-understand of audit + remediation log → direct source re-reads → **7 runtime probe suites (144 checks) against the live dev server** → production fail-closed branches exercised in isolated `NODE_ENV=production` module executions → `tsc`/`lint` → agent-browser E2E. A successful grep was NOT accepted as evidence for any runtime-testable behavior. |
+| **Baseline verified** | git `main` @ `7612414`, clean tree (only scheduler state + probe outputs). All 8 security-critical engine files UNCHANGED since `79a1e17` (proxy.ts, auth.ts, psp.ts, commission.ts, webhooks/payments/process.ts, checkout.tsx, payment-methods.ts, analytics-tick) — the post-remediation commits touched UI components only, and those were re-verified live anyway. |
+| **Environment** | Dev sandbox (`NODE_ENV=development`, webapp :3000, chat hub :3003, scheduler :3005, relay :3103, Caddy gateway :81 live). Production deployment access does NOT exist — production branches verified by isolated execution with `NODE_ENV=production`, never by code-read alone. |
+
+## 1. The four critical findings — verdicts
+
+### F-01 (CSRF) — **PASS**
+- **Files inspected:** `src/proxy.ts` (full read — origin/Sec-Fetch-Site/content-type/Bearer rules + self-authenticated exemption list).
+- **Tests executed (live, `tool-results/gate-probe-a-csrf-webhooks.ts`, 8/8 PASS):** cross-site Origin → 403 `CSRF_REJECTED`; same-origin Origin → passes gate (route 401); no-Origin non-browser POST → passes; `Sec-Fetch-Site: cross-site` → 403; urlencoded form POST → 415 `UNSUPPORTED_MEDIA_TYPE`; Bearer + cross-site Origin → passes (iframe bridge intact); `Origin: null` → 403; GET unaffected.
+- **Exemption correctness:** webhook route with cross-site Origin + valid HMAC → exempted, reaches route (404 INTENT_NOT_FOUND) — self-authenticated routes are not blocked by the CSRF gate.
+- **Legitimate flows unbroken:** every login/checkout/mutation probe across all 7 suites passed THROUGH the gate (Bearer bridge); browser E2E logins (seller/admin/moderator) all worked.
+- **Limitations:** browsers sending neither Origin nor Sec-Fetch-Site are allowed by design (non-browser class; route guards still apply) — documented residual, unchanged.
+
+### F-02/F-24 (seller suspension) — **PASS**
+- **Files inspected:** `lib/auth.ts` (`requireActiveSellerStore` status gates, `revokeUserSessions`), `auth/login/route.ts` (suspended/terminated 403s), `store/publish/route.ts` (republish gates), `admin/sellers/[id]/suspend|terminate|reject` (revocation wiring), `store/payouts`, `store/me` guards.
+- **Tests executed (live, `tool-results/gate-probe-c-suspension-rotation.ts`, 23/23 PASS):** fresh seller register → onboarding access PRESERVED (approval loop intact); admin approve → active ops 200; suspend with live session → `sessionsRevoked≥1` audited; existing session 401 immediately; re-login → 403 `ACCOUNT_SUSPENDED`; **forged live session (DB-injected — bypasses revocation)** still blocked: `store/me`, payout request, product mutation, republish → all 403 `ACCOUNT_SUSPENDED`; terminate → login 403 `ACCOUNT_TERMINATED`; post-terminate forged session → 403 `ACCOUNT_TERMINATED` on me + republish; test data fully cleaned.
+- **Notable strength found during verification:** `terminate` ALSO revokes sessions injected after suspension (observed live — the earlier forged token was correctly killed by the terminate call).
+- **Limitations:** none material.
+
+### F-03 (password change + build errors) — **PASS**
+- **Files inspected:** `me/password/route.ts` (three-principal rotation), `lib/auth.ts` (`rotateSession` delete-first + Bearer/cookie aware), `lib/password.ts` (`safeEqualHex`), `lib/psp.ts` (adapter contract types).
+- **Tests executed (live, in Probe C, 6/6 PASS):** wrong current password → 400 `INVALID_CURRENT_PASSWORD`; correct change → 200 + fresh token; **old token 401**; new token 200; new-password login works; old-password login 401.
+- **Build errors:** `bunx tsc --noEmit` → **0 errors in `src/`** (607 total, ALL in `scripts/`+`tool-results/` dev-tooling — classified debt outside the Next build graph, incl. this gate's own probe files; same classification as remediation). `bun run lint` → **0 errors**, 18 warnings (pre-existing, scripts/tool-results).
+- **Limitations:** `next build` NOT RUNNABLE in this sandbox (dev-only policy) — must pass in CI/staging before deployment. tsc-src-clean ⇒ no known TS build blockers remain (`ignoreBuildErrors:false`).
+
+### F-04 (webhook secret) — **PASS**
+- **Files inspected:** `webhooks/payments/process.ts` (lazy `webhookSecret()`, timing-safe compare, ±10-min replay window, claim-first Serializable).
+- **Tests executed:**
+  - Live signature matrix (`gate-probe-a`, 6/6 PASS): valid sig + unknown ref → 404 `INTENT_NOT_FOUND` (authentication passed); wrong sig → 400 `BAD_SIGNATURE`; correctly-signed 30-min-old event → 400 `STALE_EVENT` (replay guard); missing sig → 400; cross-site Origin + valid HMAC → CSRF-exempt; empty ref → 400 `BAD_REQUEST`.
+  - **Production fail-closed (isolated `NODE_ENV=production`, `gate-probe-b`, 2/2 PASS):** `PSP_WEBHOOK_SECRET` unset → **503 `WEBHOOK_SECRET_UNSET`** (no demo-constant fallback); set → returns env value.
+  - **Invalid signatures cannot create financial state (live):** every BAD_SIGNATURE/STALE probe left no order/refund/ledger change (all rejected before intent lookup); Probe F's cross-tenant checks confirm no state changes.
+  - **Valid signed events still work (live, Probe G):** server-signed `payment.succeeded` via `/simulate` → order `paid`, webhook log `signatureValid=true processed=true`, wallet credited, ledger T1 posted, inventory decremented.
+- **Required production config:** `PSP_WEBHOOK_SECRET` MUST be set (boot warning + 503 until then — fail closed, not open).
+
+## 2. High-risk findings — verdicts
+
+| Finding | Verdict | Evidence (tests actually executed) |
+|---|---|---|
+| **F-05 shipping webhook auth + replay** | **PASS** | Live matrix 5/5 (no sig → 400; wrong sig → 400; valid sig + unknown AWB → 404 no state change; stale signed → 400 STALE_EVENT; forged status value → 400 VALIDATION whitelist). Production-mode isolated 4/4: sig presented + secret unset → **503 SHIPPING_SECRET_UNSET**; no-sig + unset secret → 400 (rejected BEFORE secret resolution — ordering verified, both paths fail closed); secret set + wrong sig → 400; correct sig + unknown AWB → 404 (valid events work). |
+| **F-06 chat socket auth / rooms / relay / gateway** | **PASS** | Live 18/18 (`gate-probe-e-chat.ts`): hub-auth garbage token 401; membership decisions (own user room allowed, other's denied, participant thread allowed, unknown thread denied); unauthenticated + garbage-token sockets DISCONNECTED by hub; shopper A receives own/participant events only; non-participant B denied; store-owner seller receives via ownership; relay no/wrong secret → 401. Gateway allowlist live on :81 (3/3): `XTransformPort=3103` and `=3005` fall through to the webapp (internal ports NOT proxied); `=3003` reaches the hub. |
+| **F-13 mock PSP fail-closed** | **PASS** | Isolated production: `mockPspAllowed()` with Setting row missing → **false**; simulate route in production → **404** (mock rails closed). Dev row `psp.mock.enabled` confirmed absent in DB (default-denied posture). |
+| **F-12 login/register rate limiting** | **PASS** | Live: login 429 fires within 10/min with `RATE_LIMITED` code; register 429 within 5/min; invalid registrations created **0** accounts. All 4 auth routes carry `rateLimit` (source read + live firing). Legitimate logins unblocked across all suites (spacing respected). |
+| **F-19 demo credentials out of client bundle** | **PASS** (static — bundle membership is source-derived) | `admin-shell.tsx` contains no `DEMO_ACCOUNTS`/credentials (only a literal "DEMO" badge label); seeded passwords env-overridable server-side (`SEED_*_PASSWORD`), documented in `.env.example` only. |
+| **F-09/F-18/F-25/F-26 admin capability checks** | **PASS** | Live matrix 33/33 (`gate-probe-d-admin-caps.ts`): moderator denied on commission/hold PATCH (F-09), seller-detail PII, kyc-queue, banks, bulk CSV export, commission analytics + CSV download, webhook-delivery replay (F-25), featured-stores PUT (F-18), coupon create; **split-guard preserved** (moderator `marketplaceOptIn`-only PATCH → 200); legitimate surfaces preserved (seller list, report aggregates, coupon list); finance tier correct (banks/detail/analytics/export 200; kyc-queue correctly 403); superadmin passes; seller/shopper/anonymous → 401. Browser: moderator nav hides KYC Queue/Banks/Overrides/Fee Holidays/Coupons/Settings — matches server matrix (Simulator/Ledger-Explorer/Reports visible = admin-wide routes by documented design; UI == API). |
+| **F-26-class money/PII reads** | **PASS** | Included in the 33/33 matrix above. |
+| **F-20 marketplace connection isolation** | **OPEN** (unchanged) | `connections/route.ts:15` + `disconnect/route.ts:18` still query/mutate `OR storeId:null` global rows — pre-existing, explicitly deferred out of Task G scope, NOT silently dropped. Cross-store leak of unclaimed platform connections + global-row disconnect mutation. Recommend scheduling as its own task (small, self-contained). |
+| F-27 anonymous auto-published reviews | **OPEN** (LOW, deferred) | unchanged since audit |
+| F-28 order lookup/receipt enumeration | **OPEN** (LOW, deferred) | unchanged since audit |
+
+## 3. Configuration & attribute linkage — verdicts
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| **F-08 commission overrides wired** | **PASS** | Engine (`lib/commission.ts`) UNCHANGED since the 32/32 live Phase-4 matrix; real-order evidence this session: item snapshot `commissionPercent=0.5` + `commissionMinor=100` (min-commission floor honoured: max(0.5%×RM89, RM1)=100) + `breakdownJson` present; refund reversal 92 ≤ earned 100 (cumulative cap intact). |
+| **F-10 hold-release policy + grace days** | **PASS (labeled, not wired — honest)** | Browser: superadmin Commission form renders both "Not enforced" amber badges + hints. Explicitly marked unavailable; no invented business rule. |
+| **F-11 analytics retention** | **PASS** | `analytics-tick` reads Setting `analytics.retention_days` (Setting-primary, env fallback, 7–730 clamp) — code re-read; Phase-4 live matrix stands (file unchanged since). |
+| **F-14 payment-provider config** | **PASS** | Single source `lib/payment-methods.ts` (5 methods incl. `fpx_curlec`); server validation `KNOWN_PAYMENT_METHODS` live in checkout (Probe G order placed with `fpx_toyyibpay`; prior E2E used `fpx_curlec`). |
+| **F-15 checkout expiry display** | **PASS** | Server truth verified live: payment group persisted with ~30-min `expiresAt` (Probe G); UI countdown code unchanged since Phase-4 browser verification (29:38 live then). |
+| **F-07 feature flags dead surface** | **PASS (removed)** | `/api/admin/feature-flags` → 404; zero `db.featureFlag` runtime readers (only a removal-note comment in system.tsx). |
+| **F-17 payout-minimum display** | **PASS** | Browser: seller Wallet shows live **RM 10.00** minimum (survived the post-remediation wallet.tsx restyle). |
+| **F-16 buyer-protection policy** | **PASS (labeled honestly)** | Browser: PDP renders "Buyer protection — returns & refunds supported" (no fabricated window). |
+| Markets route API documentation | **PASS (exists)** | `docs/seller-insights/markets-api.md` (273 lines) + `metric-definitions.md` — landed in `d57414e` for the upcoming dashboard work. |
+
+## 4. Core behaviors after the security changes — regression verdicts
+
+| Behavior | Verdict | Evidence |
+|---|---|---|
+| Checkout | **PASS** | Live E2E: create (Idempotency-Key enforced, 201, server pricing) → simulate → paid; 4 orders through the full path this session. |
+| Payment (valid signed events) | **PASS** | Probe G: signature valid + processed webhook log rows; exactly the F-04 "still works" requirement. |
+| Inventory | **PASS** | Decrement on payment (−1), restock on refund (+1), InventoryLog written. |
+| Wallet | **PASS** | pendingMinor credited on payment; **wallet cache == ledger truth** verified via the app's own `walletTruth()` (pending/available parity on both refunded orders). |
+| Ledger | **PASS** | T1 postings per order; **T5 refund postings balanced** (DR 8808+92 = CR 8900) with `refund:refund:{id}` dedupKey; commission-reversal cap enforced. |
+| Refund | **PASS** | Full flow ×3 this session (request → approve → process): statuses terminal, wallet totals decreased by seller share, stock restored, order `partially_refunded`. In-hold semantics correct (pending constant by design — debit nets at maturity). |
+| Scheduler | **PASS** | expiry-scheduler :3005 alive (state.json fresh, 30 s interval); cron routes 200 live (expiry-sweep, refund-reconcile, analytics-tick); dev.log shows continuous successful ticks; alert history stale (last alert 06:00, from an old restart window). |
+| **Seller isolation (live — the audit's §6.3.8 "NOT TESTED at runtime" gap)** | **PASS** | Two-session abuse test executed (`gate-probe-f`, 14/14): seller A (lumina) → B's (glow) order by id AND orderNumber → 404; B's product GET/PATCH → 404; refund-request on B's order → 404; positive controls both directions 200. |
+| Buyer ownership | **PASS** | Shopper sees own order 200 (Probe G); cross-principal 401s (Probe D). |
+
+## 5. Executed checks — totals
+
+| Suite | Checks | Result | File |
+|---|---|---|---|
+| A — CSRF + webhook signatures + gateway + public | 26 | **26 PASS** | `tool-results/gate-probe-a-csrf-webhooks.ts` |
+| B — production fail-closed (isolated NODE_ENV=production) | 8 | **8 PASS** | `tool-results/gate-probe-b-prod-failclosed.ts` |
+| C — suspension lifecycle + password rotation | 23 | **23 PASS** | `tool-results/gate-probe-c-suspension-rotation.ts` |
+| D — admin capability matrix | 33 | **33 PASS** | `tool-results/gate-probe-d-admin-caps.ts` |
+| E — chat hub auth + relay | 18 | **18 PASS** | `tool-results/gate-probe-e-chat.ts` |
+| G — order lifecycle E2E (+G-verify money invariants) | 23 + 22 | **45 PASS** (G's 5 initial "fails" were probe-assertion bugs — response shapes/201/case — corrected in G-verify with correct semantics; no code defect found) | `tool-results/gate-probe-g-order-lifecycle.ts`, `gate-probe-g2-verify.ts` |
+| F — isolation + rate limits | 14 | **14 PASS** | `tool-results/gate-probe-f-isolation-ratelimit.ts` |
+| tsc / lint | — | src **0 errors**; lint **0 errors / 18 pre-existing warnings** | — |
+| Browser E2E | — | home renders; PDP honest copy; seller wallet RM 10.00; admin commission badges; moderator nav gating; **zero browser console/page errors; zero 5xx / errors in dev.log across the entire campaign** | screenshots: `tool-results/gate-browser-{home,moderator}.png` |
+
+## 6. Test hygiene (probe-induced state changes — all documented)
+
+- **Gate orders NM-103629–NM-103632** (lumina-living, RM 97 each): created by the probe campaign, taken through pay → refund → restock; left in the dev DB as money-consistent artifacts (deleting would falsify the ledger mirror). Wallet cache == ledger truth verified on them.
+- 4 order-bound probe shoppers kept (FK), 4 orderless removed.
+- Rejected/stale webhook probe deliveries logged in `PaymentWebhookLog` with `signatureValid=false` (by-design logging).
+- **One probe-induced data mutation, caught and RESTORED:** the first Probe-D run read `marketplaceOptIn` from a wrong response path and wrote `false` to seller `lt-si-b-mvs909g7` (moderator-tier field — allowed, but not the intended no-op). Restored to `true`; all subsequent runs used correct no-op values (verified post-run). No other writes to seeded data.
+- Suspension + chat probes: full DB cleanup executed and verified.
+
+## 7. Honest limits
+
+1. **`next build` NOT RUNNABLE in this sandbox** (dev-only policy). Source-level gate PASS (tsc src-clean, lint clean) ⇒ no known TS build blockers; the actual build MUST run in CI/staging before any deployment. NOT TESTED (environment), not claimed as PASS.
+2. **Production deployment access does not exist.** All production fail-closed branches were verified by isolated execution of the REAL route/module code under `NODE_ENV=production` with controlled env — not by code-read alone, but also not against a real production deployment.
+3. **Caddy external reachability:** the :81 gateway port allowlist was verified live from inside the sandbox; the external network path is an environment property (same honest limit as the audit).
+4. Redis rate-limit path untested (`RATE_LIMIT_REDIS_URL` unset — in-memory limiter only, single-process).
+5. Load/capacity behavior (checkout rush, PSP retry storms) — out of this gate's scope; covered by the F1/F2/F3 readiness runs and their own open items.
+
+## 8. Required production configuration / deployment actions (carry-forward)
+
+1. Set `PSP_WEBHOOK_SECRET` (else payment webhooks 503 fail-closed — correct but disabled).
+2. Set `SHIPPING_WEBHOOK_SECRET` (same fail-closed posture for tracking webhooks).
+3. Set `CHAT_RELAY_SECRET` (production relay rejects all broadcasts without it).
+4. Set `CRON_SECRET` + `METRICS_TOKEN` (fail-closed / disabled until set).
+5. Run `next build` in CI/staging (sandbox cannot).
+6. Review the seeded 10% Glow commission override row (live since F-08 wiring — intended, but an ops decision).
+7. Schedule remediation for the three OPEN items: **F-20** (marketplace connections cross-store visibility + global-row disconnect), F-27 (anonymous reviews), F-28 (lookup throttling).
+
+## 9. Completion gate — verdict
+
+**All four critical findings PASS at runtime. All in-scope high-risk findings PASS (or are explicitly OPEN and unchanged, none silently removed). Core money-path behaviors verified unregressed.**
+
+### ✅ The repository is READY to proceed to the Seller Insights & Marketing Intelligence implementation.
+
+Grounds: the four CRITICALs (F-01/F-02+F-24/F-03/F-04) are independently runtime-verified; the auth/authorization baseline they underpin is intact (60/60-class matrix re-verified 33/33 live); the money path (checkout → payment → inventory → wallet → ledger → refund) is regression-verified end-to-end including seller-isolation at runtime; the Seller Insights data plane (analytics queries, markets API) is untouched by any open finding and its route API is already documented (`docs/seller-insights/markets-api.md`).
+
+This is NOT a production-readiness claim: deployment prerequisites (§8 secrets, CI build, capacity work in the F1/F2/F3 readiness track, and the three OPEN findings) remain separate and explicitly scheduled.
