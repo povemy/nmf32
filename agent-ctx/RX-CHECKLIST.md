@@ -346,3 +346,45 @@ pending action gets its OWN card with a large count and urgency colors/sizing.
       NOT TESTED: days_after_delivered display variant (not implemented at runtime;
       copy never claims it). Worklog appended. VLM's "N badge over sidebar" note =
       pre-existing global portal-switcher FAB (fixed 10,10, draggable by design).
+
+---
+
+# Addendum #9 — Task F: FULL webapp linkage & auth audit (full-audit-report.md)
+
+**User request (verbatim intent):** "Run full audit regarding this kind of issue towards
+the whole webapp structure & all auth (admin,seller,buyer), ensure all attributes are
+actually linked and synced. I need the report in full-audit-report.md file."
+
+**Scope:** static code audit (evidence = file:line), NO code changes in this task.
+1. Attribute-linkage audit across ALL surfaces (admin / seller / buyer / storefront /
+   cron / webhooks / mini-services): every platform-controlled attribute
+   (commission %, hold days, fixed fee, min commission, payout min, payout mode,
+   moderation first-N, PSP settings, feature flags, footer visibility, retention,
+   etc.) → authoritative source → every consumer → LINKED / SNAPSHOT-OK (money math) /
+   HARDCODED / UNWIRED classification.
+2. Auth audit for all three roles + public surface: session model, per-route guards,
+   role capability checks, cross-tenant isolation (seller A vs B, buyer vs seller),
+   cron/webhook/chat-service authentication, rate limits, CSRF posture
+   (SameSite=None cookie), suspended/terminated account enforcement.
+
+**Ground rules (inherited):** PASS/FAIL/NOT TESTED/BLOCKED only for executed checks;
+audit claims must cite file:line; documentation ≠ implementation; runtime spot-checks
+limited to read-only GETs on the running dev server. Report file:
+/home/z/my-project/full-audit-report.md (user-requested location).
+
+**Phase checklist**
+- [x] F1 Register this task (this addendum).
+- [x] F2 Parallel audit agents: (a) SSOT & consumers, (b) seller backend, (c) admin +
+      buyer + storefront, (d) auth core & cross-cutting. All read-only.
+- [x] F3 Spot-verify top findings with direct reads — 18 direct reads incl.
+      process.ts:49 (webhook secret fallback), wallet.tsx:336 (RM 50), checkout
+      timer 10 vs 30 min, analytics-tick env-vs-Setting, vouchers scope mismatch,
+      login status gate, reviews route, admin PATCH guards, Caddyfile, chat hub.
+      tsc --noEmit: TS2724 rotateSession + TS2305 safeEqualHex VERIFIED.
+- [x] F4 full-audit-report.md compiled at project root: 30-row attribute matrix,
+      4 CRITICAL / 7 HIGH / 13 MEDIUM / 15 LOW findings, remediation priorities.
+- [x] F5 Runtime probes (one command window; watchdog-assisted revival):
+      10/10 unauth guards 401 PASS; platform/terms live values PASS;
+      settings/site & sf/app-config consistent PASS; anonymous review publish
+      FAIL (confirmed, probe deleted + aggregates restored); lookup unthrottled
+      FAIL. Zero code changes; one probe review reverted (§6.2 of the report).

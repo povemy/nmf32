@@ -1837,3 +1837,23 @@ EVIDENCE:
   additive read-only endpoints + UI copy only; smoke covers the golden paths).
 - NOT TESTED: holdReleaseRule=days_after_delivered display variant (not implemented at
   runtime — copy deliberately never claims it).
+
+## 2026-10-29 — Task F: Full webapp linkage & auth audit (full-audit-report.md)
+- Commissioned after the Platform-Commission-card desync class; user ordered a
+  full-structure + all-auth (admin/seller/buyer) audit with a report file.
+- Executed per RX-CHECKLIST Addendum #9: 4 parallel read-only audit agents
+  (F2-a SSOT/consumers, F2-b seller backend, F2-c admin+buyer+storefront, F2-d
+  auth core/cross-cutting) → 18 direct spot-verification reads → tsc --noEmit →
+  runtime probes (watchdog-assisted; sandbox recycler kills dev server between
+  tool calls).
+- Deliverable: /home/z/my-project/full-audit-report.md — 30-row attribute linkage
+  matrix; guard tables for all 3 portals; tenant-isolation PASS; findings register
+  4 CRITICAL (CSRF systemic; suspension cosmetic; rotateSession TS2724 broken
+  password-change; webhook secret fail-open) / 7 HIGH / 13 MEDIUM / 15 LOW;
+  remediation priorities P0-P3.
+- Positive verification: prior seller-terms linkage (Addendum #8) holds end-to-end;
+  live terms runtime PASS; 10/10 unauth guard probes 401 PASS; zero cross-tenant
+  store routes; zero unguarded admin routes.
+- Runtime-confirmed defects: anonymous auto-published reviews (probe review deleted,
+  aggregates restored); order-lookup unthrottled.
+- Zero production code changes (audit-only). One write probe reverted cleanly.
