@@ -8,10 +8,13 @@ import { toJson } from "@/lib/json";
 import { findCartForShopper } from "../../cart/cart";
 import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
 import { withCheckoutAdmission } from "@/lib/checkout-gate";
+import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
 
 export const dynamic = "force-dynamic";
 
-const KNOWN_PROVIDERS = ["fpx_toyyibpay", "fpx_curlec", "tng", "grabpay", "card_stripe"];
+// F-14: single source of truth — the buyer-facing method list lives in
+// lib/payment-methods.ts and is shared with the shopper checkout UI, so the
+// server-accepted set and the buyer-selectable set can never drift again.
 
 // POST /api/checkout/create — header Idempotency-Key REQUIRED.
 // OPTION B (one licensed-PSP charge per checkout; no platform custody): the
@@ -99,8 +102,8 @@ export const POST = handle(async (req: Request) => {
   if (customerPhone && !/^[+()\d\s-]{6,20}$/.test(customerPhone)) throw new ApiError(400, "VALIDATION", "customer.phone is invalid");
 
   const provider = String(body.provider ?? "fpx_toyyibpay");
-  if (!KNOWN_PROVIDERS.includes(provider)) {
-    throw new ApiError(400, "INVALID_PROVIDER", `provider must be one of: ${KNOWN_PROVIDERS.join(", ")}`);
+  if (!KNOWN_PAYMENT_METHODS.includes(provider)) {
+    throw new ApiError(400, "INVALID_PROVIDER", `provider must be one of: ${KNOWN_PAYMENT_METHODS.join(", ")}`);
   }
 
   // Shipping address — full destination is REQUIRED (drives delivery eligibility).

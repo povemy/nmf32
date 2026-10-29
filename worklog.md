@@ -1885,3 +1885,54 @@ EVIDENCE:
   lint 0 errors. Phase 2 log section reconciled with committed 9fe703e evidence.
 - Ops note: dev server had been OOM-killed (next-server 1.8GB RSS vs 4GB sandbox);
   relaunched detached (setsid -f) and verified stable across commands.
+
+## 2026-10-31 — Task G Phase 4 + Phase 5 (SEC-PHASE4/5)
+
+- Phase 4 (config/functional consistency — wire/label/remove, all live-verified):
+  - F-08 WIRED: resolveRate resolves CommissionOverride rows interleaved by scope
+    (product-row > product-field > category-row(nearest) > category-field >
+    seller-row > seller-field > global), field-wise percent/fixedFee/holdDays,
+    earliest-createdAt tie-break. Dead `name` field write removed from the PATCH
+    route. NUL-sentinel bug found & fixed (Postgres 22021). Seeded 10% glow row
+    now live (intended). Evidence: phase4-config-probe.ts 32/32 PASS + real order
+    NM-103628 snapshot (fpx_curlec, 0.5% global, min_commission_floor).
+  - F-11 WIRED: analytics-tick retentionDays reads Setting analytics.retention_days
+    (env fallback, clamped 7-730). Live matrix in the same probe.
+  - F-15 WIRED: checkout countdown driven by server expiresAt (29:38 live).
+  - F-14 WIRED: lib/payment-methods.ts single source (5 methods incl. fpx_curlec);
+    create route + shopper UI consume it; Curlec E2E order passed end-to-end.
+  - F-17 FIXED: wallet empty-state uses live formatMinor(minPayout) (RM 10.00).
+  - F-16 LABELED: fabricated "7-day buyer protection" copy removed (PDP + FAQ
+    template) — return flow is status-gated, no window exists in code.
+  - F-10 LABELED: NOT-ENFORCED badges + hints on grace-days and hold-release-rule
+    admin controls (browser-verified).
+  - F-07 REMOVED: dead Feature Flags page + nav + route; FeatureFlag table/seed
+    kept inert; zero db.featureFlag readers remain; route 404.
+  - F-12 registry honesty: psp.payouts.mode wired:false (dormant adapter scaffold,
+    zero live callers — verified); payments.providers description corrected
+    (methods come from lib/payment-methods.ts, NOT psp.ts); retention note updated.
+- Phase 5 (build gate): 47 → 0 src tsc build blockers.
+  - me/follows schema-drift rewrite (shopperUserId/followers/compound-unique);
+    live GET/POST/DELETE cycle 6/6.
+  - Dead code removed: admin/campaigns.tsx (zero importers — live CampaignsView is
+    in marketing.tsx; verified live view E2E preset→create→delete instead),
+    orders/[id]/shipping/quote route (dead duplicate of store/shipping/quote),
+    reReserveOrderStock (superseded by the refund-based late-payment policy).
+  - metrics route: prismaBase→db + structural $metrics cast + fail-closed 503.
+  - parseSellerVoucherInput implemented in lib/vouchers.ts (create+edit share one
+    validator); F-21 scope fix ("seller"→"STORE") — own-voucher PATCH 200 live
+    (was always 404); unknown-id 404 preserved.
+  - F-23 residual: IMPORT_TOKEN_ENC_KEY dev-fallback now errors loudly at
+    production boot (instrumentation PRODUCTION_DOWNGRADE_SECRETS).
+- Gates: tsc src 0 errors (282 scripts/tool-results debt, classified non-build);
+  lint 0 errors/18 pre-existing warnings; phase4-config-probe re-run 32/32;
+  phase5 regression probes green; agent-browser golden paths all clean; services
+  :3000/:3003/:3005 healthy. next build NOT RUNNABLE in sandbox — source-level
+  PASS only, CI must run the real build (honestly labeled).
+- Reports: security-remediation.md Phases 4+5; full-audit-report.md remediation
+  banner + per-finding statuses (OPEN-deferred: F-20, F-27, F-28 only);
+  RX-CHECKLIST G9/G10/G11 closed.
+- Ops: next-server OOM-killed 4× this session (4GB sandbox vs ~1.9GB RSS + heavy
+  compiles) — durable restart pattern applied (bash -c nohup orphan-to-init;
+  setsid& dies at tool-call boundaries per dev-supervisor.sh canary note);
+  tsc/lint never run concurrently with compiles.

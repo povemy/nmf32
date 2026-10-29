@@ -333,7 +333,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
         </CardHeader>
         <CardContent>
           {data.payouts.length === 0 ? (
-            <EmptyState title="No payouts yet" hint="Payout batches run when your available balance clears the minimum (RM 50)." />
+            <EmptyState title="No payouts yet" hint={`Payout batches run when your available balance clears the minimum (${formatMinor(minPayout)}).`} />
           ) : (
             <div className="overflow-x-auto">
               <Table>

@@ -461,8 +461,11 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             <span className="inline-flex items-center gap-1.5">
               <Truck className="h-4 w-4 text-teal-700" /> Standard RM 8 · FREE over RM 100
             </span>
+            {/* F-16: copy must not claim a window the return flow does not
+                enforce — after-sales requests are status-gated (not time-boxed),
+                so the badge states the real guarantee without a number. */}
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" /> 7-day buyer protection
+              <ShieldCheck className="h-4 w-4 text-emerald-600" /> Buyer protection — returns &amp; refunds supported
             </span>
           </div>
 

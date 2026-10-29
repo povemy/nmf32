@@ -1,11 +1,11 @@
 {
   "service": "expiry-scheduler",
-  "startedAt": "2026-10-29T03:49:47.668Z",
+  "startedAt": "2026-10-29T05:33:50.222Z",
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-29T04:44:18.603Z",
-      "lastSuccessAt": "2026-10-29T04:44:18.786Z",
+      "lastTickAt": "2026-10-29T05:40:21.449Z",
+      "lastSuccessAt": "2026-10-29T05:36:51.974Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 121,
-        "at": "2026-10-29T04:44:18.744Z",
+        "durationMs": 425,
+        "at": "2026-10-29T05:36:51.890Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
-      "consecutiveFailures": 0,
-      "lastError": null,
-      "ticks": 1208
+      "consecutiveFailures": 7,
+      "lastError": "Unable to connect. Is the computer able to access the url?",
+      "ticks": 1286
     },
     "refund": {
-      "lastTickAt": "2026-10-29T04:44:18.603Z",
-      "lastSuccessAt": "2026-10-29T04:44:18.752Z",
+      "lastTickAt": "2026-10-29T05:40:21.450Z",
+      "lastSuccessAt": "2026-10-29T05:36:51.893Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,37 +39,37 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-29T04:44:18.709Z",
-        "durationMs": 82,
+        "at": "2026-10-29T05:36:51.809Z",
+        "durationMs": 338,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
         "auth": "dev-open"
       },
-      "consecutiveFailures": 0,
-      "lastError": null,
-      "ticks": 1208
+      "consecutiveFailures": 7,
+      "lastError": "Unable to connect. Is the computer able to access the url?",
+      "ticks": 1286
     },
     "analytics": {
-      "lastTickAt": "2026-10-29T04:44:18.603Z",
-      "lastSuccessAt": "2026-10-29T04:44:18.838Z",
+      "lastTickAt": "2026-10-29T05:40:21.450Z",
+      "lastSuccessAt": "2026-10-29T05:36:52.118Z",
       "lastOutcome": {
-        "ranAt": "2026-10-29T04:44:18.794Z",
-        "durationMs": 164,
+        "ranAt": "2026-10-29T05:36:52.035Z",
+        "durationMs": 559,
         "retentionDays": 180,
-        "cutoff": "2026-05-02T04:44:18.630Z",
+        "cutoff": "2026-05-02T05:36:51.790Z",
         "purged": 0,
         "flush": {
           "flushed": 0,
           "pending": 0
         },
-        "remaining": 11,
+        "remaining": 14,
         "oldestEventAt": "2026-10-28T14:16:18.540Z",
         "auth": "dev-open"
       },
-      "consecutiveFailures": 0,
-      "lastError": null,
-      "ticks": 258
+      "consecutiveFailures": 7,
+      "lastError": "Unable to connect. Is the computer able to access the url?",
+      "ticks": 336
     }
   },
   "alerts": [
@@ -267,6 +267,46 @@
       "at": "2026-10-29T04:27:18.579Z",
       "type": "OVERDUE_SWEEP",
       "detail": "expiry: no successful tick for 120s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-29T04:58:18.629Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-29T04:59:18.627Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 120s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-29T05:08:10.488Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~652s (last success 2026-10-29T04:57:18.856Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-29T05:18:41.302Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-29T05:19:41.303Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 120s (> 3× interval)"
+    },
+    {
+      "at": "2026-10-29T05:33:50.222Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~969s (last success 2026-10-29T05:17:41.580Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-10-29T05:37:51.449Z",
+      "type": "TICK_UNREACHABLE",
+      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
+    },
+    {
+      "at": "2026-10-29T05:38:51.449Z",
+      "type": "OVERDUE_SWEEP",
+      "detail": "expiry: no successful tick for 119s (> 3× interval)"
     }
   ]
 }

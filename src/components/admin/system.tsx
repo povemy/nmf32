@@ -9,7 +9,6 @@ import {
   Check,
   CheckCircle2,
   CreditCard,
-  Flag,
   HeartPulse,
   Loader2,
   Mail,
@@ -561,85 +560,16 @@ export function SettingsView() {
   );
 }
 
-/* ---------------------------------------------------------------- FlagsView */
+/* ---------------------------------------------------------------- FlagsView
 
-type FlagRow = { key: string; description?: string | null; isEnabled: boolean; rolloutPercent: number };
+REMOVED (F-07 remediation): the Feature Flags admin page was a dead control —
+zero runtime code read db.featureFlag outside its own CRUD route, while the
+page promised "runtime switches for progressive delivery". Per the audit
+rule ("never ship dead controls") the page, its nav entry and its API route
+were removed; the underlying table + seed rows are inert and left in place
+(restorable from git if real flag consumers ever ship).
 
-export function FlagsView() {
-  const { data, error, loading, refetch } = useApi<FlagRow[]>("/api/admin/feature-flags");
-  const rows = data ?? [];
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-
-  const toggle = async (f: FlagRow) => {
-    setBusyKey(f.key);
-    try {
-      await apiSend("/api/admin/feature-flags", "PATCH", { key: f.key, isEnabled: !f.isEnabled });
-      toast.success(`Flag ${f.isEnabled ? "disabled" : "enabled"}`, { description: f.key });
-      void refetch();
-    } catch (e) {
-      toast.error("Toggle failed", { description: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Feature Flags" description="Runtime switches for progressive delivery — changes are audited." />
-
-      <Card className="py-0">
-        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Flag className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Flags ({rows.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {error ? (
-            <ErrorState message={error} onRetry={() => void refetch()} />
-          ) : loading ? (
-            <TableSkeleton rows={5} cols={4} />
-          ) : rows.length === 0 ? (
-            <EmptyState title="No feature flags" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Flag</TableHead>
-                  <TableHead className="hidden md:table-cell">Description</TableHead>
-                  <TableHead>Rollout</TableHead>
-                  <TableHead className="text-center">Enabled</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((f) => (
-                  <TableRow key={f.key}>
-                    <TableCell className="font-mono text-xs font-semibold">{f.key}</TableCell>
-                    <TableCell className="hidden max-w-[320px] text-sm text-muted-foreground md:table-cell">{f.description ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          f.rolloutPercent >= 100
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
-                        )}
-                      >
-                        {f.rolloutPercent}% rollout
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Switch checked={f.isEnabled} disabled={busyKey === f.key} onCheckedChange={() => void toggle(f)} aria-label={`Toggle ${f.key}`} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+-------------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------- AuditView */
 

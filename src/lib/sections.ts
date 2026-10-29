@@ -274,7 +274,7 @@ export const SECTION_REGISTRY: SectionDef[] = [
       title: "Frequently asked questions",
       items: [
         { q: "How long is shipping?", a: "Peninsular Malaysia 2-4 working days; East Malaysia 3-7." },
-        { q: "What is your return policy?", a: "7-day returns on unused items in original packaging." },
+        { q: "What is your return policy?", a: "Returns accepted on unused items in original packaging — message us to arrange one." },
       ],
     },
     fields: [

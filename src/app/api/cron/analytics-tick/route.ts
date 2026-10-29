@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
-import { toJson } from "@/lib/json";
+import { toJson, parseJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { analyticsQueueStats, flushAnalyticsQueue } from "@/lib/analytics/queue";
 
@@ -26,10 +26,20 @@ export const dynamic = "force-dynamic";
 
 const BATCH = 1000;
 const LAST_RUN_KEY = "cron.analytics.last";
+const RETENTION_SETTING_KEY = "analytics.retention_days";
 const DEFAULT_RETENTION_DAYS = 180;
 
-function retentionDays(): number {
-  const raw = Number(process.env.SI_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS);
+/** F-11 remediation: retention now reads Setting `analytics.retention_days`
+ *  (the key the admin Settings page edits and the registry documents) with
+ *  env `SI_RETENTION_DAYS` as the fallback when the row is absent/malformed
+ *  — previously this read ONLY the env var, so the admin edited a dead key.
+ *  Clamped 7–730 to match the registry field's min/max. */
+async function retentionDays(): Promise<number> {
+  const row = await db.setting.findUnique({ where: { key: RETENTION_SETTING_KEY } });
+  const fromSetting = parseJson<number>(row?.valueJson, NaN);
+  const raw = Number.isFinite(fromSetting)
+    ? fromSetting
+    : Number(process.env.SI_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS);
   return Math.min(730, Math.max(7, Number.isFinite(raw) ? raw : DEFAULT_RETENTION_DAYS));
 }
 
@@ -43,7 +53,7 @@ export const POST = handle(async (req: Request) => {
   // 2. Retention purge — browsing/cart events only, bounded batch.
   //    (Prisma deleteMany has no `take`: select a bounded id batch, then delete
   //    by id — same bounded-work guarantee as the other tick routes.)
-  const days = retentionDays();
+  const days = await retentionDays();
   const cutoff = new Date(Date.now() - days * 86_400_000);
   let purged = 0;
   let rounds = 0;
@@ -95,7 +105,7 @@ export const GET = handle(async (req: Request) => {
     total,
     byType: Object.fromEntries(byType.map((r) => [r.eventType, r._count._all])),
     oldestEventAt: oldest?.createdAt.toISOString() ?? null,
-    retentionDays: retentionDays(),
+    retentionDays: await retentionDays(),
     queue: analyticsQueueStats(),
     lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
     auth: auth.mode,

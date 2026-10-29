@@ -451,8 +451,31 @@ full-audit-report.md status updates (preserving historical findings), this check
       F-22 probe 15/15 PASS live; agent-browser moderator/superadmin UI
       verification clean; tsc 34 src errors = pre-existing baseline, zero in
       changed files; lint 0 errors.)
-- [ ] G9 P4 linkage honesty decisions (wire/label/remove) per finding.
-- [ ] G10 P5 regressions, lint, tsc src-clean, dev-server + agent-browser
+- [x] G9 P4 linkage honesty decisions (wire/label/remove) per finding.
+      (DONE 2026-10-31 — security-remediation.md Phase 4: F-08 WIRED into
+      resolveRate (interleaved-by-scope, field-wise; 32/32 live matrix;
+      Curlec E2E order snapshot verified); F-11 WIRED (tick reads Setting,
+      env fallback; live matrix); F-15 WIRED (countdown from expiresAt,
+      29:38 live); F-14 WIRED (lib/payment-methods.ts single source; 5 methods;
+      Curlec E2E); F-17 FIXED (live RM 10.00 copy); F-16 LABELED honest
+      (window-free copy — no window exists in code); F-10 LABELED (NOT
+      ENFORCED badges, browser-verified); F-07 REMOVED (page+nav+route; 404;
+      zero featureFlag readers); F-12 registry honesty (payouts.mode
+      wired:false + notes). Seeded 10% glow override row now live — intended.)
+- [x] G10 P5 regressions, lint, tsc src-clean, dev-server + agent-browser
       verification, honest build-gate labeling.
-- [ ] G11 Reports updated (security-remediation.md, full-audit-report.md,
+      (DONE 2026-10-31 — 47→0 src tsc build blockers: follows schema-drift
+      rewrite (6/6 live cycle), dead campaigns.tsx + dead shipping/quote route
+      + dead reReserveOrderStock removed, metrics fail-closed cast,
+      parseSellerVoucherInput implemented (and F-21 scope fix — own-voucher
+      PATCH 200 live, was 404), F-23 IMPORT_TOKEN_ENC_KEY boot warning; tsc
+      src 0 errors; lint 0 errors/18 pre-existing warnings; Phase 4 probe
+      re-run 32/32; browser golden path (checkout Curlec + countdown + order
+      snapshot), commission badges, flags-nav absence, wallet copy, PDP copy,
+      CampaignsView E2E; build gate: source-level PASS, next build NOT
+      RUNNABLE in sandbox — honestly labeled, CI must run.)
+- [x] G11 Reports updated (security-remediation.md, full-audit-report.md,
       worklog.md).
+      (DONE 2026-10-31 — remediation log Phases 4+5 written; audit report:
+      remediation-status banner + per-finding status column (REMEDIATED P1–P5
+      / OPEN-deferred for F-20/F-27/F-28 only); worklog session entry added.)

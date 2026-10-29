@@ -159,10 +159,86 @@ Infrastructure: `ADMIN_CAPS` moved to **pure `src/lib/admin-caps.ts`** (single s
 - Refunds/Disputes/Payouts/Wallets reads stay `requireAdmin` (same class as orders/dashboard — unflagged); their mutations were already capped pre-Phase-3; non-cap roles clicking their action buttons get server 403s with error toasts (pre-existing behavior, not regressed).
 - Probe artifacts: one `[LT]`-class throwaway seller (`lt-p3b-*@probe.local`, onboarding) + one LT shopper + one internal note on the seeded test seller — consistent with the repo's LT test-data convention.
 
-## Phase 4 — Configuration / functional consistency
+## Phase 4 — Configuration / functional consistency (LANDED + RUNTIME-VERIFIED 2026-10-31)
 
-(pending)
+Decision rule applied per finding: **WIRE** (make the admin control actually drive the runtime), **LABEL** (honestly mark not-yet-enforced), or **REMOVE** (delete the dead surface). All decisions below executed and verified against the live dev server.
 
-## Phase 5 — Testing & build verification
+### F-08 — Commission Overrides wired into the engine (WIRED · VERIFIED)
+- **Files changed:** `src/lib/commission.ts` (`resolveRate` now resolves active, validity-windowed `CommissionOverride` rows interleaved into the M09 chain at their scope position: product-scope row > product direct field > category-scope row (nearest ancestor first) > category direct field > seller-scope row > seller direct field > global; `percent`/`fixedFeeMinor`/`holdDays` resolve field-wise — a holdDays-only row contributes holdDays while the rate falls through; deterministic tie-break = earliest createdAt, then id), `src/app/api/admin/commission/overrides/[id]/route.ts` (removed a dead `name` field write that would have thrown a Prisma validation error — the model has no such column).
+- **Interleaving rationale:** the admin UI itself promises "the affected scope falls back to the next rule in the M09 chain" (finance.tsx deactivate hint) — windowed rows beat same-scope direct fields, direct fields at HIGHER scope beat lower-scope rows.
+- **Consequence (intended):** the SEEDED demo row (seller-scope 10% on Glow Theory/MeiLing, createdBy finance@nomofee.io) — dead since seeding — now takes effect for MeiLing products in categories without a direct percent. Existing order snapshots are never recomputed (frozen at checkout by design); only NEW orders change.
+- **Evidence (`tool-results/phase4-config-probe.ts`, live, 32/32 PASS):** clean-baseline 0.5% global → seeded glow row resolves 10% `override` with correct sourceId → category direct field 9% beats seller-scope row (interleaved precedence) → CRUD row drives 12.5% → deactivate falls back → past validity window ignored → current window applies → category-scope row 7% beats category field 9% → no cross-category leak → holdDays-only row applies 9 hold days with percent still 12.5% (field-wise) → moderator 403 on create → cleanup restores baseline; seeded row untouched.
+- **Real-order verification:** browser E2E checkout (order NM-103628, provider `fpx_curlec`) — item snapshot `rule_source:"global"`, `percent:0.5`, `min_commission_floor` flag intact; the full commission pipeline (changed `resolveRate` + unchanged floor/reconcile logic) produces correct money on a live order.
+- **Bug found & fixed during verification:** the scoped-row Prisma query originally used a `\u0000` sentinel for "no target" — Postgres rejects `0x00` in UTF-8 text parameters (`22021`), which 500'd every resolution without a productId. Replaced with `"__no_target__"` (ids are cuids; no collision possible).
+- **Regression note:** `scripts/fin-tests.ts` + `test-commission-parity.ts` are pre-existing import-drift debt (reference money.ts/commission.ts exports that never existed in the current code — part of the 126→ classified scripts/ errors, NOT caused by this change; `verify-finance-hardening.ts` is 127.0.0.1-hardcoded and blocked by the sandbox bind). The commission path was therefore verified by the 32-check live probe + real-order snapshot above.
 
-(pending)
+### F-11 — Analytics retention reads the Setting row (WIRED · VERIFIED)
+- **Files changed:** `src/app/api/cron/analytics-tick/route.ts` (`retentionDays()` now async: reads Setting `analytics.retention_days` first, falls back to env `SI_RETENTION_DAYS`, then default 180; clamped 7–730 matching the registry field). The route's own header comment already CLAIMED it read the Setting — documentation ≠ implementation, now aligned.
+- **Evidence (live, in phase4-config-probe):** no row → 180; Setting 730 → tick reports 730 & purges nothing; Setting 365 → 365; settings PUT REJECTS a non-integer value (registry validation working); DB-corrupted `"not-a-number"` row → falls back to 180; row deleted → default restored.
+- **Registry:** `analytics.retention_days` `wired:true` claim is now TRUE; wiredNote updated to document Setting-primary + env fallback.
+
+### F-15 — Checkout countdown driven by server expiresAt (WIRED · VERIFIED)
+- **Files changed:** `src/components/shopper/checkout.tsx` (`PaymentT.expiresAt` added; countdown initialized/synced from the payment's server `expiresAt` on every 3 s poll — provisional 30:00 until first load; "expired" phase remains server-authoritative).
+- **Evidence (browser, live):** pay screen shows "Session expires in **29:38**" (server's 30-min window; was a hardcoded 10:00 that expired 20 minutes before the real enforcement).
+
+### F-14 — Payment method list single-sourced (WIRED · VERIFIED)
+- **Files changed:** `src/lib/payment-methods.ts` (NEW client-safe module: `CHECKOUT_PAYMENT_METHODS` — 5 methods incl. `fpx_curlec`), `src/app/api/checkout/create/route.ts` (validates against `KNOWN_PAYMENT_METHODS` from the module), `src/components/shopper/checkout.tsx` (renders from the module; icons mapped client-side by id).
+- **Evidence (browser, live):** checkout renders all 5 methods including "FPX Online Banking (Curlec)"; a full E2E order placed WITH `fpx_curlec` (order NM-103628, `paymentProvider: "fpx_curlec"` in DB) — the previously-hidden method now passes server validation end-to-end.
+- **Registry honesty (F-12 linkage):** `payments.providers` description corrected — it claimed methods came from "the PSP provider registry (src/lib/psp.ts)" which was FALSE (that registry is the adapter layer: mock + future candidates); now points at `lib/payment-methods.ts`.
+
+### F-17 — Wallet payout-minimum copy (FIXED · VERIFIED)
+- **Files changed:** `src/components/seller/wallet.tsx` (empty-state hint now uses `formatMinor(minPayout)` — the same live variable the request CTA uses, instead of hardcoded "RM 50" while the live minimum is RM 10).
+- **Evidence (browser, live):** payout-free seller (Glow Theory) sees "…clears the minimum (**RM 10.00**)"; the request CTA on the same page shows the identical live value.
+
+### F-16 — Buyer-protection copy (LABELED honestly · VERIFIED)
+- **Files changed:** `src/components/shopper/pdp.tsx` ("7-day buyer protection" → "Buyer protection — returns & refunds supported"), `src/lib/sections.ts` (storefront FAQ default template: "7-day returns…" → window-free copy).
+- **Rationale:** the return-request route enforces STATUS only (accepts paid→completed, no time window; even completed orders can open disputes) and auto-complete is 14 days — NO 7-day window exists anywhere in code, so any number claim would be fabricated. LABEL chosen over WIRE: inventing a buyer-protection window is a product policy decision, not a remediation call.
+- **Evidence (browser, live):** PDP renders the honest copy.
+
+### F-10 — Hold-release rule + grace days (LABELED · VERIFIED)
+- **Files changed:** `src/components/admin/commission.tsx` (both controls now carry amber "NOT ENFORCED" / "DAYS AFTER DELIVERY: NOT ENFORCED" badges + explanatory hints: payouts release holdDays after payment regardless; delivered orders auto-complete after a fixed 14-day window).
+- **Evidence (browser, live):** superadmin commission form renders both badges and hints.
+
+### F-07 — Feature Flags dead surface (REMOVED · VERIFIED)
+- **Files changed:** `src/components/admin/system.tsx` (FlagsView deleted, removal note left), `src/components/admin/admin-shell.tsx` (nav entry + view mapping + ToggleLeft import removed), `src/app/api/admin/feature-flags/route.ts` (DELETED).
+- **Rationale:** zero runtime consumers read `db.featureFlag` outside the CRUD route itself; the page promised "runtime switches for progressive delivery" (false). NOTE: `src/lib/feature-flags.ts` (`NOMO_FINANCE_ENABLED=false`) is a SEPARATE compile-time constant for the dormant Nomo Finance scaffold WITH live consumers — untouched.
+- **Kept:** the `FeatureFlag` model + seed rows (inert, no migration churn; restorable from git).
+- **Evidence (live):** `/api/admin/feature-flags` → 404; superadmin nav contains no "Feature Flags" entry (browser-eval verified); zero remaining `db.featureFlag` readers (grep).
+
+### F-12 — Registry honesty fixes (FIXED)
+- **Files changed:** `src/lib/settings-registry.ts`.
+- `psp.payouts.mode`: `wired:true` → `wired:false` + honest note — `resolvePayoutMode` exists in `lib/psp-adapter.ts` but has ZERO live callers (dormant payout adapter scaffold, R2 decision); engages only when a real provider payout phase ships.
+- `analytics.retention_days`: note now documents Setting-primary + env fallback (true after F-11).
+- `payments.providers`: description corrected (see F-14).
+
+### Phase 4 residuals (deliberate)
+- The dead `orders/[id]/shipping/quote` route and dead `admin/campaigns.tsx` component found during Phase 5 were removed as superseded duplicates (see Phase 5).
+- The seeded 10% Glow override row now LIVE (intended F-08 consequence) — ops should review whether the demo row should stay (it was configured by the seeded finance user and represents admin intent that was silently ignored for weeks).
+
+## Phase 5 — Testing & build verification (LANDED 2026-10-31)
+
+### Build-blocker cleanup (47 → **0 src errors**)
+Baseline 47 src `tsc` errors (hard `next build` blockers per Phase 0 classification); 13 were fixed en route in Phases 1–2 (F-03 cluster + shipping webhook rewrite). The remaining 34 fixed now:
+
+| Cluster | Count | Resolution |
+|---|---|---|
+| `api/me/follows` | 14 | Schema-drift rewrite: `shopperId`→`shopperUserId`, `follows`→`followers` count, `shopperId_storeId`→`shopperUserId_storeId` compound unique, `store` include now type-valid. Verified live: GET/POST/DELETE follow cycle 6/6 PASS (`tool-results/phase5-follows-cycle.ts`) |
+| `components/admin/campaigns.tsx` | 12 | **DELETED — dead code** (zero importers; the live CampaignsView lives in marketing.tsx and is already type-clean). First fixed against the current lib types, then the import-scan proved it dead — removed per the never-ship-dead-surfaces rule. The LIVE view was browser-verified end-to-end instead (preset → create → row → delete) |
+| `api/store/orders/[id]/shipping/quote` | 5 | **DELETED — dead duplicate** (zero callers; UI uses `GET /api/store/shipping/quote?orderId=`; written against the pre-rebuild shipping API: `quoteRatesFor`/`eddWindow`/`weightGrams`/`shipmentStatus` none of which exist) |
+| `api/metrics` | 1 | `prismaBase` (never exported) → `db` + structural cast for the runtime-only `$metrics` extension with a fail-closed 503 `METRICS_UNAVAILABLE` fallback. Live: unauthenticated GET → 503/401 fail-closed PASS |
+| `api/store/vouchers/[id]` | 1 | Implemented the missing `parseSellerVoucherInput` in `lib/vouchers.ts` (create-route validation semantics extracted verbatim so create and edit share one source of truth; returns the full normalized payload incl. regionLimit) |
+| `lib/inventory-release.ts` | 1 | **`reReserveOrderStock` DELETED — superseded dead code** (zero callers; written for a late-payment RE-RESERVATION policy that never shipped — the landed policy is refund-based: PaymentReconciliation + refund-reconcile sweep). Removal note left pointing at the real implementation |
+
+- **`bunx tsc --noEmit` src/: 0 errors.** Total 282 remain in `scripts/`+`tool-results/` (126 baseline + probe files added since) — classified dev-tooling debt, NOT app build blockers (excluded from the Next build graph). Honestly reported, not suppressed.
+- **`bun run lint`: 0 errors, 18 warnings** (all pre-existing in scripts/tool-results).
+
+### Verification suite executed (all live against dev server)
+1. Phase 4 probe re-run after all Phase 5 changes: **32/32 PASS** (commission overrides, retention, flags-404).
+2. Phase 5 regression probe: **follows cycle 6/6, metrics fail-closed, both deleted routes 404** (`tool-results/phase5-regression-probe.ts` + `phase5-follows-cycle.ts`).
+3. Browser E2E (agent-browser): full shopper golden path — PDP (F-16 copy) → cart → address → shipping → 5 payment methods (F-14) → pay screen countdown 29:38 from `expiresAt` (F-15) → payment confirmed → order snapshot verified in DB (`fpx_curlec`, 0.5% global, min-commission floor flag); admin commission form NOT-ENFORCED badges (F-10); no Feature Flags nav (F-07); seller wallet live minimum (F-17); live CampaignsView create-from-preset → delete E2E. Zero browser console/page errors at the end of every flow.
+4. Mini-services healthy: webapp :3000, chat hub :3003, expiry scheduler :3005.
+
+### Build gate — honest labeling
+- **Source-level gate: PASS** — `tsc` src-clean (0 errors), lint 0 errors, dev server runs every touched route without runtime errors, all probes green.
+- **`next build`: NOT RUN HERE** — the sandbox forbids production builds (dev server only, port 3000; environment policy). With `ignoreBuildErrors:false`, src-clean ⇒ no known TS build blockers remain, but the actual build must run in CI/staging before launch. Labeled NOT TESTED (environment), not PASS.
+- **Sandbox OOM note:** the 3.9 GB sandbox OOM-killed `next-server` 4× during this session (heavy admin-view compiles / concurrent tsc runs). Mitigation applied: never run `tsc`/lint concurrently with route compiles; dev server + mini-services restarted with the durable orphan pattern (`bash -c 'nohup … >> log 2>&1 &'`; `setsid &` is killed at tool-call boundaries — documented in `scripts/dev-supervisor.sh`).

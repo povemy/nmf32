@@ -98,31 +98,9 @@ export async function releaseOrderReservation(input: {
   });
 }
 
-/**
- * Re-reserve stock for a released order inside the CALLER's transaction (the
- * late-payment-after-release policy). CONDITIONAL decrements only — can never
- * drive stock negative. Throws ApiError(409, STOCK_LOST_AFTER_RELEASE) when
- * any line cannot be re-reserved; the caller's tx aborts atomically.
- */
-export async function reReserveOrderStock(
-  tx: Prisma.TransactionClient,
-  input: { order: { id: string; orderNumber: string; items: { variantId: string | null; qty: number }[] }; providerRef: string }
-) {
-  for (const item of input.order.items) {
-    if (!item.variantId || item.qty <= 0) continue;
-    const moved = await tx.productVariant.updateMany({
-      where: { id: item.variantId, isActive: true, stock: { gte: item.qty } },
-      data: { stock: { decrement: item.qty } },
-    });
-    if (moved.count === 0) {
-      throw new ApiError(
-        409,
-        "STOCK_LOST_AFTER_RELEASE",
-        `Stock for "${item.title ?? item.variantId}" was released after the reservation expired and is no longer available — payment must be refunded.`
-      );
-    }
-    await tx.inventoryLog.create({
-      data: { variantId: item.variantId, delta: -item.qty, reason: `late_payment_reserve:${input.providerRef}`, refId: input.order.id },
-    });
-  }
-}
+// NOTE (Phase 5 cleanup): `reReserveOrderStock` was removed — it was written
+// for a late-payment-after-release RE-RESERVATION policy that never shipped
+// (zero callers, and its item type had drifted off the schema). The
+// late-payment policy that DID land is refund-based: PaymentReconciliation
+// obligations + the refund-reconcile cron sweep (see lib/psp-refund.ts,
+// /api/cron/refund-reconcile, docs/late-payment-refund-runbook.md).

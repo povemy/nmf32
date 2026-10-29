@@ -48,6 +48,93 @@ const PENINSULAR_KEYS = new Set([
 
 const EAST_MALAYSIA_KEYS = new Set(["sabah", "sarawak", "labuan"]);
 
+// ---------------------------------------------------------------------------
+// Seller voucher input parsing — the shared validator for CREATE (route body)
+// and EDIT (merged onto current values). Mirrors the create-route rules so an
+// edit can never produce a row the create path would have rejected.
+// ---------------------------------------------------------------------------
+
+export type SellerVoucherInput = {
+  title: string;
+  kind: VoucherKind;
+  discountMinor: number;
+  percentOff: number | null;
+  maxDiscountMinor: number | null;
+  minSpendMinor: number;
+  expiryAt: Date;
+  quota: number | null;
+  regionLimit: string | null;
+};
+
+function intOrU(v: unknown, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function dateOrU(v: unknown): Date | null {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Validate + normalize a seller-scope voucher payload (create OR merged edit
+ *  state). Throws ApiError(400, "VALIDATION") on any rule violation — exactly
+ *  the create-route semantics, so both paths share one source of truth. */
+export function parseSellerVoucherInput(body: Record<string, unknown>): SellerVoucherInput {
+  const title = String(body.title ?? "").trim();
+  if (title.length < 3 || title.length > 80) {
+    throw new ApiError(400, "VALIDATION", "title must be 3-80 characters");
+  }
+  const kind = String(body.kind ?? "discount") as VoucherKind;
+  if (!SUPPORTED_VOUCHER_KINDS.includes(kind)) {
+    throw new ApiError(400, "VALIDATION", "kind must be discount | freeshipping (coinsback is disabled platform-wide)");
+  }
+
+  const minSpendMinor = intOrU(body.minSpendMinor ?? 0, 0);
+  if (minSpendMinor < 0 || minSpendMinor > 100_000_000) {
+    throw new ApiError(400, "VALIDATION", "minSpendMinor must be a non-negative integer (minor units)");
+  }
+  const quota = body.quota != null && body.quota !== "" ? intOrU(body.quota, 0) : null;
+  if (quota != null && (quota < 1 || quota > 1_000_000)) {
+    throw new ApiError(400, "VALIDATION", "quota must be a positive integer when provided");
+  }
+  const expiryAt = dateOrU(body.expiryAt);
+  if (!expiryAt) throw new ApiError(400, "VALIDATION", "expiryAt is required (ISO date)");
+  if (expiryAt.getTime() <= Date.now()) throw new ApiError(400, "VALIDATION", "expiryAt must be in the future");
+
+  let discountMinor = 0;
+  let percentOff: number | null = null;
+  let maxDiscountMinor: number | null = null;
+  let regionLimit: string | null = null;
+
+  if (kind === "discount") {
+    const hasFlat = body.discountMinor != null && body.discountMinor !== "";
+    const hasPercent = body.percentOff != null && body.percentOff !== "";
+    if (hasFlat === hasPercent) {
+      throw new ApiError(400, "VALIDATION", "Provide exactly one of discountMinor (flat) or percentOff (1..90)");
+    }
+    if (hasFlat) {
+      discountMinor = intOrU(body.discountMinor, 0);
+      if (discountMinor <= 0 || discountMinor > 100_000_000) {
+        throw new ApiError(400, "VALIDATION", "discountMinor must be a positive integer (minor units)");
+      }
+    } else {
+      const p = intOrU(body.percentOff, 0);
+      if (p < 1 || p > 90) throw new ApiError(400, "VALIDATION", "percentOff must be 1..90");
+      percentOff = p;
+      if (body.maxDiscountMinor != null && body.maxDiscountMinor !== "") {
+        maxDiscountMinor = intOrU(body.maxDiscountMinor, 0);
+        if (maxDiscountMinor <= 0) throw new ApiError(400, "VALIDATION", "maxDiscountMinor must be a positive integer when provided");
+      }
+    }
+  } else {
+    // freeshipping — seller-funded, West-Malaysia-only by platform rule.
+    regionLimit = "peninsular";
+  }
+
+  return { title, kind, discountMinor, percentOff, maxDiscountMinor, minSpendMinor, expiryAt, quota, regionLimit };
+}
+
 /** Normalize a free-text Malaysian state into a comparable key. */
 function stateKey(state: string | null | undefined): string {
   return (state ?? "")

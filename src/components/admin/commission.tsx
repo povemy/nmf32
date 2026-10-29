@@ -239,8 +239,14 @@ export function CommissionSettingsView() {
                 <Input inputMode="numeric" value={form.payoutHoldDays} onChange={(e) => setForm({ ...form, payoutHoldDays: e.target.value })} className="min-h-[44px]" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Grace days after delivered</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Grace days after delivered</Label>
+                  {/* F-10: honest labelling — this field is stored but NOT enforced
+                      (auto-complete uses a fixed 14-day window; see order-completion.ts). */}
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">Not enforced</Badge>
+                </div>
                 <Input inputMode="numeric" value={form.graceDays} onChange={(e) => setForm({ ...form, graceDays: e.target.value })} className="min-h-[44px]" />
+                <p className="text-[11px] leading-snug text-muted-foreground">Delivered orders currently auto-complete after a fixed 14-day window — this value is stored for future use but does not change that.</p>
               </div>
               <div className="flex items-end gap-3 pb-1.5">
                 <Switch id="ship" checked={form.appliesToShipping} onCheckedChange={(v) => setForm({ ...form, appliesToShipping: v })} />
@@ -263,7 +269,13 @@ export function CommissionSettingsView() {
                 </RadioGroup>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Hold release rule</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Hold release rule</Label>
+                  {/* F-10: honest labelling — payouts always release holdDays after
+                      payment today (process.ts); "days after delivery" is stored
+                      but not enforced. */}
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">Days after delivery: not enforced</Badge>
+                </div>
                 <RadioGroup value={form.holdReleaseRule} onValueChange={(v) => setForm({ ...form, holdReleaseRule: v })} className="gap-2">
                   {["days_after_paid", "days_after_delivered"].map((v) => (
                     <div key={v} className="flex min-h-[44px] items-center gap-2 rounded-lg border px-3">
@@ -274,6 +286,7 @@ export function CommissionSettingsView() {
                     </div>
                   ))}
                 </RadioGroup>
+                <p className="text-[11px] leading-snug text-muted-foreground">Payout holds currently release a fixed number of days after <span className="font-semibold">payment</span> regardless of this setting — "Days after delivery" is stored for future use only.</p>
               </div>
             </div>
           </CardContent>

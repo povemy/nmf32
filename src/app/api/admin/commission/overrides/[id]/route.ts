@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { readBody, reqStr, optNum, optDate, str, optBool } from "@/app/api/admin/_helpers";
+import { readBody, reqStr, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,8 +35,9 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   if ("validTo" in body) data.validTo = optDate(body, "validTo") ?? null;
   const isActive = optBool(body, "isActive");
   if (isActive != null) data.isActive = isActive;
-  const name = str(body, "name");
-  if (name) data.name = name;
+  // NOTE: a `name` field was previously copied from the body here, but the
+  // CommissionOverride model has no such column — any PATCH carrying `name`
+  // would have thrown a Prisma validation error. Removed (F-08 pass).
   if (Object.keys(data).length === 0) throw new ApiError(400, "VALIDATION", "Nothing to update");
 
   const updated = await db.commissionOverride.update({ where: { id }, data });

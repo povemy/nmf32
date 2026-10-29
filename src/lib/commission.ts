@@ -1,8 +1,19 @@
 // ============================================================================
 // M09 COMMISSION ENGINE — full spec implementation (PART 3 M09)
-// Resolution priority: fee holiday > product override > category ancestor >
-// seller override > global default. Money math in integer minor units.
+// Resolution priority: fee holiday > [scoped CommissionOverride rows and
+// direct field overrides interleaved by scope: product > category ancestor >
+// seller] > global default. Money math in integer minor units.
 // Commission snapshots are stored per order_item and NEVER recomputed.
+//
+// F-08 remediation: the scoped CommissionOverride table (Admin→Finance
+// "Commission Overrides") is resolved HERE, interleaved into the M09 chain at
+// its scope position — an active row within its validity window beats the
+// direct field at the SAME scope, and falls back to the next rule in the
+// chain otherwise (exactly what the admin UI promises). percent /
+// fixedFeeMinor / holdDays are resolved field-wise: a row that only sets
+// holdDays contributes its holdDays while the rate keeps falling through.
+// Multiple rows matching the same scope resolve deterministically:
+// earliest createdAt wins (id as final tie-break).
 // ============================================================================
 import { db } from "./db";
 import { commissionOf, allocateProportionally } from "./money";
@@ -31,12 +42,52 @@ export async function getCommissionSettings(): Promise<CommissionSettingsDTO> {
 
 type RateResolution = {
   percent: number;
-  source: "fee_holiday" | "product" | "category" | "seller" | "global";
+  source: "fee_holiday" | "override" | "product" | "category" | "seller" | "global";
   sourceId?: string;
   holidayId?: string;
   holdDays: number;
   fixedFeeMinor: number;
 };
+
+/** CommissionOverride rows matching (scope, target, validity, now), ordered
+ *  most→least specific: product rows first, then category rows in ancestor
+ *  chain order (nearest first), then seller rows. Within one class,
+ *  earliest createdAt wins. */
+async function scopedOverrideRows(
+  ctx: { sellerId: string; categoryId?: string | null; productId?: string | null; now?: Date },
+  chain: string[]
+) {
+  const now = ctx.now ?? new Date();
+  // Sentinel ids that can never match a real row (ids are cuids — "cm…") keep
+  // the Prisma OR exact when ctx.productId / the category chain is absent —
+  // `undefined` inside an OR would instead IGNORE the condition and match
+  // every row. NOTE: the sentinel must be plain ASCII (a \u0000 byte would be
+  // rejected by Postgres as an invalid UTF-8 sequence).
+  const NONE = "__no_target__";
+  const rows = await db.commissionOverride.findMany({
+    where: {
+      isActive: true,
+      AND: [
+        { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+        { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+        {
+          OR: [
+            { scope: "product", productId: ctx.productId ?? NONE },
+            { scope: "category", categoryId: { in: chain.length > 0 ? chain : [NONE] } },
+            { scope: "seller", sellerId: ctx.sellerId },
+          ],
+        },
+      ],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const productRows = rows.filter((r) => r.scope === "product");
+  // chain is [category, parent, ...] — nearest ancestor first, so flatMap
+  // preserves specificity order.
+  const categoryRows = chain.flatMap((catId) => rows.filter((r) => r.scope === "category" && r.categoryId === catId));
+  const sellerRows = rows.filter((r) => r.scope === "seller");
+  return [...productRows, ...categoryRows, ...sellerRows];
+}
 
 async function categoryAncestorChain(categoryId: string | null | undefined): Promise<string[]> {
   // returns [category, parent, grandparent, ...]
@@ -61,19 +112,25 @@ export async function resolveRate(ctx: {
 }): Promise<RateResolution> {
   const settings = await getCommissionSettings();
   const now = ctx.now ?? new Date();
-  let fallback: RateResolution = {
-    percent: settings.defaultPercent,
-    source: "global",
-    holdDays: settings.payoutHoldDays,
-    fixedFeeMinor: settings.fixedFeeMinor,
-  };
+  const chain = await categoryAncestorChain(ctx.categoryId);
 
-  // 0. seller-level hold override
+  // 0. seller-level direct overrides + F-08 scoped override rows (ordered
+  //    most→least specific). Field-wise first-match wins for holdDays and
+  //    fixedFeeMinor — a windowed row beats the static seller field, and a
+  //    product/category-scoped row beats a seller-scoped one.
   const seller = await db.seller.findUnique({
     where: { id: ctx.sellerId },
     select: { commissionOverridePercent: true, holdDaysOverride: true },
   });
-  if (seller?.holdDaysOverride != null) fallback = { ...fallback, holdDays: seller.holdDaysOverride };
+  const overrides = await scopedOverrideRows(ctx, chain);
+  const holdRow = overrides.find((r) => r.holdDays != null);
+  const fixedRow = overrides.find((r) => r.fixedFeeMinor != null);
+  const fallback: RateResolution = {
+    percent: settings.defaultPercent,
+    source: "global",
+    holdDays: holdRow?.holdDays ?? seller?.holdDaysOverride ?? settings.payoutHoldDays,
+    fixedFeeMinor: fixedRow?.fixedFeeMinor ?? settings.fixedFeeMinor,
+  };
 
   // 1. active fee holiday covering (seller, category, now)
   const holidays = await db.feeHoliday.findMany({
@@ -93,7 +150,13 @@ export async function resolveRate(ctx: {
     }
   }
 
-  // 2. product override
+  // 2. product-scope override row (F-08) — windowed, beats the direct field
+  const pRow = overrides.find((r) => r.scope === "product" && r.percent != null);
+  if (pRow) {
+    return { ...fallback, percent: pRow.percent!, source: "override", sourceId: pRow.id };
+  }
+
+  // 3. product direct override
   if (ctx.productId) {
     const p = await db.product.findUnique({
       where: { id: ctx.productId },
@@ -104,8 +167,13 @@ export async function resolveRate(ctx: {
     }
   }
 
-  // 3. nearest category ancestor with commission_percent
-  const chain = await categoryAncestorChain(ctx.categoryId);
+  // 4. category-scope override rows (F-08) — nearest ancestor first
+  const cRow = overrides.find((r) => r.scope === "category" && r.percent != null);
+  if (cRow) {
+    return { ...fallback, percent: cRow.percent!, source: "override", sourceId: cRow.id };
+  }
+
+  // 5. nearest category ancestor with commission_percent (direct field)
   for (const catId of chain) {
     const cat = await db.category.findUnique({ where: { id: catId }, select: { commissionPercent: true } });
     if (cat?.commissionPercent != null) {
@@ -113,12 +181,18 @@ export async function resolveRate(ctx: {
     }
   }
 
-  // 4. seller override
+  // 6. seller-scope override row (F-08)
+  const sRow = overrides.find((r) => r.scope === "seller" && r.percent != null);
+  if (sRow) {
+    return { ...fallback, percent: sRow.percent!, source: "override", sourceId: sRow.id };
+  }
+
+  // 7. seller direct override
   if (seller?.commissionOverridePercent != null) {
     return { ...fallback, percent: seller.commissionOverridePercent, source: "seller", sourceId: ctx.sellerId };
   }
 
-  // 5. global default
+  // 8. global default
   return fallback;
 }
 

@@ -210,8 +210,9 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
         { value: "bank_payout", label: "Bank payout (adapter phase)" },
       ],
     },
-    wired: true,
-    wiredNote: "Unknown/missing values always fall back to manual — money never moves on a malformed value.",
+    wired: false,
+    wiredNote:
+      "Not yet wired — read only by the dormant PSP payout adapter scaffold (src/lib/psp-adapter.ts, resolvePayoutMode). No payout flow invokes the adapter today; it engages when a real provider payout phase ships. Unknown/missing values still fall back to manual, so money can never move on a malformed value.",
   },
   {
     key: "psp.mock.refund.behavior",
@@ -237,7 +238,7 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
     group: "payments",
     label: "Enabled payment providers (informational)",
     description:
-      "Legacy list from the original seed. Checkout methods come from the PSP provider registry (src/lib/psp.ts), so this list is informational only.",
+      "Legacy list from the original seed — informational only. The checkout method list buyers actually see and the server accepts comes from the single source in src/lib/payment-methods.ts (F-14), not this key and not the PSP adapter registry.",
     field: {
       kind: "string_list",
       default: ["fpx_toyyibpay", "tng", "grabpay", "card_stripe"],
@@ -309,7 +310,8 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
       "Seller Insights browsing/cart events older than this are permanently deleted by the scheduled retention tick. Order, payment and refund records are NEVER deleted by this rule — sales history is authoritative and permanent.",
     field: { kind: "integer", default: 180, min: 7, max: 730 },
     wired: true,
-    wiredNote: "Enforced by /api/cron/analytics-tick (called by the expiry scheduler service).",
+    wiredNote:
+      "Enforced by /api/cron/analytics-tick (reads THIS key; env SI_RETENTION_DAYS is only the fallback when the row is absent — F-11). Called by the expiry scheduler service.",
     danger: true,
   },
 

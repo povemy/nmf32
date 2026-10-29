@@ -33,7 +33,6 @@ import {
   Store,
   Tags,
   Ticket,
-  ToggleLeft,
   UserCheck,
   Users,
   Wallet,
@@ -79,7 +78,7 @@ import { BanksView } from "./banks";
 import { BannersView, CampaignsView, FeaturedView, CouponsView } from "./marketing";
 import { SupportView } from "./support";
 import { ReportsView } from "./reports";
-import { SettingsView, FlagsView, AuditView, ActivityView, NotificationsView, HealthView } from "./system";
+import { SettingsView, AuditView, ActivityView, NotificationsView, HealthView } from "./system";
 
 /* ------------------------------------------------------------ nav tree */
 
@@ -144,7 +143,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "System",
     items: [
       { view: "settings", label: "Settings", icon: Settings, caps: ["settings.manage"] },
-      { view: "flags", label: "Feature Flags", icon: ToggleLeft, caps: ["settings.manage"] },
+      // F-07: "Feature Flags" nav entry removed with its dead page (no runtime
+      // consumer ever read the FeatureFlag table; see system.tsx note).
       { view: "audit", label: "Audit Log", icon: ScrollText, caps: ["logs.view"] },
       { view: "activity", label: "Activity Log", icon: Activity, caps: ["logs.view"] },
       { view: "notifications", label: "Notifications", icon: Bell },
@@ -185,7 +185,6 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   tickets: SupportView,
   reports: ReportsView,
   settings: SettingsView,
-  flags: FlagsView,
   audit: AuditView,
   activity: ActivityView,
   notifications: NotificationsView,

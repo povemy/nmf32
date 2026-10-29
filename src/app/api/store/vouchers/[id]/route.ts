@@ -10,9 +10,11 @@ export const dynamic = "force-dynamic";
 // are frozen — only the isActive toggle is accepted (pausing stops new
 // checkouts from applying it without burning existing holders' claims).
 async function ownVoucher(storeId: string, id: string) {
-  // scope guard: sellers can only touch their own seller-scope vouchers —
-  // never platform pool rows.
-  const voucher = await db.voucher.findFirst({ where: { id, storeId, scope: "seller" } });
+  // scope guard: sellers can only touch their own STORE-scope vouchers —
+  // never platform pool rows. (F-21 fix: this previously filtered
+  // scope:"seller", a value the create route never writes — every own-voucher
+  // PATCH/DELETE 404'd. Rows are created with scope:"STORE".)
+  const voucher = await db.voucher.findFirst({ where: { id, storeId, scope: "STORE" } });
   if (!voucher) throw new ApiError(404, "NOT_FOUND", "Voucher not found");
   return voucher;
 }

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async () => {
   const me = await requireShopper();
   const follows = await db.storeFollow.findMany({
-    where: { shopperId: me.id },
+    where: { shopperUserId: me.id },
     orderBy: { createdAt: "desc" },
     include: {
       store: {
@@ -25,7 +25,7 @@ export const GET = handle(async () => {
           bannerUrl: true,
           status: true,
           tagline: true,
-          _count: { select: { products: true, follows: true } },
+          _count: { select: { products: true, followers: true } },
         },
       },
     },
@@ -40,7 +40,7 @@ export const GET = handle(async () => {
     status: f.store.status,
     isLive: f.store.status === "live",
     productCount: f.store._count.products,
-    followers: f.store._count.follows,
+    followers: f.store._count.followers,
     followedAt: f.createdAt,
   }));
   return ok({ stores, total: stores.length });
@@ -58,10 +58,10 @@ export const POST = handle(async (req: Request) => {
   if (store.status !== "live") throw new ApiError(409, "STORE_NOT_LIVE", "Only live stores can be followed");
 
   try {
-    await db.storeFollow.create({ data: { shopperId: me.id, storeId: store.id } });
+    await db.storeFollow.create({ data: { shopperUserId: me.id, storeId: store.id } });
   } catch (e) {
-    // createMany-safe insert: the unique [shopperId,storeId] pair turns into a
-    // friendly 409 instead of a 500 (P2002 = unique constraint violation).
+    // createMany-safe insert: the unique [shopperUserId,storeId] pair turns
+    // into a friendly 409 instead of a 500 (P2002 = unique constraint violation).
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const followers = await db.storeFollow.count({ where: { storeId: store.id } });
       return ok({ following: true, followers, already: true }, { status: 200 });
@@ -84,7 +84,7 @@ export const DELETE = handle(async (req: Request) => {
   if (!storeId) throw new ApiError(400, "VALIDATION", "storeId is required");
 
   const existing = await db.storeFollow.findUnique({
-    where: { shopperId_storeId: { shopperId: me.id, storeId } },
+    where: { shopperUserId_storeId: { shopperUserId: me.id, storeId } },
   });
   if (!existing) throw new ApiError(404, "NOT_FOUND", "You are not following this store");
 

@@ -110,6 +110,13 @@ const PRODUCTION_SECRETS = [
   { key: "METRICS_TOKEN", endpoint: "GET /api/metrics (read-only, disabled when unset)" },
 ] as const;
 
+// NOT fail-closed, but silently DOWNGRADES: without IMPORT_TOKEN_ENC_KEY the
+// secretbox derives a deterministic development key (F-23 residual surfaced at
+// boot so a production deploy cannot miss it).
+const PRODUCTION_DOWNGRADE_SECRETS = [
+  { key: "IMPORT_TOKEN_ENC_KEY", note: "import/claim tokens are being encrypted with a DERIVED development key (lib/secretbox.ts) — set a strong key before production" },
+] as const;
+
 export function warnProductionSecrets(): void {
   if (process.env.NODE_ENV !== "production") return;
   const missing = PRODUCTION_SECRETS.filter((s) => !process.env[s.key]);
@@ -117,5 +124,10 @@ export function warnProductionSecrets(): void {
     console.error(
       `[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.endpoint} will FAIL CLOSED (503/401) until it is configured.`,
     );
+  }
+  for (const s of PRODUCTION_DOWNGRADE_SECRETS) {
+    if (!process.env[s.key]) {
+      console.error(`[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.note}`);
+    }
   }
 }

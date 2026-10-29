@@ -4,7 +4,7 @@
 // Requires header: X-Metrics-Token: <METRICS_TOKEN from .env>. 503 if unset,
 // 401 on mismatch — never open by default.
 import { snapshot } from "@/lib/metrics";
-import { prismaBase } from "@/lib/db";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,14 @@ export async function GET(req: Request) {
   if (got !== expected) {
     return Response.json({ error: { code: "UNAUTHORIZED", message: "Invalid or missing X-Metrics-Token" } }, { status: 401 });
   }
-  const snap = await snapshot(async () => prismaBase.$metrics.json());
+  // $metrics is a runtime-only Prisma extension on this generated client —
+  // typed access via the structural cast; if unavailable, fail CLOSED (503)
+  // rather than 500-ing the telemetry endpoint.
+  const metricsClient = db as unknown as { $metrics?: { json(): Promise<unknown> } };
+  if (typeof metricsClient.$metrics?.json !== "function") {
+    return Response.json({ error: { code: "METRICS_UNAVAILABLE", message: "Prisma runtime metrics are not available on this client build (fail-closed)" } }, { status: 503 });
+  }
+  const snap = await snapshot(async () => metricsClient.$metrics!.json());
   return Response.json(
     { data: snap },
     { headers: { "Cache-Control": "no-store" } },

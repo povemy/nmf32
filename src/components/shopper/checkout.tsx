@@ -52,6 +52,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { CHECKOUT_PAYMENT_METHODS } from "@/lib/payment-methods";
 import {
   fetchJson,
   postJson,
@@ -88,12 +89,17 @@ const MY_STATES = [
   "Pahang", "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
 ];
 
-const PROVIDERS = [
-  { id: "fpx_toyyibpay", label: "FPX Online Banking", icon: Landmark },
-  { id: "tng", label: "Touch 'n Go eWallet", icon: Smartphone },
-  { id: "grabpay", label: "GrabPay", icon: Wallet },
-  { id: "card_stripe", label: "Card (Stripe MY)", icon: CreditCard },
-];
+// F-14: method ids/labels come from the shared single source (lib/payment-methods.ts)
+// — the same list the create route validates against. Icons are a pure
+// presentation concern, so they map by id here.
+const PROVIDER_ICON: Record<string, typeof Landmark> = {
+  fpx_toyyibpay: Landmark,
+  fpx_curlec: Landmark,
+  tng: Smartphone,
+  grabpay: Wallet,
+  card_stripe: CreditCard,
+};
+const PROVIDERS = CHECKOUT_PAYMENT_METHODS.map((m) => ({ id: m.id, label: m.label, icon: PROVIDER_ICON[m.id] ?? CreditCard }));
 
 const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.label]));
 
@@ -1539,6 +1545,8 @@ type PaymentT = {
   storeName: string | null;
   storeSlug: string | null;
   provider: string;
+  /** Server-authoritative payment window end (ISO) — drives the countdown. */
+  expiresAt: string;
 };
 
 export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: string }) {
@@ -1546,13 +1554,20 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
   const [failed, setFailed] = useState(false);
   const [phase, setPhase] = useState<"awaiting" | "success" | "failure" | "expired">("awaiting");
   const [busy, setBusy] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(10 * 60);
+  // F-15: countdown is driven by the server's expiresAt (30-min window), NOT a
+  // hardcoded 10:00. Provisional 30:00 until the first status load lands; each
+  // 3 s poll re-syncs, so the timer can never drift from the enforcement.
+  const [secondsLeft, setSecondsLeft] = useState(30 * 60);
 
   const load = useCallback(async () => {
     try {
       const p = await fetchJson<PaymentT>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
       setPayment(p);
       setFailed(false);
+      if (p.expiresAt) {
+        const secs = Math.max(0, Math.ceil((new Date(p.expiresAt).getTime() - Date.now()) / 1000));
+        setSecondsLeft(secs);
+      }
       if (p.status === "succeeded") {
         setPhase((ph) => (ph === "awaiting" ? "success" : ph));
       } else if (p.status === "failed") {
@@ -1572,7 +1587,9 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
     return () => clearInterval(t);
   }, [load]);
 
-  // 10:00 countdown
+  // countdown ticks down from the server-provided expiresAt; the "expired"
+  // phase itself stays server-authoritative (the poll flips it once the
+  // payment window actually ends)
   useEffect(() => {
     if (phase !== "awaiting") return;
     const t = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
