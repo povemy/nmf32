@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-29T04:43:48.602Z",
-      "lastSuccessAt": "2026-10-29T04:43:48.786Z",
+      "lastTickAt": "2026-10-29T04:44:18.603Z",
+      "lastSuccessAt": "2026-10-29T04:44:18.786Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 124,
-        "at": "2026-10-29T04:43:48.743Z",
+        "durationMs": 121,
+        "at": "2026-10-29T04:44:18.744Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1207
+      "ticks": 1208
     },
     "refund": {
-      "lastTickAt": "2026-10-29T04:43:48.602Z",
-      "lastSuccessAt": "2026-10-29T04:43:48.748Z",
+      "lastTickAt": "2026-10-29T04:44:18.603Z",
+      "lastSuccessAt": "2026-10-29T04:44:18.752Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,7 +39,7 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-29T04:43:48.704Z",
+        "at": "2026-10-29T04:44:18.709Z",
         "durationMs": 82,
         "backoffMs": 15000,
         "maxAttempts": 8,
@@ -48,16 +48,16 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1207
+      "ticks": 1208
     },
     "analytics": {
-      "lastTickAt": "2026-10-29T04:43:48.602Z",
-      "lastSuccessAt": "2026-10-29T04:43:48.822Z",
+      "lastTickAt": "2026-10-29T04:44:18.603Z",
+      "lastSuccessAt": "2026-10-29T04:44:18.838Z",
       "lastOutcome": {
-        "ranAt": "2026-10-29T04:43:48.781Z",
-        "durationMs": 156,
+        "ranAt": "2026-10-29T04:44:18.794Z",
+        "durationMs": 164,
         "retentionDays": 180,
-        "cutoff": "2026-05-02T04:43:48.625Z",
+        "cutoff": "2026-05-02T04:44:18.630Z",
         "purged": 0,
         "flush": {
           "flushed": 0,
@@ -69,7 +69,7 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 257
+      "ticks": 258
     }
   },
   "alerts": [
