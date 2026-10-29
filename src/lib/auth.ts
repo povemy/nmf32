@@ -220,26 +220,28 @@ export async function requireShopper(): Promise<ShopperUserDTO> {
   return { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone };
 }
 
-// RBAC capability matrix (PART 1 §1.2) — role checks for admin endpoints
-export const ADMIN_CAPS: Record<string, string[]> = {
-  "sellers.approve": ["superadmin", "ops"],
-  "sellers.suspend": ["superadmin", "ops"],
-  "products.moderate": ["superadmin", "ops", "moderator"],
-  "commission.manage": ["superadmin", "finance"],
-  "payouts.manage": ["superadmin", "finance"],
-  "refunds.manage": ["superadmin", "ops", "finance"],
-  "disputes.manage": ["superadmin", "ops", "finance"],
-  "settings.manage": ["superadmin"],
-  "impersonate": ["superadmin"],
-  "logs.view": ["superadmin", "ops", "finance"],
-  /** Permanent ActivityLog wipe — superadmin only, password re-verified. */
-  "logs.purge": ["superadmin"],
-  "campaigns.manage": ["superadmin", "ops"],
-};
+// RBAC capability matrix (PART 1 §1.2) — role checks for admin endpoints.
+// The matrix lives in lib/admin-caps.ts (PURE module) so client components
+// (admin-shell nav gating) import the SAME source of truth — UI == API.
+export { ADMIN_CAPS } from "./admin-caps";
+import { ADMIN_CAPS as CAPS, roleHasAnyCap, type AdminCap } from "./admin-caps";
 
-export async function requireCap(cap: keyof typeof ADMIN_CAPS): Promise<AdminUserDTO> {
+export async function requireCap(cap: AdminCap): Promise<AdminUserDTO> {
   const admin = await requireAdmin();
-  const allowed = ADMIN_CAPS[cap] ?? ["superadmin"];
+  const allowed = CAPS[cap] ?? ["superadmin"];
   if (!allowed.includes(admin.role)) throw new ApiError(403, "FORBIDDEN", `Capability '${cap}' required`);
+  return admin;
+}
+
+/** Any-of capability gate (Phase 3 / F-26): grants access when the admin's
+ * role holds ANY of the listed capabilities — e.g. the seller-detail profile
+ * is needed by ops (seller management) AND finance (commission overrides),
+ * while moderator is excluded from the KYC/bank/wallet PII it returns. */
+export async function requireAnyCap(...caps: AdminCap[]): Promise<AdminUserDTO> {
+  if (caps.length === 0) throw new ApiError(500, "CONFIG", "requireAnyCap requires at least one capability");
+  const admin = await requireAdmin();
+  if (!roleHasAnyCap(admin.role, ...caps)) {
+    throw new ApiError(403, "FORBIDDEN", `Capability required: ${caps.join(" | ")}`);
+  }
   return admin;
 }

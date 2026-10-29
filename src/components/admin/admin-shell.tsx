@@ -60,6 +60,7 @@ import { useApp } from "@/lib/app-store";
 import { apiSend } from "./use-api";
 import type { AdminNav, AdminParams } from "./nav";
 import { EmptyState } from "./ui-bits";
+import { roleHasAnyCap, type AdminCap } from "@/lib/admin-caps";
 
 // views
 import { DashboardView } from "./dashboard";
@@ -82,23 +83,28 @@ import { SettingsView, FlagsView, AuditView, ActivityView, NotificationsView, He
 
 /* ------------------------------------------------------------ nav tree */
 
-type NavItem = { view: string; label: string; icon: LucideIcon };
+type NavItem = { view: string; label: string; icon: LucideIcon; caps?: AdminCap[] };
 type NavGroup = { label: string; items: NavItem[] };
 
+// Phase 3 UI/API consistency: navigation visibility mirrors the SERVER route
+// guards via the SAME capability matrix (src/lib/admin-caps.ts — the module
+// lib/auth.ts requireCap enforces). `caps` = ANY-of; omitted = every admin
+// role (requireAdmin surface). The server remains the enforcement boundary —
+// this only stops the UI from offering surfaces a role cannot use.
 const NAV_GROUPS: NavGroup[] = [
   { label: "", items: [{ view: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
   {
     label: "Sellers",
     items: [
       { view: "sellers", label: "All Sellers", icon: Users },
-      { view: "kyc-queue", label: "KYC Queue", icon: UserCheck },
+      { view: "kyc-queue", label: "KYC Queue", icon: UserCheck, caps: ["sellers.approve"] },
     ],
   },
   { label: "Stores", items: [{ view: "stores", label: "Stores & Domains", icon: Store }] },
   {
     label: "Catalog",
     items: [
-      { view: "moderation", label: "Product Moderation", icon: PackageSearch },
+      { view: "moderation", label: "Product Moderation", icon: PackageSearch, caps: ["products.moderate"] },
       { view: "categories", label: "Categories", icon: Tags },
     ],
   },
@@ -113,23 +119,23 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Finance",
     items: [
-      { view: "commission", label: "Commission", icon: Percent },
-      { view: "overrides", label: "Overrides", icon: SlidersHorizontal },
-      { view: "holidays", label: "Fee Holidays", icon: CalendarClock },
+      { view: "commission", label: "Commission", icon: Percent, caps: ["commission.manage"] },
+      { view: "overrides", label: "Overrides", icon: SlidersHorizontal, caps: ["commission.manage"] },
+      { view: "holidays", label: "Fee Holidays", icon: CalendarClock, caps: ["commission.manage"] },
       { view: "simulator", label: "Simulator", icon: FlaskConical },
       { view: "wallets", label: "Wallets", icon: Wallet },
       { view: "ledger", label: "Ledger Explorer", icon: BookOpen },
       { view: "payouts", label: "Payout Batches", icon: Banknote },
-      { view: "banks", label: "Bank Verification", icon: Landmark },
+      { view: "banks", label: "Bank Verification", icon: Landmark, caps: ["sellers.approve", "payouts.manage"] },
     ],
   },
   {
     label: "Marketing",
     items: [
       { view: "banners", label: "Banners", icon: Megaphone },
-      { view: "campaigns", label: "Campaigns", icon: PartyPopper },
+      { view: "campaigns", label: "Campaigns", icon: PartyPopper, caps: ["campaigns.manage"] },
       { view: "featured", label: "Featured", icon: Star },
-      { view: "coupons", label: "Coupons", icon: Ticket },
+      { view: "coupons", label: "Coupons", icon: Ticket, caps: ["campaigns.manage"] },
     ],
   },
   { label: "Support", items: [{ view: "tickets", label: "Tickets", icon: LifeBuoy }] },
@@ -137,10 +143,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
-      { view: "settings", label: "Settings", icon: Settings },
-      { view: "flags", label: "Feature Flags", icon: ToggleLeft },
-      { view: "audit", label: "Audit Log", icon: ScrollText },
-      { view: "activity", label: "Activity Log", icon: Activity },
+      { view: "settings", label: "Settings", icon: Settings, caps: ["settings.manage"] },
+      { view: "flags", label: "Feature Flags", icon: ToggleLeft, caps: ["settings.manage"] },
+      { view: "audit", label: "Audit Log", icon: ScrollText, caps: ["logs.view"] },
+      { view: "activity", label: "Activity Log", icon: Activity, caps: ["logs.view"] },
       { view: "notifications", label: "Notifications", icon: Bell },
       { view: "health", label: "System Health", icon: HeartPulse },
     ],
@@ -219,12 +225,13 @@ export default function AdminShell() {
   }
 
   const title = VIEW_TITLES[view] ?? "Command Centre";
+  const role = me.admin.role;
 
   return (
     <div className="flex min-h-screen w-full">
       {/* desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-56 shrink-0 border-r bg-card/40 lg:block">
-        <SidebarContent nav={nav} />
+        <SidebarContent nav={nav} role={role} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -232,7 +239,7 @@ export default function AdminShell() {
         <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-            <MobileNav nav={nav} />
+            <MobileNav nav={nav} role={role} />
             <h1 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight sm:text-base">{title}</h1>
             <AdminMenu admin={me.admin} />
           </div>
@@ -284,7 +291,13 @@ export default function AdminShell() {
 
 /* -------------------------------------------------------------- sidebar */
 
-function SidebarContent({ nav, onNavigate }: { nav: AdminNav; onNavigate?: () => void }) {
+function SidebarContent({ nav, role, onNavigate }: { nav: AdminNav; role: string; onNavigate?: () => void }) {
+  // Phase 3: filter nav items by the signed-in admin's capabilities using the
+  // same matrix the server enforces (lib/admin-caps.ts). Empty groups hidden.
+  const visibleGroups = NAV_GROUPS.map((g) => ({
+    label: g.label,
+    items: g.items.filter((i) => !i.caps || roleHasAnyCap(role, ...i.caps)),
+  })).filter((g) => g.items.length > 0);
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 border-b px-4 py-4">
@@ -304,7 +317,7 @@ function SidebarContent({ nav, onNavigate }: { nav: AdminNav; onNavigate?: () =>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3 [scrollbar-width:thin] [scrollbar-color:rgba(20,184,166,0.4)_transparent] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-teal-600/30 [&::-webkit-scrollbar]:w-1.5" aria-label="Admin navigation">
-        {NAV_GROUPS.map((group, gi) => (
+        {visibleGroups.map((group, gi) => (
           <div key={group.label || `g${gi}`} className="mb-2">
             {group.label ? (
               <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{group.label}</p>
@@ -347,7 +360,7 @@ function SidebarContent({ nav, onNavigate }: { nav: AdminNav; onNavigate?: () =>
   );
 }
 
-function MobileNav({ nav }: { nav: AdminNav }) {
+function MobileNav({ nav, role }: { nav: AdminNav; role: string }) {
   const [open, setOpen] = useState(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -365,7 +378,7 @@ function MobileNav({ nav }: { nav: AdminNav }) {
           <SheetTitle>Admin navigation</SheetTitle>
           <SheetDescription>Navigate between command centre views</SheetDescription>
         </SheetHeader>
-        <SidebarContent nav={nav} onNavigate={() => setOpen(false)} />
+        <SidebarContent nav={nav} role={role} onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

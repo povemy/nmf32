@@ -101,13 +101,63 @@ src/ breakdown: `me/follows` 14 (Prisma field drift: `shopperId`→`shopperUserI
 
 **Stop-and-test discipline:** payment/authorization changes were tested at each boundary before continuing (webhook signature matrix, then suspension lifecycle, then rotation) — all executed against the live dev server with DB state verified through responses.
 
-## Phase 2 — High-risk public entry points
+## Phase 2 — High-risk public entry points (CODE LANDED in commit 9fe703e; log reconciled 2026-10-31)
 
-(pending)
+> Honesty note: Phase 2 fixes were implemented + probed in the prior session (context truncated before the log was written); the code and probe evidence files are committed in `9fe703e`. This session re-verified every fix by direct source read (line-level, below) and re-exercised the login paths (6 successful logins) via the Phase 3 probe. Items not re-probed at runtime this session are labeled accordingly.
 
-## Phase 3 — Authorization boundaries
+### F-05 — Shipping webhook (FIXED · code re-verified this session)
+- `shipping/webhook/[provider]/route.ts` rewritten against the live `Shipment` model: HMAC-SHA256 over `${awb}.${status}.${ts}` with `SHIPPING_WEBHOOK_SECRET`, timing-safe `safeEqualHex`, replay window, **fail-closed 503 `SHIPPING_SECRET_UNSET` in production** when the secret is unset (dev keeps documented fallback). Prior-session probe evidence: `tool-results/` (committed). Runtime re-probe this session: **NOT TESTED** (covered by code-path read; the payments-webhook HMAC pattern was live-verified in Phase 1).
 
-(pending)
+### F-06 — Chat hub/relay + gateway (FIXED · code re-verified this session)
+- `mini-services/chat-service/index.ts`: socket handshake authenticated via `GET /api/chat/hub-auth` (NEW authoritative Next endpoint validating the session and issuing a hub token), room membership enforced on `join`; relay `POST /broadcast` requires `CHAT_RELAY_SECRET` (timing-safe; production without it fails closed). `Caddyfile` `XTransformPort` allowlist restricted to **3000/3003** (3103/3005 internal-only). Prior-session probe evidence: `chat-auth-probe{,2,3}.ts`, `hubauth-debug.ts`, `ws-debug.ts` (committed). Runtime re-probe this session: **NOT TESTED**.
+
+### F-13 — Mock PSP fail-closed (FIXED · code re-verified this session)
+- `lib/psp.ts:206-214` `mockPspAllowed()`: dev → true; production → **strict `parseJson<boolean>(row, false) === true`** — missing row, malformed JSON, and truthy non-boolean all → false. Prior-session probe: `f13-probe.ts` (committed). Runtime re-probe: **NOT TESTED** this session.
+
+### F-12/F-19 — Auth abuse + demo credentials (FIXED · code re-verified this session)
+- Login 10/min + register 5/min bounded IP rate limits (`auth/login`, `auth/register`, `auth/shopper/{login,register}` — `rateLimit(req, "auth-login"|"auth-register", …)` verified in source). Uniform 401s (no account-existence leak — prior-session probe `phase2-misc-probes.ts`, committed). `DEMO_ACCOUNTS` quick-fill (superadmin/ops/finance/moderator emails + passwords) **removed from the client bundle** (admin-shell diff verified in 9fe703e); seeded passwords env-overridable (`SEED_*_PASSWORD`, `prisma/seed.ts:420-439`) and documented only in `.env.example`/seed (server-side). This session's live evidence: 6/6 logins succeeded through the throttle (matrix probe), confirming the limiter does not block legitimate traffic.
+
+## Phase 3 — Authorization boundaries (LANDED + RUNTIME-VERIFIED 2026-10-31)
+
+### Starting-state correction (honesty record)
+The prior session's last note claimed "mutation routes are capped" — **wrong**: F-09 (`sellers/[id]` PATCH), F-18 (`featured-stores` PUT), F-25 (webhook-deliveries replay) and every F-26 read were still bare `requireAdmin` at `1c5bbd7..9fe703e` (verified by `git diff --stat` = empty for those files + direct reads). Most `commission/*` routes were already capped, which explains the misread. All re-verified before any fix; nothing was trusted from the prior session's claim.
+
+### Capability decisions (existing matrix extended by ONE cap; all others reused)
+
+| Route | Guard before | Guard now | Rationale |
+|---|---|---|---|
+| `PATCH /api/admin/sellers/[id]` — `riskTier`/`commissionOverridePercent`/`holdDaysOverride` | `requireAdmin` | **`requireCap("commission.manage")`** (audit's own fix direction) when any such field is in the body; `marketplaceOptIn`-only bodies stay `requireAdmin` (listing preference, not money policy) | moderator could zero commission + hold days |
+| `GET /api/admin/sellers/[id]` (KYC docs + banks + wallet + notes) | `requireAdmin` | **`requireAnyCap("sellers.approve","commission.manage")`** → superadmin+ops+finance | ops manage sellers, finance edits overrides from this very view (F-09 fields live here); moderator excluded (F-26) |
+| `PUT /api/admin/featured-stores` (Setting write) | `requireAdmin` | **`requireCap("settings.manage")`** (audit direction; parity with `/api/admin/settings` PUT) | F-18 settings.manage bypass |
+| `POST /api/admin/webhook-deliveries/[id]/replay` (forges delivery success) | `requireAdmin` | **`requireCap("settings.manage")`** | most destructive existing cap for a system-integrity write; F-25 |
+| `GET /api/admin/kyc-queue` (KYC docs + banks + wallets) | `requireAdmin` | **`requireCap("sellers.approve")`** | matches the approve/reject/KYC-decision routes this queue feeds |
+| `GET /api/admin/banks` | `requireAdmin` | **`requireAnyCap("sellers.approve","payouts.manage")`** | read tier aligned with its own verify/reject mutations (`sellers.approve`, already capped pre-Phase-3) + finance payout-safety read; moderator excluded |
+| `GET /api/admin/export?entity=…` (bulk CSV: customer emails, wallet balances, full ledger) | `requireAdmin` | **`requireCap("reports.export")`** — NEW cap `[superadmin, finance]` | matrix EXTENSION (logged): no existing cap covers bulk PII+money CSV; tier matches data class. Aggregate-only `/api/admin/reports/[type]` deliberately stays `requireAdmin` (verified: no row-level PII — series/totals/by-store aggregates only) |
+| `GET /api/admin/commission/analytics` | `requireAdmin` | **`requireCap("commission.manage")`** | per-store commission money read; sibling exports POST already capped |
+| `GET /api/admin/commission/exports/[id]/download` | `requireAdmin` | **`requireCap("commission.manage")`** | full commission CSV download |
+| `POST/PATCH/DELETE /api/admin/coupons[/id]` | `requireAdmin` | **`requireCap("campaigns.manage")`** | §3.2 LOW-MED row: coupons are honoured by server pricing — marketing-tier money lever; GET list stays admin-wide |
+
+Infrastructure: `ADMIN_CAPS` moved to **pure `src/lib/admin-caps.ts`** (single source of truth importable from client components) with `roleHasCap`/`roleHasAnyCap`; `lib/auth.ts` re-exports it and adds `requireAnyCap(...caps)`.
+
+### F-22 — OAuth callback state fail-open (FIXED · RUNTIME-VERIFIED)
+- `auth/callback/[platform]/route.ts` rewritten fail-closed: state REQUIRED → row must exist → **delete-first single use** → platform match → 10-min TTL (tolerates both `Date.now()` ms and ISO createdAt) → **cross-seller CSRF guard** (state `sellerId` vs completing seller session → `state_seller_mismatch`). Session-less completion of a seller-bound state is deliberately allowed (cookie may be absent on iframe/Bearer surfaces; final ownership is enforced by claim/bind's hashed single-use token). `logActivity` now records the initiating sellerId.
+- **Dead code removed:** `src/lib/marketplaces/callback.ts` deleted (zero importers — verified) — its `handleOAuthCallback`/`beginAuthorisation` duplicated the live routes with DIVERGENT semantics (the exact drift hazard that produced F-22).
+- **Evidence (`tool-results/phase3-f22-oauth-probe.ts`, live): 15/15 PASS** — absent/unknown/consumed/malformed → `invalid_state`; expired → `expired_state`; platform mismatch → `state_platform_mismatch`; cross-seller CSRF → `state_seller_mismatch`; matched + session-less + ISO-format states reach the exchange; single-use re-hit → `invalid_state`; crafted rows cleaned up.
+
+### UI/API consistency (client mirrors the server matrix)
+- `admin-shell.tsx`: nav items carry `caps?: AdminCap[]` (any-of); `SidebarContent` filters by the signed-in role via the SAME matrix; groups with zero visible items hidden. Mapping: kyc-queue→sellers.approve; banks→any(sellers.approve,payouts.manage); commission/overrides/holidays→commission.manage; campaigns/coupons→campaigns.manage; settings/flags→settings.manage; audit/activity→logs.view (fixes pre-existing 403-on-click for moderator); moderation→products.moderate (no visual change — all roles hold it).
+- New `use-admin-caps.ts` hook (`can(...)` from `useApp`); view-level gates: ReportsView export buttons (reports.export), BanksView verify/reject (sellers.approve — finance sees read-only note), SellersView row drill-down + dropdown actions (any(sellers.approve,commission.manage) / sellers.approve / sellers.suspend; kebab hidden entirely for roles with no actions), SellerDetailView commission editor (commission.manage; read-only summary otherwise; `saveOverview` sends commission fields ONLY when the role can write them — a moderator PATCH never carries fields the server would reject) + lifecycle/KYC/bank action buttons per their caps.
+- **Browser verification (agent-browser, live):** moderator — 18 nav items visible / 11 gated items absent, Reports renders with **0 CSV buttons**, seller rows not clickable, 0 action kebabs; superadmin — all 29 nav items, **3 CSV buttons**, rows clickable, "Open detail" works, seller-detail loads with all commission fields; zero browser/console/server errors during the whole session.
+
+### Negative/positive authorization matrix (live probe: `tool-results/phase3-authz-probe.ts`)
+
+**60/60 PASS** — per-route role outcomes (superadmin/ops/finance/moderator + seller/shopper/anonymous cross-principal 401s), including preserved legitimate surfaces: moderator sellers-list/reports-aggregates/dashboard/notes remain 200; ops+finance seller-detail 200; finance banks 200; moderator coupon LIST 200.
+
+### Logged residuals (deliberate, unflagged by the audit)
+- `sellers/[id]/notes` GET/POST stays `requireAdmin` (internal commentary, no PII/money) — probe-verified preserved.
+- `featured/*` (live FeaturedSlot CRUD) stays `requireAdmin` (merchandising, not flagged); the dead `featured-stores` Setting consumer decision belongs to Phase 4.
+- Refunds/Disputes/Payouts/Wallets reads stay `requireAdmin` (same class as orders/dashboard — unflagged); their mutations were already capped pre-Phase-3; non-cap roles clicking their action buttons get server 403s with error toasts (pre-existing behavior, not regressed).
+- Probe artifacts: one `[LT]`-class throwaway seller (`lt-p3b-*@probe.local`, onboarding) + one LT shopper + one internal note on the seeded test seller — consistent with the repo's LT test-data convention.
 
 ## Phase 4 — Configuration / functional consistency
 

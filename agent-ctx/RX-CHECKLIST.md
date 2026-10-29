@@ -426,17 +426,31 @@ full-audit-report.md status updates (preserving historical findings), this check
       documents none of them; next.config.ts ignoreBuildErrors:false → src errors
       are hard build blockers. Blueprint (§943-945) claims rotation/revocation
       shipped — FALSE (doc ≠ impl); blueprint's design adopted as the spec.
-- [ ] G3 P1 F-04 webhook secret fail-closed + .env.example placeholders.
-- [ ] G4 P1 F-01 CSRF: src/proxy.ts origin/Sec-Fetch-Site/content-type guard.
-- [ ] G5 P1 F-02/F-24: status enforcement + session revocation + login gate +
-      publish gate.
-- [ ] G6 P1 F-03: rotateSession + revokeUserSessions + safeEqualHex + psp.ts
-      adapter types.
-- [ ] G7 P2 shipping webhook HMAC + rewrite against Shipment model; chat
+- [x] G3 P1 F-04 webhook secret fail-closed + .env.example placeholders.
+      (LANDED + verified 2026-10-30 — see security-remediation.md Phase 1; commit
+      9fe703e: process.ts lazy secret + instrumentation warnProductionSecrets.)
+- [x] G4 P1 F-01 CSRF: src/proxy.ts origin/Sec-Fetch-Site/content-type guard.
+      (LANDED + 9 live probes PASS — Phase 1 log; commit 9fe703e.)
+- [x] G5 P1 F-02/F-24: status enforcement + session revocation + login gate +
+      publish gate. (LANDED + 21-check lifecycle probe PASS — Phase 1 log.)
+- [x] G6 P1 F-03: rotateSession + revokeUserSessions + safeEqualHex + psp.ts
+      adapter types. (LANDED + rotation matrix PASS — Phase 1 log.)
+- [x] G7 P2 shipping webhook HMAC + rewrite against Shipment model; chat
       hub/relay auth; gateway port restriction; mockPspAllowed fail-closed;
-      login/register rate limits; demo creds removal.
-- [ ] G8 P3 capability-tier guards on the listed mutations/reads + negative
-      authorization probes.
+      login/register rate limits; demo creds removal. (Code LANDED in commit
+      9fe703e — re-verified this session: psp.ts:206-214 strict ===true fail
+      closed; login rateLimit 10/min + register 5/min; shipping webhook HMAC +
+      503 SHIPPING_SECRET_UNSET; chat relay CHAT_RELAY_SECRET + hub-auth route;
+      Caddyfile XTransformPort restricted to 3000/3003; admin-shell DEMO_ACCOUNTS
+      removed. Log section to be reconciled in G11 update — code evidence on disk.)
+- [x] G8 P3 capability-tier guards on the listed mutations/reads + negative
+      authorization probes. (DONE 2026-10-31 — security-remediation.md Phase 3:
+      F-09/F-18/F-25/F-26 + coupons capped; F-22 OAuth state fail-closed +
+      dead divergent callback module deleted; admin-caps.ts single matrix
+      shared by server guards and client nav; matrix probe 60/60 PASS live;
+      F-22 probe 15/15 PASS live; agent-browser moderator/superadmin UI
+      verification clean; tsc 34 src errors = pre-existing baseline, zero in
+      changed files; lint 0 errors.)
 - [ ] G9 P4 linkage honesty decisions (wire/label/remove) per finding.
 - [ ] G10 P5 regressions, lint, tsc src-clean, dev-server + agent-browser
       verification, honest build-gate labeling.

@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatMinor } from "@/lib/money";
 import { useApi } from "./use-api";
+import { useAdminCaps } from "./use-admin-caps";
 import {
   EmptyState,
   ErrorState,
@@ -74,6 +75,7 @@ const tooltipStyle = { borderRadius: 10, fontSize: 12 };
 
 export function ReportsView() {
   const [days, setDays] = useState("30");
+  const { can } = useAdminCaps();
 
   const exportCsv = (entity: "orders" | "sellers" | "ledger") => {
     window.location.href = `/api/admin/export?entity=${entity}`;
@@ -96,15 +98,19 @@ export function ReportsView() {
                 <SelectItem value="90">Last 90 days</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("orders")}>
-              <Download className="h-3.5 w-3.5" /> Orders CSV
-            </Button>
-            <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("sellers")}>
-              <Download className="h-3.5 w-3.5" /> Sellers CSV
-            </Button>
-            <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("ledger")}>
-              <Download className="h-3.5 w-3.5" /> Ledger CSV
-            </Button>
+            {can("reports.export") ? (
+              <>
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("orders")}>
+                  <Download className="h-3.5 w-3.5" /> Orders CSV
+                </Button>
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("sellers")}>
+                  <Download className="h-3.5 w-3.5" /> Sellers CSV
+                </Button>
+                <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => exportCsv("ledger")}>
+                  <Download className="h-3.5 w-3.5" /> Ledger CSV
+                </Button>
+              </>
+            ) : null}
           </>
         }
       />

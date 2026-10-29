@@ -1,13 +1,18 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/admin/webhook-deliveries/[id]/replay — simulate a successful retry
+// F-25 (Phase 3): this operation FORGES delivery success (writes
+// status:"success", responseCode:200 without actually re-delivering), so it is
+// now superadmin-only via `settings.manage` — the most restrictive existing cap
+// for a system-integrity write. Previously bare requireAdmin let any admin
+// role (moderator included) mark failed deliveries as delivered.
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("settings.manage");
   const { id } = await ctx.params;
 
   const delivery = await db.webhookDelivery.findUnique({ where: { id }, include: { endpoint: { include: { store: true } } } });

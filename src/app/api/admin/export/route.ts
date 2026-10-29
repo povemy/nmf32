@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, ApiError, logActivity } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { csvRow } from "@/app/api/admin/_helpers";
 
 const MAX_ROWS = 500;
 
 // GET /api/admin/export?entity=orders|sellers|ledger — CSV download (capped at 500 rows)
+// F-26 (Phase 3): bulk PII + money export — orders CSV carries customer
+// emails, sellers CSV carries wallet balances + KYC status, ledger CSV is the
+// full double-entry trail. Gated to `reports.export` (superadmin | finance;
+// matrix extension — see lib/admin-caps.ts). Aggregate-only reports
+// (/api/admin/reports/[type]) intentionally stay at requireAdmin: no row-level
+// PII there.
 export const GET = handle(async (req: NextRequest) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("reports.export");
   const url = new URL(req.url);
   const entity = url.searchParams.get("entity") ?? "orders";
 

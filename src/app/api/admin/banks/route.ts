@@ -1,11 +1,15 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAnyCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 // GET /api/admin/banks?verified=true|false|all
+// F-26 (Phase 3): bank verification data (holder names, masked accounts,
+// seller identities) — read tier aligned with the existing verify/reject
+// mutations (`sellers.approve`: superadmin | ops) plus payout-safety readers
+// (`payouts.manage`: superadmin | finance). Moderator excluded.
 export const GET = handle(async (req: NextRequest) => {
-  await requireAdmin();
+  await requireAnyCap("sellers.approve", "payouts.manage");
   const url = new URL(req.url);
   const verified = url.searchParams.get("verified");
 

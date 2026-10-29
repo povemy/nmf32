@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { aggregateCommission } from "@/lib/commission-export";
 import { ACCOUNTS } from "@/lib/ledger";
@@ -9,8 +9,11 @@ import { parseMaybeJson } from "@/app/api/admin/_helpers";
 
 // GET /api/admin/commission/analytics?days=90 — ledger-truth commission
 // analytics + recent exports + dormant PSP split-settlement scaffold state.
+// F-26 (Phase 3): per-store commission money read — now `commission.manage`
+// (superadmin | finance), matching the exports POST that creates the same
+// data. Previously bare requireAdmin (moderator readable).
 export const GET = handle(async (req: NextRequest) => {
-  await requireAdmin();
+  await requireCap("commission.manage");
   const url = new URL(req.url);
   const days = Math.min(730, Math.max(7, Number(url.searchParams.get("days") ?? 90) || 90));
   const periodTo = new Date();

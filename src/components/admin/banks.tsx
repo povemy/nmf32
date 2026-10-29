@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiSend, useApi } from "./use-api";
+import { useAdminCaps } from "./use-admin-caps";
 import {
   ConfirmDialog,
   EmptyState,
@@ -48,6 +49,7 @@ function nameMatches(holder: string | null | undefined, store: string | null | u
 }
 
 export function BanksView() {
+  const { can } = useAdminCaps();
   const queue = useApi<BankRow[]>("/api/admin/banks?verified=false");
   const verified = useApi<BankRow[]>("/api/admin/banks?verified=true");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -131,23 +133,29 @@ export function BanksView() {
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <Button
-                        size="sm"
-                        className="min-h-[44px] flex-1 bg-emerald-600 hover:bg-emerald-700 lg:flex-none"
-                        disabled={busyId !== null}
-                        onClick={() => setVerifyTarget(b)}
-                      >
-                        <BadgeCheck className="h-4 w-4" /> Verify
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="min-h-[44px] flex-1 border-red-200 text-red-600 hover:bg-red-50 lg:flex-none dark:border-red-900 dark:hover:bg-red-950/40"
-                        disabled={busyId !== null}
-                        onClick={() => setRejectTarget(b)}
-                      >
-                        <XCircle className="h-4 w-4" /> Reject
-                      </Button>
+                      {can("sellers.approve") ? (
+                        <>
+                          <Button
+                            size="sm"
+                            className="min-h-[44px] flex-1 bg-emerald-600 hover:bg-emerald-700 lg:flex-none"
+                            disabled={busyId !== null}
+                            onClick={() => setVerifyTarget(b)}
+                          >
+                            <BadgeCheck className="h-4 w-4" /> Verify
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-[44px] flex-1 border-red-200 text-red-600 hover:bg-red-50 lg:flex-none dark:border-red-900 dark:hover:bg-red-950/40"
+                            disabled={busyId !== null}
+                            onClick={() => setRejectTarget(b)}
+                          >
+                            <XCircle className="h-4 w-4" /> Reject
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground lg:px-2">Read-only — verification requires the ops tier.</p>
+                      )}
                     </div>
                   </div>
                 );

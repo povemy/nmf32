@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { handle, ok, okPaged, getPagination, ApiError, auditAdmin } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, str, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
 
@@ -21,8 +21,11 @@ export const GET = handle(async (req: NextRequest) => {
 });
 
 // POST /api/admin/coupons
+// Phase 3 (§3.2 coupons row): platform coupons are honoured by server pricing
+// (pricing.ts) — writing them is a marketing-tier money lever, now gated to
+// `campaigns.manage` (superadmin | ops). Reads (GET above) stay admin-wide.
 export const POST = handle(async (req: NextRequest) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("campaigns.manage");
   const body = await readBody(req);
 
   const code = reqStr(body, "code", "code").toUpperCase();

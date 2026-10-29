@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, parseMaybeJson } from "@/app/api/admin/_helpers";
 
@@ -69,8 +69,11 @@ export const GET = handle(async () => {
 
 // PUT /api/admin/featured-stores { storeIds: string[] } — replace the whole
 // ordered list (the client sends add/remove/reorder results as one array).
+// F-18 (Phase 3): this writes the Setting table, so it now carries the same
+// `settings.manage` (superadmin) gate as every other Setting write
+// (/api/admin/settings PUT) — previously bare requireAdmin bypassed the cap.
 export const PUT = handle(async (req: NextRequest) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("settings.manage");
   const body = await readBody(req);
 
   const rawIds = Array.isArray(body.storeIds) ? body.storeIds : null;

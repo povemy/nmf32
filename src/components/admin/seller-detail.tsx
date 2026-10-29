@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMinor } from "@/lib/money";
 import { apiSend, useApi } from "./use-api";
+import { useAdminCaps } from "./use-admin-caps";
 import type { AdminNav } from "./nav";
 import {
   ConfirmDialog,
@@ -66,6 +67,7 @@ type SellerDetailBody = {
 };
 
 export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: string }) {
+  const { can } = useAdminCaps();
   const { data, error, loading, refetch } = useApi<SellerDetailBody>(`/api/admin/sellers/${sellerId}`);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -105,12 +107,18 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
     if (!seller) return;
     setBusy("overview");
     try {
-      await apiSend(`/api/admin/sellers/${seller.id}`, "PATCH", {
-        riskTier: risk ?? seller.riskTier,
-        commissionOverridePercent: commPct === "" ? null : Number(commPct),
-        holdDaysOverride: holdDays === "" ? null : Number(holdDays),
+      // Phase 3 / F-09: commission-policy fields are server-gated to
+      // commission.manage — sessions without the cap send opt-in only, so
+      // the PATCH never carries fields the role cannot write.
+      const body: Record<string, unknown> = {
         marketplaceOptIn: optIn ?? seller.marketplaceOptIn,
-      });
+      };
+      if (can("commission.manage")) {
+        body.riskTier = risk ?? seller.riskTier;
+        body.commissionOverridePercent = commPct === "" ? null : Number(commPct);
+        body.holdDaysOverride = holdDays === "" ? null : Number(holdDays);
+      }
+      await apiSend(`/api/admin/sellers/${seller.id}`, "PATCH", body);
       toast.success("Seller updated", { description: "Changes audited server-side." });
       void refetch();
     } catch (e) {
@@ -151,27 +159,27 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
         description={`${store?.name ?? "No store"} · ${seller.email}`}
         actions={
           <div className="flex flex-wrap gap-2">
-            {status === "pending_review" || status === "rejected" ? (
+            {can("sellers.approve") && (status === "pending_review" || status === "rejected") ? (
               <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700" disabled={busy !== null} onClick={() => setConfirm("approve")}>
                 Approve
               </Button>
             ) : null}
-            {status === "pending_review" ? (
+            {can("sellers.approve") && status === "pending_review" ? (
               <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy !== null} onClick={() => setRejectOpen(true)}>
                 Reject
               </Button>
             ) : null}
-            {status === "active" ? (
+            {can("sellers.suspend") && status === "active" ? (
               <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy !== null} onClick={() => setSuspendOpen(true)}>
                 Suspend
               </Button>
             ) : null}
-            {status === "suspended" ? (
+            {can("sellers.suspend") && status === "suspended" ? (
               <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy !== null} onClick={() => setConfirm("activate")}>
                 Activate
               </Button>
             ) : null}
-            {status !== "terminated" ? (
+            {can("sellers.suspend") && status !== "terminated" ? (
               <Button size="sm" variant="outline" className="min-h-[44px] border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0 dark:border-red-900 dark:hover:bg-red-950/40" disabled={busy !== null} onClick={() => setTerminateOpen(true)}>
                 Terminate
               </Button>
@@ -209,37 +217,51 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
             </CardHeader>
             <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Risk tier</Label>
-                  <Select value={risk ?? seller.riskTier} onValueChange={setRisk}>
-                    <SelectTrigger className="min-h-[44px]" aria-label="Risk tier"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">low</SelectItem>
-                      <SelectItem value="medium">medium</SelectItem>
-                      <SelectItem value="high">high</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Commission override % (blank = inherit)</Label>
-                  <Input
-                    inputMode="decimal"
-                    value={commPct}
-                    onChange={(e) => setCommPct(e.target.value)}
-                    placeholder={seller.commissionOverridePercent != null ? String(seller.commissionOverridePercent) : "inherit"}
-                    className="min-h-[44px]"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Payout hold days override (blank = global)</Label>
-                  <Input
-                    inputMode="numeric"
-                    value={holdDays}
-                    onChange={(e) => setHoldDays(e.target.value)}
-                    placeholder={seller.holdDaysOverride != null ? String(seller.holdDaysOverride) : "global default"}
-                    className="min-h-[44px]"
-                  />
-                </div>
+                {can("commission.manage") ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Risk tier</Label>
+                      <Select value={risk ?? seller.riskTier} onValueChange={setRisk}>
+                        <SelectTrigger className="min-h-[44px]" aria-label="Risk tier"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">low</SelectItem>
+                          <SelectItem value="medium">medium</SelectItem>
+                          <SelectItem value="high">high</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Commission override % (blank = inherit)</Label>
+                      <Input
+                        inputMode="decimal"
+                        value={commPct}
+                        onChange={(e) => setCommPct(e.target.value)}
+                        placeholder={seller.commissionOverridePercent != null ? String(seller.commissionOverridePercent) : "inherit"}
+                        className="min-h-[44px]"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Payout hold days override (blank = global)</Label>
+                      <Input
+                        inputMode="numeric"
+                        value={holdDays}
+                        onChange={(e) => setHoldDays(e.target.value)}
+                        placeholder={seller.holdDaysOverride != null ? String(seller.holdDaysOverride) : "global default"}
+                        className="min-h-[44px]"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label className="text-xs text-muted-foreground">Commission &amp; risk</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Risk tier {seller.riskTier} · commission{" "}
+                      {seller.commissionOverridePercent != null ? `${seller.commissionOverridePercent}% override` : "inherits defaults"} · hold{" "}
+                      {seller.holdDaysOverride != null ? `${seller.holdDaysOverride}-day override` : "global default"}{" "}
+                      — policy edits require the finance tier (commission.manage).
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-end gap-3 pb-1">
                   <Switch
                     checked={optIn ?? seller.marketplaceOptIn}
@@ -527,6 +549,7 @@ function BankActionHead() {
 
 function BankRow({ acc, busy, onDone }: { acc: BankAcc; busy: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
+  const { can } = useAdminCaps();
   return (
     <>
       <TableRow>
@@ -536,14 +559,18 @@ function BankRow({ acc, busy, onDone }: { acc: BankAcc; busy: boolean; onDone: (
         <TableCell>{acc.verified ? <StatusChip status="verified" /> : <StatusChip status="pending" />}</TableCell>
         <TableCell className="text-right">
           {!acc.verified ? (
-            <div className="flex justify-end gap-1.5">
-              <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy} onClick={() => setOpen(true)}>
-                Reject
-              </Button>
-              <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:min-h-0" disabled={busy} onClick={() => void bankAction(acc.id, "verify", undefined, onDone)}>
-                Verify
-              </Button>
-            </div>
+            can("sellers.approve") ? (
+              <div className="flex justify-end gap-1.5">
+                <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy} onClick={() => setOpen(true)}>
+                  Reject
+                </Button>
+                <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:min-h-0" disabled={busy} onClick={() => void bankAction(acc.id, "verify", undefined, onDone)}>
+                  Verify
+                </Button>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">ops tier only</span>
+            )
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           )}
@@ -582,6 +609,7 @@ async function bankAction(id: string, kind: "verify" | "reject", body: unknown, 
 
 function KycDocRow({ doc, sellerId, busy, onDone }: { doc: KycDoc; sellerId: string; busy: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
+  const { can } = useAdminCaps();
   const decide = async (decision: "approved" | "rejected", reason?: string) => {
     try {
       await apiSend(`/api/admin/sellers/${sellerId}/kyc/${doc.id}`, "POST", { decision, reason });
@@ -601,14 +629,18 @@ function KycDocRow({ doc, sellerId, busy, onDone }: { doc: KycDoc; sellerId: str
         <TableCell className="hidden text-xs text-muted-foreground md:table-cell">{doc.reviewedAt ? fmtDT(doc.reviewedAt) : "—"}</TableCell>
         <TableCell className="text-right">
           {doc.status === "pending" ? (
-            <div className="flex justify-end gap-1.5">
-              <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy} onClick={() => setOpen(true)}>
-                Reject
-              </Button>
-              <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:min-h-0" disabled={busy} onClick={() => void decide("approved")}>
-                Approve
-              </Button>
-            </div>
+            can("sellers.approve") ? (
+              <div className="flex justify-end gap-1.5">
+                <Button size="sm" variant="outline" className="min-h-[44px] sm:min-h-0" disabled={busy} onClick={() => setOpen(true)}>
+                  Reject
+                </Button>
+                <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:min-h-0" disabled={busy} onClick={() => void decide("approved")}>
+                  Approve
+                </Button>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">ops tier only</span>
+            )
           ) : (
             <span className="text-xs text-muted-foreground">{doc.rejectReason ?? "—"}</span>
           )}

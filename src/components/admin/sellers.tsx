@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { apiSend, useApi } from "./use-api";
+import { useAdminCaps } from "./use-admin-caps";
 import type { AdminNav } from "./nav";
 import {
   Badge,
@@ -60,6 +61,7 @@ export type AdminSellerRow = {
 const SELLER_STATUSES = ["onboarding", "pending_review", "active", "suspended", "rejected", "terminated"];
 
 export function SellersView({ nav }: { nav: AdminNav }) {
+  const { can } = useAdminCaps();
   const [status, setStatus] = useState("all");
   const [risk, setRisk] = useState("all");
   const [searchInput, setSearchInput] = useState("");
@@ -192,8 +194,12 @@ export function SellersView({ nav }: { nav: AdminNav }) {
                     {rows.map((s) => (
                       <TableRow
                         key={s.id}
-                        className="cursor-pointer"
-                        onClick={() => nav.navigate("seller-detail", { sellerId: s.id })}
+                        className={can("sellers.approve", "commission.manage") ? "cursor-pointer" : undefined}
+                        onClick={
+                          can("sellers.approve", "commission.manage")
+                            ? () => nav.navigate("seller-detail", { sellerId: s.id })
+                            : undefined
+                        }
                       >
                         <TableCell>
                           <p className="font-medium">{s.displayName}</p>
@@ -217,28 +223,34 @@ export function SellersView({ nav }: { nav: AdminNav }) {
                         </TableCell>
                         <TableCell className="hidden text-xs text-muted-foreground xl:table-cell">{fmtDate(s.createdAt)}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${s.displayName}`}>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => nav.navigate("seller-detail", { sellerId: s.id })}>
-                                Open detail
-                              </DropdownMenuItem>
-                              {s.status === "pending_review" || s.status === "rejected" ? (
-                                <DropdownMenuItem onClick={() => setConfirmAction({ kind: "approve", seller: s })}>
-                                  Approve seller
-                                </DropdownMenuItem>
-                              ) : null}
-                              {s.status === "active" ? (
-                                <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setConfirmAction({ kind: "suspend", seller: s })}>
-                                  Suspend seller
-                                </DropdownMenuItem>
-                              ) : null}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {can("sellers.approve", "commission.manage") || can("sellers.suspend") ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${s.displayName}`}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {can("sellers.approve", "commission.manage") ? (
+                                  <DropdownMenuItem onClick={() => nav.navigate("seller-detail", { sellerId: s.id })}>
+                                    Open detail
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {can("sellers.approve") && (s.status === "pending_review" || s.status === "rejected") ? (
+                                  <DropdownMenuItem onClick={() => setConfirmAction({ kind: "approve", seller: s })}>
+                                    Approve seller
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {can("sellers.suspend") && s.status === "active" ? (
+                                  <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setConfirmAction({ kind: "suspend", seller: s })}>
+                                    Suspend seller
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

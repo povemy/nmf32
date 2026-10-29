@@ -1,14 +1,20 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireCap, requireAnyCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optNum, optBool, str, stripSeller, daysAgo } from "@/app/api/admin/_helpers";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/admin/sellers/[id] — full seller profile
+// F-26 (Phase 3): this profile bundles KYC documents, bank accounts, the
+// wallet and internal notes — a money/PII read that was previously open to
+// every admin role (moderator included). Elevated tier only: ops + superadmin
+// (seller management/approval) and finance + superadmin (commission/hold
+// overrides are edited from this very view — F-09). Moderator keeps the
+// non-sensitive sellers LIST (GET /api/admin/sellers, requireAdmin).
 export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
-  await requireAdmin();
+  await requireAnyCap("sellers.approve", "commission.manage");
   const { id } = await ctx.params;
   const seller = await db.seller.findUnique({
     where: { id },
@@ -62,10 +68,21 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
 });
 
 // PATCH /api/admin/sellers/[id] — risk tier / commission / hold overrides / marketplace opt-in
+// F-09 (Phase 3): commission-policy fields (riskTier, commissionOverridePercent,
+// holdDaysOverride) are now gated by `commission.manage` (superadmin | finance)
+// — previously bare requireAdmin let a moderator zero any seller's commission
+// and hold days. marketplaceOptIn is a listing preference, not money policy,
+// and stays at the admin tier. Mixed bodies take the STRICTEST tier demanded
+// by any field they carry.
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
-  const admin = await requireAdmin();
   const { id } = await ctx.params;
   const body = await readBody(req);
+
+  const touchesCommissionPolicy =
+    "riskTier" in body || "commissionOverridePercent" in body || "holdDaysOverride" in body;
+  const admin = touchesCommissionPolicy
+    ? await requireCap("commission.manage")
+    : await requireAdmin();
 
   const seller = await db.seller.findUnique({ where: { id } });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");

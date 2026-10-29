@@ -1,11 +1,16 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 // GET /api/admin/kyc-queue — sellers pending review with docs + banks + product count
+// F-26 (Phase 3): KYC queue bundles identity documents, bank accounts and
+// wallet balances — money/PII read, now gated to the approval tier
+// (`sellers.approve`: superadmin | ops), matching the approve/reject/KYC
+// decision routes this view feeds. Previously bare requireAdmin (moderator
+// could read every pending seller's documents and accounts).
 export const GET = handle(async (req: NextRequest) => {
-  await requireAdmin();
+  await requireCap("sellers.approve");
   const sellers = await db.seller.findMany({
     where: { status: "pending_review" },
     include: {

@@ -1857,3 +1857,31 @@ EVIDENCE:
 - Runtime-confirmed defects: anonymous auto-published reviews (probe review deleted,
   aggregates restored); order-lookup unthrottled.
 - Zero production code changes (audit-only). One write probe reverted cleanly.
+
+## 2026-10-31 — Security Remediation (Task G) Phase 3: authorization boundaries (+ Phase 2 log reconciliation)
+
+- Starting-state correction: prior session's "mutation routes are capped" was WRONG —
+  F-09/F-18/F-25/F-26 + coupons were still bare requireAdmin (verified by git diff
+  vs baseline + direct reads; nothing trusted from the truncated session).
+- Server caps landed: sellers/[id] GET → anyCap(sellers.approve, commission.manage);
+  PATCH commission-tier fields → commission.manage (marketplaceOptIn stays admin tier);
+  featured-stores PUT → settings.manage; webhook-deliveries replay → settings.manage;
+  kyc-queue → sellers.approve; banks GET → anyCap(sellers.approve, payouts.manage);
+  export CSV → NEW reports.export cap [superadmin, finance] (matrix extension, logged);
+  commission/analytics + exports download → commission.manage; coupons mutations →
+  campaigns.manage. ADMIN_CAPS extracted to pure src/lib/admin-caps.ts; requireAnyCap added.
+- F-22 OAuth callback: state now REQUIRED, delete-first single-use, platform-matched,
+  10-min TTL, cross-seller CSRF guard (state.sellerId vs completing session); dead
+  divergent lib/marketplaces/callback.ts deleted (zero importers).
+- UI/API consistency: nav items gated by the same matrix (moderator: 18 visible /
+  11 hidden; superadmin: all 29); use-admin-caps can() gates on reports export
+  buttons, banks verify/reject, sellers-list drill-down/actions, seller-detail
+  commission editor + lifecycle/KYC/bank actions; saveOverview omits commission
+  fields for non-commission.manage roles.
+- Runtime evidence: tool-results/phase3-authz-probe.ts 60/60 PASS (role × route
+  matrix incl. preserved surfaces + cross-principal 401s); phase3-f22-oauth-probe.ts
+  15/15 PASS; agent-browser moderator/superadmin flows verified live, zero console/
+  server errors. tsc: 34 src errors = pre-existing baseline, zero in changed files;
+  lint 0 errors. Phase 2 log section reconciled with committed 9fe703e evidence.
+- Ops note: dev server had been OOM-killed (next-server 1.8GB RSS vs 4GB sandbox);
+  relaunched detached (setsid -f) and verified stable across commands.

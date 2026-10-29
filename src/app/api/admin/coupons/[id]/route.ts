@@ -1,14 +1,16 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 // PATCH /api/admin/coupons/[id]
+// Phase 3 (§3.2 coupons row): platform coupons affect server pricing —
+// mutations gated to `campaigns.manage` (superadmin | ops).
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
   const body = await readBody(req);
 
@@ -56,8 +58,9 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
 });
 
 // DELETE /api/admin/coupons/[id]
+// Phase 3 (§3.2 coupons row): gated to `campaigns.manage` (superadmin | ops).
 export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
-  const admin = await requireAdmin();
+  const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
 
   const coupon = await db.coupon.findUnique({ where: { id } });
