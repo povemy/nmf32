@@ -1,5 +1,6 @@
 "use client";
-// R2-UI — Pending releases (grace-period release schedule). SPA seller view:
+// R2-UI — Pending releases (grace-period release schedule). Rendered as the
+// "Pending releases" tab inside Wallet & Payouts (nav-reorg consolidation);
 // per-order pending seller-net ledger credits (T1 "order_paid") joined to
 // orders, showing exactly when each payment leaves the clearing hold.
 import { useState } from "react";
@@ -15,7 +16,7 @@ import {
 } from "./ui-bits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, ArrowDownToLine, Hourglass, Loader2 } from "lucide-react";
+import { ArrowDownToLine, Hourglass, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type PendingReleaseRow = {
@@ -244,18 +245,12 @@ export default function SellerPendingReleases({ onNavigate }: { onNavigate: (n: 
 
             {releases.length > 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">
-                Click any payment to open its order. Released amounts move to your available balance automatically — request a payout from Wallet &amp; Payouts.
+                Click any payment to open its order. Released amounts move to your available balance automatically — request a payout from the Overview tab.
               </p>
             ) : null}
           </CardContent>
         </Card>
       </section>
-
-      <div className="flex justify-start">
-        <Button variant="ghost" size="sm" className="min-h-[44px] gap-1 text-xs" onClick={() => onNavigate({ view: "wallet" })}>
-          <ArrowRight className="h-3.5 w-3.5" /> Back to Wallet &amp; Payouts
-        </Button>
-      </div>
     </div>
   );
 }

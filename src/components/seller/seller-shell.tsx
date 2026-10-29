@@ -28,17 +28,13 @@ import SellerProducts from "./products";
 import SellerOrders from "./orders";
 import SellerMessages from "./messages";
 import SellerWallet from "./wallet";
-import SellerPendingReleases from "./pending-releases";
 import PageBuilder from "./builder";
-import SellerDomains from "./domains";
 import SellerCoupons from "./marketing";
 import SellerVouchers from "./vouchers";
 import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
 import SellerImports from "./imports";
 import SellerSeo from "./seo";
-import SellerCardStyle from "./card-style";
-import SellerCartSettings from "./cart-settings";
 import { Toaster } from "@/components/ui/sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -58,8 +54,6 @@ import {
   Clock3,
   DatabaseZap,
   ExternalLink,
-  Globe,
-  Hourglass,
   LayoutDashboard,
   LayoutTemplate,
   Loader2,
@@ -74,10 +68,12 @@ import {
   ShoppingCart,
   Sparkles,
   TicketPercent,
-  Type,
   Wallet,
 } from "lucide-react";
 
+// nav-reorg — consolidated nav: Pending releases is a Wallet & Payouts tab,
+// Product Cards + Cart Experience are Page Builder tabs, and Domains is a
+// Store Settings tab. The tab discriminator rides on SellerNav (see ui-bits).
 const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "insights", label: "Insights", icon: ChartColumn },
@@ -87,11 +83,7 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "messages", label: "Messages", icon: MessagesSquare },
   { key: "seo", label: "SEO", icon: Search },
   { key: "wallet", label: "Wallet & Payouts", icon: Wallet },
-  { key: "pending", label: "Pending releases", icon: Hourglass }, // R2-UI — grace-period schedule
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
-  { key: "cardstyle", label: "Product Cards", icon: Type },
-  { key: "cart", label: "Cart Experience", icon: ShoppingBag },
-  { key: "domains", label: "Domains", icon: Globe },
   { key: "coupons", label: "Coupons", icon: TicketPercent },
   { key: "vouchers", label: "Vouchers", icon: BadgePercent },
   { key: "integrations", label: "Integrations", icon: Blocks },
@@ -303,24 +295,29 @@ export default function SellerShell() {
             {nav.view === "products" && <SellerProducts focusProductId={nav.productId} onNavigate={navigate} />}
             {nav.view === "orders" && <SellerOrders focusOrderId={nav.orderId} onNavigate={navigate} />}
             {nav.view === "messages" && <SellerMessages sellerId={sellerId} onNavigate={navigate} />}
-            {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} onNavigate={navigate} />}
-            {nav.view === "pending" && <SellerPendingReleases onNavigate={navigate} />}
+            {nav.view === "wallet" && <SellerWallet focusActivityId={nav.activityId} walletTab={nav.walletTab} onNavigate={navigate} />}
             {nav.view === "builder" && (
               <PageBuilder
                 pageId={nav.pageId}
+                builderTab={nav.builderTab}
                 onNavigate={navigate}
                 storeSlug={storeSlug}
                 storeName={storeName}
               />
             )}
-            {nav.view === "domains" && <SellerDomains storeSlug={storeSlug} />}
-            {nav.view === "cardstyle" && <SellerCardStyle />}
-            {nav.view === "cart" && <SellerCartSettings />}
             {nav.view === "coupons" && <SellerCoupons />}
             {nav.view === "vouchers" && <SellerVouchers />}
             {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}
             {nav.view === "integrations" && <SellerIntegrations />}
-            {nav.view === "settings" && <SellerSettings onNavigate={navigate} storeMe={storeMe} refreshStoreMe={refreshStoreMe} />}
+            {nav.view === "settings" && (
+              <SellerSettings
+                onNavigate={navigate}
+                storeMe={storeMe}
+                refreshStoreMe={refreshStoreMe}
+                settingsTab={nav.settingsTab}
+                storeSlug={storeSlug}
+              />
+            )}
           </motion.div>
         </main>
       </div>

@@ -1,16 +1,20 @@
 "use client";
 // Task 2-d — SD-12 Store Settings: identity form, marketplace opt-in, social
 // links, storefront link, policies shortcut to the Page Builder.
+// nav-reorg — custom domains (SD-09) live here as the “Domains” tab,
+// controlled through SellerNav.settingsTab.
 import { useEffect, useState } from "react";
-import { apiSend, CopyButton, fmtCommissionPercent, runMutation, StatusChip, useSellerTerms, type SellerNav, type StoreMe } from "./ui-bits";
+import { apiSend, CopyButton, fmtCommissionPercent, runMutation, StatusChip, useSellerTerms, type SellerNav, type SettingsTab, type StoreMe } from "./ui-bits";
+import SellerDomains from "./domains";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ExternalLink, LayoutTemplate, Loader2, Megaphone, Save, Settings2, ShieldQuestion } from "lucide-react";
+import { ExternalLink, Globe, LayoutTemplate, Loader2, Megaphone, Save, Settings2, ShieldQuestion } from "lucide-react";
 import { useApp } from "@/lib/app-store";
 
 type IdentityForm = {
@@ -29,8 +33,53 @@ export default function SellerSettings({
   storeMe,
   refreshStoreMe,
   onNavigate,
+  settingsTab,
+  storeSlug,
 }: {
   storeMe: StoreMe | null;
+  refreshStoreMe: () => Promise<void>;
+  onNavigate: (n: SellerNav) => void;
+  settingsTab?: SettingsTab;
+  storeSlug: string;
+}) {
+  // nav-reorg — Domains is a tab of Store Settings. Tab state is controlled
+  // through SellerNav (never local) so future deep links (e.g. a “connect your
+  // domain” onboarding step) can land here directly.
+  if (!storeMe) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <Tabs value={settingsTab ?? "general"} onValueChange={(v) => onNavigate({ view: "settings", settingsTab: v as SettingsTab })}>
+      <TabsList className="mb-4">
+        <TabsTrigger value="general" className="min-h-[44px] gap-1.5">
+          <Settings2 className="h-3.5 w-3.5" aria-hidden /> General
+        </TabsTrigger>
+        <TabsTrigger value="domains" className="min-h-[44px] gap-1.5">
+          <Globe className="h-3.5 w-3.5" aria-hidden /> Domains
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="general" className="mt-0">
+        <GeneralSettings storeMe={storeMe} refreshStoreMe={refreshStoreMe} onNavigate={onNavigate} />
+      </TabsContent>
+      <TabsContent value="domains" className="mt-0">
+        <SellerDomains storeSlug={storeSlug} />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function GeneralSettings({
+  storeMe,
+  refreshStoreMe,
+  onNavigate,
+}: {
+  storeMe: StoreMe;
   refreshStoreMe: () => Promise<void>;
   onNavigate: (n: SellerNav) => void;
 }) {
@@ -56,7 +105,6 @@ export default function SellerSettings({
   // hydrate once store data arrives (social links are not exposed by /api/store/me,
   // so those three inputs start empty and are only sent when non-blank)
   useEffect(() => {
-    if (!storeMe) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
     setForm({
       name: storeMe.store.name ?? "",
@@ -120,15 +168,6 @@ export default function SellerSettings({
     );
     if (!ok) setOptIn(!next);
   };
-
-  if (!storeMe) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-40 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
-    );
-  }
 
   const storefrontUrl = `/${storeMe.store.slug}`;
 

@@ -518,7 +518,12 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   const [productSort, setProductSort] = useState<ProductSort>("views");
   const [productPage, setProductPage] = useState(1);
   const [salesGran, setSalesGran] = useState<"day" | "week" | "month">("day");
-  const [marketDim, setMarketDim] = useState<"country" | "state">("country");
+  // nav/markets default: State — on this Malaysia-first platform the state
+  // dimension is the actionable one (every destination country is MY), so the
+  // Markets tab opens with the finer-grained breakdown. Country stays one
+  // toggle away. The API itself still defaults to country when the dimension
+  // param is omitted (see docs/seller-insights/markets-api.md).
+  const [marketDim, setMarketDim] = useState<"country" | "state">("state");
 
   // Custom range validity mirrors the backend contract: from < to, span ≤ 92 days.
   const datesFilled = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to);

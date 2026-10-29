@@ -1,7 +1,7 @@
 # Seller Insights — Metric Definitions
 
-Last updated: 2026-10-28 · Scope: Seller Store Insights + Sales & Market Insights (unified feature).
-Companion docs: `performance/seller-insights-audit.md` (architecture audit), `docs/seller-insights/implementation-report.md` (what shipped + test evidence).
+Last updated: 2026-10-29 · Scope: Seller Store Insights + Sales & Market Insights (unified feature).
+Companion docs: `performance/seller-insights-audit.md` (architecture audit), `docs/seller-insights/implementation-report.md` (what shipped + test evidence), `docs/seller-insights/markets-api.md` (binding Markets route/schema contract for future dashboards).
 
 Every number shown in the Seller Insights dashboard is defined here — its formula, its source table, its date basis, and its limitations. Two data families are kept strictly separate:
 
@@ -96,6 +96,8 @@ Not shown / not derivable (honest gaps): taxes are always 0 today; per-item refu
 Per product, windowed unless noted: views (events), view sessions, add units/events (events), **current cart units + distinct carts (live snapshot — not windowed)**, ordered units (orders created), purchased units (orders paid), gross/net sales + refunded (order items), view→cart rate = sessions that viewed AND added ÷ sessions that viewed (same window, same product), checkout→purchase rate = purchased units ÷ ordered units. Server-side sorting by views/adds/cartQty/purchases/revenue/conversion; pagination capped at 50/page.
 
 ## 8. Markets (Sales by Country / State)
+
+> Route-level contract (params, response schema, cache keys, dimension semantics, future-dashboard integration rules): `markets-api.md`. Since 2026-10-29 the seller Markets tab opens on the **state** dimension by default (API default remains `country`).
 
 | Rule | Definition |
 |---|---|

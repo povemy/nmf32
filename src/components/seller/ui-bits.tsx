@@ -81,18 +81,36 @@ export type SellerViewName =
   | "orders"
   | "seo"
   | "wallet"
-  | "pending" // R2-UI — grace-period release schedule (SPA view, no new route)
   | "builder"
-  | "domains"
   | "coupons"
   | "vouchers"
   | "integrations"
   | "messages"
-  | "cardstyle"
-  | "cart"
   | "settings";
 
-export type SellerNav = { view: SellerViewName; pageId?: string; orderId?: string; productId?: string; activityId?: string };
+// ---------------------------------------------------------------- nav sub-tabs
+// Consolidated nav (nav-reorg): four standalone views became tabbed sections
+// inside their parent destination. The tab discriminator rides on SellerNav
+// so deep links keep working exactly like the old flat views — SPA only,
+// no new routes. Omitting the field renders the destination's default tab.
+
+/** Wallet & Payouts tabs — "pending" = grace-period release schedule (R2-UI). */
+export type WalletTab = "overview" | "pending";
+/** Page Builder tabs — "cards" = product card style, "cart" = cart experience. */
+export type BuilderTab = "pages" | "cards" | "cart";
+/** Store Settings tabs — "domains" = custom domain management (SD-09). */
+export type SettingsTab = "general" | "domains";
+
+export type SellerNav = {
+  view: SellerViewName;
+  pageId?: string;
+  orderId?: string;
+  productId?: string;
+  activityId?: string;
+  walletTab?: WalletTab;
+  builderTab?: BuilderTab;
+  settingsTab?: SettingsTab;
+};
 
 // ---------------------------------------------------------------- platform terms
 // Structural mirror of src/lib/seller-terms.ts PlatformTerms (the server lib

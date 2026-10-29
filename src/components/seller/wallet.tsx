@@ -3,6 +3,8 @@
 // ledger lines, payout history, bank accounts with add dialog.
 // Every recent-activity row is clickable and opens the individual activity
 // page (txn context + related order/payout) — same pattern as Orders detail.
+// nav-reorg — the grace-period release schedule (R2-UI) lives here as the
+// "Pending releases" tab, controlled through SellerNav.walletTab.
 import { useState } from "react";
 import {
   apiSend,
@@ -22,7 +24,9 @@ import {
   type BankAccount,
   type SellerNav,
   type SellerWallet,
+  type WalletTab,
 } from "./ui-bits";
+import SellerPendingReleases from "./pending-releases";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +35,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, ArrowRight, Banknote, Clock3, Coins, Landmark, PiggyBank, Plus, ReceiptText, ShieldCheck, Wallet2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, ArrowRight, Banknote, Clock3, Coins, Hourglass, Landmark, PiggyBank, Plus, ReceiptText, ShieldCheck, Wallet2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type WalletData = {
@@ -100,13 +105,37 @@ function PayoutStatusChip({ status, className }: { status: string; className?: s
   );
 }
 
-export default function SellerWallet({ focusActivityId, onNavigate }: { focusActivityId?: string; onNavigate?: (n: SellerNav) => void } = {}) {
+export default function SellerWallet(
+  { focusActivityId, walletTab, onNavigate }: { focusActivityId?: string; walletTab?: WalletTab; onNavigate?: (n: SellerNav) => void } = {},
+) {
   // Individual activity page (deep-linkable, same pattern as Orders detail)
   if (focusActivityId && onNavigate) {
     return <LedgerActivityDetail activityId={focusActivityId} onBack={() => onNavigate({ view: "wallet" })} onNavigate={onNavigate} />;
   }
 
-  return <WalletOverview onNavigate={onNavigate} />;
+  // nav-reorg — Pending releases is a tab of Wallet & Payouts. The tab state
+  // is controlled through SellerNav (never local) so every deep link keeps
+  // working: "View release schedule", the Pending StatCard, and future
+  // notifications can land directly on the schedule tab.
+  const noop = () => undefined;
+  return (
+    <Tabs value={walletTab ?? "overview"} onValueChange={(v) => onNavigate?.({ view: "wallet", walletTab: v as WalletTab })}>
+      <TabsList className="mb-4">
+        <TabsTrigger value="overview" className="min-h-[44px]">
+          Overview
+        </TabsTrigger>
+        <TabsTrigger value="pending" className="min-h-[44px] gap-1.5">
+          <Hourglass className="h-3.5 w-3.5" aria-hidden /> Pending releases
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="overview" className="mt-0">
+        <WalletOverview onNavigate={onNavigate} />
+      </TabsContent>
+      <TabsContent value="pending" className="mt-0">
+        <SellerPendingReleases onNavigate={onNavigate ?? noop} />
+      </TabsContent>
+    </Tabs>
+  );
 }
 
 function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void }) {
@@ -188,11 +217,11 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
         {!openRequest && (bankAccounts ?? []).length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">Add a bank account below to enable payout requests.</p>
         ) : null}
-        {/* R2-UI — deep-link to the grace-period release schedule (pending view). */}
+        {/* R2-UI — deep-link to the grace-period release schedule (pending tab). */}
         {onNavigate ? (
           <button
             type="button"
-            onClick={() => onNavigate({ view: "pending" })}
+            onClick={() => onNavigate({ view: "wallet", walletTab: "pending" })}
             className="mt-2 inline-flex min-h-[44px] items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             View release schedule <ArrowRight className="h-3 w-3" />
@@ -208,7 +237,7 @@ function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void })
           sub={terms ? `Available ${holdAfterPayment(terms)} (hold)` : "Available after the clearing hold"}
           icon={<Clock3 className="h-4 w-4" />}
           tone="warn"
-          onClick={onNavigate ? () => onNavigate({ view: "pending" }) : undefined}
+          onClick={onNavigate ? () => onNavigate({ view: "wallet", walletTab: "pending" }) : undefined}
         />
         <StatCard
           label="Available"

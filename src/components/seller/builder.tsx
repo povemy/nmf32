@@ -2,6 +2,8 @@
 // Task 2-d — SD-08 Page Builder (flagship): page list + 3-pane editor.
 // LEFT section library (add/drag-reorder/ops) · CENTER device-framed canvas ·
 // RIGHT props form. Autosave (debounced 3s), publish/revert, theme dialog.
+// nav-reorg — Product Cards (card style) and Cart Experience live here as
+// tabs alongside the page list, controlled through SellerNav.builderTab.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -31,8 +33,11 @@ import {
   StatusChip,
   useApi,
   useDebouncedCallback,
+  type BuilderTab,
   type SellerNav,
 } from "./ui-bits";
+import SellerCardStyle from "./card-style";
+import SellerCartSettings from "./cart-settings";
 import { SectionPreview } from "./builder-render";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,13 +59,16 @@ import {
   ExternalLink,
   GripVertical,
   Layers,
+  LayoutTemplate,
   Loader2,
   Monitor,
   Palette,
   Plus,
   RotateCcw,
+  ShoppingBag,
   Smartphone,
   Trash2,
+  Type,
 } from "lucide-react";
 
 // ---------------------------------------------------------------- page list
@@ -86,19 +94,50 @@ type PageDetail = {
 
 export default function PageBuilder({
   pageId,
+  builderTab,
   onNavigate,
   storeSlug,
   storeName,
 }: {
   pageId?: string;
+  builderTab?: BuilderTab;
   onNavigate: (n: SellerNav) => void;
   storeSlug: string;
   storeName: string;
 }) {
+  // Editor mode (deep-linked page) takes over the whole surface — the tabs
+  // come back via the editor's back button ({ view: "builder" }, no pageId).
   if (pageId) {
     return <BuilderEditor key={pageId} pageId={pageId} onNavigate={onNavigate} storeSlug={storeSlug} storeName={storeName} />;
   }
-  return <PageList onNavigate={onNavigate} />;
+
+  // nav-reorg — tabbed home for the builder surface. Tab state is controlled
+  // through SellerNav (never local) so deep links like “edit in builder” from
+  // Store Settings keep landing on the Pages tab.
+  return (
+    <Tabs value={builderTab ?? "pages"} onValueChange={(v) => onNavigate({ view: "builder", builderTab: v as BuilderTab })}>
+      <TabsList className="mb-4">
+        <TabsTrigger value="pages" className="min-h-[44px] gap-1.5">
+          <LayoutTemplate className="h-3.5 w-3.5" aria-hidden /> Pages
+        </TabsTrigger>
+        <TabsTrigger value="cards" className="min-h-[44px] gap-1.5">
+          <Type className="h-3.5 w-3.5" aria-hidden /> Product cards
+        </TabsTrigger>
+        <TabsTrigger value="cart" className="min-h-[44px] gap-1.5">
+          <ShoppingBag className="h-3.5 w-3.5" aria-hidden /> Cart experience
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="pages" className="mt-0">
+        <PageList onNavigate={onNavigate} />
+      </TabsContent>
+      <TabsContent value="cards" className="mt-0">
+        <SellerCardStyle />
+      </TabsContent>
+      <TabsContent value="cart" className="mt-0">
+        <SellerCartSettings />
+      </TabsContent>
+    </Tabs>
+  );
 }
 
 function PageList({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
