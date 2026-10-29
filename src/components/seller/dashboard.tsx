@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   BadgeDollarSign,
   Boxes,
   ClipboardCheck,
@@ -19,7 +20,6 @@ import {
   Timer,
   TrendingUp,
   Undo2,
-  Wallet2,
 } from "lucide-react";
 
 type DashboardData = {
@@ -65,7 +65,7 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
 
   if (error) {
     return (
-      <Card>
+      <Card className="border-rose-200/70">
         <CardContent className="p-6 text-sm text-rose-600">Failed to load dashboard: {error}</CardContent>
       </Card>
     );
@@ -92,29 +92,29 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
     { chip: string; number: string; bar: string; iconBg: string; badge: string; chipLabel: string; short: string }
   > = {
     ok: {
-      chip: "border-emerald-200 bg-emerald-100 text-emerald-800",
+      chip: "border-emerald-200/70 bg-emerald-50 text-emerald-700",
       number: "text-emerald-600",
-      bar: "bg-emerald-500",
-      iconBg: "bg-emerald-100 text-emerald-700",
-      badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+      bar: "bg-emerald-400",
+      iconBg: "bg-emerald-50 text-emerald-600",
+      badge: "border-emerald-200/70 bg-emerald-50 text-emerald-700",
       chipLabel: "All clear",
       short: "All caught up",
     },
     warn: {
-      chip: "border-amber-200 bg-amber-100 text-amber-800",
+      chip: "border-amber-200/70 bg-amber-50 text-amber-700",
       number: "text-amber-600",
       bar: "bg-amber-400",
-      iconBg: "bg-amber-100 text-amber-700",
-      badge: "border-amber-200 bg-amber-100 text-amber-800",
+      iconBg: "bg-amber-50 text-amber-600",
+      badge: "border-amber-200/70 bg-amber-50 text-amber-700",
       chipLabel: "Action needed",
       short: "open",
     },
     urgent: {
-      chip: "border-rose-200 bg-rose-100 text-rose-800",
+      chip: "border-rose-200/70 bg-rose-50 text-rose-600",
       number: "text-rose-600",
       bar: "bg-rose-500",
-      iconBg: "bg-rose-100 text-rose-700",
-      badge: "border-rose-200 bg-rose-100 text-rose-800",
+      iconBg: "bg-rose-50 text-rose-600",
+      badge: "border-rose-200/70 bg-rose-50 text-rose-600",
       chipLabel: "Urgent",
       short: "needs urgent action",
     },
@@ -175,32 +175,33 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
           {(["today", "7d"] as const).map((k) => {
             const c = data.cards[k];
             const labels: Record<string, string> = { today: "Today", "7d": "Last 7 days" };
+            const PeriodIcon = k === "today" ? Timer : TrendingUp;
             return (
-              <Card key={k} className="gap-3">
-                <CardHeader className="pb-0">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    {k === "today" ? <Timer className="h-4 w-4 text-primary" /> : <TrendingUp className="h-4 w-4 text-primary" />}
+              <Card key={k} className="gap-3 py-4">
+                <CardHeader className="px-4 pb-0">
+                  <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                      <PeriodIcon className="h-4 w-4" />
+                    </span>
                     {labels[k]}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Orders</p>
-                      <p className="text-lg font-semibold tabular-nums">{c.orders}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Revenue</p>
-                      <p className="text-lg font-semibold tabular-nums">{formatMinor(c.revenueMinor)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Commission</p>
-                      <p className="text-sm font-medium tabular-nums text-amber-600">−{formatMinor(c.commissionMinor)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Net to you</p>
-                      <p className="text-sm font-medium tabular-nums text-emerald-600">{formatMinor(c.netMinor)}</p>
-                    </div>
+                <CardContent className="grid grid-cols-2 gap-2 px-4">
+                  <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                    <p className="text-[11px] text-slate-400">Orders</p>
+                    <p className="text-lg font-bold tabular-nums text-slate-900">{c.orders}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                    <p className="text-[11px] text-slate-400">Revenue</p>
+                    <p className="text-lg font-bold tabular-nums text-slate-900">{formatMinor(c.revenueMinor)}</p>
+                  </div>
+                  <div className="rounded-lg bg-amber-50/70 px-2.5 py-2">
+                    <p className="text-[11px] text-slate-400">Commission</p>
+                    <p className="text-sm font-bold tabular-nums text-amber-600">−{formatMinor(c.commissionMinor)}</p>
+                  </div>
+                  <div className="rounded-lg bg-emerald-50/70 px-2.5 py-2">
+                    <p className="text-[11px] text-slate-400">Net to you</p>
+                    <p className="text-sm font-bold tabular-nums text-emerald-600">{formatMinor(c.netMinor)}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -212,21 +213,28 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
             type="button"
             onClick={() => onNavigate({ view: "wallet" })}
             aria-label="Available e-wallet — open wallet"
-            className="flex flex-col rounded-xl border bg-card text-left shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="relative flex min-h-[125px] flex-col justify-between overflow-hidden rounded-xl bg-brand-gradient p-4 text-left text-white shadow-glow-cyan transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-8px_rgba(0,196,180,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <div className="flex items-center gap-2 px-6 pt-6">
-              <Wallet2 className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm font-semibold">Available e-wallet</span>
-              <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-            </div>
-            <div className="flex flex-1 flex-col justify-center gap-1 p-6 pt-3">
-              <p className="text-2xl font-semibold tabular-nums text-emerald-600 sm:text-3xl">
+            <span aria-hidden="true" className="pointer-events-none absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+            <span className="relative flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold tracking-wide text-teal-50/90">Available e-wallet</span>
+              <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30">
+                <ArrowUpRight className="h-3.5 w-3.5 text-white" />
+              </span>
+            </span>
+            <span className="relative my-auto pt-1">
+              <span className="block text-2xl font-extrabold tracking-tight tabular-nums lg:text-3xl">
                 {formatMinor(data.wallet?.availableMinor ?? 0)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {formatMinor(data.wallet?.pendingMinor ?? 0)} pending · released {terms ? holdAfterPayment(terms) : "after the clearing hold"}
-              </p>
-            </div>
+              </span>
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-teal-50/90">
+                <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                  {formatMinor(data.wallet?.pendingMinor ?? 0)} pending
+                </span>
+                <span className="text-[11px] font-medium text-teal-50/80">
+                  released {terms ? holdAfterPayment(terms) : "after the clearing hold"}
+                </span>
+              </span>
+            </span>
           </button>
         </div>
       </section>
@@ -235,10 +243,10 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
           action (big count, color-coded severity) so nothing gets missed. */}
       <section aria-label="Pending actions">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <ClipboardList className="h-4 w-4 text-primary" /> Pending actions
+          <h2 className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
+            <ClipboardList className="h-4 w-4 text-teal-600" /> Pending actions
           </h2>
-          <Badge variant="outline" className={cn("border font-medium", URGENCY[maxUrgency].badge)}>
+          <Badge variant="outline" className={cn("border font-semibold", URGENCY[maxUrgency].badge)}>
             {totalOpen === 0 ? "All caught up" : `${totalOpen} open item${totalOpen === 1 ? "" : "s"}`}
           </Badge>
         </div>
@@ -253,26 +261,26 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
                 type="button"
                 onClick={a.go}
                 aria-label={`${a.label}: ${display} — ${s.chipLabel}`}
-                className="group relative flex min-h-[44px] flex-col gap-3 overflow-hidden rounded-xl border bg-card p-5 text-left shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="group relative flex min-h-[44px] flex-col gap-3 overflow-hidden rounded-xl border border-slate-200/80 bg-card p-5 text-left shadow-soft-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-glow-cyan-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
-                <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1", s.bar)} />
+                <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 rounded-t-lg", s.bar)} />
                 <span className="flex items-center justify-between gap-2">
                   <span className={cn("flex h-10 w-10 items-center justify-center rounded-lg", s.iconBg)}>
                     <Icon className="h-5 w-5" />
                   </span>
-                  <Badge variant="outline" className={cn("border font-medium", s.chip)}>
+                  <Badge variant="outline" className={cn("border font-semibold", s.chip)}>
                     {a.urgency === "ok" ? "All clear" : s.chipLabel}
                   </Badge>
                 </span>
                 <span>
-                  <span className={cn("block text-4xl font-bold leading-none tabular-nums sm:text-5xl", s.number)}>
+                  <span className={cn("block text-4xl font-extrabold leading-none tabular-nums sm:text-5xl", s.number)}>
                     {display}
                   </span>
-                  <span className="mt-2.5 flex items-center gap-1 text-sm font-medium">
+                  <span className="mt-2.5 flex items-center gap-1 text-sm font-medium text-slate-700">
                     {a.label}
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-400 transition-transform group-hover:translate-x-0.5" />
                   </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{a.hint}</span>
+                  <span className="mt-0.5 block text-xs text-slate-400">{a.hint}</span>
                 </span>
               </button>
             );
@@ -285,38 +293,46 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
         <section aria-label="Low stock">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
+              <CardTitle className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
                 <AlertTriangle className="h-4 w-4 text-amber-500" /> Low stock
               </CardTitle>
             </CardHeader>
             <CardContent>
               {data.lowStock.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Everything is well stocked 🎉</p>
+                <p className="py-6 text-center text-sm text-slate-400">Everything is well stocked</p>
               ) : (
                 <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
                   {data.lowStock.map((v) => (
-                    <li key={v.id} className="flex items-center gap-3 rounded-xl border p-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <Boxes className="h-4 w-4 text-muted-foreground" />
+                    <li
+                      key={v.id}
+                      className="flex items-center gap-3 rounded-lg bg-slate-50 p-2.5 transition-colors hover:bg-teal-50/60"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200/70 bg-white text-teal-700">
+                        <Boxes className="h-4 w-4" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
+                        <p className="truncate text-sm font-medium text-slate-900">
                           {v.productTitle}
-                          {v.optionValue ? <span className="text-muted-foreground"> · {v.optionValue}</span> : null}
+                          {v.optionValue ? <span className="text-slate-400"> · {v.optionValue}</span> : null}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-slate-400">
                           {v.sku ? `${v.sku} · ` : ""}threshold {v.lowStockThreshold}
                         </p>
                       </div>
                       <span
                         className={
-                          "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums " +
-                          (v.stock === 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700")
+                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums " +
+                          (v.stock === 0 ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700")
                         }
                       >
                         {v.stock} left
                       </span>
-                      <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => restock(v.id, v.productTitle)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
+                        onClick={() => restock(v.id, v.productTitle)}
+                      >
                         +10
                       </Button>
                     </li>
@@ -331,16 +347,21 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
         <section aria-label="Latest orders">
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <ReceiptText className="h-4 w-4 text-primary" /> Latest orders
+              <CardTitle className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
+                <ReceiptText className="h-4 w-4 text-teal-600" /> Latest orders
               </CardTitle>
-              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => onNavigate({ view: "orders" })}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                onClick={() => onNavigate({ view: "orders" })}
+              >
                 View all <ArrowRight className="ml-1 h-3.5 w-3.5" />
               </Button>
             </CardHeader>
             <CardContent>
               {data.latestOrders.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
+                <p className="py-6 text-center text-sm text-slate-400">
                   No orders yet — share your storefront link to get the first sale!
                 </p>
               ) : (
@@ -348,26 +369,26 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Order</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Order</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Customer</TableHead>
+                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</TableHead>
+                        <TableHead className="text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Total</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {data.latestOrders.map((o) => (
                         <TableRow
                           key={o.id}
-                          className="cursor-pointer"
+                          className="cursor-pointer hover:bg-teal-50/40"
                           onClick={() => onNavigate({ view: "orders", orderId: o.id })}
                         >
                           <TableCell>
-                            <p className="font-medium">{o.orderNumber}</p>
-                            <p className="text-xs text-muted-foreground">{ageOf(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? "" : "s"}</p>
+                            <p className="font-semibold text-slate-900">{o.orderNumber}</p>
+                            <p className="text-xs text-slate-400">{ageOf(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? "" : "s"}</p>
                           </TableCell>
                           <TableCell className="max-w-32 truncate">{o.customerName}</TableCell>
                           <TableCell><StatusChip status={o.status} /></TableCell>
-                          <TableCell className="text-right tabular-nums">{formatMinor(o.totalMinor)}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-slate-900">{formatMinor(o.totalMinor)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

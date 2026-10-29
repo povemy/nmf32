@@ -269,6 +269,14 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
   const [purchaseTab, setPurchaseTab] = useState<string>(initialTab && initialTab.startsWith("bucket:") ? initialTab.slice(7) : "all");
   const data = useMeData(Boolean(shopper));
 
+  // Bubbly Cyan backend theme — the Me Hub is the BUYER backend; scope the
+  // theme to <body> while it is mounted so portaled dialogs inherit it.
+  // The marketplace views keep the root theme.
+  useEffect(() => {
+    document.body.classList.add("backend-ui");
+    return () => document.body.classList.remove("backend-ui");
+  }, []);
+
   // Task 30 — the Me-page (mobile) header's "Settings" item dispatches
   // nomofee:open-settings. The Dashboard below listens for it too; if a
   // sub-view (purchases, wallet, likes…) is currently mounted we return to
@@ -294,18 +302,29 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
   }, [sub]);
 
   if (!shopper) {
+    // Bubbly Cyan recipe 10 — white rounded-3xl envelope, gradient squircle
+    // logo, extrabold heading, gradient CTA pill (openShopperAuth preserved).
     return (
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
-        <EmptyState
-          icon={User}
-          title="Your dashboard awaits"
-          hint="Sign in to see your purchases, vouchers and personalised picks — all in one place."
-          action={
-            <Button onClick={() => openShopperAuth()} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+        <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-card p-8 text-center shadow-soft-card sm:p-12">
+          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-teal-100/70 blur-2xl pointer-events-none" aria-hidden="true" />
+          <div className="absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-teal-50 blur-2xl pointer-events-none" aria-hidden="true" />
+          <div className="relative flex flex-col items-center gap-4">
+            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-brand-gradient text-white shadow-glow-cyan-sm" aria-hidden="true">
+              <User className="h-7 w-7" />
+            </span>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">Your dashboard awaits</h1>
+            <p className="max-w-md text-sm leading-relaxed text-slate-500">
+              Sign in to see your purchases, vouchers and personalised picks — all in one place.
+            </p>
+            <Button
+              onClick={() => openShopperAuth()}
+              className="min-h-[44px] bg-brand-gradient px-6 text-white shadow-glow-cyan-sm hover:brightness-110"
+            >
               Sign in / Create account
             </Button>
-          }
-        />
+          </div>
+        </div>
       </div>
     );
   }
@@ -402,16 +421,16 @@ function Dashboard({
       <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-6 lg:items-start">
         {/* ------------------------------ sidebar (desktop) ------------------------------ */}
         <aside className="hidden lg:block sticky top-20 space-y-3" aria-label="Dashboard menu">
-          <div className="rounded-2xl border bg-card p-4 shadow-soft">
+          <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
             <div className="flex items-center gap-3">
               <Avatar profile={data.profile} size="md" />
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold">{shopper?.fullName ?? "…"}</p>
-                <p className="truncate text-xs text-muted-foreground">{data.profile?.username ? `@${data.profile.username}` : shopper?.email}</p>
+                <p className="truncate text-sm font-bold text-slate-900">{shopper?.fullName ?? "…"}</p>
+                <p className="truncate text-xs text-slate-400">{data.profile?.username ? `@${data.profile.username}` : shopper?.email}</p>
               </div>
             </div>
           </div>
-          <nav className="rounded-2xl border bg-card p-2 shadow-soft">
+          <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
             <SideItem icon={Store} label="Dashboard" active onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
             <SideItem icon={Package} label="My Purchases" onClick={() => onSub("purchases")} />
             {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
@@ -421,8 +440,8 @@ function Dashboard({
             <SideItem icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
             <SideItem icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           </nav>
-          <nav className="rounded-2xl border bg-card p-2 shadow-soft">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Support</p>
+          <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
+            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Support</p>
             <SideItem icon={LifeBuoy} label="Help Center" onClick={() => onSub("purchases")} />
             <SideItem icon={Headset} label="Customer Service" onClick={() => ctx.nav({ name: "messages" })} />
             <SideItem icon={ShieldCheck} label="Jom Beli Selamat!" onClick={() => setSafetyOpen(true)} />
@@ -457,7 +476,7 @@ function Dashboard({
               <button
                 type="button"
                 onClick={dismissNotif}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-amber-700 hover:bg-amber-100 transition-colors"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-amber-700 hover:bg-amber-100 transition-colors"
                 aria-label="Dismiss notification prompt"
               >
                 <X className="h-4 w-4" />
@@ -466,21 +485,21 @@ function Dashboard({
           ) : null}
 
           {/* purchases hub */}
-          <section className="rounded-2xl border bg-card p-4 shadow-soft" aria-labelledby="me-purchases">
+          <section className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card" aria-labelledby="me-purchases">
             <div className="flex items-center justify-between gap-2 pb-3">
-              <h2 id="me-purchases" className="text-sm font-extrabold uppercase tracking-wide">
+              <h2 id="me-purchases" className="text-sm font-extrabold text-slate-900">
                 My Purchases
               </h2>
               <button
                 type="button"
                 onClick={() => onSub("purchases")}
-                className="inline-flex min-h-[44px] items-center gap-0.5 text-xs font-semibold text-teal-700 hover:text-teal-800 transition-colors"
+                className="inline-flex min-h-[44px] items-center gap-0.5 rounded-full px-2.5 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-50 hover:text-teal-800"
                 aria-label="View full purchase history"
               >
                 View Purchase History <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="grid grid-cols-4">
+            <div className="grid grid-cols-4 gap-2">
               {PURCHASE_BUCKETS.map(({ key, label, icon: Icon }) => {
                 const n = data.counts?.[key] ?? 0;
                 return (
@@ -488,7 +507,7 @@ function Dashboard({
                     key={key}
                     type="button"
                     onClick={() => onPurchaseTab(key)}
-                    className="relative flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl px-1 py-2 transition-colors hover:bg-muted"
+                    className="relative flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200/60 bg-slate-50 px-1 py-2 transition-all hover:border-teal-200 hover:bg-teal-50/60"
                     aria-label={`${label}${n > 0 ? `, ${n} orders` : ""}`}
                   >
                     <span className="relative">
@@ -499,7 +518,7 @@ function Dashboard({
                         </span>
                       ) : null}
                     </span>
-                    <span className="text-[11px] font-semibold sm:text-xs">{label}</span>
+                    <span className="text-[10px] font-bold text-slate-600 sm:text-[11px]">{label}</span>
                   </button>
                 );
               })}
@@ -511,34 +530,34 @@ function Dashboard({
             <button
               type="button"
               onClick={() => toast.info("Prepaid, Bills & Tickets", { description: "Coming soon in this demo." })}
-              className="flex items-center gap-3 rounded-2xl border bg-card p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-md"
+              className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-card p-4 text-left shadow-soft-card transition-all hover:-translate-y-0.5 hover:shadow-glow-cyan-sm"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-gradient-soft text-teal-800">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
                 <Landmark className="h-5 w-5" aria-hidden="true" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-xs font-bold sm:text-sm">Prepaid, Bills & Tickets</span>
-                <span className="mt-0.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700">20% Off</span>
+                <span className="block truncate text-xs font-bold text-slate-800 sm:text-sm">Prepaid, Bills & Tickets</span>
+                <span className="mt-0.5 inline-block rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">20% Off</span>
               </span>
             </button>
             <button
               type="button"
               onClick={() => toast.info("NOMOFEE Food", { description: "Coming soon in this demo." })}
-              className="flex items-center gap-3 rounded-2xl border bg-card p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-md"
+              className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-card p-4 text-left shadow-soft-card transition-all hover:-translate-y-0.5 hover:shadow-glow-cyan-sm"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-gradient-soft text-teal-800">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
                 <Sparkles className="h-5 w-5" aria-hidden="true" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-xs font-bold sm:text-sm">NOMOFEE Food</span>
-                <span className="mt-0.5 inline-block rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-extrabold text-teal-800">Free Delivery</span>
+                <span className="block truncate text-xs font-bold text-slate-800 sm:text-sm">NOMOFEE Food</span>
+                <span className="mt-0.5 inline-block rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700">Free Delivery</span>
               </span>
             </button>
           </section>
 
           {/* campaign carousel */}
-          <section className="rounded-2xl border bg-card p-4 shadow-soft" aria-labelledby="me-campaign">
-            <h2 id="me-campaign" className="pb-3 text-sm font-extrabold uppercase tracking-wide">
+          <section className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card" aria-labelledby="me-campaign">
+            <h2 id="me-campaign" className="pb-3 text-sm font-extrabold text-slate-900">
               Oct 15 Mid-Month Madness
             </h2>
             <div className="grid grid-cols-4 gap-2">
@@ -601,9 +620,9 @@ function Dashboard({
 
           {/* activities & support */}
           <section className="grid gap-3 md:grid-cols-2" aria-label="Activities and support">
-            <div className="rounded-2xl border bg-card p-4 shadow-soft">
-              <h2 className="pb-3 text-sm font-extrabold uppercase tracking-wide">More Activities</h2>
-              <div className="grid grid-cols-3 gap-y-3">
+            <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+              <h2 className="pb-3 text-sm font-extrabold text-slate-900">More Activities</h2>
+              <div className="grid grid-cols-3 gap-2">
                 <ActivityTile icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
                 <ActivityTile icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
                 <ActivityTile icon={Store} label="Start Selling" onClick={() => setSurface("seller")} />
@@ -614,8 +633,8 @@ function Dashboard({
                 <ActivityTile icon={Gift} label="Invite & Earn" onClick={() => toast.info("Invite & Earn", { description: "Coming soon in this demo." })} />
               </div>
             </div>
-            <div className="rounded-2xl border bg-card p-4 shadow-soft">
-              <h2 className="pb-1 text-sm font-extrabold uppercase tracking-wide">Support</h2>
+            <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+              <h2 className="pb-1 text-sm font-extrabold text-slate-900">Support</h2>
               <ul>
                 <SupportRow icon={LifeBuoy} title="Help Center" hint="Shipping, returns & payment FAQs" onClick={() => ctx.nav({ name: "lookup" })} />
                 <SupportRow icon={Headset} title="Customer Service" hint="Chat with a store or our team" onClick={() => ctx.nav({ name: "messages" })} />
@@ -628,19 +647,19 @@ function Dashboard({
           <button
             type="button"
             onClick={() => onSub("addresses")}
-            className="flex w-full items-center gap-3 rounded-2xl border bg-card p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-md"
+            className="flex w-full items-center gap-3 rounded-xl border border-slate-200/80 bg-card p-4 text-left shadow-soft-card transition-all hover:-translate-y-0.5 hover:shadow-glow-cyan-sm"
             aria-label={`Manage delivery addresses, ${data.profile?.addressCount ?? 0} saved`}
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-gradient-soft text-teal-800">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
               <MapPin className="h-5 w-5" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold">My Addresses</span>
-              <span className="block truncate text-xs text-muted-foreground">
+              <span className="block text-sm font-bold text-slate-800">My Addresses</span>
+              <span className="block truncate text-xs text-slate-400">
                 {data.profile?.addressCount ? `${data.profile.addressCount} saved address${data.profile.addressCount === 1 ? "" : "es"}` : "Add your first delivery address"}
               </span>
             </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
           </button>
 
           {/* recommendations */}
@@ -678,11 +697,11 @@ function Avatar({ profile, size = "md" }: { profile: ProfileT | null; size?: "sm
               ? "from-slate-400 to-slate-600"
               : "from-teal-500 to-teal-800";
   if (profile?.avatarUrl && !gradKey && /^https?:\/\/|^\//.test(profile.avatarUrl)) {
-    return <img src={profile.avatarUrl} alt={`${profile.fullName} avatar`} className={cn(px, "shrink-0 rounded-full object-cover ring-2 ring-white/70")} />;
+    return <img src={profile.avatarUrl} alt={`${profile.fullName} avatar`} className={cn(px, "shrink-0 rounded-full object-cover ring-2 ring-white")} />;
   }
   const initial = (profile?.fullName ?? "?").trim().slice(0, 1).toUpperCase();
   return (
-    <span className={cn(px, "flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-extrabold text-white ring-2 ring-white/70", gradClass)} aria-hidden="true">
+    <span className={cn(px, "flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-extrabold text-white ring-2 ring-white", gradClass)} aria-hidden="true">
       {initial}
     </span>
   );
@@ -710,9 +729,12 @@ function ProfileHeader({
     // Task 33 — MOBILE ONLY banner compaction (−40% height): smaller avatar,
     // smaller name, no email line, follow stats folded into the name block as
     // plain text (no tiles), and the membership + free-shipping rows slimmed
-    // down. Desktop (md+) keeps the Task-30 banner exactly as it was.
-    <section className="overflow-hidden rounded-2xl bg-brand-gradient-deep text-white shadow-soft" aria-label="Profile">
-      <div className="flex items-center gap-2.5 p-3 md:gap-4 md:p-5">
+    // down. Desktop (md+) keeps the Task-30 banner structure.
+    // Bubbly Cyan recipe 3 — vibrant gradient hero + frosted rows + blob glow.
+    <section className="relative overflow-hidden rounded-xl bg-brand-gradient text-white shadow-glow-cyan" aria-label="Profile">
+      <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl pointer-events-none" aria-hidden="true" />
+      <div className="absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-white/10 blur-2xl pointer-events-none" aria-hidden="true" />
+      <div className="relative flex items-center gap-2.5 p-3 md:gap-4 md:p-5">
         <Avatar profile={profile} size="lg" />
         <div className="min-w-0 flex-1">
           {loading && !profile ? (
@@ -739,12 +761,12 @@ function ProfileHeader({
 
       {/* Following / Followers — desktop keeps the two stat tiles; mobile got
           the inline line above, so the tile row is hidden there */}
-      <div className="hidden flex-wrap gap-2 px-5 pb-1 md:flex">
+      <div className="relative hidden flex-wrap gap-2 px-5 pb-1 md:flex">
         <FollowStat label="Following" value={profile?.followingCount} />
         <FollowStat label="Followers" value={profile?.followerCount} />
       </div>
 
-      <div className="space-y-2 px-3 pb-3 pt-1.5 md:space-y-2.5 md:px-5 md:pb-4 md:pt-2.5">
+      <div className="relative space-y-2 px-3 pb-3 pt-1.5 md:space-y-2.5 md:px-5 md:pb-4 md:pt-2.5">
         {/* Membership — progressive: the current tier with its live progress
             bar visible at a glance; tapping the right-chevron opens the modal
             with the full breakdown (lifetime spend, next tier, member since). */}
@@ -761,7 +783,7 @@ function ProfileHeader({
           <span className="min-w-0 flex-1">
             <span className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-extrabold uppercase tracking-wide md:text-xs">{tier} Member</span>
-              <span className="shrink-0 text-[10px] font-semibold tabular-nums text-white/90 md:text-[11px]">
+              <span className="shrink-0 rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
                 {profile?.tierProgress ? `${pct}% → ${profile.tierProgress.nextTier}` : "Top tier reached"}
               </span>
             </span>
@@ -773,7 +795,7 @@ function ProfileHeader({
               aria-valuemax={100}
               aria-label="Progress to next membership tier"
             >
-              <span className="block h-full rounded-full bg-amber-400" style={{ width: `${Math.max(6, pct)}%` }} />
+              <span className="block h-full rounded-full pattern-stripes-cyan" style={{ width: `${Math.max(6, pct)}%` }} />
             </span>
           </span>
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 md:h-4 md:w-4" aria-hidden="true" />
@@ -800,11 +822,11 @@ function ProfileHeader({
 
 function FollowStat({ label, value }: { label: string; value?: number }) {
   return (
-    <span className="inline-flex min-w-[76px] flex-col rounded-lg bg-white/15 px-3 py-1.5 backdrop-blur">
+    <span className="inline-flex min-w-[76px] flex-col rounded-full bg-white/15 px-3.5 py-1.5 backdrop-blur">
       <span className="text-sm font-extrabold leading-tight tabular-nums">
         {typeof value === "number" ? value.toLocaleString() : "—"}
       </span>
-      <span className="text-[10px] font-medium uppercase tracking-wide text-white/80">{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-white/80">{label}</span>
     </span>
   );
 }
@@ -813,16 +835,16 @@ function MembershipDialog({ open, onOpenChange, profile }: { open: boolean; onOp
   const tier = profile?.membershipLevel ?? "SILVER";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm rounded-2xl">
+      <DialogContent className="max-w-sm rounded-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 font-bold">
             <Crown className="h-4 w-4 text-amber-500" aria-hidden="true" /> {tier} Membership
           </DialogTitle>
           <DialogDescription>Your lifetime spend unlocks higher tiers automatically.</DialogDescription>
         </DialogHeader>
         {profile ? (
           <div className="space-y-4">
-            <div className="rounded-xl border bg-muted/40 p-4 text-center">
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-4 text-center">
               <span className={cn("inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br text-white shadow", TIER_STYLE[tier])}>
                 <Crown className="h-6 w-6" aria-hidden="true" />
               </span>
@@ -835,7 +857,7 @@ function MembershipDialog({ open, onOpenChange, profile }: { open: boolean; onOp
                   <span>Next: {profile.tierProgress.nextTier}</span>
                   <span className="tabular-nums">{profile.tierProgress.percent}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={profile.tierProgress.percent} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={profile.tierProgress.percent} aria-valuemin={0} aria-valuemax={100}>
                   <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${Math.max(4, profile.tierProgress.percent)}%` }} />
                 </div>
                 <p className="text-xs text-muted-foreground">Spend {formatMinor(profile.tierProgress.remainingMinor)} more to reach {profile.tierProgress.nextTier}.</p>
@@ -856,52 +878,69 @@ function MembershipDialog({ open, onOpenChange, profile }: { open: boolean; onOp
 // =============================================================================================
 
 function SideItem({ icon: Icon, label, badge, active, onClick }: { icon: typeof Package; label: string; badge?: number; active?: boolean; onClick: () => void }) {
+  // Bubbly Cyan recipe 5 — active item is a gradient pill capsule with the
+  // cyan glow; inactive items rest in slate until a soft teal hover.
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-[40px] w-full items-center gap-2.5 rounded-lg px-3 text-sm font-medium transition-colors",
-        active ? "bg-teal-50 text-teal-900" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        "flex min-h-[40px] w-full items-center gap-2.5 rounded-xl px-3 text-sm transition-colors",
+        active
+          ? "bg-brand-gradient font-semibold text-white shadow-glow-cyan-sm"
+          : "font-medium text-slate-500 hover:bg-teal-50/70 hover:text-teal-800"
       )}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="flex-1 text-left">{label}</span>
       {badge ? (
-        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white">{badge > 9 ? "9+" : badge}</span>
+        <span
+          className={cn(
+            "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-extrabold",
+            active ? "bg-white/25 text-white" : "bg-amber-500 text-white"
+          )}
+        >
+          {badge > 9 ? "9+" : badge}
+        </span>
       ) : null}
     </button>
   );
 }
 
 function CampaignCircle({ icon: Icon, label, onClick }: { icon: typeof Package; label: string; onClick: () => void }) {
+  // Bubbly Cyan recipe 8 — teal icon ring that flips to the gradient pill
+  // with the cyan glow on hover.
   return (
     <button type="button" onClick={onClick} className="group flex flex-col items-center gap-1.5" aria-label={label}>
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-gradient-soft text-teal-800 ring-1 ring-teal-700/10 transition-all group-hover:scale-105 group-hover:bg-brand-gradient group-hover:text-white">
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-50 text-teal-700 ring-1 ring-teal-100 transition-all group-hover:scale-105 group-hover:bg-brand-gradient group-hover:text-white group-hover:shadow-glow-cyan-sm">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <span className="text-center text-[10px] font-semibold leading-tight sm:text-[11px]">{label}</span>
+      <span className="text-center text-[10px] font-semibold leading-tight text-slate-600 sm:text-[11px]">{label}</span>
     </button>
   );
 }
 
 function WalletCard({ icon: Icon, label, value, hint, meter, onClick }: { icon: typeof Package; label: string; value: string; hint: string; meter?: number; onClick: () => void }) {
+  // Bubbly Cyan recipe 4 — white metric card with a teal icon chip,
+  // extrabold tabular headline and an optional gradient meter (recipe 9).
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-2xl border bg-card p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="flex flex-col rounded-xl border border-slate-200/80 bg-card p-4 text-left shadow-soft-card transition-all hover:-translate-y-0.5 hover:shadow-glow-cyan-sm"
       aria-label={`${label}: ${value}`}
     >
-      <div className="flex items-center gap-2 pb-1.5">
-        <Icon className="h-4 w-4 text-teal-700" aria-hidden="true" />
-        <span className="text-xs font-bold">{label}</span>
+      <div className="flex items-center gap-2.5 pb-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
       </div>
-      <p className="truncate text-lg font-extrabold tabular-nums text-teal-800">{value}</p>
-      <p className="truncate text-[11px] text-muted-foreground">{hint}</p>
+      <p className="truncate text-2xl font-extrabold tracking-tight text-slate-900 tabular-nums">{value}</p>
+      <p className="truncate text-xs text-slate-400">{hint}</p>
       {typeof meter === "number" ? (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(2, meter * 100))}%` }} aria-hidden="true" />
+        <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${Math.min(100, Math.max(2, meter * 100))}%` }} aria-hidden="true" />
         </div>
       ) : null}
     </button>
@@ -926,26 +965,28 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
   };
 
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-soft">
-      <div className="flex items-center gap-2 pb-1.5">
-        <Coins className="h-4 w-4 text-amber-500" aria-hidden="true" />
-        <span className="text-xs font-bold">Nomo Coins</span>
+    <div className="flex flex-col rounded-xl border border-slate-200/80 bg-card p-4 text-left shadow-soft-card">
+      <div className="flex items-center gap-2.5 pb-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+          <Coins className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Nomo Coins</span>
       </div>
-      <p className="truncate text-lg font-extrabold tabular-nums text-teal-800">{wallet ? wallet.wallet.coinBalance.toLocaleString() : "—"}</p>
-      <div className="flex items-center gap-2 pt-1">
+      <p className="truncate text-2xl font-extrabold tracking-tight text-slate-900 tabular-nums">{wallet ? wallet.wallet.coinBalance.toLocaleString() : "—"}</p>
+      <div className="flex items-center gap-2 pt-2">
         <Button
           size="sm"
           disabled={!canClaim || busy}
           onClick={() => void claim()}
           className={cn(
             "relative h-7 min-h-[28px] px-2.5 text-[11px] font-bold",
-            canClaim ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-muted text-muted-foreground hover:bg-muted"
+            canClaim ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-slate-100 text-slate-500 hover:bg-slate-100"
           )}
         >
           {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : canClaim ? "Check in" : "Checked in"}
           {canClaim && !busy ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-card" aria-hidden="true" /> : null}
         </Button>
-        {wallet && wallet.wallet.checkInStreak > 0 ? <span className="text-[10px] font-semibold text-muted-foreground">🔥 {wallet.wallet.checkInStreak}-day</span> : null}
+        {wallet && wallet.wallet.checkInStreak > 0 ? <span className="text-[10px] font-semibold text-slate-400">🔥 {wallet.wallet.checkInStreak}-day</span> : null}
       </div>
     </div>
   );
@@ -958,16 +999,18 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
 function FinanceComingSoonCard() {
   return (
     <div
-      className="flex min-h-[92px] flex-col justify-center rounded-2xl border border-dashed border-teal-300 bg-teal-50/40 p-4"
+      className="flex min-h-[92px] flex-col justify-center rounded-xl border border-dashed border-teal-300/80 bg-teal-50/50 p-4"
       role="note"
       aria-label="NomoPay and Nomo Coins coming soon"
     >
       <div className="flex items-center gap-2">
-        <Wallet className="h-4 w-4 text-teal-600" aria-hidden="true" />
-        <span className="text-xs font-bold">NomoPay &amp; Coins</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+          <Wallet className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="text-xs font-bold text-teal-900">NomoPay &amp; Coins</span>
         <span className="ml-auto rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-extrabold text-teal-800">SOON</span>
       </div>
-      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+      <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
         Wallet, coins &amp; pay-later are switched off for now — the scaffold is kept for the roadmap.
       </p>
     </div>
@@ -976,7 +1019,7 @@ function FinanceComingSoonCard() {
 
 function FinanceComingSoonView({ onBack }: { onBack: () => void }) {
   return (
-    <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 px-4 py-6">
+    <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 px-3 py-4 sm:px-4 sm:py-6">
       <SubHeader title="My Wallet" onBack={onBack} />
       <EmptyState
         icon={Wallet}
@@ -1015,25 +1058,36 @@ function ServiceCard({
       aria-disabled={disabled || undefined}
       aria-label={`${title} — ${tag}${disabled ? " (coming soon)" : ""}`}
       className={cn(
-        "flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 text-left transition-all",
-        disabled ? "cursor-not-allowed opacity-50 grayscale" : "hover:-translate-y-0.5 hover:shadow-md",
+        "flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-card px-3 py-2.5 text-left shadow-soft-card transition-all",
+        disabled ? "cursor-not-allowed opacity-50 grayscale" : "hover:-translate-y-0.5 hover:shadow-glow-cyan-sm",
       )}
     >
-      <Icon className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
       <span className="min-w-0">
-        <span className="block truncate text-xs font-bold">{title}</span>
-        <span className="block truncate text-[10px] font-semibold text-amber-600">{tag}</span>
+        <span className="block truncate text-xs font-bold text-slate-800">{title}</span>
+        <span className="block truncate text-[10px] font-bold text-amber-600">{tag}</span>
       </span>
     </button>
   );
 }
 
 function ActivityTile({ icon: Icon, label, badge, isNew, onClick }: { icon: typeof Package; label: string; badge?: number; isNew?: boolean; onClick: () => void }) {
+  // Bubbly Cyan inner tile — soft slate well that blushes teal on hover, with
+  // a rounded-lg icon chip (new-dot / count-badge logic preserved).
   return (
-    <button type="button" onClick={onClick} className="group relative flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl px-1 transition-colors hover:bg-muted" aria-label={label}>
-      {isNew ? <span className="absolute right-1 top-0.5 rounded-full bg-rose-600 px-1 py-px text-[8px] font-extrabold text-white">NEW</span> : null}
-      <Icon className="h-5 w-5 text-teal-700 transition-transform group-hover:scale-110" aria-hidden="true" />
-      <span className="text-center text-[10px] font-semibold leading-tight sm:text-[11px]">
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200/60 bg-slate-50 px-1 py-2 transition-all hover:border-teal-200 hover:bg-teal-50/60"
+      aria-label={label}
+    >
+      {isNew ? <span className="absolute right-1.5 top-1 rounded-full bg-rose-600 px-1 py-px text-[8px] font-extrabold text-white">NEW</span> : null}
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+        <Icon className="h-4 w-4 transition-transform group-hover:scale-110" aria-hidden="true" />
+      </span>
+      <span className="text-center text-[10px] font-semibold leading-tight text-slate-600 sm:text-[11px]">
         {label}
         {badge ? <span className="ml-1 rounded-full bg-amber-100 px-1 text-[9px] font-extrabold text-amber-700 tabular-nums">{badge}</span> : null}
       </span>
@@ -1044,15 +1098,15 @@ function ActivityTile({ icon: Icon, label, badge, isNew, onClick }: { icon: type
 function SupportRow({ icon: Icon, title, hint, onClick }: { icon: typeof Package; title: string; hint: string; onClick: () => void }) {
   return (
     <li>
-      <button type="button" onClick={onClick} className="flex min-h-[52px] w-full items-center gap-3 rounded-lg px-1 text-left transition-colors hover:bg-muted">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-gradient-soft text-teal-800">
+      <button type="button" onClick={onClick} className="flex min-h-[52px] w-full items-center gap-3 rounded-lg px-1.5 text-left transition-colors hover:bg-teal-50/60">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
           <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{title}</span>
-          <span className="block truncate text-xs text-muted-foreground">{hint}</span>
+          <span className="block text-sm font-semibold text-slate-800">{title}</span>
+          <span className="block truncate text-xs text-slate-400">{hint}</span>
         </span>
-        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
       </button>
     </li>
   );
@@ -1061,9 +1115,9 @@ function SupportRow({ icon: Icon, title, hint, onClick }: { icon: typeof Package
 function SafetyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm rounded-2xl">
+      <DialogContent className="max-w-sm rounded-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 font-bold">
             <ShieldCheck className="h-4 w-4 text-teal-700" aria-hidden="true" /> Jom Beli Selamat!
           </DialogTitle>
           <DialogDescription>NOMOFEE safe-shopping guidelines.</DialogDescription>
@@ -1125,9 +1179,9 @@ function SettingsDialog({ open, onOpenChange, profile, onSaved }: { open: boolea
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md rounded-2xl">
+      <DialogContent className="max-w-md rounded-3xl">
         <DialogHeader>
-          <DialogTitle>Profile settings</DialogTitle>
+          <DialogTitle className="font-bold">Profile settings</DialogTitle>
           <DialogDescription>{profile?.email}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -1194,17 +1248,20 @@ const PURCHASE_TABS: { key: string; label: string }[] = [
 ];
 
 function SubHeader({ title, onBack, action }: { title: string; onBack: () => void; action?: React.ReactNode }) {
+  // Bubbly Cyan — sticky frosted bar: white/80 backdrop-blur strip with a
+  // white pill-circle back button that teases the teal ring on hover.
+  // Offsets tuck it under the app's pinned market header (72px mobile / 68px desktop).
   return (
-    <div className="flex items-center gap-2 pb-4">
+    <div className="sticky top-[72px] z-20 -mx-3 -mt-4 mb-4 flex items-center gap-2.5 border-b border-slate-200/70 bg-white/80 px-3 py-3 backdrop-blur-md sm:-mx-4 sm:-mt-6 sm:px-4 md:top-[68px]">
       <button
         type="button"
         onClick={onBack}
-        className="flex h-10 w-10 items-center justify-center rounded-lg border bg-card transition-colors hover:bg-muted"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-teal-400 hover:text-teal-700"
         aria-label="Back to dashboard"
       >
         <ArrowLeft className="h-4 w-4" />
       </button>
-      <h1 className="flex-1 truncate text-lg font-extrabold tracking-tight sm:text-xl">{title}</h1>
+      <h1 className="flex-1 truncate text-base font-bold tracking-tight text-slate-900 sm:text-lg">{title}</h1>
       {action}
     </div>
   );
@@ -1317,8 +1374,10 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "min-h-[36px] shrink-0 rounded-full border px-3.5 text-xs font-bold transition-colors",
-              tab === t.key ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "bg-card text-muted-foreground hover:text-foreground"
+              "min-h-[36px] shrink-0 rounded-full border px-3.5 text-xs font-bold transition-all",
+              tab === t.key
+                ? "border-transparent bg-brand-gradient text-white shadow-glow-cyan-sm"
+                : "border-slate-200/80 bg-card text-slate-500 hover:border-teal-300 hover:text-teal-800"
             )}
           >
             {t.label}
@@ -1328,9 +1387,9 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
 
       {loading ? (
         <div className="space-y-3">
-          <Skeleton className="h-44 rounded-2xl" />
-          <Skeleton className="h-44 rounded-2xl" />
-          <Skeleton className="h-44 rounded-2xl" />
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
         </div>
       ) : shown.length === 0 ? (
         <EmptyState
@@ -1391,18 +1450,18 @@ function PurchasesOrderCard({
   const shipLabel = shipmentStatusLabel(o.shipmentStatus);
   const shipTone =
     o.shipmentStatus === "DELIVERED"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      ? "bg-emerald-50 text-emerald-700"
       : o.shipmentStatus === "EXCEPTION" || o.shipmentStatus === "RETURNED"
-        ? "border-rose-200 bg-rose-50 text-rose-700"
-        : "border-teal-200 bg-teal-50 text-teal-800";
+        ? "bg-rose-50 text-rose-600"
+        : "bg-teal-50 text-teal-700";
 
   return (
-    <li className="overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md">
+    <li className="overflow-hidden rounded-xl border border-slate-200/80 bg-card shadow-soft-card transition-shadow hover:shadow-glow-cyan-sm">
       {/* clickable summary (store header, chips, item rows, totals) */}
       <button
         type="button"
         onClick={onOpen}
-        className="block w-full p-4 text-left transition-colors hover:bg-muted/30"
+        className="block w-full p-4 text-left transition-colors hover:bg-slate-50/80"
         aria-label={`View order ${o.orderNumber} from ${o.store.name}, ${statusLabel(o.status)}`}
       >
         <div className="flex items-center gap-2">
@@ -1413,7 +1472,7 @@ function PurchasesOrderCard({
 
         {o.trackingNumber ? (
           <div className="pt-2">
-            <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold", shipTone)}>
+            <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold", shipTone)}>
               <Truck className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="truncate">
                 {o.shippingCourierName ? `${o.shippingCourierName} · ` : ""}
@@ -1427,7 +1486,7 @@ function PurchasesOrderCard({
         <ul className="pt-1.5" aria-label={`Items in order ${o.orderNumber}`}>
           {o.items.map((i) => (
             <li key={i.id} className="flex items-center gap-3 py-2">
-              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted" aria-hidden="true">
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100" aria-hidden="true">
                 {i.imageUrl ? (
                   <img src={i.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (
@@ -1447,19 +1506,19 @@ function PurchasesOrderCard({
         </ul>
 
         <div className="flex items-end justify-between gap-2 pt-2">
-          <span className="min-w-0 text-[11px] text-muted-foreground tabular-nums">
-            <span className="block truncate">{o.orderNumber}</span>
+          <span className="min-w-0 text-[11px] text-slate-500 tabular-nums">
+            <span className="block truncate font-bold">{o.orderNumber}</span>
             <span className="block">{dateShort(o.createdAt)}</span>
           </span>
           <span className="text-right" aria-label={`Order total ${formatMinor(o.totalMinor)}`}>
-            <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Order Total</span>
-            <span className="block text-base font-extrabold text-teal-700 tabular-nums">{formatMinor(o.totalMinor)}</span>
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Order Total</span>
+            <span className="block text-base font-extrabold tracking-tight text-slate-900 tabular-nums">{formatMinor(o.totalMinor)}</span>
           </span>
         </div>
       </button>
 
       {/* actions row — outside the clickable summary so buttons never nest */}
-      <div className="flex items-center justify-end gap-2 border-t bg-muted/30 px-4 py-3">
+      <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3">
         <Button
           variant="outline"
           size="sm"
@@ -1513,43 +1572,50 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
       <SubHeader title="My Wallet" onBack={onBack} />
       {wallet ? (
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-2xl bg-brand-gradient-deep p-5 text-white shadow-soft">
-            <p className="text-xs font-semibold uppercase tracking-widest text-white/80">NomoPay balance</p>
-            <p className="pt-1 text-3xl font-extrabold tabular-nums">{formatMinor(wallet.wallet.balanceMinor)}</p>
-            <p className="pt-1 text-xs text-white/80">Spend it at checkout — top-ups land instantly.</p>
+          <div className="relative overflow-hidden rounded-xl bg-brand-gradient p-5 text-white shadow-glow-cyan">
+            <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl pointer-events-none" aria-hidden="true" />
+            <div className="relative">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-white/80">NomoPay balance</p>
+              <p className="pt-1 text-2xl font-extrabold tracking-tight tabular-nums lg:text-3xl">{formatMinor(wallet.wallet.balanceMinor)}</p>
+              <p className="pt-1 text-xs text-white/80">Spend it at checkout — top-ups land instantly.</p>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border bg-card p-4 shadow-soft">
-              <div className="flex items-center gap-2 pb-1">
-                <Coins className="h-4 w-4 text-amber-500" aria-hidden="true" />
-                <p className="text-xs font-bold uppercase tracking-wide">Nomo Coins</p>
+            <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+              <div className="flex items-center gap-2.5 pb-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                  <Coins className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Nomo Coins</p>
               </div>
-              <p className="text-2xl font-extrabold tabular-nums text-teal-800">{wallet.wallet.coinBalance.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">1 coin ≈ RM0.01 at checkout · streak {wallet.wallet.checkInStreak} day{wallet.wallet.checkInStreak === 1 ? "" : "s"}</p>
-              <Button size="sm" disabled={!canClaim || busy} onClick={() => void claim()} className={cn("mt-3 min-h-[36px]", canClaim ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-muted text-muted-foreground hover:bg-muted")}>
+              <p className="text-2xl font-extrabold tracking-tight text-slate-900 tabular-nums">{wallet.wallet.coinBalance.toLocaleString()}</p>
+              <p className="text-xs text-slate-400">1 coin ≈ RM0.01 at checkout · streak {wallet.wallet.checkInStreak} day{wallet.wallet.checkInStreak === 1 ? "" : "s"}</p>
+              <Button size="sm" disabled={!canClaim || busy} onClick={() => void claim()} className={cn("mt-3 min-h-[36px]", canClaim ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-slate-100 text-slate-500 hover:bg-slate-100")}>
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : canClaim ? "Daily check-in" : "Come back tomorrow"}
               </Button>
               {!canClaim && wallet?.checkIn?.nextClaimAt ? (
-                <p className="pt-1.5 text-[10px] text-muted-foreground">Next check-in from {new Date(wallet.checkIn.nextClaimAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "medium", timeStyle: "short" })}</p>
+                <p className="pt-1.5 text-[10px] text-slate-400">Next check-in from {new Date(wallet.checkIn.nextClaimAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "medium", timeStyle: "short" })}</p>
               ) : null}
             </div>
-            <div className="rounded-2xl border bg-card p-4 shadow-soft">
-              <div className="flex items-center gap-2 pb-1">
-                <CreditCardIcon className="h-4 w-4 text-teal-700" aria-hidden="true" />
-                <p className="text-xs font-bold uppercase tracking-wide">NomoPay Later</p>
+            <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+              <div className="flex items-center gap-2.5 pb-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                  <CreditCardIcon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">NomoPay Later</p>
               </div>
-              <p className="text-2xl font-extrabold tabular-nums text-teal-800">{formatMinor(wallet.wallet.payLaterAvailableMinor)}</p>
-              <p className="text-xs text-muted-foreground">available of {formatMinor(wallet.wallet.payLaterLimitMinor)} limit</p>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round((wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(1, (wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100))}%` }} />
+              <p className="text-2xl font-extrabold tracking-tight text-slate-900 tabular-nums">{formatMinor(wallet.wallet.payLaterAvailableMinor)}</p>
+              <p className="text-xs text-slate-400">available of {formatMinor(wallet.wallet.payLaterLimitMinor)} limit</p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={Math.round((wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100)} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${Math.min(100, Math.max(1, (wallet.wallet.payLaterUsedMinor / Math.max(1, wallet.wallet.payLaterLimitMinor)) * 100))}%` }} />
               </div>
             </div>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <Skeleton className="h-32 rounded-2xl" />
-          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
         </div>
       )}
     </div>
@@ -1570,13 +1636,13 @@ const VOUCHER_TABS: { key: "mine" | "center"; label: string }[] = [
 ];
 
 const VOUCHER_KIND_META: Record<string, { label: string; badgeClass: string; stripe: string }> = {
-  discount: { label: "Discount", badgeClass: "border-rose-200 bg-rose-50 text-rose-700", stripe: "bg-rose-500" },
-  freeshipping: { label: "Free Shipping", badgeClass: "border-teal-200 bg-teal-50 text-teal-800", stripe: "bg-teal-600" },
-  coinsback: { label: "Coins Back", badgeClass: "border-amber-200 bg-amber-50 text-amber-700", stripe: "bg-amber-500" },
+  discount: { label: "Discount", badgeClass: "bg-rose-50 text-rose-600", stripe: "bg-rose-500" },
+  freeshipping: { label: "Free Shipping", badgeClass: "bg-teal-50 text-teal-700", stripe: "bg-teal-600" },
+  coinsback: { label: "Coins Back", badgeClass: "bg-amber-50 text-amber-700", stripe: "bg-amber-500" },
 };
 
 function voucherKindMeta(kind: string) {
-  return VOUCHER_KIND_META[kind] ?? { label: kind.replace(/_/g, " "), badgeClass: "border-muted bg-muted text-muted-foreground", stripe: "bg-muted-foreground" };
+  return VOUCHER_KIND_META[kind] ?? { label: kind.replace(/_/g, " "), badgeClass: "bg-slate-100 text-slate-600", stripe: "bg-slate-400" };
 }
 
 /** Human value line: "RM 10 off" / "20% off · up to RM 15" / "Free shipping". */
@@ -1593,7 +1659,7 @@ function voucherValueLabel(v: VoucherCoreT): string {
 function KindBadge({ kind }: { kind: string }) {
   const meta = voucherKindMeta(kind);
   return (
-    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-extrabold", meta.badgeClass)}>
+    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", meta.badgeClass)}>
       {meta.label}
     </span>
   );
@@ -1678,8 +1744,25 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
     <div className="mx-auto w-full max-w-3xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
       <SubHeader title="My Vouchers" onBack={onBack} />
 
+      {/* hero summary — Bubbly Cyan gradient envelope (recipe 3) */}
+      <div className="relative mb-4 overflow-hidden rounded-xl bg-brand-gradient p-5 text-white shadow-glow-cyan" aria-label="Voucher wallet summary">
+        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl pointer-events-none" aria-hidden="true" />
+        <div className="relative flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-white/80">Voucher wallet</p>
+            <p className="text-2xl font-extrabold tracking-tight tabular-nums lg:text-3xl">{mine === null ? "…" : availableCount}</p>
+            <p className="pt-0.5 text-xs text-white/80">
+              {mine === null ? "Loading your vouchers…" : `${availableCount} voucher${availableCount === 1 ? "" : "s"} ready to apply at checkout`}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+            {mine === null ? "…" : `${mineCount} total`}
+          </span>
+        </div>
+      </div>
+
       {/* segmented tabs — Mine | Voucher Center */}
-      <div className="flex rounded-full border bg-muted p-1 pb-1.5" role="tablist" aria-label="Voucher views">
+      <div className="flex rounded-full border border-slate-200/70 bg-slate-100/80 p-1" role="tablist" aria-label="Voucher views">
         {VOUCHER_TABS.map((t) => (
           <button
             key={t.key}
@@ -1688,8 +1771,8 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "min-h-[36px] flex-1 rounded-full px-4 text-xs font-bold transition-colors sm:text-sm",
-              tab === t.key ? "bg-teal-700 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+              "min-h-[36px] flex-1 rounded-full px-4 text-xs font-bold transition-all sm:text-sm",
+              tab === t.key ? "bg-brand-gradient text-white shadow-glow-cyan-sm" : "text-slate-500 hover:text-slate-800"
             )}
           >
             {t.label}
@@ -1707,18 +1790,18 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === "Enter" && void claimByCode()}
               placeholder="Enter a voucher code (try MESH10)"
-              className="min-h-[44px] font-mono"
+              className="min-h-[44px] rounded-full font-mono"
               aria-label="Voucher code"
             />
-            <Button onClick={() => void claimByCode()} disabled={codeBusy || !code.trim()} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+            <Button onClick={() => void claimByCode()} disabled={codeBusy || !code.trim()} className="min-h-[44px] bg-brand-gradient text-white shadow-glow-cyan-sm hover:brightness-110">
               {codeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Claim
             </Button>
           </div>
 
           {mine === null ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Skeleton className="h-28 rounded-2xl" />
-              <Skeleton className="h-28 rounded-2xl" />
+              <Skeleton className="h-28 rounded-xl" />
+              <Skeleton className="h-28 rounded-xl" />
             </div>
           ) : mine.length === 0 ? (
             <EmptyState
@@ -1741,12 +1824,12 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
                 const used = r.status === "USED";
                 const meta = voucherKindMeta(r.voucher.kind);
                 return (
-                  <div key={r.id} className={cn("flex overflow-hidden rounded-2xl border bg-card shadow-sm", (expired || used) && "opacity-60")} aria-label={`${r.voucher.title} — ${r.status.toLowerCase()}`}>
+                  <div key={r.id} className={cn("flex overflow-hidden rounded-xl border border-slate-200/80 bg-card shadow-soft-card", (expired || used) && "opacity-60")} aria-label={`${r.voucher.title} — ${r.status.toLowerCase()}`}>
                     <span className={cn("w-1.5 shrink-0", meta.stripe)} aria-hidden="true" />
                     <div className="min-w-0 flex-1 p-4">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="min-w-0 text-sm font-bold leading-snug">{r.voucher.title}</p>
-                        <Badge variant="outline" className={cn("shrink-0 text-[10px]", expired ? "border-rose-200 text-rose-700" : used ? "border-muted text-muted-foreground" : "border-emerald-200 text-emerald-700")}>
+                        <p className="min-w-0 text-sm font-bold leading-snug text-slate-900">{r.voucher.title}</p>
+                        <Badge variant="outline" className={cn("shrink-0 border-transparent text-[10px] font-bold", expired ? "bg-rose-50 text-rose-600" : used ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700")}>
                           {r.status}
                         </Badge>
                       </div>
@@ -1754,8 +1837,10 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
                         <p className="text-sm font-extrabold text-teal-700">{voucherValueLabel(r.voucher)}</p>
                         <KindBadge kind={r.voucher.kind} />
                       </div>
-                      <p className="pt-1 font-mono text-xs font-extrabold tracking-wide text-foreground/80">{r.voucher.code}</p>
-                      <p className="pt-1 text-[11px] text-muted-foreground">
+                      <p className="pt-1.5">
+                        <code className="inline-block rounded-lg bg-slate-50 px-2 py-1 font-mono text-xs font-extrabold tracking-wide text-slate-700">{r.voucher.code}</code>
+                      </p>
+                      <p className="pt-1.5 text-[11px] text-slate-400">
                         {r.voucher.scope === "STORE" && r.voucher.store ? `${r.voucher.store.name} · ` : ""}
                         {r.voucher.minSpendMinor > 0 ? `Min. spend ${formatMinor(r.voucher.minSpendMinor)} · ` : "No min. spend · "}
                         Expires {dateShort(r.voucher.expiryAt)}
@@ -1764,7 +1849,7 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
                         <p className="pt-1 text-[10px] font-semibold text-amber-700">West Malaysia delivery only</p>
                       ) : null}
                       {used && r.usedAt ? (
-                        <p className="pt-1 text-[10px] text-muted-foreground">Used on {dateShort(r.usedAt)}</p>
+                        <p className="pt-1 text-[10px] text-slate-400">Used on {dateShort(r.usedAt)}</p>
                       ) : null}
                     </div>
                   </div>
@@ -1782,8 +1867,8 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
         <div className="pt-5">
           {center === null ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Skeleton className="h-44 rounded-2xl" />
-              <Skeleton className="h-44 rounded-2xl" />
+              <Skeleton className="h-44 rounded-xl" />
+              <Skeleton className="h-44 rounded-xl" />
             </div>
           ) : center.length === 0 ? (
             <EmptyState
@@ -1806,48 +1891,48 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
                 const fullyClaimed = v.quotaRemaining === 0;
                 const label = v.claimedByMe ? "Claimed" : fullyClaimed ? "Fully claimed" : "Claim";
                 return (
-                  <div key={v.id} className="flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm" aria-label={`${v.title} from ${v.store?.name ?? "platform"}`}>
+                  <div key={v.id} className="flex flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-card shadow-soft-card" aria-label={`${v.title} from ${v.store?.name ?? "platform"}`}>
                     {/* store header */}
-                    <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
                       {v.store?.logoUrl ? (
-                        <img src={v.store.logoUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-border" />
+                        <img src={v.store.logoUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover ring-1 ring-teal-100" />
                       ) : (
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-gradient-soft text-teal-800" aria-hidden="true">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700" aria-hidden="true">
                           <Store className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <span className="min-w-0 flex-1 truncate text-xs font-bold">{v.store?.name ?? "NOMOFEE"}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{v.store?.name ?? "NOMOFEE"}</span>
                       {v.scope !== "STORE" ? (
-                        <span className="shrink-0 rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-teal-800">Platform</span>
+                        <span className="shrink-0 rounded-full bg-teal-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-teal-700">Platform</span>
                       ) : null}
                     </div>
                     {/* body */}
                     <div className="min-w-0 flex-1 p-4">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="min-w-0 text-sm font-bold leading-snug">{v.title}</p>
+                        <p className="min-w-0 text-sm font-bold leading-snug text-slate-900">{v.title}</p>
                         <KindBadge kind={v.kind} />
                       </div>
                       <p className="pt-1 text-lg font-extrabold tabular-nums text-teal-700">{voucherValueLabel(v)}</p>
-                      <p className="pt-1 text-[11px] text-muted-foreground">
+                      <p className="pt-1 text-[11px] text-slate-400">
                         {v.minSpendMinor > 0 ? `Min. spend ${formatMinor(v.minSpendMinor)}` : "No min. spend"}
                         {" · "}
                         {v.quotaRemaining == null ? "Unlimited quota" : `${v.quotaRemaining} left`}
                       </p>
-                      <p className="pt-0.5 text-[11px] text-muted-foreground">Expires {dateShort(v.expiryAt)}</p>
+                      <p className="pt-0.5 text-[11px] text-slate-400">Expires {dateShort(v.expiryAt)}</p>
                       {v.regionLimit === "peninsular" ? (
                         <p className="pt-1 text-[10px] font-semibold text-amber-700">West Malaysia delivery only</p>
                       ) : null}
                     </div>
                     {/* claim action — 44px target */}
-                    <div className="border-t px-4 py-3">
+                    <div className="border-t border-slate-100 px-4 py-3">
                       <Button
                         onClick={() => void claimPool(v)}
                         disabled={claiming || v.claimedByMe || fullyClaimed}
                         className={cn(
                           "min-h-[44px] w-full gap-1.5",
                           v.claimedByMe || fullyClaimed
-                            ? "bg-muted text-muted-foreground hover:bg-muted"
-                            : "bg-brand-gradient-deep text-white hover:brightness-110"
+                            ? "bg-slate-100 text-slate-500 hover:bg-slate-100"
+                            : "bg-brand-gradient text-white shadow-glow-cyan-sm hover:brightness-110"
                         )}
                         aria-label={`${label} — ${v.title}`}
                       >
@@ -1904,15 +1989,17 @@ function ActivityGridView({ type, title, onBack, ctx }: { type: "LIKE" | "VIEWED
           action={<Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">Explore the market</Button>}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
-          {items.map((it) => (
-            <MeProductCard
-              key={it.activityId}
-              p={{ ...it.product, inStock: true, isFeatured: false, isSellingFast: false, payLaterEligible: it.product.priceMinor >= 10000 }}
-              onOpen={(prod) => ctx.nav({ name: "pdp", slug: prod.storeSlug, pSlug: prod.slug })}
-            />
-          ))}
-        </div>
+        <section className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card" aria-label={title}>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
+            {items.map((it) => (
+              <MeProductCard
+                key={it.activityId}
+                p={{ ...it.product, inStock: true, isFeatured: false, isSellingFast: false, payLaterEligible: it.product.priceMinor >= 10000 }}
+                onOpen={(prod) => ctx.nav({ name: "pdp", slug: prod.storeSlug, pSlug: prod.slug })}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
@@ -1940,19 +2027,21 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
   const discount = p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
     ? Math.round(100 - (p.priceMinor / p.compareAtPriceMinor) * 100)
     : null;
+  // Bubbly Cyan product tile — padded slate-100 image well (rounded-lg),
+  // bold title, extrabold tabular price and soft pill micro-badges.
   return (
     <button
       type="button"
       onClick={() => onOpen(p)}
-      className="group text-left rounded-xl border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
+      className="group rounded-xl text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
       aria-label={`${p.title}, ${formatMinor(p.priceMinor)}${p.isSellingFast ? ", selling fast" : ""}${NOMO_FINANCE_ENABLED && p.payLaterEligible ? ", NomoPay Later available" : ""}`}
     >
-      <div className="relative aspect-square overflow-hidden bg-muted">
+      <div className="relative mb-2 aspect-square overflow-hidden rounded-lg bg-slate-100 p-2">
         <img
           src={p.imageUrl}
           alt={p.title}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+          className="h-full w-full rounded-md object-cover transition-transform duration-300 group-hover:scale-[1.04]"
         />
         {discount ? (
           <span className="absolute left-1.5 top-1.5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold text-white shadow">-{discount}%</span>
@@ -1964,28 +2053,28 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
           <span className="absolute right-1.5 top-1.5 rounded-full bg-amber-500/95 px-1.5 py-0.5 text-[9px] font-extrabold text-white shadow">Featured</span>
         ) : null}
       </div>
-      <div className="space-y-1 p-2.5">
-        <h3 className="line-clamp-2 min-h-[2rem] text-xs font-medium leading-snug">{p.title}</h3>
+      <div className="space-y-1">
+        <h3 className="line-clamp-2 min-h-[2rem] text-xs font-bold leading-snug text-slate-800">{p.title}</h3>
         <div className="flex flex-wrap items-baseline gap-1.5">
-          <span className="text-sm font-bold text-teal-700">{formatMinor(p.priceMinor)}</span>
+          <span className="text-sm font-extrabold tracking-tight text-slate-900 tabular-nums">{formatMinor(p.priceMinor)}</span>
           {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
-            <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+            <span className="text-[10px] text-slate-400 line-through">{formatMinor(p.compareAtPriceMinor)}</span>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-1">
           {p.isSellingFast ? (
-            <span className="rounded border border-rose-300 bg-rose-50 px-1 py-px text-[9px] font-extrabold text-rose-700">Selling Fast</span>
+            <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-extrabold text-rose-600">Selling Fast</span>
           ) : null}
           {NOMO_FINANCE_ENABLED && p.payLaterEligible ? (
-            <span className="rounded border border-teal-300 bg-teal-50 px-1 py-px text-[9px] font-extrabold text-teal-800">NomoPay Later 0% 3x</span>
+            <span className="rounded-full bg-teal-50 px-1.5 py-0.5 text-[9px] font-extrabold text-teal-700">NomoPay Later 0% 3x</span>
           ) : null}
         </div>
         <div className="flex items-center justify-between gap-1 pt-0.5">
-          <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 tabular-nums">
             <Star className="h-3 w-3 fill-amber-400 text-amber-400" aria-hidden="true" />
             {p.ratingAvg > 0 ? p.ratingAvg.toFixed(1) : "New"}
           </span>
-          <span className="text-[10px] text-muted-foreground tabular-nums">{p.salesCount} sold</span>
+          <span className="text-[10px] text-slate-400 tabular-nums">{p.salesCount} sold</span>
         </div>
       </div>
     </button>
@@ -2050,15 +2139,15 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
   };
 
   return (
-    <section className="rounded-2xl border bg-card p-4 shadow-soft" aria-labelledby="me-recs">
+    <section className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card" aria-labelledby="me-recs">
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-        <h2 id="me-recs" className="text-sm font-extrabold uppercase tracking-wide">You May Also Like</h2>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <h2 id="me-recs" className="text-sm font-extrabold text-slate-900">You May Also Like</h2>
+        <label className="flex items-center gap-1.5 text-xs text-slate-400">
           <span className="sr-only">Sort recommendations</span>
           <select
             value={sort}
             onChange={(e) => onSort(e.target.value)}
-            className="min-h-[36px] rounded-lg border bg-background px-2 text-xs font-semibold text-foreground"
+            className="min-h-[36px] cursor-pointer rounded-full border border-slate-200 bg-slate-100 px-3.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-teal-300 focus:border-teal-400 focus:outline-none"
             aria-label="Sort recommendations"
           >
             <option value="popular">Popular</option>
@@ -2196,8 +2285,8 @@ function AddressesView({ onBack }: { onBack: () => void }) {
 
       {rows === null ? (
         <div className="space-y-3">
-          <Skeleton className="h-24 rounded-2xl" />
-          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
         </div>
       ) : rows.length === 0 && !form ? (
         <EmptyState
@@ -2209,13 +2298,13 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       ) : (
         <ul className="space-y-3">
           {rows.map((a) => (
-            <li key={a.id} className="rounded-2xl border bg-card p-4 shadow-sm" aria-label={`${a.label} address for ${a.name}`}>
+            <li key={a.id} className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card" aria-label={`${a.label} address for ${a.name}`}>
               <div className="flex items-center gap-2 pb-1">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">{a.label}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{a.label}</span>
                 {a.isDefault ? <Badge className="bg-teal-700 hover:bg-teal-700 text-[10px]">Default</Badge> : null}
               </div>
-              <p className="text-sm font-bold">{a.name} {a.phone ? <span className="font-normal text-muted-foreground">· {a.phone}</span> : null}</p>
-              <p className="text-sm text-muted-foreground">{a.line1}, {a.city}, {a.state} {a.postcode}</p>
+              <p className="text-sm font-bold text-slate-900">{a.name} {a.phone ? <span className="font-normal text-slate-400">· {a.phone}</span> : null}</p>
+              <p className="text-sm text-slate-500">{a.line1}, {a.city}, {a.state} {a.postcode}</p>
               <div className="flex flex-wrap gap-2 pt-3">
                 {!a.isDefault ? (
                   <Button size="sm" variant="outline" className="h-8 min-h-[32px]" onClick={() => void setDefault(a.id)}>Set default</Button>
@@ -2239,9 +2328,9 @@ function AddressesView({ onBack }: { onBack: () => void }) {
       )}
 
       <Dialog open={form !== null} onOpenChange={(v) => { if (!v) { setForm(null); setEditId(null); } }}>
-        <DialogContent className="max-w-md rounded-2xl">
+        <DialogContent className="max-w-md rounded-3xl">
           <DialogHeader>
-            <DialogTitle>{editId ? "Edit address" : "New address"}</DialogTitle>
+            <DialogTitle className="font-bold">{editId ? "Edit address" : "New address"}</DialogTitle>
             <DialogDescription>Saved to your account — used to prefill checkout.</DialogDescription>
           </DialogHeader>
           {form ? (

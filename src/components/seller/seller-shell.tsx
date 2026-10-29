@@ -97,6 +97,13 @@ export default function SellerShell() {
   const [storeMe, setStoreMe] = useState<StoreMe | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  // Bubbly Cyan backend theme — scoped to <body> so Radix portals (popovers,
+  // sheets, toasts) inherit it too. Marketplace surfaces keep the root theme.
+  useEffect(() => {
+    document.body.classList.add("backend-ui");
+    return () => document.body.classList.remove("backend-ui");
+  }, []);
+
   const seller = me.loaded && "seller" in me ? me.seller : null;
   const sellerId = seller?.id ?? null;
 
@@ -167,10 +174,10 @@ export default function SellerShell() {
   if (status === "suspended" || status === "terminated") {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-md w-full space-y-4 text-center rounded-2xl border bg-card p-8">
+        <div className="max-w-md w-full space-y-4 rounded-3xl border border-slate-200/80 bg-card p-8 text-center shadow-soft-card">
           <ShieldAlert className="mx-auto h-10 w-10 text-rose-500" />
-          <h2 className="text-lg font-semibold capitalize">Store {status}</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-lg font-bold capitalize tracking-tight text-slate-900">Store {status}</h2>
+          <p className="text-sm text-slate-500">
             This store is not currently trading. Contact NOMOFEE support if you believe this is a mistake.
           </p>
           <Button variant="outline" onClick={logout} className="gap-2">
@@ -219,34 +226,34 @@ export default function SellerShell() {
     <div className="flex-1 flex min-h-0">
       <Toaster position="bottom-right" richColors closeButton />
       {/* desktop sidebar */}
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-card/50 print:hidden">
-        <div className="flex items-center gap-2.5 px-4 py-4 border-b">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white print:hidden">
+        <div className="flex items-center gap-2.5 border-b border-slate-200/80 px-4 py-4">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm">
             <ShoppingBag className="h-4.5 w-4.5" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-tight">{storeName}</p>
-            <p className="truncate text-xs text-muted-foreground">/{storeSlug}</p>
+            <p className="truncate text-sm font-bold leading-tight text-slate-900">{storeName}</p>
+            <p className="truncate text-xs text-slate-400">/{storeSlug}</p>
           </div>
         </div>
         <SideNav active={nav.view} onNavigate={navigate} className="flex-1 overflow-y-auto p-2" />
-        <div className="border-t p-3 space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Store status</span>
+        <div className="space-y-2 border-t border-slate-200/80 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-slate-400">Store status</span>
             <StatusChip status={storeMe?.store.status ?? "live"} />
           </div>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Plan</span>
-            <span className="font-medium capitalize text-foreground">{storeMe?.seller.planCode ?? "free"}</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-slate-400">Plan</span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold capitalize text-slate-600">
+              {storeMe?.seller.planCode ?? "free"}
+            </span>
           </div>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* top bar */}
-        <header className="flex items-center gap-3 border-b bg-background/95 px-4 py-3 print:hidden">
-          {/* brand gradient strip */}
-          <div className="fixed inset-x-0 top-0 z-50 h-1 bg-brand-gradient print:hidden" aria-hidden="true" />
+        <header className="flex items-center gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur print:hidden">
           {/* mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
@@ -254,19 +261,22 @@ export default function SellerShell() {
                 <Menu className="h-4 w-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0">
-              <SheetHeader className="border-b px-4 py-3">
-                <SheetTitle className="text-left text-sm">{storeName}</SheetTitle>
+            <SheetContent side="left" className="w-72 border-slate-200/80 bg-white p-0">
+              <SheetHeader className="flex-row items-center gap-2.5 border-b border-slate-200/80 px-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm">
+                  <ShoppingBag className="h-4.5 w-4.5" />
+                </span>
+                <SheetTitle className="text-left text-sm font-bold text-slate-900">{storeName}</SheetTitle>
               </SheetHeader>
               <SideNav active={nav.view} onNavigate={navigate} className="p-2" />
             </SheetContent>
           </Sheet>
 
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold capitalize">
+            <h1 className="truncate text-sm font-bold capitalize tracking-tight text-slate-900">
               {NAV.find((n) => n.key === nav.view)?.label ?? "Dashboard"}
             </h1>
-            <p className="hidden sm:block text-xs text-muted-foreground">
+            <p className="hidden sm:block text-xs text-slate-400">
               Seller portal · {seller.displayName} ({seller.email})
             </p>
           </div>
@@ -388,7 +398,7 @@ function SellerNotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative text-muted-foreground"
+          className="relative rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-teal-400 hover:bg-white hover:text-teal-700"
           aria-label="Seller notifications"
           aria-haspopup="dialog"
           aria-expanded={open}
@@ -396,17 +406,17 @@ function SellerNotificationBell() {
           <Bell className="h-4 w-4" aria-hidden="true" />
           {recent > 0 ? (
             <span
-              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+              className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white"
               aria-hidden="true"
             />
           ) : null}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 rounded-2xl p-0 sm:w-96" role="dialog" aria-label="Seller notifications panel">
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">Notifications</h2>
+        <div className="flex items-center gap-2 border-b border-slate-200/80 px-4 py-3">
+          <h2 className="text-sm font-bold text-slate-900">Notifications</h2>
           {recent > 0 ? (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 tabular-nums">
+            <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 tabular-nums">
               {recent} new
             </span>
           ) : null}
@@ -437,7 +447,7 @@ function SellerNotificationBell() {
             </p>
           </div>
         ) : (
-          <ul className={cn("divide-y", SELLER_BELL_SCROLL)} aria-label="Notification list">
+          <ul className={cn("divide-y divide-slate-100", SELLER_BELL_SCROLL)} aria-label="Notification list">
             {rows.map((n) => {
               const isNew = Date.now() - new Date(n.createdAt).getTime() < RECENT_WINDOW_MS;
               return (
@@ -514,16 +524,22 @@ function SideNav({
           onClick={() => onNavigate({ view: key })}
           aria-current={active === key ? "page" : undefined}
           className={cn(
-            "flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "flex min-h-[44px] items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors",
             active === key
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "bg-brand-gradient font-semibold text-white shadow-glow-cyan-sm"
+              : "font-medium text-slate-500 hover:bg-teal-50/70 hover:text-teal-800"
           )}
         >
           <Icon className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 text-left">{label}</span>
           {key === "messages" && unreadChats > 0 ? (
-            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white shadow" aria-label={`${unreadChats} unread messages`}>
+            <span
+              className={cn(
+                "flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-extrabold",
+                active === key ? "bg-white/25 text-white" : "bg-amber-500 text-white shadow"
+              )}
+              aria-label={`${unreadChats} unread messages`}
+            >
               {unreadChats > 99 ? "99+" : unreadChats}
             </span>
           ) : null}
@@ -573,17 +589,17 @@ function PendingReview({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="flex-1 flex items-start justify-center p-4 sm:p-8">
       <div className="w-full max-w-lg space-y-4">
-        <div className="rounded-2xl border bg-card p-6 sm:p-8 text-center space-y-3">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+        <div className="space-y-3 rounded-3xl border border-slate-200/80 bg-card p-6 text-center shadow-soft-card sm:p-8">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
             <Clock3 className="h-7 w-7" />
           </span>
-          <h2 className="text-xl font-semibold">Your store is under review</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">Your store is under review</h2>
+          <p className="text-sm text-slate-500">
             Thanks {seller?.displayName ?? "there"} — our team is verifying your details. This usually takes
             1–2 business days. We&apos;ll email you the moment your store is approved, no action needed.
           </p>
           {storeMe?.seller.submittedAt ? (
-            <p className="text-xs text-muted-foreground">Submitted {fmtDateTime(storeMe.seller.submittedAt)}</p>
+            <p className="text-xs text-slate-400">Submitted {fmtDateTime(storeMe.seller.submittedAt)}</p>
           ) : null}
           <div className="flex justify-center gap-2 pt-1">
             <StatusChip status="pending_review" />
@@ -591,24 +607,24 @@ function PendingReview({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-card p-5">
-          <p className="text-sm font-semibold">What we verify</p>
+        <div className="rounded-3xl border border-slate-200/80 bg-card p-5 shadow-soft-card">
+          <p className="text-sm font-bold text-slate-900">What we verify</p>
           <ul className="mt-3 space-y-2.5">
             {checks.map((c) => (
               <li key={c.label} className="flex items-center gap-2.5 text-sm">
                 <span
                   className={cn(
                     "flex h-5 w-5 items-center justify-center rounded-full border",
-                    c.done ? "border-emerald-300 bg-emerald-100 text-emerald-700" : "border-dashed text-muted-foreground"
+                    c.done ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-dashed border-slate-300 text-slate-400"
                   )}
                 >
                   {c.done ? <BadgeCheck className="h-3.5 w-3.5" /> : <Clock3 className="h-3 w-3" />}
                 </span>
-                <span className={c.done ? "" : "text-muted-foreground"}>{c.label}</span>
+                <span className={c.done ? "text-slate-700" : "text-slate-400"}>{c.label}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-3 text-xs text-slate-400">
             While you wait you can keep editing products, pages and settings — everything goes live on approval.
           </p>
         </div>
@@ -700,7 +716,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
     <div className="flex-1 flex flex-col min-h-0">
       {/* top chrome — the portal is reachable from the buyer hub (“Start Selling” /
           “Open store”), so there is always a visible way back to the marketplace */}
-      <header className="border-b bg-background/95 backdrop-blur px-4 py-2.5">
+      <header className="border-b border-slate-200/80 bg-white/80 px-4 py-2.5 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
           <button
             type="button"
@@ -708,12 +724,12 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
             className="flex min-h-[44px] items-center gap-2.5"
             aria-label="NOMOFEE — back to the marketplace"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm">
               <ShoppingBag className="h-4 w-4" />
             </span>
-            <span className="text-lg font-extrabold tracking-tight">
+            <span className="text-lg font-extrabold tracking-tight text-slate-900">
               NOMO<span className="text-brand-gradient">FEE</span>{" "}
-              <span className="text-sm font-semibold text-muted-foreground">Seller Portal</span>
+              <span className="text-sm font-semibold text-slate-400">Seller Portal</span>
             </span>
           </button>
           <Button variant="outline" size="sm" onClick={goMarket} className="ml-auto min-h-[40px] gap-1.5">
@@ -726,18 +742,20 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
 
       <div className="flex-1 grid lg:grid-cols-2 min-h-0">
       {/* brand panel */}
-      <div className="relative hidden lg:flex flex-col justify-between p-10 bg-primary text-primary-foreground">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/15">
+      <div className="relative hidden overflow-hidden bg-brand-gradient text-white lg:flex flex-col justify-between p-10">
+        <span aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+        <span aria-hidden="true" className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="relative flex items-center gap-2.5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
             <ShoppingBag className="h-5 w-5" />
           </span>
-          <span className="text-lg font-bold tracking-tight">NOMO<span className="text-primary-foreground/70">FEE</span></span>
+          <span className="text-lg font-bold tracking-tight">NOMO<span className="text-white/70">FEE</span></span>
         </div>
-        <div className="max-w-md space-y-5">
-          <h1 className="text-3xl font-bold leading-tight">
+        <div className="relative max-w-md space-y-5">
+          <h1 className="text-3xl font-extrabold leading-tight tracking-tight">
             Sell on your own storefront — and the marketplace.
           </h1>
-          <p className="text-primary-foreground/80 text-sm leading-relaxed">
+          <p className="text-sm leading-relaxed text-white/80">
             Spin up a hosted store in minutes: page builder, orders, wallet with transparent commission,
             payouts, custom domains and webhooks. One portal for everything.
           </p>
@@ -750,22 +768,22 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
                 : "Transparent platform commission, no hidden fees",
             ].map((t) => (
               <li key={t} className="flex items-center gap-2.5">
-                <BadgeCheck className="h-4 w-4 shrink-0" /> {t}
+                <BadgeCheck className="h-4 w-4 shrink-0 text-white/90" /> {t}
               </li>
             ))}
           </ul>
         </div>
-        <p className="text-xs text-primary-foreground/60">Demo environment · data resets with the seed</p>
+        <p className="relative text-xs text-white/60">Demo environment · data resets with the seed</p>
       </div>
 
       {/* forms */}
       <div className="flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-        <div className="w-full max-w-md space-y-5">
+        <div className="w-full max-w-md space-y-5 rounded-3xl border border-slate-200/80 bg-card p-5 shadow-soft-card sm:p-7">
           <div className="lg:hidden flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm">
               <ShoppingBag className="h-4 w-4" />
             </span>
-            <span className="font-bold">NOMO<span className="text-primary/70">FEE</span></span>
+            <span className="font-bold text-slate-900">NOMO<span className="text-teal-600">FEE</span></span>
           </div>
 
           <Tabs defaultValue="login">
@@ -780,6 +798,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
                 <Input
                   id="seller-login-email"
                   type="email"
+                  className="min-h-[44px]"
                   placeholder="you@store.com"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
@@ -791,16 +810,17 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
                 <Input
                   id="seller-login-password"
                   type="password"
+                  className="min-h-[44px]"
                   placeholder="••••••••"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && login()}
                 />
               </div>
-              <Button className="w-full min-h-[44px]" onClick={login} disabled={busy}>
+              <Button className="w-full min-h-[44px] bg-brand-gradient-deep text-white shadow-glow-cyan-sm hover:brightness-105" onClick={login} disabled={busy}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log in to seller portal"}
               </Button>
-              <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs space-y-1.5">
+              <div className="space-y-1.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs">
                 <p className="flex items-center gap-1.5 font-medium">
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Sandbox demo accounts
                 </p>
@@ -818,35 +838,35 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
               <div className="grid gap-3.5 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="reg-full">Full name *</Label>
-                  <Input id="reg-full" value={reg.fullName} onChange={(e) => setReg({ ...reg, fullName: e.target.value })} placeholder="Sofia Lim" />
+                  <Input id="reg-full" className="min-h-[44px]" value={reg.fullName} onChange={(e) => setReg({ ...reg, fullName: e.target.value })} placeholder="Sofia Lim" />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="reg-disp">Display name</Label>
-                  <Input id="reg-disp" value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })} placeholder="Sofia" />
+                  <Input id="reg-disp" className="min-h-[44px]" value={reg.displayName} onChange={(e) => setReg({ ...reg, displayName: e.target.value })} placeholder="Sofia" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="reg-email">Email *</Label>
-                <Input id="reg-email" type="email" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} placeholder="you@store.com" />
+                <Input id="reg-email" type="email" className="min-h-[44px]" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} placeholder="you@store.com" />
               </div>
               <div className="grid gap-3.5 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="reg-pass">Password * (min 8)</Label>
-                  <Input id="reg-pass" type="password" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
+                  <Input id="reg-pass" type="password" className="min-h-[44px]" value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="reg-phone">Phone</Label>
-                  <Input id="reg-phone" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="60123456789" />
+                  <Input id="reg-phone" className="min-h-[44px]" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="60123456789" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="reg-store">Store name *</Label>
-                <Input id="reg-store" value={reg.storeName} onChange={(e) => setReg({ ...reg, storeName: e.target.value })} placeholder="Lumina Living" />
+                <Input id="reg-store" className="min-h-[44px]" value={reg.storeName} onChange={(e) => setReg({ ...reg, storeName: e.target.value })} placeholder="Lumina Living" />
               </div>
-              <Button className="w-full min-h-[44px]" onClick={register} disabled={busy}>
+              <Button className="w-full min-h-[44px] bg-brand-gradient-deep text-white shadow-glow-cyan-sm hover:brightness-105" onClick={register} disabled={busy}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create my free store"}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
+              <p className="text-center text-xs text-slate-400">
                 Free forever plan ·{" "}
                 {publicTerms
                   ? publicTerms.moderationFirstN > 0

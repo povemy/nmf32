@@ -38,16 +38,16 @@ type Tone = "emerald" | "amber" | "red" | "gray" | "teal" | "slate" | "violet";
 
 export const TONE_CLASS: Record<Tone, string> = {
   emerald:
-    "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
+    "border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
   amber:
-    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
-  red: "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300",
-  gray: "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400",
-  teal: "border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300",
+    "border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  red: "border-rose-200/70 bg-rose-50 text-rose-600 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300",
+  gray: "border-slate-200/70 bg-slate-100 text-slate-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400",
+  teal: "border-teal-200/70 bg-teal-50 text-teal-700 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300",
   slate:
-    "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300",
+    "border-slate-200/70 bg-slate-100 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300",
   violet:
-    "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
+    "border-violet-200/70 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
 };
 
 const EMERALD_STATUSES = new Set([
@@ -172,8 +172,8 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
+        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -234,16 +234,17 @@ export function KpiCard({
   tone?: Tone | "plain";
 }) {
   const clickable = Boolean(onClick);
-  const iconColor =
+  // Tone-tinted icon chip (recipe 4): soft 50-tint background + 600/700 text.
+  const chipTone =
     tone === "emerald"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
       : tone === "amber"
-        ? "text-amber-600 dark:text-amber-400"
+        ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
         : tone === "red"
-          ? "text-red-600 dark:text-red-400"
+          ? "bg-rose-50 text-rose-600 dark:bg-red-950/40 dark:text-red-400"
           : tone === "teal"
-            ? "text-teal-600 dark:text-teal-400"
-            : "text-muted-foreground";
+            ? "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
+            : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
   return (
     <div
       role={clickable ? "button" : undefined}
@@ -256,16 +257,20 @@ export function KpiCard({
         }
       }}
       className={cn(
-        "rounded-xl border bg-card p-4 shadow-sm transition-shadow sm:p-5",
-        clickable && "cursor-pointer hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+        "rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card transition-shadow",
+        clickable && "cursor-pointer hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-        {Icon ? <Icon className={cn("h-4 w-4 shrink-0", iconColor)} /> : null}
+        <p className="truncate text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+        {Icon ? (
+          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", chipTone)}>
+            <Icon className="h-4 w-4" />
+          </span>
+        ) : null}
       </div>
-      <div className="mt-2 text-xl font-semibold sm:text-2xl">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+      <div className="mt-2 text-2xl font-extrabold tracking-tight tabular-nums text-slate-900">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-slate-400">{sub}</div> : null}
     </div>
   );
 }
@@ -275,8 +280,8 @@ export function KpiCard({
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
-        <Inbox className="h-5 w-5 text-muted-foreground" />
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">
+        <Inbox className="h-5 w-5" />
       </div>
       <p className="text-sm font-medium">{title}</p>
       {hint ? <p className="max-w-sm text-xs text-muted-foreground">{hint}</p> : null}
@@ -287,8 +292,8 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/50">
-        <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 text-rose-600 dark:bg-red-950/50 dark:text-red-400">
+        <AlertTriangle className="h-5 w-5" />
       </div>
       <div>
         <p className="text-sm font-medium">Could not load data</p>
@@ -334,7 +339,7 @@ export function CardsSkeleton({ n = 6, className }: { n?: number; className?: st
   return (
     <div className={cn("grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3", className)}>
       {Array.from({ length: n }).map((_, i) => (
-        <div key={i} className="rounded-xl border p-4">
+        <div key={i} className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
           <div className="flex items-center gap-3">
             <Skeleton className="h-10 w-10 rounded-full" />
             <div className="flex-1 space-y-2">
@@ -665,7 +670,7 @@ export function BreakdownChips({ json, className }: { json?: string | null; clas
           <span
             key={k}
             className={cn(
-              "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]",
+              "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px]",
               highlight ? TONE_CLASS.teal : "bg-muted/60 text-muted-foreground"
             )}
           >

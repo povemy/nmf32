@@ -276,44 +276,44 @@ export function useSellerTerms(): { terms: PlatformTerms | null; loading: boolea
 // ---------------------------------------------------------------- status chip
 
 const STATUS_STYLES: Record<string, string> = {
-  // positive
-  active: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  live: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  delivered: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  approved: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  verified: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  issued: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  success: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  succeeded: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  done: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  // in-progress / attention
-  processing: "bg-amber-100 text-amber-800 border-amber-200",
-  shipped: "bg-amber-100 text-amber-800 border-amber-200",
-  pending_review: "bg-amber-100 text-amber-800 border-amber-200",
-  verifying: "bg-amber-100 text-amber-800 border-amber-200",
-  onboarding: "bg-amber-100 text-amber-800 border-amber-200",
-  requested: "bg-amber-100 text-amber-800 border-amber-200",
-  processing_payout: "bg-amber-100 text-amber-800 border-amber-200",
-  // neutral
-  draft: "bg-muted text-muted-foreground border-border",
-  pending: "bg-muted text-muted-foreground border-border",
-  payment_pending: "bg-muted text-muted-foreground border-border",
-  requires_payment: "bg-muted text-muted-foreground border-border",
-  // warning money
-  refunding: "bg-orange-100 text-orange-800 border-orange-200",
-  partially_refunded: "bg-orange-100 text-orange-800 border-orange-200",
-  // negative
-  refunded: "bg-rose-100 text-rose-800 border-rose-200",
-  cancelled: "bg-rose-100 text-rose-800 border-rose-200",
-  rejected: "bg-rose-100 text-rose-800 border-rose-200",
-  banned: "bg-rose-100 text-rose-800 border-rose-200",
-  failed: "bg-rose-100 text-rose-800 border-rose-200",
-  archived: "bg-rose-100 text-rose-800 border-rose-200",
-  suspended: "bg-rose-100 text-rose-800 border-rose-200",
-  terminated: "bg-rose-100 text-rose-800 border-rose-200",
-  closed: "bg-rose-100 text-rose-800 border-rose-200",
+  // positive — soft mint tints
+  active: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  live: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  paid: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  delivered: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  approved: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  verified: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  issued: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  success: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  succeeded: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  done: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  // in-progress / attention — amber
+  processing: "bg-amber-50 text-amber-700 border-amber-200/70",
+  shipped: "bg-amber-50 text-amber-700 border-amber-200/70",
+  pending_review: "bg-amber-50 text-amber-700 border-amber-200/70",
+  verifying: "bg-amber-50 text-amber-700 border-amber-200/70",
+  onboarding: "bg-amber-50 text-amber-700 border-amber-200/70",
+  requested: "bg-amber-50 text-amber-700 border-amber-200/70",
+  processing_payout: "bg-amber-50 text-amber-700 border-amber-200/70",
+  // neutral — slate
+  draft: "bg-slate-100 text-slate-600 border-slate-200/70",
+  pending: "bg-slate-100 text-slate-600 border-slate-200/70",
+  payment_pending: "bg-slate-100 text-slate-600 border-slate-200/70",
+  requires_payment: "bg-slate-100 text-slate-600 border-slate-200/70",
+  // warning money — amber (in-flight refunds)
+  refunding: "bg-amber-50 text-amber-700 border-amber-200/70",
+  partially_refunded: "bg-amber-50 text-amber-700 border-amber-200/70",
+  // negative — rose
+  refunded: "bg-rose-50 text-rose-600 border-rose-200/70",
+  cancelled: "bg-rose-50 text-rose-600 border-rose-200/70",
+  rejected: "bg-rose-50 text-rose-600 border-rose-200/70",
+  banned: "bg-rose-50 text-rose-600 border-rose-200/70",
+  failed: "bg-rose-50 text-rose-600 border-rose-200/70",
+  archived: "bg-rose-50 text-rose-600 border-rose-200/70",
+  suspended: "bg-rose-50 text-rose-600 border-rose-200/70",
+  terminated: "bg-rose-50 text-rose-600 border-rose-200/70",
+  closed: "bg-rose-50 text-rose-600 border-rose-200/70",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -325,7 +325,7 @@ const STATUS_LABELS: Record<string, string> = {
 export function StatusChip({ status, className }: { status: string | null | undefined; className?: string }) {
   const s = (status ?? "unknown").toLowerCase();
   return (
-    <Badge variant="outline" className={cn("border font-medium capitalize", STATUS_STYLES[s] ?? "bg-muted text-muted-foreground border-border", className)}>
+    <Badge variant="outline" className={cn("border font-semibold capitalize", STATUS_STYLES[s] ?? "bg-slate-100 text-slate-600 border-slate-200/70", className)}>
       {STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
     </Badge>
   );
@@ -357,9 +357,9 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card p-4",
+        "rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card",
         interactive &&
-          "cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          "cursor-pointer transition-colors hover:bg-teal-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
       )}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
@@ -376,29 +376,31 @@ export function StatCard({
       }
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        {icon ? <span className="text-muted-foreground">{icon}</span> : null}
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+        {icon ? (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">{icon}</span>
+        ) : null}
       </div>
       <p
         className={cn(
-          "mt-1 text-xl font-semibold tabular-nums sm:text-2xl",
+          "mt-2 text-2xl font-extrabold tracking-tight text-slate-900 tabular-nums",
           tone === "bad" && "text-rose-600",
           tone === "warn" && "text-amber-600"
         )}
       >
         {value}
       </p>
-      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
+      {sub ? <p className="mt-1 text-xs text-slate-400">{sub}</p> : null}
     </div>
   );
 }
 
 export function EmptyState({ title, hint, icon }: { title: string; hint?: string; icon?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-10 text-center">
-      <div className="text-muted-foreground">{icon ?? <Inbox className="h-8 w-8" />}</div>
-      <p className="text-sm font-medium">{title}</p>
-      {hint ? <p className="max-w-sm text-xs text-muted-foreground">{hint}</p> : null}
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 p-10 text-center">
+      <div className="text-slate-400">{icon ?? <Inbox className="h-8 w-8" />}</div>
+      <p className="text-sm font-semibold text-slate-900">{title}</p>
+      {hint ? <p className="max-w-sm text-xs text-slate-400">{hint}</p> : null}
     </div>
   );
 }
@@ -407,7 +409,7 @@ export function RowsSkeleton({ rows = 4, className }: { rows?: number; className
   return (
     <div className={cn("space-y-2", className)}>
       {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
+        <Skeleton key={i} className="h-12 w-full rounded-xl" />
       ))}
     </div>
   );
@@ -417,7 +419,7 @@ export function CardsSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full" />
+        <Skeleton key={i} className="h-28 w-full rounded-xl" />
       ))}
     </div>
   );

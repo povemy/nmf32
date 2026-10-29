@@ -47,21 +47,39 @@
    * Every teal-* class in the app now resolves to the brand palette
    * (#004B5C → #00A8C6) so surfaces, accents and hover states all
    * inherit the gradient brand system automatically.
+   *
+   * The scale is var()-indirected (--tq-*) so the BACKEND surfaces
+   * (Admin / Seller / Buyer Me-Hub — `body.backend-ui`) can re-map the
+   * entire teal family to the "Bubbly Cyan" studio palette without
+   * touching the marketplace look.
    * ------------------------------------------------------------------ */
-  --color-teal-50: #e6f7fb;
-  --color-teal-100: #cceef7;
-  --color-teal-200: #9fdcef;
-  --color-teal-300: #6cc9e4;
-  --color-teal-400: #2fb2d4;
-  --color-teal-500: #00a8c6;
-  --color-teal-600: #0093b4;
-  --color-teal-700: #00647a;
-  --color-teal-800: #004b5c;
-  --color-teal-900: #003947;
-  --color-teal-950: #002a34;
+  --color-teal-50: var(--tq-50);
+  --color-teal-100: var(--tq-100);
+  --color-teal-200: var(--tq-200);
+  --color-teal-300: var(--tq-300);
+  --color-teal-400: var(--tq-400);
+  --color-teal-500: var(--tq-500);
+  --color-teal-600: var(--tq-600);
+  --color-teal-700: var(--tq-700);
+  --color-teal-800: var(--tq-800);
+  --color-teal-900: var(--tq-900);
+  --color-teal-950: var(--tq-950);
 }
 
 :root {
+  /* marketplace brand scale (unchanged NOMOFEE teal) */
+  --tq-50: #e6f7fb;
+  --tq-100: #cceef7;
+  --tq-200: #9fdcef;
+  --tq-300: #6cc9e4;
+  --tq-400: #2fb2d4;
+  --tq-500: #00a8c6;
+  --tq-600: #0093b4;
+  --tq-700: #00647a;
+  --tq-800: #004b5c;
+  --tq-900: #003947;
+  --tq-950: #002a34;
+
   --radius: 0.75rem;
   /* NOMOFEE Modern Gradient (DESIGN.md) */
   --background: #fafeff;
@@ -177,3 +195,156 @@
 }
 
 /* Task 6 — force Tailwind rescan (new arbitrary utilities in insights.tsx) */
+
+/* =====================================================================
+ * BACKEND UI THEME — "Bubbly Cyan Studio" (upload/DESIGN.md + code.html)
+ * Applied to the three backends only (Admin / Seller / Buyer Me-Hub) via
+ * the `backend-ui` body class (toggled on shell mount). The marketplace
+ * (shopper market / storefront / PDP / checkout) keeps the root theme.
+ * Unlayered on purpose: wins over any @layer rule, including Radix
+ * portals (dialogs/tooltips/dropdowns render under <body>).
+ * ===================================================================== */
+body.backend-ui {
+  /* Bubbly turquoise scale (teal-* classes resolve here) */
+  --tq-50: #ecfdf5;
+  --tq-100: #ccfbf1;
+  --tq-200: #99f6e4;
+  --tq-300: #5eead4;
+  --tq-400: #2dd4bf;
+  --tq-500: #14b8a6;
+  --tq-600: #0d9488;
+  --tq-700: #0f766e;
+  --tq-800: #115e59;
+  --tq-900: #134e4a;
+  --tq-950: #042f2e;
+
+  /* Semantic tokens — soft cool canvas + vibrant turquoise accents */
+  --radius: 1rem;
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0d9488;
+  --primary-foreground: #ffffff;
+  --secondary: #0891b2;
+  --secondary-foreground: #ffffff;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #ccfbf1;
+  --accent-foreground: #0f766e;
+  --destructive: #e11d48;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #00c4b4;
+  --chart-1: #00c4b4;
+  --chart-2: #0891b2;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #334155;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #0d9488;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ccfbf1;
+  --sidebar-accent-foreground: #0f766e;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #00c4b4;
+
+  /* Flat cool-gray canvas (Level 0) instead of the vertical brand wash */
+  background-image: none;
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Level 1 — card panels: diffuse ambient shadow + hairline border */
+body.backend-ui .bg-card {
+  box-shadow:
+    0 10px 30px -5px rgba(15, 118, 110, 0.05),
+    0 4px 12px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* ---- Brand gradient remaps (vibrant cyan → deep oceanic) ---- */
+body.backend-ui .bg-brand-gradient {
+  background-image: linear-gradient(135deg, #00c4b4 0%, #0891b2 100%);
+}
+body.backend-ui .bg-brand-gradient-deep {
+  background-image: linear-gradient(135deg, #0d9488 0%, #06b6d4 100%);
+}
+body.backend-ui .bg-brand-gradient-soft {
+  background-image: linear-gradient(135deg, rgba(0, 196, 180, 0.1) 0%, rgba(8, 145, 178, 0.16) 100%);
+}
+body.backend-ui .text-brand-gradient {
+  background-image: linear-gradient(135deg, #0f766e 0%, #00c4b4 55%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+body.backend-ui .shadow-soft {
+  box-shadow:
+    0 10px 30px -5px rgba(15, 118, 110, 0.05),
+    0 4px 12px -2px rgba(0, 0, 0, 0.03);
+}
+body.backend-ui .border-brand-subtle {
+  border-color: rgba(0, 196, 180, 0.35);
+}
+
+/* ---- Signature shadows & patterns (code.html) ---- */
+body.backend-ui .shadow-soft-card {
+  box-shadow:
+    0 10px 30px -5px rgba(15, 118, 110, 0.05),
+    0 4px 12px -2px rgba(0, 0, 0, 0.03);
+}
+body.backend-ui .shadow-glow-cyan {
+  box-shadow: 0 12px 28px -6px rgba(0, 196, 180, 0.35);
+}
+body.backend-ui .shadow-glow-cyan-sm {
+  box-shadow: 0 8px 20px -6px rgba(0, 196, 180, 0.4);
+}
+/* Diagonal stripe texture for hero bars / highlighted progress fills */
+.pattern-stripes-cyan {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0.22) 8px,
+    rgba(0, 196, 180, 0.95) 8px,
+    rgba(0, 196, 180, 0.95) 16px
+  );
+}
+
+/* ---- Pill execution: buttons, badges, tabs (9999px) ---- */
+body.backend-ui [data-slot="button"] {
+  border-radius: 9999px;
+}
+body.backend-ui [data-slot="badge"] {
+  border-radius: 9999px;
+}
+body.backend-ui [data-slot="tabs-list"] {
+  border-radius: 9999px;
+}
+body.backend-ui [data-slot="tabs-trigger"] {
+  border-radius: 9999px;
+}
+
+/* ---- Soft scrollbar (code.html) ---- */
+body.backend-ui ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+body.backend-ui ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+}
+body.backend-ui ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+body.backend-ui ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ---- Focus ring: vibrant brand glow ---- */
+body.backend-ui *:focus-visible {
+  outline-color: #00c4b4;
+}

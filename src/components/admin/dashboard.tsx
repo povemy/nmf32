@@ -91,7 +91,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
       ) : dash.loading || !d ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-xl border p-4">
+            <div key={i} className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
               <Skeleton className="h-3 w-20" />
               <Skeleton className="mt-3 h-7 w-24" />
               <Skeleton className="mt-2 h-3 w-16" />
@@ -100,9 +100,21 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
         </div>
       ) : (
         <>
-          {/* KPI grid */}
+          {/* KPI grid — hero gradient GMV card + standard metric cards */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <KpiCard icon={CircleDollarSign} label="GMV today" value={<Money minor={d.gmvTodayMinor} bold />} sub={`${d.ordersToday} orders today`} />
+            <div className="relative overflow-hidden rounded-xl bg-brand-gradient p-4 text-white shadow-glow-cyan">
+              <div aria-hidden="true" className="pointer-events-none absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-teal-50/90">GMV today</p>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
+                  <CircleDollarSign className="h-4 w-4" />
+                </span>
+              </div>
+              <p className="mt-2 text-2xl font-extrabold tracking-tight tabular-nums lg:text-3xl">{formatMinor(d.gmvTodayMinor)}</p>
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-teal-50/90">
+                <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold">{d.ordersToday} orders today</span>
+              </div>
+            </div>
             <KpiCard icon={ShoppingCart} label="Orders today" value={<span className="tabular-nums">{d.ordersToday}</span>} sub={<Money minor={d.gmvTodayMinor} muted />} />
             <KpiCard icon={Banknote} label="Commission today" value={<Money minor={d.commissionTodayMinor} bold />} tone="teal" />
             <KpiCard icon={Store} label="Active stores" value={<span className="tabular-nums">{d.activeStores}</span>} sub="live storefronts" />
@@ -136,7 +148,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
             <Card className="py-0 xl:col-span-3">
               <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
-                <CardTitle className="text-base">GMV — last 30 days</CardTitle>
+                <CardTitle className="text-sm font-extrabold tracking-tight text-slate-900">GMV — last 30 days</CardTitle>
                 <CardDescription>Gross merchandise value across all storefronts</CardDescription>
               </CardHeader>
               <CardContent className="px-2 pb-4 sm:px-4">
@@ -148,11 +160,11 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
                       <AreaChart data={series} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
                         <defs>
                           <linearGradient id="gmvFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.35} />
-                            <stop offset="95%" stopColor="#0d9488" stopOpacity={0.02} />
+                            <stop offset="5%" stopColor="#00c4b4" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#00c4b4" stopOpacity={0.02} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                         <XAxis
                           dataKey="date"
                           tickFormatter={(v) => String(v).slice(5)}
@@ -175,9 +187,9 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
                         <Tooltip
                           formatter={(v) => formatMinor(Number(v))}
                           labelFormatter={(l) => `Date: ${l}`}
-                          contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                          contentStyle={{ borderRadius: 14, fontSize: 12, border: "1px solid #e2e8f0" }}
                         />
-                        <Area type="monotone" dataKey="gmvMinor" stroke="#0d9488" strokeWidth={2} fill="url(#gmvFill)" />
+                        <Area type="monotone" dataKey="gmvMinor" stroke="#00c4b4" strokeWidth={2} fill="url(#gmvFill)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -187,7 +199,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
 
             <Card className="py-0 xl:col-span-2">
               <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
-                <CardTitle className="text-base">Featured stores — 30d</CardTitle>
+                <CardTitle className="text-sm font-extrabold tracking-tight text-slate-900">Featured stores — 30d</CardTitle>
                 <CardDescription>Ranked by GMV</CardDescription>
               </CardHeader>
               <CardContent className="px-0 pb-2">
@@ -205,7 +217,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
                       </TableHeader>
                       <TableBody>
                         {(d.topStores ?? []).map((s, i) => (
-                          <TableRow key={`${s.storeName}-${i}`} className="cursor-pointer" onClick={() => nav.navigate("sellers")}>
+                          <TableRow key={`${s.storeName}-${i}`} className="cursor-pointer hover:bg-teal-50/50" onClick={() => nav.navigate("sellers")}>
                             <TableCell className="max-w-[180px] truncate font-medium">{i + 1}. {s.storeName}</TableCell>
                             <TableCell className="text-right"><Money minor={s.gmv30dMinor} /></TableCell>
                             <TableCell className="text-right tabular-nums">{s.orders30d}</TableCell>
@@ -222,7 +234,7 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
           {/* Recent signups */}
           <Card className="py-0">
             <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
-              <CardTitle className="text-base">Recent seller signups</CardTitle>
+              <CardTitle className="text-sm font-extrabold tracking-tight text-slate-900">Recent seller signups</CardTitle>
               <CardDescription>Newest sellers joining the marketplace</CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-2">
@@ -232,10 +244,10 @@ export function DashboardView({ nav }: { nav: AdminNav }) {
                 <Table>
                   <TableBody>
                     {(d.recentSellers ?? []).map((s) => (
-                      <TableRow key={s.id} className="cursor-pointer" onClick={() => nav.navigate("seller-detail", { sellerId: s.id })}>
+                      <TableRow key={s.id} className="cursor-pointer hover:bg-teal-50/50" onClick={() => nav.navigate("seller-detail", { sellerId: s.id })}>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-600/10 text-sm font-semibold text-teal-700 dark:text-teal-300">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100/70 text-sm font-semibold text-teal-800 dark:bg-teal-900/40 dark:text-teal-300">
                               {(s.displayName || "?").slice(0, 1).toUpperCase()}
                             </span>
                             <div className="min-w-0">

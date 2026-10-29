@@ -1,7 +1,7 @@
 "use client";
 // Admin command centre shell — auth gate, sidebar navigation (PART 4 tree),
 // sticky top bar and the view switch. Views are client state (no URLs).
-import { useCallback, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { toast } from "sonner";
 import {
   Activity,
@@ -10,6 +10,7 @@ import {
   Bell,
   BookOpen,
   CalendarClock,
+  ChevronDown,
   FlaskConical,
   HeartPulse,
   Landmark,
@@ -200,6 +201,13 @@ export default function AdminShell() {
   const [view, setView] = useState("dashboard");
   const [params, setParams] = useState<AdminParams>({});
 
+  // Bubbly Cyan backend theme — scoped to <body> so Radix portals (dropdowns,
+  // dialogs, toasts) inherit it too. Marketplace surfaces keep the root theme.
+  useEffect(() => {
+    document.body.classList.add("backend-ui");
+    return () => document.body.classList.remove("backend-ui");
+  }, []);
+
   const navigate = useCallback((v: string, p?: AdminParams) => {
     setView(v);
     setParams(p ?? {});
@@ -229,17 +237,16 @@ export default function AdminShell() {
   return (
     <div className="flex min-h-screen w-full">
       {/* desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 border-r bg-card/40 lg:block">
+      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 border-r border-slate-200/80 bg-card lg:block">
         <SidebarContent nav={nav} role={role} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top bar */}
-        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
+        <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur">
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
             <MobileNav nav={nav} role={role} />
-            <h1 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight sm:text-base">{title}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-sm font-bold tracking-tight text-slate-900 sm:text-base">{title}</h1>
             <AdminMenu admin={me.admin} />
           </div>
         </header>
@@ -299,13 +306,13 @@ function SidebarContent({ nav, role, onNavigate }: { nav: AdminNav; role: string
   })).filter((g) => g.items.length > 0);
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2.5 border-b px-4 py-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-200/80 px-4 py-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm">
           <ShieldCheck className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold tracking-tight">NOMO<span className="text-brand-gradient">FEE</span></p>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Command Centre</p>
+          <p className="truncate text-sm font-bold tracking-tight text-slate-900">NOMO<span className="text-brand-gradient">FEE</span></p>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Command Centre</p>
         </div>
         <Badge
           variant="outline"
@@ -319,7 +326,7 @@ function SidebarContent({ nav, role, onNavigate }: { nav: AdminNav; role: string
         {visibleGroups.map((group, gi) => (
           <div key={group.label || `g${gi}`} className="mb-2">
             {group.label ? (
-              <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{group.label}</p>
+              <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">{group.label}</p>
             ) : null}
             {group.items.map((item) => {
               const active = nav.view === item.view;
@@ -333,13 +340,13 @@ function SidebarContent({ nav, role, onNavigate }: { nav: AdminNav; role: string
                   }}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex min-h-[40px] w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                    "flex min-h-[40px] w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
                     active
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      ? "bg-brand-gradient font-semibold text-white shadow-glow-cyan-sm"
+                      : "text-slate-500 hover:bg-teal-50/70 hover:text-teal-800"
                   )}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground/80")} />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.label}</span>
                 </button>
               );
@@ -348,7 +355,7 @@ function SidebarContent({ nav, role, onNavigate }: { nav: AdminNav; role: string
         ))}
       </nav>
 
-      <div className="border-t px-4 py-3">
+      <div className="border-t border-slate-200/80 px-4 py-3">
         <p className="text-[10px] leading-tight text-muted-foreground">
           PART 4 wireframes · NOMOFEE v1
           <br />
@@ -372,7 +379,7 @@ function MobileNav({ nav, role }: { nav: AdminNav; role: string }) {
       >
         <Menu className="h-5 w-5" />
       </Button>
-      <SheetContent side="left" className="w-64 p-0">
+      <SheetContent side="left" className="w-64 bg-card p-0">
         <SheetHeader className="sr-only">
           <SheetTitle>Admin navigation</SheetTitle>
           <SheetDescription>Navigate between command centre views</SheetDescription>
@@ -413,15 +420,16 @@ function AdminMenu({ admin }: { admin: { id: string; email: string; name: string
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex min-h-[44px] items-center gap-2 rounded-full pl-1 pr-2 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+          className="flex min-h-[44px] items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pr-2.5 pl-1 shadow-sm transition-colors hover:border-teal-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           aria-label="Account menu"
         >
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-teal-600/10 text-xs font-semibold text-teal-700 dark:text-teal-300">
+            <AvatarFallback className="bg-teal-100/70 text-xs font-semibold text-teal-800 dark:bg-teal-900/40 dark:text-teal-300">
               {initials}
             </AvatarFallback>
           </Avatar>
-          <span className="hidden max-w-[140px] truncate text-sm font-medium sm:block">{admin.name}</span>
+          <span className="hidden max-w-[140px] truncate text-sm font-medium text-slate-700 sm:block">{admin.name}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
@@ -483,16 +491,16 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
     <div className="flex flex-1 items-center justify-center p-4 py-12">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-glow-cyan-sm">
             <ShieldCheck className="h-6 w-6" />
           </span>
           <div>
-            <p className="text-xl font-bold tracking-tight">NOMO<span className="text-brand-gradient">FEE</span></p>
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Command Centre</p>
+            <p className="text-xl font-extrabold tracking-tight text-slate-900">NOMO<span className="text-brand-gradient">FEE</span></p>
+            <p className="text-xs font-medium uppercase tracking-widest text-slate-400">Command Centre</p>
           </div>
         </div>
 
-        <Card className="py-0">
+        <Card className="rounded-3xl py-0 shadow-soft-card">
           <CardContent className="p-6">
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
