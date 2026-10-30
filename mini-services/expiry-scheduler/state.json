@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-10-30T05:38:48.987Z",
-      "lastSuccessAt": "2026-10-30T05:38:49.139Z",
+      "lastTickAt": "2026-10-30T06:32:18.988Z",
+      "lastSuccessAt": "2026-10-30T06:32:19.199Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 89,
-        "at": "2026-10-30T05:38:49.093Z",
+        "durationMs": 152,
+        "at": "2026-10-30T06:32:19.159Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2058
+      "ticks": 2165
     },
     "refund": {
-      "lastTickAt": "2026-10-30T05:38:48.987Z",
-      "lastSuccessAt": "2026-10-30T05:38:49.132Z",
+      "lastTickAt": "2026-10-30T06:32:18.989Z",
+      "lastSuccessAt": "2026-10-30T06:32:19.220Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-10-30T05:38:49.094Z",
-        "durationMs": 85,
+        "at": "2026-10-30T06:32:19.174Z",
+        "durationMs": 131,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,28 +48,28 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2058
+      "ticks": 2165
     },
     "analytics": {
-      "lastTickAt": "2026-10-30T05:38:48.987Z",
-      "lastSuccessAt": "2026-10-30T05:38:49.421Z",
+      "lastTickAt": "2026-10-30T06:32:18.989Z",
+      "lastSuccessAt": "2026-10-30T06:32:19.449Z",
       "lastOutcome": {
-        "ranAt": "2026-10-30T05:38:49.379Z",
-        "durationMs": 358,
+        "ranAt": "2026-10-30T06:32:19.406Z",
+        "durationMs": 360,
         "retentionDays": 180,
-        "cutoff": "2026-05-03T05:38:49.142Z",
+        "cutoff": "2026-05-03T06:32:19.166Z",
         "purged": 0,
         "flush": {
-          "flushed": 1,
+          "flushed": 27,
           "pending": 0
         },
-        "remaining": 19,
+        "remaining": 22,
         "oldestEventAt": "2026-10-28T14:16:18.540Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1108
+      "ticks": 1215
     }
   },
   "alerts": [

@@ -68,6 +68,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { FunnelCard, FUNNEL_WINDOW_PARAM, type FunnelApi, type FunnelData, type FunnelViewKey } from "./funnel-diagram";
 import {
   apiGetPaged,
   apiSend,
@@ -593,6 +594,20 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   const [to, setTo] = useState("");
   const [freshTick, setFreshTick] = useState(0);
 
+  // Funnel diagram view — independent of the page window so the 3D diagram can
+  // be toggled (Daily/Weekly/Monthly/Yearly) without refetching every tab.
+  // Changing the PAGE window to a matching preset syncs it (custom does not).
+  const [funnelView, setFunnelView] = useState<FunnelViewKey>("monthly");
+  useEffect(() => {
+    // Derived state: the funnel card follows the page window when a matching
+    // preset is chosen (custom has no funnel equivalent — the diagram keeps
+    // its own last-selected view).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived preset sync, one setState max per window change
+    if (winKey === "today") setFunnelView("daily");
+    else if (winKey === "7d") setFunnelView("weekly");
+    else if (winKey === "30d") setFunnelView("monthly");
+  }, [winKey]);
+
   const [productSort, setProductSort] = useState<ProductSort>("views");
   const [productPage, setProductPage] = useState(1);
   const [salesGran, setSalesGran] = useState<"day" | "week" | "month">("day");
@@ -623,6 +638,8 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   const markets = useApi<MarketsData>(mkUrl("markets", visited.markets, `&dimension=${marketDim}`));
   const campaigns = useApi<CampaignsData>(mkUrl("campaigns", visited.campaigns));
   const products = usePagedApi<ProductsPayload>(mkUrl("products", visited.products, `&sort=${productSort}&page=${productPage}&size=20`));
+  const funnelUrl = visited.overview ? `/api/store/insights/funnel?window=${FUNNEL_WINDOW_PARAM[funnelView]}${freshQ}` : null;
+  const funnel: FunnelApi = useApi<FunnelData>(funnelUrl);
 
   const refreshing =
     (visited.overview && overview.loading) ||
@@ -751,6 +768,9 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
               error={overview.error}
               onRetry={overview.refetch}
               onNavigate={onNavigate}
+              funnelApi={funnel}
+              funnelView={funnelView}
+              onFunnelView={setFunnelView}
             />
           </TabsContent>
 
@@ -822,12 +842,18 @@ function OverviewSection({
   error,
   onRetry,
   onNavigate,
+  funnelApi,
+  funnelView,
+  onFunnelView,
 }: {
   data: OverviewData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
   onNavigate: (n: SellerNav) => void;
+  funnelApi: FunnelApi;
+  funnelView: FunnelViewKey;
+  onFunnelView: (v: FunnelViewKey) => void;
 }) {
   if (error) return <ErrorPanel message={error} onRetry={onRetry} />;
   if (loading || !data) {
@@ -840,9 +866,8 @@ function OverviewSection({
     );
   }
 
-  const { traffic, funnel, summary, observations, freshness } = data;
+  const { traffic, summary, observations, freshness } = data;
   const hasTraffic = traffic.byDay.some((d) => d.storeViews > 0 || d.productViews > 0);
-  const funnelBase = funnel.stages[0]?.count ?? 0;
   const maxChannelViews = Math.max(1, ...traffic.channels.map((c) => c.views));
 
   return (
@@ -913,6 +938,9 @@ function OverviewSection({
         </div>
       </section>
 
+      {/* conversion funnel — interactive 3D canvas diagram (hero, full width) */}
+      <FunnelCard api={funnelApi} view={funnelView} onView={onFunnelView} />
+
       <div className="grid gap-4 lg:grid-cols-5">
         {/* traffic trend */}
         <Card className="gap-3 lg:col-span-3">
@@ -979,64 +1007,8 @@ function OverviewSection({
           </CardContent>
         </Card>
 
-        {/* conversion funnel */}
-        <Card className="gap-3 lg:col-span-2">
-          <CardHeader className="pb-0">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <TrendingUp className="h-4 w-4 text-primary" /> Conversion funnel
-            </CardTitle>
-            <CardDescription className="text-xs">Stage counts, shown against the window&apos;s first stage</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span>Stage</span>
-              <span>Prev · step · drop-off</span>
-            </div>
-            {funnel.stages.map((s) => {
-              const widthPct = funnelBase > 0 ? Math.min(100, (s.count / funnelBase) * 100) : s.count > 0 ? 100 : 0;
-              return (
-                <div key={s.key} className="space-y-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-xs font-medium">{s.label}</p>
-                    <p className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      prev {fmtInt(s.prev)} · step {fmtPct(s.stepRate)}
-                      {s.dropOff != null ? (
-                        <span className={s.dropOff > 0 ? "text-rose-600" : s.dropOff < 0 ? "text-emerald-600" : ""}>
-                          {s.dropOff > 0
-                            ? ` · drop ${fmtInt(s.dropOff)}${s.dropOffPct != null ? ` (${s.dropOffPct}%)` : ""}`
-                            : s.dropOff < 0
-                              ? ` · gained ${fmtInt(-s.dropOff)}`
-                              : " · drop 0"}
-                        </span>
-                      ) : null}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-muted" aria-hidden="true">
-                      <div className="h-full rounded-md bg-teal-600/85" style={{ width: `${widthPct}%` }} />
-                    </div>
-                    <p className="w-16 shrink-0 text-right text-sm font-semibold tabular-nums">{fmtInt(s.count)}</p>
-                  </div>
-                </div>
-              );
-            })}
-            <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              Payment sessions (authoritative): <span className="font-semibold text-foreground">{fmtInt(funnel.paymentAttempts)}</span> in this window
-              {funnel.paymentAttemptsPrev > 0 ? <> · {fmtInt(funnel.paymentAttemptsPrev)} in the previous window</> : null} — one record per checkout
-              payment attempt; a failed-session retry re-opens the same record and is not counted twice.
-            </p>
-            <ul className="list-disc space-y-1 pl-5 text-[11px] leading-relaxed text-muted-foreground">
-              {funnel.basis.map((b, i) => (
-                <li key={i}>{b}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
         {/* channels */}
-        <Card className="gap-3">
+        <Card className="gap-3 lg:col-span-2">
           <CardHeader className="pb-0">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Globe className="h-4 w-4 text-primary" /> Channels
@@ -1065,45 +1037,45 @@ function OverviewSection({
             )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* top viewed products */}
-        <Card className="gap-3">
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-0">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Eye className="h-4 w-4 text-primary" /> Top viewed products
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Views in this window{traffic.truncated ? " · list truncated" : ""}
-              </CardDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 gap-1 text-xs"
-              onClick={() => onNavigate({ view: "products" })}
-            >
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {traffic.topViewedProducts.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No product views in this window yet.</p>
-            ) : (
-              <ul className={cn("space-y-2 pr-1", SCROLLY)}>
-                {traffic.topViewedProducts.map((p) => (
-                  <li key={p.productId} className="flex items-center gap-3 rounded-xl border p-2.5">
-                    <ProductThumb imageUrl={p.imageUrl} title={p.title} />
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{p.title}</p>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtInt(p.views)}</span>
-                    <span className="sr-only">views</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+      {/* top viewed products */}
+      <Card className="gap-3">
+        <CardHeader className="flex-row items-center justify-between space-y-0 pb-0">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Eye className="h-4 w-4 text-primary" /> Top viewed products
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Views in this window{traffic.truncated ? " · list truncated" : ""}
+            </CardDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 gap-1 text-xs"
+            onClick={() => onNavigate({ view: "products" })}
+          >
+            View all <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {traffic.topViewedProducts.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No product views in this window yet.</p>
+          ) : (
+            <ul className={cn("space-y-2 pr-1", SCROLLY)}>
+              {traffic.topViewedProducts.map((p) => (
+                <li key={p.productId} className="flex items-center gap-3 rounded-xl border p-2.5">
+                  <ProductThumb imageUrl={p.imageUrl} title={p.title} />
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">{p.title}</p>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtInt(p.views)}</span>
+                  <span className="sr-only">views</span>
+                </li>
+              ))}
+            </ul>
+          )}
           </CardContent>
         </Card>
-      </div>
 
       {/* observations — server-gated, rendered verbatim */}
       {observations.length > 0 ? (

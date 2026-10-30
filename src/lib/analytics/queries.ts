@@ -22,7 +22,7 @@ const KL_OFFSET_MS = 8 * 3_600_000;
 const MAX_WINDOW_DAYS = 92;
 
 export type InsightsWindow = {
-  key: "today" | "7d" | "30d" | "custom";
+  key: "today" | "7d" | "30d" | "1y" | "custom";
   from: Date;
   to: Date;
   prevFrom: Date;
@@ -42,7 +42,7 @@ function klDayStart(ymd: string): Date {
   return new Date(kl.getTime() - KL_OFFSET_MS);
 }
 
-export function parseInsightsWindow(url: URL): InsightsWindow {
+export function parseInsightsWindow(url: URL, opts: { allowYearly?: boolean } = {}): InsightsWindow {
   const raw = url.searchParams.get("window") ?? "30d";
   const now = new Date();
   let from: Date;
@@ -51,6 +51,14 @@ export function parseInsightsWindow(url: URL): InsightsWindow {
     from = klStartOfToday();
   } else if (raw === "7d" || raw === "30d") {
     from = new Date(now.getTime() - (raw === "7d" ? 7 : 30) * 86_400_000);
+  } else if (raw === "1y" && opts.allowYearly) {
+    // Rolling 365-day window — OPT-IN (funnel route only). Not part of the
+    // shared window contract documented in markets-api.md §2.3: the other
+    // insight routes keep today|7d|30d|custom (≤ 92 d) so their order pulls
+    // stay inside the documented bounded-window envelope. Event scans here
+    // remain bounded by the 20 k `eventsFor` guard; retention purges older
+    // events anyway (traffic honestly shows only what exists).
+    from = new Date(now.getTime() - 365 * 86_400_000);
   } else if (raw === "custom") {
     const fromStr = url.searchParams.get("from") ?? "";
     const toStr = url.searchParams.get("to") ?? "";
@@ -65,7 +73,7 @@ export function parseInsightsWindow(url: URL): InsightsWindow {
     }
     if (to > now) to = now;
   } else {
-    throw new ApiError(400, "VALIDATION", "window must be one of today|7d|30d|custom");
+    throw new ApiError(400, "VALIDATION", `window must be one of today|7d|30d|custom${opts.allowYearly ? "|1y" : ""}`);
   }
   const len = to.getTime() - from.getTime();
   return {
@@ -329,6 +337,77 @@ export type Funnel = {
   paymentAttemptsPrev: number;
 };
 
+/** Per-KL-day funnel series (funnel route only). Session stages count DISTINCT
+ *  sessions per day — a session spanning midnight counts on both days, so the
+ *  daily values can sum ABOVE the window total (which counts each session
+ *  once). Checkouts/paid are exact per-day order counts (createdAt / paidAt). */
+export type FunnelDayPoint = {
+  day: string;
+  visits: number;
+  productViews: number;
+  cartAdds: number;
+  checkouts: number;
+  paidOrders: number;
+};
+export type FunnelReport = Funnel & {
+  byDay: FunnelDayPoint[];
+  truncated: boolean;
+};
+
+/** Distinct-session sets per funnel stage over an event pull (shared math —
+ *  funnelFor and funnelReportFor always produce identical stage numbers). */
+function sessionSets(rows: EventRow[]) {
+  const store = new Set<string>();
+  const product = new Set<string>();
+  const cart = new Set<string>();
+  for (const e of rows) {
+    const sk = sessionKey(e);
+    if (!sk) continue;
+    if (e.eventType === "store_view") store.add(sk);
+    if (e.eventType === "product_view") product.add(sk);
+    if (e.eventType === "add_to_cart") cart.add(sk);
+  }
+  return { store, product, cart };
+}
+
+/** Stage rows with server-computed step rate + drop-off (computed here so
+ *  every consumer gets the same numbers — never re-derived client-side). */
+function buildFunnelStages(
+  s: ReturnType<typeof sessionSets>,
+  sp: ReturnType<typeof sessionSets>,
+  ordersCur: number,
+  ordersPrev: number,
+  paidCur: number,
+  paidPrev: number
+): FunnelStage[] {
+  const raw: Array<Omit<FunnelStage, "dropOff" | "dropOffPct">> = [
+    { key: "store_visit", label: "Store visit (sessions)", count: s.store.size, prev: sp.store.size, stepRate: null },
+    { key: "product_view", label: "Viewed a product", count: s.product.size, prev: sp.product.size, stepRate: rate(s.product.size, s.store.size) },
+    { key: "add_to_cart", label: "Added to cart", count: s.cart.size, prev: sp.cart.size, stepRate: rate(s.cart.size, s.product.size) },
+    { key: "begin_checkout", label: "Checkout started (orders)", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.cart.size) },
+    { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
+  ];
+  return raw.map((st, i) => {
+    if (i === 0) return { ...st, dropOff: null, dropOffPct: null };
+    const prevCount = raw[i - 1]!.count;
+    const dropOff = prevCount - st.count;
+    return {
+      ...st,
+      dropOff,
+      dropOffPct: prevCount > 0 ? Math.round((dropOff / prevCount) * 1000) / 10 : null,
+    };
+  });
+}
+
+function funnelBasis(attemptsCur: number): string[] {
+  return [
+    "Visit → cart stages count DISTINCT pseudonymous sessions that performed each stage inside the window (estimates from first-party cookies; login not required).",
+    "Checkout started = orders created in the window (authoritative Order.createdAt, any status). Paid orders = orders with paidAt in the window.",
+    "The cart → checkout step mixes bases (sessions vs orders) — read it as an indication, not an exact visitor conversion. Drop-off on that step (and the checkout → purchase step) can be negative when the bases disagree.",
+    `Payment attempts = authoritative payment sessions (PaymentGroup records created in the window for this store's checkouts — ${attemptsCur} now). A failed-session retry re-opens the same record and is not counted twice.`,
+  ];
+}
+
 export async function funnelFor(storeId: string, win: InsightsWindow): Promise<Funnel> {
   const [cur, prev, ordersCur, ordersPrev] = await Promise.all([
     eventsFor(storeId, win.from, win.to),
@@ -342,52 +421,104 @@ export async function funnelFor(storeId: string, win: InsightsWindow): Promise<F
     db.paymentGroup.count({ where: { createdAt: { gte: win.from, lt: win.to }, orders: { some: { storeId } } } }),
     db.paymentGroup.count({ where: { createdAt: { gte: win.prevFrom, lt: win.prevTo }, orders: { some: { storeId } } } }),
   ]);
-
-  const sessionSets = (rows: EventRow[]) => {
-    const store = new Set<string>();
-    const product = new Set<string>();
-    const cart = new Set<string>();
-    for (const e of rows) {
-      const sk = sessionKey(e);
-      if (!sk) continue;
-      if (e.eventType === "store_view") store.add(sk);
-      if (e.eventType === "product_view") product.add(sk);
-      if (e.eventType === "add_to_cart") cart.add(sk);
-    }
-    return { store, product, cart };
+  const s = sessionSets(cur.rows);
+  const sp = sessionSets(prev.rows);
+  return {
+    stages: buildFunnelStages(s, sp, ordersCur, ordersPrev, paidCur, paidPrev),
+    paymentAttempts: attemptsCur,
+    paymentAttemptsPrev: attemptsPrev,
+    basis: funnelBasis(attemptsCur),
   };
+}
+
+/** Funnel + per-day series for the dedicated funnel route. One bounded event
+ *  pull per window side (same 20 k guard as funnelFor); order dates come from
+ *  bounded date pulls (take 20 001 → `truncated`) that double as exact counts
+ *  (with an honest exact re-count fallback when the cap is hit). */
+export async function funnelReportFor(storeId: string, win: InsightsWindow): Promise<FunnelReport> {
+  const DATE_CAP = 20_000;
+  const [cur, prev, orderDates, paidDates, ordersPrev, paidPrev, attemptsCur, attemptsPrev] = await Promise.all([
+    eventsFor(storeId, win.from, win.to),
+    eventsFor(storeId, win.prevFrom, win.prevTo),
+    db.order.findMany({
+      where: { storeId, createdAt: { gte: win.from, lt: win.to } },
+      select: { createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: DATE_CAP + 1,
+    }),
+    db.order.findMany({
+      where: { storeId, paidAt: { gte: win.from, lt: win.to } },
+      select: { paidAt: true },
+      orderBy: { paidAt: "asc" },
+      take: DATE_CAP + 1,
+    }),
+    db.order.count({ where: { storeId, createdAt: { gte: win.prevFrom, lt: win.prevTo } } }),
+    db.order.count({ where: { storeId, paidAt: { gte: win.prevFrom, lt: win.prevTo } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.from, lt: win.to }, orders: { some: { storeId } } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.prevFrom, lt: win.prevTo }, orders: { some: { storeId } } } }),
+  ]);
+
+  let ordersCur = orderDates.length;
+  let paidCur = paidDates.length;
+  let truncated = cur.truncated || prev.truncated;
+  if (orderDates.length > DATE_CAP) {
+    ordersCur = await db.order.count({ where: { storeId, createdAt: { gte: win.from, lt: win.to } } });
+    truncated = true;
+  }
+  if (paidDates.length > DATE_CAP) {
+    paidCur = await db.order.count({ where: { storeId, paidAt: { gte: win.from, lt: win.to } } });
+    truncated = true;
+  }
+
   const s = sessionSets(cur.rows);
   const sp = sessionSets(prev.rows);
 
-  const raw: Array<Omit<FunnelStage, "dropOff" | "dropOffPct">> = [
-    { key: "store_visit", label: "Store visit (sessions)", count: s.store.size, prev: sp.store.size, stepRate: null },
-    { key: "product_view", label: "Viewed a product", count: s.product.size, prev: sp.product.size, stepRate: rate(s.product.size, s.store.size) },
-    { key: "add_to_cart", label: "Added to cart", count: s.cart.size, prev: sp.cart.size, stepRate: rate(s.cart.size, s.product.size) },
-    { key: "begin_checkout", label: "Checkout started (orders)", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.cart.size) },
-    { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
-  ];
-  // Drop-off vs the PREVIOUS stage (computed here so every consumer gets the
-  // same numbers — never re-derived client-side).
-  const stages: FunnelStage[] = raw.map((st, i) => {
-    if (i === 0) return { ...st, dropOff: null, dropOffPct: null };
-    const prevCount = raw[i - 1]!.count;
-    const dropOff = prevCount - st.count;
-    return {
-      ...st,
-      dropOff,
-      dropOffPct: prevCount > 0 ? Math.round((dropOff / prevCount) * 1000) / 10 : null,
-    };
-  });
+  // Per-day series — every KL day of the window is present (zeros included).
+  const dayMap = new Map<string, { store: Set<string>; product: Set<string>; cart: Set<string>; checkouts: number; paidOrders: number }>();
+  const emptyDay = () => ({ store: new Set<string>(), product: new Set<string>(), cart: new Set<string>(), checkouts: 0, paidOrders: 0 });
+  for (let d = new Date(win.from); d < win.to; d = new Date(d.getTime() + 86_400_000)) {
+    dayMap.set(klDayKey(d), emptyDay());
+  }
+  // Rolling windows (7d/30d/1y) have to − from as an EXACT day multiple, so
+  // the stepping loop's last iteration lands on `to` and would skip the final
+  // partial day — this guarantee closes that gap (today's orders must land in
+  // the series, or byDay would disagree with the stage counts).
+  const endKey = klDayKey(new Date(win.to.getTime() - 1));
+  if (!dayMap.has(endKey)) dayMap.set(endKey, emptyDay());
+  for (const e of cur.rows) {
+    if (e.eventType !== "store_view" && e.eventType !== "product_view" && e.eventType !== "add_to_cart") continue;
+    const slot = dayMap.get(klDayKey(e.createdAt));
+    if (!slot) continue;
+    const sk = sessionKey(e);
+    if (!sk) continue;
+    if (e.eventType === "store_view") slot.store.add(sk);
+    if (e.eventType === "product_view") slot.product.add(sk);
+    if (e.eventType === "add_to_cart") slot.cart.add(sk);
+  }
+  for (const o of orderDates) {
+    const slot = dayMap.get(klDayKey(o.createdAt));
+    if (slot) slot.checkouts += 1;
+  }
+  for (const o of paidDates) {
+    const slot = dayMap.get(klDayKey(o.paidAt as Date));
+    if (slot) slot.paidOrders += 1;
+  }
+  const byDay: FunnelDayPoint[] = [...dayMap.entries()].map(([day, v]) => ({
+    day,
+    visits: v.store.size,
+    productViews: v.product.size,
+    cartAdds: v.cart.size,
+    checkouts: v.checkouts,
+    paidOrders: v.paidOrders,
+  }));
+
   return {
-    stages,
+    stages: buildFunnelStages(s, sp, ordersCur, ordersPrev, paidCur, paidPrev),
     paymentAttempts: attemptsCur,
     paymentAttemptsPrev: attemptsPrev,
-    basis: [
-      "Visit → cart stages count DISTINCT pseudonymous sessions that performed each stage inside the window (estimates from first-party cookies; login not required).",
-      "Checkout started = orders created in the window (authoritative Order.createdAt, any status). Paid orders = orders with paidAt in the window.",
-      "The cart → checkout step mixes bases (sessions vs orders) — read it as an indication, not an exact visitor conversion. Drop-off on that step (and the checkout → purchase step) can be negative when the bases disagree.",
-      `Payment attempts = authoritative payment sessions (PaymentGroup records created in the window for this store's checkouts — ${attemptsCur} now). A failed-session retry re-opens the same record and is not counted twice.`,
-    ],
+    basis: funnelBasis(attemptsCur),
+    byDay,
+    truncated,
   };
 }
 

@@ -1,14 +1,14 @@
 {
   "suite": "seller-insights",
-  "ranAt": "2026-10-30T05:28:08.502Z",
-  "total": 55,
-  "passed": 55,
+  "ranAt": "2026-10-30T06:22:47.040Z",
+  "total": 63,
+  "passed": 63,
   "failed": 0,
   "results": [
     {
       "name": "setup: two [LT] sellers + live stores + active products + shopper",
       "ok": true,
-      "detail": "A=lt-si-store-a-6 B=lt-si-store-b-6"
+      "detail": "A=lt-si-store-a-8 B=lt-si-store-b-8"
     },
     {
       "name": "T1 unauthenticated /api/store/insights/overview → 401",
@@ -118,12 +118,12 @@
     {
       "name": "T10 multi-seller checkout creates one payment group + 2 orders",
       "ok": true,
-      "detail": "status=201 ref=ref_fa0a189f9c23986f total=4600"
+      "detail": "status=201 ref=ref_fef2a20b86b2f0c4 total=4600"
     },
     {
       "name": "T10 payment webhook succeeds for the group",
       "ok": true,
-      "detail": "status=200 {\"data\":{\"ok\":true,\"duplicate\":false,\"orderNumber\":\"NM-103646\",\"orderStatus\":\"paid\"}}"
+      "detail": "status=200 {\"data\":{\"ok\":true,\"duplicate\":false,\"orderNumber\":\"NM-103650\",\"orderStatus\":\"paid\"}}"
     },
     {
       "name": "T10 order A paid (authoritative paidAt)",
@@ -193,7 +193,7 @@
     {
       "name": "T15 seller B product table contains ONLY seller B products",
       "ok": true,
-      "detail": "[\"cmvuj5e7p0005r1zul758jhd3\"]"
+      "detail": "[\"cmvul4aj20005r1h55l76ln93\"]"
     },
     {
       "name": "T15 seller B sales: own order only (1 paid order, B totalMinor)",
@@ -274,6 +274,46 @@
       "name": "T21 analytics tick observability (queue stats + retention)",
       "ok": true,
       "detail": "status=200"
+    },
+    {
+      "name": "T23 funnel unauthenticated → 401",
+      "ok": true,
+      "detail": "got 401"
+    },
+    {
+      "name": "T23 funnel invalid window → 400 VALIDATION (lists 1y)",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "T23 markets still rejects window=1y (shared contract intact)",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "T23 funnel window=1y → 5 stages + 365-day series + echo",
+      "ok": true,
+      "detail": "status=200 byDay=366"
+    },
+    {
+      "name": "T23 funnel today → single-day series + all 6 fields per point",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "T23 funnel byDay sums equal stage counts (order rows, 7d)",
+      "ok": true,
+      "detail": "co 1/1 paid 1/1"
+    },
+    {
+      "name": "T23 funnel route stages identical to overview funnel (shared math)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "T23 funnel seller B isolation (B sees own checkouts only)",
+      "ok": true,
+      "detail": "B checkouts=1"
     },
     {
       "name": "T22 insights endpoints rate-limited (429 after burst)",

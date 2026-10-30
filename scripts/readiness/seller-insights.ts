@@ -305,7 +305,64 @@ async function main() {
   const tickGet = await jsonFetch("/api/cron/analytics-tick");
   record("T21 analytics tick observability (queue stats + retention)", tickGet.status === 200 && Boolean(tickGet.body?.data?.queue), `status=${tickGet.status}`);
 
-  // ---- T22: rate limiting ----
+  // ---- T23: funnel route (3D diagram data) — runs BEFORE the T22 rate-limit
+  //      burst: the funnel route shares the "insights" bucket (60/min). ----
+  const funUnauth = await jsonFetch("/api/store/insights/funnel?window=7d");
+  record("T23 funnel unauthenticated → 401", funUnauth.status === 401, `got ${funUnauth.status}`);
+
+  const funBad = await jsonFetch("/api/store/insights/funnel?window=bogus", { headers: bearer(sellerA.token) });
+  record("T23 funnel invalid window → 400 VALIDATION (lists 1y)", funBad.status === 400 && /1y/.test(String(funBad.body?.error?.message)), `status=${funBad.status}`);
+
+  // 1y is funnel-only: the shared window contract must reject it elsewhere.
+  const mkt1y = await jsonFetch("/api/store/insights/markets?window=1y", { headers: bearer(sellerA.token) });
+  record("T23 markets still rejects window=1y (shared contract intact)", mkt1y.status === 400, `status=${mkt1y.status}`);
+
+  const fun1y = await jsonFetch("/api/store/insights/funnel?window=1y", { headers: bearer(sellerA.token) });
+  const f1y = fun1y.body?.data;
+  record(
+    "T23 funnel window=1y → 5 stages + 365-day series + echo",
+    fun1y.status === 200 && f1y?.stages?.length === 5 && f1y?.byDay?.length >= 300 && f1y?.window?.days === 365 && f1y?.truncated === false,
+    `status=${fun1y.status} byDay=${f1y?.byDay?.length ?? 0}`
+  );
+
+  const funToday = await jsonFetch("/api/store/insights/funnel?window=today", { headers: bearer(sellerA.token) });
+  const ft = funToday.body?.data;
+  record(
+    "T23 funnel today → single-day series + all 6 fields per point",
+    funToday.status === 200 && ft?.byDay?.length === 1 && ft?.byDay?.[0] && ["visits", "productViews", "cartAdds", "checkouts", "paidOrders"].every((k) => typeof ft.byDay[0][k] === "number"),
+    `status=${funToday.status}`
+  );
+
+  // Stage numbers must reconcile with the byDay series (exact for order rows).
+  const fun7 = await jsonFetch("/api/store/insights/funnel?window=7d", { headers: bearer(sellerA.token) });
+  const f7 = fun7.body?.data;
+  const checkoutStage = f7?.stages?.find((s) => s.key === "begin_checkout")?.count ?? -1;
+  const paidStage = f7?.stages?.find((s) => s.key === "purchase")?.count ?? -1;
+  const sumCo = (f7?.byDay ?? []).reduce((a: number, p: Record<string, number>) => a + (p.checkouts ?? 0), 0);
+  const sumPaid = (f7?.byDay ?? []).reduce((a: number, p: Record<string, number>) => a + (p.paidOrders ?? 0), 0);
+  record(
+    "T23 funnel byDay sums equal stage counts (order rows, 7d)",
+    fun7.status === 200 && sumCo === checkoutStage && sumPaid === paidStage,
+    `co ${sumCo}/${checkoutStage} paid ${sumPaid}/${paidStage}`
+  );
+
+  // Overview funnel must equal funnel-route stages (same shared math).
+  const ov7 = await jsonFetch("/api/store/insights/overview?window=7d&fresh=1", { headers: bearer(sellerA.token) });
+  const ovStages = ov7.body?.data?.funnel?.stages ?? [];
+  const sameNumbers = ovStages.length === 5 && ovStages.every((s: { key: string; count: number }, i: number) => f7?.stages?.[i]?.key === s.key && f7?.stages?.[i]?.count === s.count);
+  record("T23 funnel route stages identical to overview funnel (shared math)", fun7.status === 200 && ov7.status === 200 && sameNumbers, "");
+
+  // Cross-seller isolation: seller B's funnel only shows B's own store.
+  const funB = await jsonFetch("/api/store/insights/funnel?window=7d", { headers: bearer(sellerB.token) });
+  const fB = funB.body?.data;
+  const bCheckout = fB?.stages?.find((s) => s.key === "begin_checkout")?.count ?? -1;
+  record(
+    "T23 funnel seller B isolation (B sees own checkouts only)",
+    funB.status === 200 && bCheckout >= 1 && bCheckout === (fB?.byDay ?? []).reduce((a: number, p: Record<string, number>) => a + (p.checkouts ?? 0), 0),
+    `B checkouts=${bCheckout}`
+  );
+
+  // ---- T22: rate limiting (LAST — the burst exhausts the shared insights bucket) ----
   let limited = false;
   for (let i = 0; i < 65; i++) {
     const r = await fetch(`${BASE}/api/store/insights/overview?window=7d`, { headers: bearer(sellerA.token) });

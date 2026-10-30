@@ -78,6 +78,16 @@ Snapshot rules: purchased variants are deleted by the payment webhook (excluded 
 - **Payment sessions (authoritative):** PaymentGroup records created in the window covering this store's orders — the platform's payment-attempt object. One record per checkout payment attempt; a failed-session retry re-opens the same record and is not counted twice. Shown as an annotated figure next to the funnel, NOT a stage (legacy single-order PaymentIntent rows predate the group flow and are not the current measure).
 - The cart→checkout step mixes bases (sessions vs orders) and is labelled as an indication, not exact visitor conversion. Visit→purchase rate (Sales tab) = paid orders ÷ tracked visits — post-release traffic only.
 
+### 5.1 Interactive funnel diagram (2026-10-30 — funnel route)
+
+`GET /api/store/insights/funnel?window=today|7d|30d|1y[&fresh=1]` — seller-session-scoped (401/403/400 envelope identical to the other insights routes), 60/min `insights` bucket, 45 s TTL cache keyed `funnel:{storeId}:{window.key}:{from}:{to}`. Stage numbers come from the same shared math as the Overview funnel (`buildFunnelStages`) — the two routes can never disagree.
+
+- **`window=1y`** (rolling 365 days) is accepted by THIS ROUTE ONLY, via `parseInsightsWindow(url, { allowYearly: true })`. Every other insights route keeps the shared contract `today|7d|30d|custom` (≤ 92 d) documented in `markets-api.md` §2.3 — verified by a negative test (markets rejects `1y`).
+- **`byDay[]`** — per-KL-day series, one point per calendar day touched by the window (a 7d rolling window spans 8 calendar days — 7 full + today's partial; `1y` → 365–366). Every day is present, zeros included. `visits` / `productViews` / `cartAdds` = **distinct sessions per calendar day** — a session spanning midnight counts on BOTH days, so daily values can sum above the window total (which counts each session once). `checkouts` / `paidOrders` = exact per-day order counts (`createdAt` / `paidAt`), so their byDay sums equal the stage counts exactly.
+- **`truncated`** — true when the event pull (20 k guard) or an order-date pull (20 k cap, `take 20 001`) hit its cap; order counts then fall back to exact `count` queries.
+- **Diagram semantics (UI):** the 3D funnel's stage THICKNESS ∝ stage count relative to the window's max stage (min clamp keeps small stages visible/hoverable). A later stage that exceeds an earlier one (the honest mixed-basis case) WIDENS the funnel — never clamped to fake a funnel shape. The streamgraph below is a centered (silhouette) stack of the five byDay series; the Daily view shows a single stacked bar of today's stages instead (a one-day stream would be degenerate).
+- Retention: `byDay` derives from `AnalyticsEvent` rows → old traffic days vanish under the retention rule (defaults 180 d); order-derived days persist. The window echo (`window.days` = 365 for `1y`) describes the REQUESTED window, not the retained data depth.
+
 ## 6. Sales metrics (Sales tab) — authoritative
 
 All money is **MYR minor units (sen)** — the platform is single-currency; no conversion exists anywhere.
