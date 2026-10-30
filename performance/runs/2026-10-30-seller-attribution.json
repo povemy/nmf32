@@ -1,6 +1,6 @@
 {
   "suite": "seller-attribution",
-  "ranAt": "2026-10-30T06:23:19.365Z",
+  "ranAt": "2026-10-30T07:04:06.206Z",
   "total": 52,
   "passed": 52,
   "failed": 0,
@@ -8,7 +8,7 @@
     {
       "name": "setup: two [LT] sellers + live stores + products + shopper",
       "ok": true,
-      "detail": "A=lt-mi-store-a-7 B=lt-mi-store-b-6"
+      "detail": "A=lt-mi-store-a-8 B=lt-mi-store-b-7"
     },
     {
       "name": "A1 campaigns list requires auth (401 on bad token)",
@@ -18,12 +18,12 @@
     {
       "name": "A2 campaign created (201) with code + slug + linkPath",
       "ok": true,
-      "detail": "/?sf=lt-mi-store-a-7&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=social&nmcl=c3f200b6a8c"
+      "detail": "/?sf=lt-mi-store-a-8&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=social&nmcl=cea534a1b49"
     },
     {
       "name": "A2 linkPath targets the seller's storefront with utm_campaign",
       "ok": true,
-      "detail": "/?sf=lt-mi-store-a-7&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=soci"
+      "detail": "/?sf=lt-mi-store-a-8&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=soci"
     },
     {
       "name": "A2 default source/medium stamped into the link",
@@ -83,7 +83,7 @@
     {
       "name": "B4 valid beacon → captured:true + nm_ins_attr cookie set (httpOnly, 30d)",
       "ok": true,
-      "detail": "nm_ins_attr=%7B%22v%22%3A1%2C%22campaignId%22%3A%22cmvul5l02"
+      "detail": "nm_ins_attr=%7B%22v%22%3A1%2C%22campaignId%22%3A%22cmvumm2aw"
     },
     {
       "name": "B4 cookie carries the resolved campaign + validated UTMs",
@@ -103,7 +103,7 @@
     {
       "name": "C1 store_view event carries the campaign attribution",
       "ok": true,
-      "detail": "{\"campaignId\":\"cmvul5l02006ir1rnl1wafjmg\",\"utmSource\":\"facebook\"}"
+      "detail": "{\"campaignId\":\"cmvumm2aw00ber1rnrfgrmeic\",\"utmSource\":\"facebook\"}"
     },
     {
       "name": "C1 store_view utmCampaign falls back to the campaign slug",
@@ -128,32 +128,32 @@
     {
       "name": "D1 active session within window: SAME token, mintedAt refreshed (sliding fix)",
       "ok": true,
-      "detail": "nm_ins_sid=abcdef0123456789abcdef0123456789.1793341386099; P"
+      "detail": "nm_ins_sid=abcdef0123456789abcdef0123456789.1793343833846; P"
     },
     {
       "name": "D2 session past the 30-min window rotates to a NEW token",
       "ok": true,
-      "detail": "nm_ins_sid=212d7cab937641a08d0799ff8be5218d.1793341386273; P"
+      "detail": "nm_ins_sid=ca6b10e8ef229bf63bb3bbbc2961f61a.1793343834003; P"
     },
     {
       "name": "E1 add_to_cart event carries attribution (fire-and-forget context intact)",
       "ok": true,
-      "detail": "{\"campaignId\":\"cmvul5l02006ir1rnl1wafjmg\",\"utmSource\":\"facebook\"}"
+      "detail": "{\"campaignId\":\"cmvumm2aw00ber1rnrfgrmeic\",\"utmSource\":\"facebook\"}"
     },
     {
       "name": "E2 checkout created (single-seller)",
       "ok": true,
-      "detail": "status=201 ref=ref_f7edf49e8e869def total=2800"
+      "detail": "status=201 ref=ref_153fbb843791e282 total=2800"
     },
     {
       "name": "E3 order froze the attribution snapshot at creation",
       "ok": true,
-      "detail": "{\"c\":\"cmvul5l02006ir1rnl1wafjmg\",\"s\":\"facebook\",\"m\":\"paid_social\"}"
+      "detail": "{\"c\":\"cmvumm2aw00ber1rnrfgrmeic\",\"s\":\"facebook\",\"m\":\"paid_social\"}"
     },
     {
       "name": "E4 payment webhook → order paid, attribution retained",
       "ok": true,
-      "detail": "status=paid attr=cmvul5l02006ir1rnl1wafjmg"
+      "detail": "status=paid attr=cmvumm2aw00ber1rnrfgrmeic"
     },
     {
       "name": "F1 campaigns report requires auth (401)",

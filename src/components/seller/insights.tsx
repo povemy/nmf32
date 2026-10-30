@@ -64,6 +64,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -608,6 +609,10 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
     else if (winKey === "30d") setFunnelView("monthly");
   }, [winKey]);
 
+  // Per-product funnel scope — null = whole store. Owned here so the product
+  // selection survives view toggles and page-window changes (URL rebuilt below).
+  const [funnelProduct, setFunnelProduct] = useState<string | null>(null);
+
   const [productSort, setProductSort] = useState<ProductSort>("views");
   const [productPage, setProductPage] = useState(1);
   const [salesGran, setSalesGran] = useState<"day" | "week" | "month">("day");
@@ -638,8 +643,21 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   const markets = useApi<MarketsData>(mkUrl("markets", visited.markets, `&dimension=${marketDim}`));
   const campaigns = useApi<CampaignsData>(mkUrl("campaigns", visited.campaigns));
   const products = usePagedApi<ProductsPayload>(mkUrl("products", visited.products, `&sort=${productSort}&page=${productPage}&size=20`));
-  const funnelUrl = visited.overview ? `/api/store/insights/funnel?window=${FUNNEL_WINDOW_PARAM[funnelView]}${freshQ}` : null;
+  const funnelUrl = visited.overview
+    ? `/api/store/insights/funnel?window=${FUNNEL_WINDOW_PARAM[funnelView]}${
+        funnelProduct ? `&productId=${encodeURIComponent(funnelProduct)}` : ""
+      }${freshQ}`
+    : null;
   const funnel: FunnelApi = useApi<FunnelData>(funnelUrl);
+
+  // Self-healing: when the selected product stops resolving server-side
+  // (deleted, or never belonged to this store → honest 404 "Unknown product…"),
+  // fall back to the store-wide funnel instead of a dead error panel.
+  // Transient network/server errors keep the panel + Retry.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- self-heal product scope, one setState max
+    if (funnelProduct && funnel.error?.includes("Unknown product")) setFunnelProduct(null);
+  }, [funnelProduct, funnel.error]);
 
   const refreshing =
     (visited.overview && overview.loading) ||
@@ -771,6 +789,8 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
               funnelApi={funnel}
               funnelView={funnelView}
               onFunnelView={setFunnelView}
+              funnelProduct={funnelProduct}
+              onFunnelProduct={setFunnelProduct}
             />
           </TabsContent>
 
@@ -845,6 +865,8 @@ function OverviewSection({
   funnelApi,
   funnelView,
   onFunnelView,
+  funnelProduct,
+  onFunnelProduct,
 }: {
   data: OverviewData | null;
   loading: boolean;
@@ -854,6 +876,9 @@ function OverviewSection({
   funnelApi: FunnelApi;
   funnelView: FunnelViewKey;
   onFunnelView: (v: FunnelViewKey) => void;
+  /** Selected per-product funnel scope (null = store-wide). */
+  funnelProduct: string | null;
+  onFunnelProduct: (id: string | null) => void;
 }) {
   if (error) return <ErrorPanel message={error} onRetry={onRetry} />;
   if (loading || !data) {
@@ -939,7 +964,13 @@ function OverviewSection({
       </section>
 
       {/* conversion funnel — interactive 3D canvas diagram (hero, full width) */}
-      <FunnelCard api={funnelApi} view={funnelView} onView={onFunnelView} />
+      <FunnelCard
+        api={funnelApi}
+        view={funnelView}
+        onView={onFunnelView}
+        product={funnelProduct}
+        onProduct={onFunnelProduct}
+      />
 
       <div className="grid gap-4 lg:grid-cols-5">
         {/* traffic trend */}
@@ -1009,11 +1040,49 @@ function OverviewSection({
 
         {/* channels */}
         <Card className="gap-3 lg:col-span-2">
-          <CardHeader className="pb-0">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Globe className="h-4 w-4 text-primary" /> Channels
-            </CardTitle>
-            <CardDescription className="text-xs">Where store views came from</CardDescription>
+          <CardHeader className="flex-row items-start justify-between space-y-0 pb-0">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Globe className="h-4 w-4 text-primary" /> Channels
+              </CardTitle>
+              <CardDescription className="text-xs">Where store views came from</CardDescription>
+            </div>
+            {/* Inline explainer — the attribution design in plain language
+                (campaign links → UTM/tokens, referrer hostname, direct). */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1 px-2 text-[11px] text-muted-foreground"
+                  aria-label="How channel detection works"
+                >
+                  <Info className="h-3.5 w-3.5" aria-hidden="true" /> How?
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 text-xs leading-relaxed">
+                <p className="text-sm font-medium">How we know where a visit came from</p>
+                <ul className="mt-2 space-y-2">
+                  <li>
+                    <span className="font-medium">1 · Campaign links — most reliable.</span> Links shared from the Campaigns tab carry UTM
+                    tags (utm_source …) plus a store token. The storefront reads them once on landing and remembers the visit for 30 days —
+                    every tracked view is then stamped with that source (e.g. utm_source=instagram → Social).
+                  </li>
+                  <li>
+                    <span className="font-medium">2 · Referrer header.</span> Untagged visits are classified from the browser&apos;s standard
+                    Referer hostname: known search engines → Search, known social networks → Social, any other site → Other.
+                  </li>
+                  <li>
+                    <span className="font-medium">3 · Direct.</span> No referrer and no campaign tag — typed URLs, bookmarks, in-app
+                    browsers and messengers that strip referrers all land here.
+                  </li>
+                </ul>
+                <p className="mt-2 text-muted-foreground">
+                  Last-touch, first-party measurement: a channel shows where the most recent tagged/referring visit came from — it is
+                  associated with, never proven to cause, a sale. No cross-site tracking, no fingerprints, no personal data.
+                </p>
+              </PopoverContent>
+            </Popover>
           </CardHeader>
           <CardContent>
             {traffic.channels.length === 0 ? (

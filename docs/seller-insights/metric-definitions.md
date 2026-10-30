@@ -88,6 +88,17 @@ Snapshot rules: purchased variants are deleted by the payment webhook (excluded 
 - **Diagram semantics (UI):** the 3D funnel's stage THICKNESS ∝ stage count relative to the window's max stage (min clamp keeps small stages visible/hoverable). A later stage that exceeds an earlier one (the honest mixed-basis case) WIDENS the funnel — never clamped to fake a funnel shape. The streamgraph below is a centered (silhouette) stack of the five byDay series; the Daily view shows a single stacked bar of today's stages instead (a one-day stream would be degenerate).
 - Retention: `byDay` derives from `AnalyticsEvent` rows → old traffic days vanish under the retention rule (defaults 180 d); order-derived days persist. The window echo (`window.days` = 365 for `1y`) describes the REQUESTED window, not the retained data depth.
 
+### 5.2 Per-product funnel (2026-10-30 — `productId` on the funnel route)
+
+`GET /api/store/insights/funnel?window=…&productId=<id>` — same route, same auth/rate-limit/cache envelope (cache key extended with the product id). The product is resolved against the CALLER'S OWN store (`db.product.findFirst({ id, storeId })`) — a valid id belonging to another store is a **404**, never cross-store data (negative-tested).
+
+- **Stages (4):** `Viewed this product` → `Added to cart` (both DISTINCT sessions that performed the stage FOR THIS PRODUCT — a session counts even when it also viewed other products) → `Checkout started` (orders created in the window CONTAINING the product, `createdAt` basis) → `Paid orders` (orders containing the product with `paidAt` in the window). The store-visit stage is deliberately absent — a store visit is not product-scoped; the funnel starts where the product enters the story. Drop-off/step-rate math is the SAME shared `withDropOff` helper as the store funnel (identical semantics; the checkout→paid step can be negative "gained" for the same mixed-basis reason).
+- **`product` (sales context, NOT a stage):** `unitsSold`, `revenueMinor` (gross line subtotal of the product's items in paid orders, before refunds), `ordersPaid`. Paid-at basis; computed from the same bounded paid-order pull (exact `orderItem.aggregate` re-count when the 20 k cap is hit).
+- **`products[]` (selector list):** products with tracked `product_view`/`add_to_cart` activity in the window, ranked by views, capped at 60 with an honest `productsTruncated` flag. `views` = product_view events (deduped per session/product/hour); `cartAdds` = distinct cart sessions. Derived from the SAME event pull as the stages (no extra scan) and returned by BOTH scopes so the selector stays populated while switching.
+- **`paymentAttempts`:** product-scoped — PaymentGroup records created in the window whose orders contain this product.
+- **`byDay[]`:** same per-KL-day shape minus `visits` (absent in product scope); view/cart = distinct sessions per day for this product, checkout/paid = exact per-day counts of orders containing it.
+- **UI (§5.1 diagram, scope-generic):** the 3D canvas, callout chips, hover tooltip, legend, Daily stacked bar and streamgraph all follow the active scope (5 store stages / 4 product stages — a stage keeps its colour in both). Selecting a deleted/foreign product self-heals to the store-wide funnel client-side.
+
 ## 6. Sales metrics (Sales tab) — authoritative
 
 All money is **MYR minor units (sen)** — the platform is single-currency; no conversion exists anywhere.

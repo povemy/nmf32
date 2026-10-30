@@ -340,10 +340,11 @@ export type Funnel = {
 /** Per-KL-day funnel series (funnel route only). Session stages count DISTINCT
  *  sessions per day — a session spanning midnight counts on both days, so the
  *  daily values can sum ABOVE the window total (which counts each session
- *  once). Checkouts/paid are exact per-day order counts (createdAt / paidAt). */
+ *  once). Checkouts/paid are exact per-day order counts (createdAt / paidAt).
+ *  `visits` is store-scope only (a store visit is not product-scoped). */
 export type FunnelDayPoint = {
   day: string;
-  visits: number;
+  visits?: number;
   productViews: number;
   cartAdds: number;
   checkouts: number;
@@ -352,6 +353,10 @@ export type FunnelDayPoint = {
 export type FunnelReport = Funnel & {
   byDay: FunnelDayPoint[];
   truncated: boolean;
+  /** Products with tracked product_view/add_to_cart activity in the window
+   *  (ranked by views, capped) — powers the per-product funnel selector. */
+  products: FunnelProductRow[];
+  productsTruncated: boolean;
 };
 
 /** Distinct-session sets per funnel stage over an event pull (shared math —
@@ -370,23 +375,12 @@ function sessionSets(rows: EventRow[]) {
   return { store, product, cart };
 }
 
-/** Stage rows with server-computed step rate + drop-off (computed here so
- *  every consumer gets the same numbers — never re-derived client-side). */
-function buildFunnelStages(
-  s: ReturnType<typeof sessionSets>,
-  sp: ReturnType<typeof sessionSets>,
-  ordersCur: number,
-  ordersPrev: number,
-  paidCur: number,
-  paidPrev: number
+/** Attach ABSOLUTE drop-off + drop-off % to a raw stage list — shared math for
+ *  the store funnel AND the product funnel (identical semantics in both);
+ *  every consumer gets the same numbers, never re-derived client-side. */
+function withDropOff(
+  raw: Array<Omit<FunnelStage, "dropOff" | "dropOffPct">>
 ): FunnelStage[] {
-  const raw: Array<Omit<FunnelStage, "dropOff" | "dropOffPct">> = [
-    { key: "store_visit", label: "Store visit (sessions)", count: s.store.size, prev: sp.store.size, stepRate: null },
-    { key: "product_view", label: "Viewed a product", count: s.product.size, prev: sp.product.size, stepRate: rate(s.product.size, s.store.size) },
-    { key: "add_to_cart", label: "Added to cart", count: s.cart.size, prev: sp.cart.size, stepRate: rate(s.cart.size, s.product.size) },
-    { key: "begin_checkout", label: "Checkout started (orders)", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.cart.size) },
-    { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
-  ];
   return raw.map((st, i) => {
     if (i === 0) return { ...st, dropOff: null, dropOffPct: null };
     const prevCount = raw[i - 1]!.count;
@@ -397,6 +391,23 @@ function buildFunnelStages(
       dropOffPct: prevCount > 0 ? Math.round((dropOff / prevCount) * 1000) / 10 : null,
     };
   });
+}
+
+function buildFunnelStages(
+  s: ReturnType<typeof sessionSets>,
+  sp: ReturnType<typeof sessionSets>,
+  ordersCur: number,
+  ordersPrev: number,
+  paidCur: number,
+  paidPrev: number
+): FunnelStage[] {
+  return withDropOff([
+    { key: "store_visit", label: "Store visit (sessions)", count: s.store.size, prev: sp.store.size, stepRate: null },
+    { key: "product_view", label: "Viewed a product", count: s.product.size, prev: sp.product.size, stepRate: rate(s.product.size, s.store.size) },
+    { key: "add_to_cart", label: "Added to cart", count: s.cart.size, prev: sp.cart.size, stepRate: rate(s.cart.size, s.product.size) },
+    { key: "begin_checkout", label: "Checkout started (orders)", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.cart.size) },
+    { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
+  ]);
 }
 
 function funnelBasis(attemptsCur: number): string[] {
@@ -512,6 +523,10 @@ export async function funnelReportFor(storeId: string, win: InsightsWindow): Pro
     paidOrders: v.paidOrders,
   }));
 
+  // Per-product selector list — derived from the SAME event pull (no extra
+  // scan; one bounded title/image join on the store's own products).
+  const products = await funnelProductsFromRows(storeId, cur.rows);
+
   return {
     stages: buildFunnelStages(s, sp, ordersCur, ordersPrev, paidCur, paidPrev),
     paymentAttempts: attemptsCur,
@@ -519,6 +534,249 @@ export async function funnelReportFor(storeId: string, win: InsightsWindow): Pro
     basis: funnelBasis(attemptsCur),
     byDay,
     truncated,
+    products: products.rows,
+    productsTruncated: products.truncated,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-product conversion funnel (product-scoped stages + selector list)
+// ---------------------------------------------------------------------------
+
+export type FunnelProductRow = {
+  productId: string;
+  title: string;
+  slug: string;
+  imageUrl: string | null;
+  /** product_view events in the window (deduped per session/product/hour). */
+  views: number;
+  /** DISTINCT sessions that added this product to a cart in the window. */
+  cartAdds: number;
+};
+
+const FUNNEL_PRODUCTS_CAP = 60;
+
+/** Products with tracked product_view / add_to_cart activity in the window,
+ *  ranked by views (capped at 60 — honest `truncated` flag). Derived from an
+ *  event pull the caller already made, so it costs no extra scan. */
+async function funnelProductsFromRows(
+  storeId: string,
+  events: EventRow[]
+): Promise<{ rows: FunnelProductRow[]; truncated: boolean }> {
+  const map = new Map<string, { views: number; carts: Set<string> }>();
+  for (const e of events) {
+    if (!e.productId) continue;
+    if (e.eventType !== "product_view" && e.eventType !== "add_to_cart") continue;
+    const slot = map.get(e.productId) ?? { views: 0, carts: new Set<string>() };
+    if (e.eventType === "product_view") slot.views += 1;
+    else {
+      const sk = sessionKey(e);
+      if (sk) slot.carts.add(sk);
+    }
+    map.set(e.productId, slot);
+  }
+  const ranked = [...map.entries()].sort((a, b) => b[1].views - a[1].views);
+  const truncated = ranked.length > FUNNEL_PRODUCTS_CAP;
+  const topIds = ranked.slice(0, FUNNEL_PRODUCTS_CAP).map(([id]) => id);
+  const products = topIds.length
+    ? await db.product.findMany({
+        where: { id: { in: topIds }, storeId },
+        select: { id: true, title: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } } },
+      })
+    : [];
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const rows = topIds
+    .map((id): FunnelProductRow | null => {
+      const p = byId.get(id);
+      const slot = map.get(id)!;
+      return p
+        ? { productId: id, title: p.title, slug: p.slug, imageUrl: p.images[0]?.url ?? null, views: slot.views, cartAdds: slot.carts.size }
+        : null;
+    })
+    .filter((x): x is FunnelProductRow => x != null);
+  return {
+    rows,
+    truncated,
+  };
+}
+
+export type ProductFunnel = {
+  stages: FunnelStage[];
+  byDay: FunnelDayPoint[];
+  truncated: boolean;
+  basis: string[];
+  /** Selector list (same derivation as the store report — same window). */
+  products: FunnelProductRow[];
+  productsTruncated: boolean;
+  /** Authoritative payment sessions for checkouts CONTAINING this product
+   *  (same semantics as the store funnel's paymentAttempts, product-scoped). */
+  paymentAttempts: number;
+  paymentAttemptsPrev: number;
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    imageUrl: string | null;
+    /** Units of THIS product in orders paid in the window (paidAt basis). */
+    unitsSold: number;
+    /** Gross line subtotal of this product's items in those paid orders
+     *  (before refunds — money context, not a funnel stage). */
+    revenueMinor: number;
+    ordersPaid: number;
+  };
+};
+
+/** Product-scoped conversion funnel. Stages:
+ *    Viewed this product (distinct sessions) → Added this product to cart
+ *    (distinct sessions) → Checkout started (orders CONTAINING the product,
+ *    createdAt basis) → Paid orders (paidAt basis).
+ *  The store-visit stage is deliberately absent — a store visit is not
+ *  product-scoped, so the funnel starts where the product enters the story.
+ *  Ownership is checked HERE (store-scoped lookup, never trusting the client).
+ *  Throws ApiError 404 when the product does not belong to the caller's store. */
+export async function productFunnelFor(
+  storeId: string,
+  productId: string,
+  win: InsightsWindow
+): Promise<ProductFunnel> {
+  const DATE_CAP = 20_000;
+  const product = await db.product.findFirst({
+    where: { id: productId, storeId },
+    select: { id: true, title: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } } },
+  });
+  if (!product) throw new ApiError(404, "NOT_FOUND", "Unknown product for this store");
+
+  const [cur, prev, orderDates, paidRows, ordersPrev, paidPrev, attemptsCur, attemptsPrev] = await Promise.all([
+    eventsFor(storeId, win.from, win.to),
+    eventsFor(storeId, win.prevFrom, win.prevTo),
+    db.order.findMany({
+      where: { storeId, createdAt: { gte: win.from, lt: win.to }, items: { some: { productId } } },
+      select: { createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: DATE_CAP + 1,
+    }),
+    db.order.findMany({
+      where: { storeId, paidAt: { gte: win.from, lt: win.to }, items: { some: { productId } } },
+      select: { paidAt: true, items: { where: { productId }, select: { qty: true, lineSubtotalMinor: true } } },
+      orderBy: { paidAt: "asc" },
+      take: DATE_CAP + 1,
+    }),
+    db.order.count({ where: { storeId, createdAt: { gte: win.prevFrom, lt: win.prevTo }, items: { some: { productId } } } }),
+    db.order.count({ where: { storeId, paidAt: { gte: win.prevFrom, lt: win.prevTo }, items: { some: { productId } } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.from, lt: win.to }, orders: { some: { storeId, items: { some: { productId } } } } } }),
+    db.paymentGroup.count({ where: { createdAt: { gte: win.prevFrom, lt: win.prevTo }, orders: { some: { storeId, items: { some: { productId } } } } } }),
+  ]);
+
+  let ordersCur = orderDates.length;
+  let paidCur = paidRows.length;
+  let truncated = cur.truncated || prev.truncated;
+  if (orderDates.length > DATE_CAP) {
+    ordersCur = await db.order.count({ where: { storeId, createdAt: { gte: win.from, lt: win.to }, items: { some: { productId } } } });
+    truncated = true;
+  }
+
+  // Money context from the paid pull (exact re-aggregation when the cap hit).
+  let unitsSold = 0;
+  let revenueMinor = 0;
+  if (paidRows.length > DATE_CAP) {
+    paidCur = await db.order.count({ where: { storeId, paidAt: { gte: win.from, lt: win.to }, items: { some: { productId } } } });
+    truncated = true;
+    const agg = await db.orderItem.aggregate({
+      where: { productId, order: { storeId, paidAt: { gte: win.from, lt: win.to } } },
+      _sum: { qty: true, lineSubtotalMinor: true },
+    });
+    unitsSold = agg._sum.qty ?? 0;
+    revenueMinor = agg._sum.lineSubtotalMinor ?? 0;
+  } else {
+    for (const o of paidRows) {
+      for (const it of o.items) {
+        unitsSold += it.qty;
+        revenueMinor += it.lineSubtotalMinor;
+      }
+    }
+  }
+
+  // Product-scoped session sets (this product only).
+  const stageSets = (rows: EventRow[]) => {
+    const views = new Set<string>();
+    const carts = new Set<string>();
+    for (const e of rows) {
+      if (e.productId !== productId) continue;
+      const sk = sessionKey(e);
+      if (!sk) continue;
+      if (e.eventType === "product_view") views.add(sk);
+      if (e.eventType === "add_to_cart") carts.add(sk);
+    }
+    return { views, carts };
+  };
+  const s = stageSets(cur.rows);
+  const sp = stageSets(prev.rows);
+
+  // Per-day series (KL day buckets; same midnight double-count caveat).
+  const dayMap = new Map<string, { views: Set<string>; carts: Set<string>; checkouts: number; paidOrders: number }>();
+  const emptyDay = () => ({ views: new Set<string>(), carts: new Set<string>(), checkouts: 0, paidOrders: 0 });
+  for (let d = new Date(win.from); d < win.to; d = new Date(d.getTime() + 86_400_000)) {
+    dayMap.set(klDayKey(d), emptyDay());
+  }
+  const endKey = klDayKey(new Date(win.to.getTime() - 1));
+  if (!dayMap.has(endKey)) dayMap.set(endKey, emptyDay());
+  for (const e of cur.rows) {
+    if (e.productId !== productId) continue;
+    if (e.eventType !== "product_view" && e.eventType !== "add_to_cart") continue;
+    const slot = dayMap.get(klDayKey(e.createdAt));
+    if (!slot) continue;
+    const sk = sessionKey(e);
+    if (!sk) continue;
+    if (e.eventType === "product_view") slot.views.add(sk);
+    if (e.eventType === "add_to_cart") slot.carts.add(sk);
+  }
+  for (const o of orderDates) {
+    const slot = dayMap.get(klDayKey(o.createdAt));
+    if (slot) slot.checkouts += 1;
+  }
+  for (const o of paidRows) {
+    const slot = dayMap.get(klDayKey(o.paidAt as Date));
+    if (slot) slot.paidOrders += 1;
+  }
+  const byDay: FunnelDayPoint[] = [...dayMap.entries()].map(([day, v]) => ({
+    day,
+    productViews: v.views.size,
+    cartAdds: v.carts.size,
+    checkouts: v.checkouts,
+    paidOrders: v.paidOrders,
+  }));
+
+  const products = await funnelProductsFromRows(storeId, cur.rows);
+
+  return {
+    stages: withDropOff([
+      { key: "product_view", label: "Viewed this product", count: s.views.size, prev: sp.views.size, stepRate: null },
+      { key: "add_to_cart", label: "Added to cart", count: s.carts.size, prev: sp.carts.size, stepRate: rate(s.carts.size, s.views.size) },
+      { key: "begin_checkout", label: "Checkout started", count: ordersCur, prev: ordersPrev, stepRate: rate(ordersCur, s.carts.size) },
+      { key: "purchase", label: "Paid orders", count: paidCur, prev: paidPrev, stepRate: rate(paidCur, ordersCur) },
+    ]),
+    byDay,
+    truncated,
+    basis: [
+      `View and cart stages count DISTINCT pseudonymous sessions that viewed or added THIS product inside the window (a session counts here even when it also viewed other products; first-party cookies, login not required).`,
+      `Checkout started = orders created in the window that CONTAIN this product (authoritative Order.createdAt, any status). Paid orders = orders containing this product with paidAt in the window — an order created before the window but paid inside it counts as paid only, so this step can be negative (gained).`,
+      "View/cart stages are session-based while checkout/paid are order-based — mixed bases, so read step rates as indications, not exact visitor conversion.",
+      `Units sold (${unitsSold.toLocaleString("en-MY")}) and gross product revenue (before refunds) cover this product's line items in those paid orders — sales context, not a funnel stage.`,
+      `Payment sessions = authoritative payment sessions for checkouts CONTAINING this product (${attemptsCur} in this window). A failed-session retry re-opens the same record and is not counted twice.`,
+    ],
+    products: products.rows,
+    productsTruncated: products.truncated,
+    paymentAttempts: attemptsCur,
+    paymentAttemptsPrev: attemptsPrev,
+    product: {
+      id: product.id,
+      title: product.title,
+      slug: product.slug,
+      imageUrl: product.images[0]?.url ?? null,
+      unitsSold,
+      revenueMinor,
+      ordersPaid: paidCur,
+    },
   };
 }
 

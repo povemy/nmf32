@@ -1,14 +1,14 @@
 {
   "suite": "seller-insights",
-  "ranAt": "2026-10-30T06:22:47.040Z",
-  "total": 63,
-  "passed": 63,
+  "ranAt": "2026-10-30T07:03:35.568Z",
+  "total": 69,
+  "passed": 69,
   "failed": 0,
   "results": [
     {
       "name": "setup: two [LT] sellers + live stores + active products + shopper",
       "ok": true,
-      "detail": "A=lt-si-store-a-8 B=lt-si-store-b-8"
+      "detail": "A=lt-si-store-a-9 B=lt-si-store-b-9"
     },
     {
       "name": "T1 unauthenticated /api/store/insights/overview → 401",
@@ -118,12 +118,12 @@
     {
       "name": "T10 multi-seller checkout creates one payment group + 2 orders",
       "ok": true,
-      "detail": "status=201 ref=ref_fef2a20b86b2f0c4 total=4600"
+      "detail": "status=201 ref=ref_c0abaff20902cda5 total=4600"
     },
     {
       "name": "T10 payment webhook succeeds for the group",
       "ok": true,
-      "detail": "status=200 {\"data\":{\"ok\":true,\"duplicate\":false,\"orderNumber\":\"NM-103650\",\"orderStatus\":\"paid\"}}"
+      "detail": "status=200 {\"data\":{\"ok\":true,\"duplicate\":false,\"orderNumber\":\"NM-103653\",\"orderStatus\":\"paid\"}}"
     },
     {
       "name": "T10 order A paid (authoritative paidAt)",
@@ -193,7 +193,7 @@
     {
       "name": "T15 seller B product table contains ONLY seller B products",
       "ok": true,
-      "detail": "[\"cmvul4aj20005r1h55l76ln93\"]"
+      "detail": "[\"cmvumkqa10005r1cylzwvd8ca\"]"
     },
     {
       "name": "T15 seller B sales: own order only (1 paid order, B totalMinor)",
@@ -314,6 +314,36 @@
       "name": "T23 funnel seller B isolation (B sees own checkouts only)",
       "ok": true,
       "detail": "B checkouts=1"
+    },
+    {
+      "name": "T24 product funnel → scope=product, 4 stages (view→cart→checkout→paid)",
+      "ok": true,
+      "detail": "status=200 stages=4"
+    },
+    {
+      "name": "T24 product stage counts match the fixture (1 view session, 1 cart session, 1 paid order)",
+      "ok": true,
+      "detail": "view=1 cart=1 paid=1"
+    },
+    {
+      "name": "T24 product sales context (2 units, RM 20.00 gross, 1 paid order) + byDay omits visits",
+      "ok": true,
+      "detail": "units=2 rev=2000 orders=1"
+    },
+    {
+      "name": "T24 product funnel payment sessions ≥ 1 + selector list carries the product",
+      "ok": true,
+      "detail": "attempts=1 products=1"
+    },
+    {
+      "name": "T24 product funnel cross-seller → 404 (ownership checked, no cross-store leak)",
+      "ok": true,
+      "detail": "got 404"
+    },
+    {
+      "name": "T24 store-scope funnel carries the selector list (product present, views=1, carts=1, truncated=false)",
+      "ok": true,
+      "detail": "row={\"productId\":\"cmvumkoob0001r1cyzunrkv7j\",\"title\":\"[LT] SI product a\",\"slug\":\"lt-si-a-mvumkmq9\",\"imageUrl\":null,\"views\":1,\"cartAdds\":1}"
     },
     {
       "name": "T22 insights endpoints rate-limited (429 after burst)",

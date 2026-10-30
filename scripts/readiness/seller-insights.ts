@@ -362,6 +362,49 @@ async function main() {
     `B checkouts=${bCheckout}`
   );
 
+  // ---- T24: per-product funnel (product-scoped stages + selector list) ----
+  const pf = await jsonFetch(`/api/store/insights/funnel?window=7d&productId=${sellerA.productId}`, { headers: bearer(sellerA.token) });
+  const pfd = pf.body?.data;
+  const pfStages: Array<{ key: string; count: number }> = pfd?.stages ?? [];
+  record(
+    "T24 product funnel → scope=product, 4 stages (view→cart→checkout→paid)",
+    pf.status === 200 && pfd?.scope === "product" && pfStages.length === 4 && ["product_view", "add_to_cart", "begin_checkout", "purchase"].every((k, i) => pfStages[i]?.key === k),
+    `status=${pf.status} stages=${pfStages.length}`
+  );
+  const pfView = pfStages.find((s) => s.key === "product_view")?.count ?? -1;
+  const pfCart = pfStages.find((s) => s.key === "add_to_cart")?.count ?? -1;
+  const pfPaid = pfStages.find((s) => s.key === "purchase")?.count ?? -1;
+  record(
+    "T24 product stage counts match the fixture (1 view session, 1 cart session, 1 paid order)",
+    pfView === 1 && pfCart === 1 && pfPaid === 1,
+    `view=${pfView} cart=${pfCart} paid=${pfPaid}`
+  );
+  record(
+    "T24 product sales context (2 units, RM 20.00 gross, 1 paid order) + byDay omits visits",
+    pfd?.product?.unitsSold === 2 && pfd?.product?.revenueMinor === 2000 && pfd?.product?.ordersPaid === 1 &&
+      (pfd?.byDay ?? []).every((p: Record<string, unknown>) => p.visits === undefined),
+    `units=${pfd?.product?.unitsSold} rev=${pfd?.product?.revenueMinor} orders=${pfd?.product?.ordersPaid}`
+  );
+  record(
+    "T24 product funnel payment sessions ≥ 1 + selector list carries the product",
+    typeof pfd?.paymentAttempts === "number" && pfd.paymentAttempts >= 1 && Array.isArray(pfd?.products) && pfd.products.some((p: { productId: string }) => p.productId === sellerA.productId),
+    `attempts=${pfd?.paymentAttempts} products=${pfd?.products?.length ?? 0}`
+  );
+
+  // Ownership: a valid productId from ANOTHER store is a 404, never cross-store data.
+  const pfX = await jsonFetch(`/api/store/insights/funnel?window=7d&productId=${sellerA.productId}`, { headers: bearer(sellerB.token) });
+  record("T24 product funnel cross-seller → 404 (ownership checked, no cross-store leak)", pfX.status === 404, `got ${pfX.status}`);
+
+  // Store-scope response carries the selector list with the same activity numbers.
+  const pfStore = await jsonFetch("/api/store/insights/funnel?window=7d", { headers: bearer(sellerA.token) });
+  const psd = pfStore.body?.data;
+  const selRow = (psd?.products ?? []).find((p: { productId: string }) => p.productId === sellerA.productId);
+  record(
+    "T24 store-scope funnel carries the selector list (product present, views=1, carts=1, truncated=false)",
+    pfStore.status === 200 && psd?.scope === "store" && psd?.product === null && selRow?.views === 1 && selRow?.cartAdds === 1 && psd?.productsTruncated === false,
+    `row=${JSON.stringify(selRow)}`
+  );
+
   // ---- T22: rate limiting (LAST — the burst exhausts the shared insights bucket) ----
   let limited = false;
   for (let i = 0; i < 65; i++) {

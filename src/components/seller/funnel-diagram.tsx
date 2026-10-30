@@ -4,9 +4,15 @@
 // Conversion Funnel — interactive 3D funnel diagram (HTML5 Canvas) + stage
 // streamgraph (recharts, centered "silhouette" stream) for the Insights page.
 //
-// Data: GET /api/store/insights/funnel?window=today|7d|30d|1y (seller-session
-// scoped; stage numbers are server-computed — this component never re-derives
-// step rates or drop-off).
+// Data: GET /api/store/insights/funnel?window=today|7d|30d|1y[&productId=<id>]
+// (seller-session scoped; stage numbers are server-computed — this component
+// never re-derives step rates or drop-off).
+//
+// Scope: store-wide (5 stages) or, via the product selector, ONE product's
+// funnel (4 stages: product view → add to cart → checkout → paid) with sales
+// context (units sold, gross product revenue). The 3D canvas, callout chips,
+// hover tooltip, legend, daily stacked bar and streamgraph are all
+// scope-generic — stage count and palette follow the active scope.
 //
 // Canvas rendering notes:
 //   • The funnel is a tapered horizontal ribbon: thickness ∝ stage count
@@ -28,10 +34,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
-import { Info, RefreshCw, TrendingUp } from "lucide-react";
+import { Info, Package, RefreshCw, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatMinor } from "./ui-bits";
 
 // ---------------------------------------------------------------- contract
 
@@ -49,12 +57,39 @@ export const FUNNEL_WINDOW_PARAM: Record<FunnelViewKey, string> = {
 };
 const VIEW_LABELS: Record<FunnelViewKey, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 
+export type FunnelProductOption = {
+  productId: string;
+  title: string;
+  slug: string;
+  imageUrl: string | null;
+  /** product_view events in the window (deduped per session/product/hour). */
+  views: number;
+  /** DISTINCT sessions that added this product to a cart in the window. */
+  cartAdds: number;
+};
+
 export type FunnelData = {
+  /** "store" = whole-store funnel (5 stages); "product" = one product's
+   *  funnel (4 stages: product view → paid) + sales context in `product`. */
+  scope: "store" | "product";
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    imageUrl: string | null;
+    unitsSold: number;
+    revenueMinor: number;
+    ordersPaid: number;
+  } | null;
+  /** Products with tracked product_view / add_to_cart activity in the
+   *  window, ranked by views — powers the per-product selector. */
+  products: FunnelProductOption[];
+  productsTruncated: boolean;
   window: { key: string; from: string; to: string; prevFrom: string; prevTo: string; days: number };
   generatedAt: string;
   freshness: { eventsUpTo: string | null; trackingSince: string | null; note: string | null };
   stages: { key: string; label: string; count: number; prev: number; stepRate: number | null; dropOff: number | null; dropOffPct: number | null }[];
-  byDay: { day: string; visits: number; productViews: number; cartAdds: number; checkouts: number; paidOrders: number }[];
+  byDay: { day: string; visits?: number; productViews: number; cartAdds: number; checkouts: number; paidOrders: number }[];
   truncated: boolean;
   paymentAttempts: number;
   paymentAttemptsPrev: number;
@@ -73,7 +108,7 @@ export type FunnelApi = {
 type StageMeta = { key: string; label: string; color: string; icon: string };
 
 /** House palette (teal → emerald → amber → orange → rose; no blue/indigo). */
-const STAGE_META: StageMeta[] = [
+const STORE_STAGE_META: StageMeta[] = [
   {
     key: "store_visit",
     label: "Store visit",
@@ -106,6 +141,41 @@ const STAGE_META: StageMeta[] = [
   },
 ];
 
+/** Product-scoped funnel stages — the store-visit stage is deliberately
+ *  absent (a store visit is not product-scoped): the funnel starts where the
+ *  product enters the story. Palette/icons follow the store funnel's
+ *  product→paid stages so a stage keeps its colour in both scopes. */
+const PRODUCT_STAGE_META: StageMeta[] = [
+  {
+    key: "product_view",
+    label: "Product view",
+    color: "#059669",
+    icon: svgIcon("<path d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z'/><circle cx='12' cy='12' r='3'/>"),
+  },
+  {
+    key: "add_to_cart",
+    label: "Add to cart",
+    color: "#d97706",
+    icon: svgIcon("<circle cx='9' cy='20.5' r='1'/><circle cx='20' cy='20.5' r='1'/><path d='M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6'/>"),
+  },
+  {
+    key: "begin_checkout",
+    label: "Checkout",
+    color: "#ea580c",
+    icon: svgIcon("<rect x='2' y='5' width='20' height='14' rx='2'/><path d='M2 10h20'/>"),
+  },
+  {
+    key: "purchase",
+    label: "Paid order",
+    color: "#e11d48",
+    icon: svgIcon("<circle cx='12' cy='12' r='9.5'/><path d='m8.3 12.2 2.6 2.6 4.8-5.4'/>"),
+  },
+];
+
+function stageMetaFor(scope: "store" | "product" | undefined): StageMeta[] {
+  return scope === "product" ? PRODUCT_STAGE_META : STORE_STAGE_META;
+}
+
 function svgIcon(paths: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>${paths}</svg>`
@@ -132,40 +202,87 @@ const FONT = (weight: number, size: number) => `${weight} ${size}px ui-sans-seri
 
 // ---------------------------------------------------------------- card
 
-export function FunnelCard({ view, onView, api }: { view: FunnelViewKey; onView: (v: FunnelViewKey) => void; api: FunnelApi }) {
+export function FunnelCard({
+  view,
+  onView,
+  api,
+  product,
+  onProduct,
+}: {
+  view: FunnelViewKey;
+  onView: (v: FunnelViewKey) => void;
+  api: FunnelApi;
+  /** Selected per-product scope (null = store-wide funnel). */
+  product: string | null;
+  onProduct: (id: string | null) => void;
+}) {
   const data = api.data;
+  const meta = stageMetaFor(data?.scope);
 
   return (
     <Card className="gap-3">
-      <CardHeader className="flex-row items-start justify-between space-y-0 pb-0">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-2 space-y-0 pb-0">
         <div className="min-w-0">
           <CardTitle className="flex items-center gap-2 text-sm">
             <TrendingUp className="h-4 w-4 text-primary" /> Conversion funnel
           </CardTitle>
           <CardDescription className="text-xs">
             Interactive 3D funnel · stage flow over time
+            {data?.scope === "product" ? " · single product" : ""}
             {data?.truncated ? <span className="ml-1 text-amber-700">· sampled (very large window)</span> : null}
           </CardDescription>
         </div>
-        <div
-          role="group"
-          aria-label="Funnel view"
-          className="shrink-0 rounded-lg border bg-muted/40 p-0.5"
-        >
-          {(Object.keys(VIEW_LABELS) as FunnelViewKey[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => onView(k)}
-              aria-pressed={view === k}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                view === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Per-product scope — products with tracked activity in the window. */}
+          <Select
+            value={product ?? "all"}
+            onValueChange={(v) => onProduct(v === "all" ? null : v)}
+            disabled={!data || data.products.length === 0}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-8 max-w-[230px] gap-1.5 text-xs"
+              aria-label="Funnel product — inspect one product, or the whole store"
             >
-              {VIEW_LABELS[k]}
-            </button>
-          ))}
+              <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <SelectValue placeholder={data && data.products.length === 0 ? "No product traffic yet" : "All products · store"} />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="all" className="text-xs">
+                All products · store-wide
+              </SelectItem>
+              {data?.products.map((p) => (
+                <SelectItem key={p.productId} value={p.productId} className="text-xs">
+                  <span className="max-w-[260px] truncate">{p.title}</span>
+                </SelectItem>
+              ))}
+              {data?.productsTruncated ? (
+                <p className="px-2 py-1.5 text-[10px] text-muted-foreground">
+                  Showing the {data.products.length} most-viewed products with traffic in this window…
+                </p>
+              ) : null}
+            </SelectContent>
+          </Select>
+          <div
+            role="group"
+            aria-label="Funnel view"
+            className="shrink-0 rounded-lg border bg-muted/40 p-0.5"
+          >
+            {(Object.keys(VIEW_LABELS) as FunnelViewKey[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => onView(k)}
+                aria-pressed={view === k}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  view === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {VIEW_LABELS[k]}
+              </button>
+            ))}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -183,13 +300,32 @@ export function FunnelCard({ view, onView, api }: { view: FunnelViewKey; onView:
           </div>
         ) : (
           <>
-            <FunnelCanvas stages={data.stages} />
+            {/* product-scope sales context — authoritative order facts, not a stage */}
+            {data.scope === "product" && data.product ? (
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-muted/40 px-3 py-2 text-xs">
+                <span className="min-w-0 truncate font-medium">{data.product.title}</span>
+                <span className="text-muted-foreground">
+                  {data.product.unitsSold.toLocaleString("en-MY")} units sold · {formatMinor(data.product.revenueMinor)} gross product revenue ·{" "}
+                  {data.product.ordersPaid.toLocaleString("en-MY")} paid orders (this window)
+                </span>
+              </div>
+            ) : null}
+
+            <FunnelCanvas
+              stages={data.stages}
+              meta={meta}
+              emptyCaption={
+                data.scope === "product"
+                  ? "No funnel activity for this product in this window yet"
+                  : undefined
+              }
+            />
 
             {/* DOM legend — also the narrow-viewport label carrier */}
             <ul className="flex flex-wrap gap-x-4 gap-y-1.5" aria-label="Funnel stages">
               {data.stages.map((s, i) => (
                 <li key={s.key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STAGE_META[i]!.color }} aria-hidden="true" />
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: meta[i]!.color }} aria-hidden="true" />
                   <span className="font-medium text-foreground">{s.label.replace(" (sessions)", "").replace(" (orders)", "")}</span>
                   <span className="tabular-nums">{s.count.toLocaleString("en-MY")}</span>
                 </li>
@@ -199,7 +335,8 @@ export function FunnelCard({ view, onView, api }: { view: FunnelViewKey; onView:
             <FunnelStream data={data} view={view} />
 
             <p className="rounded-md bg-muted/60 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              Payment sessions (authoritative): <span className="font-semibold text-foreground">{data.paymentAttempts.toLocaleString("en-MY")}</span> in this window
+              Payment sessions (authoritative){data.scope === "product" ? " for checkouts containing this product" : ""}:{" "}
+              <span className="font-semibold text-foreground">{data.paymentAttempts.toLocaleString("en-MY")}</span> in this window
               {data.paymentAttemptsPrev > 0 ? <> · {data.paymentAttemptsPrev.toLocaleString("en-MY")} in the previous window</> : null} — one record per checkout
               payment attempt; a failed-session retry re-opens the same record and is not counted twice.
             </p>
@@ -215,7 +352,8 @@ export function FunnelCard({ view, onView, api }: { view: FunnelViewKey; onView:
               ))}
             </ul>
             <p className="text-right text-[10px] text-muted-foreground/70">
-              {VIEW_LABELS[view]} view · generated {new Date(data.generatedAt).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit" })}
+              {VIEW_LABELS[view]} view · {data.scope === "product" ? "single product" : "whole store"} · generated{" "}
+              {new Date(data.generatedAt).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit" })}
             </p>
           </>
         )}
@@ -229,7 +367,7 @@ export function FunnelCard({ view, onView, api }: { view: FunnelViewKey; onView:
 type StageRow = FunnelData["stages"][number];
 type HitRect = { i: number; x0: number; x1: number; y0: number; y1: number };
 
-function FunnelCanvas({ stages }: { stages: StageRow[] }) {
+function FunnelCanvas({ stages, meta, emptyCaption }: { stages: StageRow[]; meta: StageMeta[]; emptyCaption?: string }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -250,9 +388,10 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
     []
   );
 
-  // Load the SVG icons once; each completed load triggers a redraw.
+  // Load the SVG icons once (both scopes — keys overlap, dedup keeps one
+  // image per key); each completed load triggers a redraw.
   useEffect(() => {
-    for (const m of STAGE_META) {
+    for (const m of [...STORE_STAGE_META, ...PRODUCT_STAGE_META]) {
       if (iconsRef.current.has(m.key)) continue;
       const img = new Image();
       img.onload = () => setIconTick((t) => t + 1);
@@ -331,8 +470,8 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
       const bR = bound(i + 1);
       const thL = Math.max(minThick * 0.6, thAt(i));
       const thR = Math.max(minThick * 0.6, thAt(i + 1));
-      const meta = STAGE_META[i]!;
-      const color = empty ? "#cbd5e1" : meta.color;
+      const sm = meta[i]!;
+      const color = empty ? "#cbd5e1" : sm.color;
       const hov = hoverRef.current === i;
       const ly = -lift[i]!;
 
@@ -405,7 +544,7 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
       const t = thick[i] ?? minThick;
       const stage = stages[i]!;
       const cnt = stage.count.toLocaleString("en-MY");
-      const icon = iconsRef.current.get(meta.key);
+      const icon = iconsRef.current.get(sm.key);
 
       if (t >= 30) {
         ctx.font = FONT(700, 14);
@@ -509,9 +648,9 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
       ctx.fillStyle = "#94a3b8";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("No funnel activity in this window yet", width / 2, fy + maxThick / 2 + 16);
+      ctx.fillText(emptyCaption ?? "No funnel activity in this window yet", width / 2, fy + maxThick / 2 + 16);
     }
-  }, [stages, width, reducedMotion, iconTick]);
+  }, [stages, meta, emptyCaption, width, reducedMotion, iconTick]);
 
   // Animation loop — eases thickness toward targets and lift toward hover state.
   useEffect(() => {
@@ -579,7 +718,7 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
   }, []);
 
   const stage = tip != null ? stages[tip.i] : null;
-  const meta = tip != null ? STAGE_META[tip.i] : null;
+  const sm = tip != null ? meta[tip.i] : null;
 
   return (
     <div ref={wrapRef} className="relative w-full">
@@ -619,7 +758,7 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
         </tbody>
       </table>
 
-      {stage && meta && tip ? (
+      {stage && sm && tip ? (
         <div
           role="tooltip"
           className="pointer-events-none absolute z-10 w-52 rounded-xl border bg-popover/95 p-3 text-xs shadow-lg backdrop-blur"
@@ -629,11 +768,11 @@ function FunnelCanvas({ stages }: { stages: StageRow[] }) {
           }}
         >
           <p className="flex items-center gap-1.5 font-semibold">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: meta.color }} aria-hidden="true" />
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: sm.color }} aria-hidden="true" />
             {stage.label}
           </p>
           <p className="mt-1 tabular-nums">
-            <span className="font-bold" style={{ color: shade(meta.color, -0.15) }}>{stage.count.toLocaleString("en-MY")}</span>
+            <span className="font-bold" style={{ color: shade(sm.color, -0.15) }}>{stage.count.toLocaleString("en-MY")}</span>
             <span className="text-muted-foreground"> in window · prev {stage.prev.toLocaleString("en-MY")}</span>
           </p>
           <p className="mt-0.5 tabular-nums text-muted-foreground">
@@ -670,41 +809,62 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 // ---------------------------------------------------------------- streamgraph
 
+/** Stream series field per scope: the store funnel carries 5 stages (incl.
+ *  visits), the product funnel 4 (starts at product views — a store visit is
+ *  not product-scoped). Module-level consts → stable useMemo deps. */
+const STORE_STREAM_KEYS = ["visits", "productViews", "cartAdds", "checkouts", "paidOrders"] as const;
+const PRODUCT_STREAM_KEYS = ["productViews", "cartAdds", "checkouts", "paidOrders"] as const;
+
+type StreamPoint = Record<string, number | string>;
+
 /** Stage flow over time. Weekly/Monthly/Yearly → centred streamgraph (recharts
  *  stacked areas over an invisible negative-offset base — the "silhouette"
  *  stream). Daily → the window is a single day, so a stacked bar of today's
- *  stages replaces the degenerate one-point stream. */
+ *  stages replaces the degenerate one-point stream. Scope-generic: the stage
+ *  count follows the active funnel (5 store stages / 4 product stages). */
 function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey }) {
+  const meta = stageMetaFor(data.scope);
+  const keys = data.scope === "product" ? PRODUCT_STREAM_KEYS : STORE_STREAM_KEYS;
   const series = useMemo(
     () =>
-      data.byDay.map((d) => {
-        const vals = [d.visits, d.productViews, d.cartAdds, d.checkouts, d.paidOrders];
+      data.byDay.map((d): StreamPoint => {
+        const vals = keys.map((k) => Number(d[k] ?? 0));
         const total = vals.reduce((a, b) => a + b, 0);
-        return { day: d.day, off: -total / 2, v0: d.visits, v1: d.productViews, v2: d.cartAdds, v3: d.checkouts, v4: d.paidOrders, total };
+        const o: StreamPoint = { day: d.day, off: -total / 2, total };
+        vals.forEach((v, i) => {
+          o[`v${i}`] = v;
+        });
+        return o;
       }),
-    [data.byDay]
+    [data.byDay, keys]
   );
-  const hasFlow = series.some((p) => p.total > 0);
+  const hasFlow = series.some((p) => Number(p.total) > 0);
 
   if (view === "daily") {
     const p = series[series.length - 1];
-    const vals = p ? [p.v0, p.v1, p.v2, p.v3, p.v4] : [0, 0, 0, 0, 0];
+    const vals = meta.map((_, i) => (p ? Number(p[`v${i}`] ?? 0) : 0));
     const total = vals.reduce((a, b) => a + b, 0);
     return (
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s stages</p>
         {total === 0 ? (
-          <p className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground">No activity today yet.</p>
+          <p className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground">
+            {data.scope === "product" ? "No activity for this product today yet." : "No activity today yet."}
+          </p>
         ) : (
           <div className="space-y-2">
-            <div className="flex h-9 w-full overflow-hidden rounded-lg" role="img" aria-label="Today's funnel stages stacked bar">
+            <div
+              className="flex h-9 w-full overflow-hidden rounded-lg"
+              role="img"
+              aria-label={data.scope === "product" ? "Today's product funnel stages stacked bar" : "Today's funnel stages stacked bar"}
+            >
               {vals.map((v, i) =>
                 v <= 0 ? null : (
                   <div
                     key={i}
                     className="h-full min-w-[4px] transition-[flex-grow] duration-500"
-                    style={{ flexGrow: v, backgroundColor: STAGE_META[i]!.color }}
-                    title={`${STAGE_META[i]!.label}: ${v}`}
+                    style={{ flexGrow: v, backgroundColor: meta[i]!.color }}
+                    title={`${meta[i]!.label}: ${v}`}
                   />
                 )
               )}
@@ -725,7 +885,7 @@ function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey })
         <div className="h-[190px] w-full" role="img" aria-label="Funnel stage flow streamgraph by day">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-              {STAGE_META.map((m, i) => (
+              {meta.map((m, i) => (
                 <defs key={m.key}>
                   <linearGradient id={`fsGrad${i}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={m.color} stopOpacity={0.72} />
@@ -743,10 +903,10 @@ function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey })
                 stroke="currentColor"
                 className="text-muted-foreground"
               />
-              <Tooltip content={<StreamTip />} />
+              <Tooltip content={<StreamTip meta={meta} />} />
               {/* invisible negative base centred around zero → silhouette stream */}
               <Area dataKey="off" stackId="s" type="monotone" stroke="none" fill="transparent" isAnimationActive={false} />
-              {STAGE_META.map((m, i) => (
+              {meta.map((m, i) => (
                 <Area
                   key={m.key}
                   dataKey={`v${i}`}
@@ -763,29 +923,30 @@ function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey })
         </div>
       ) : (
         <p className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground">
-          No stage activity in this window yet — the stream appears as visitor tracking and orders accrue.
+          {data.scope === "product"
+            ? "No stage activity for this product in this window yet — the stream appears as tracking and orders accrue."
+            : "No stage activity in this window yet — the stream appears as visitor tracking and orders accrue."}
         </p>
       )}
     </div>
   );
 }
 
-function StreamTip(props: { active?: boolean; payload?: Array<{ payload: { day: string; v0: number; v1: number; v2: number; v3: number; v4: number; total: number } }>; label?: string }) {
-  const { active, payload } = props;
+function StreamTip(props: { active?: boolean; payload?: Array<{ payload: StreamPoint }>; label?: string; meta: StageMeta[] }) {
+  const { active, payload, meta } = props;
   if (!active || !payload?.length) return null;
   const p = payload[0]!.payload;
-  const rows = [p.v0, p.v1, p.v2, p.v3, p.v4];
   return (
     <div className="rounded-xl border bg-popover/95 p-3 text-xs shadow-lg backdrop-blur">
-      <p className="mb-1.5 font-semibold">{p.day}</p>
+      <p className="mb-1.5 font-semibold">{String(p.day)}</p>
       <ul className="space-y-0.5">
-        {STAGE_META.map((m, i) => (
+        {meta.map((m, i) => (
           <li key={m.key} className="flex items-center justify-between gap-4 tabular-nums">
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} aria-hidden="true" />
               {m.label}
             </span>
-            <span className="font-medium">{rows[i]!.toLocaleString("en-MY")}</span>
+            <span className="font-medium">{Number(p[`v${i}`] ?? 0).toLocaleString("en-MY")}</span>
           </li>
         ))}
       </ul>
