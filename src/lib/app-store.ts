@@ -1,8 +1,9 @@
 "use client";
 // App-wide client state: which surface is active + auth session.
 import { create } from "zustand";
-import { authHeaders, clearSessionToken } from "./session-client";
+import { authHeaders, clearSessionToken, getSessionToken } from "./session-client";
 import { clearMeHubCache, prefetchMeHub } from "./me-hub-cache";
+import { SHOPPER_VIEW_KEY, signalSignedOut } from "./session-events";
 
 export type Surface = "shopper" | "seller" | "admin";
 
@@ -91,10 +92,46 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
   logout: async () => {
+    // Sign-out reliability fix — TWO bugs lived here before:
+    // 1) clearSessionToken() ran BEFORE the fetch, so authHeaders() was empty
+    //    and the Bearer token was never sent to /api/auth/logout. In
+    //    cookie-less contexts (cross-site iframe preview panels) the server
+    //    had no token to destroy and the DB session row SURVIVED — sign-out
+    //    looked decorative. Fix: capture the token first, present it to the
+    //    logout endpoint, then clear local state.
+    // 2) Any fetch failure propagated and skipped refreshMe + every caller's
+    //    success toast — a network blip made the button do literally nothing.
+    //    Fix: tolerate the failure; local identity is cleared regardless and
+    //    refreshMe re-syncs the UI with what the server still believes.
+    const token = getSessionToken();
     clearSessionToken();
     clearMeHubCache(); // Task 34: drop the persisted Me banner snapshot with the session
-    await fetch("/api/auth/logout", { method: "POST", headers: authHeaders() });
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : authHeaders(),
+      });
+    } catch {
+      /* network failure — session may survive server-side until expiry, but
+         this browser no longer holds a usable token (cleared above) and
+         refreshMe below will confirm the signed-out UI state */
+    }
     await get().refreshMe();
+
+    // ---- redirect to the marketplace homepage (identical on ALL portals) ---
+    // Clear the persisted shopper view + any store deep-link so the shopper
+    // surface boots into the market home, then switch the surface itself.
+    try {
+      window.localStorage.removeItem(SHOPPER_VIEW_KEY);
+    } catch {
+      /* storage unavailable — fresh mount defaults to market home anyway */
+    }
+    set({ activeStoreSlug: null });
+    if (get().surface !== "shopper") get().setSurface("shopper");
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    // Same-document signal: the shopper shell (already mounted when signing
+    // out of a shopper session) resets its in-memory view to the home page.
+    signalSignedOut();
   },
   openShopperAuth: (after) => set({ shopperAuthOpen: true, afterShopperAuth: after ?? null }),
   closeShopperAuth: () => set({ shopperAuthOpen: false, afterShopperAuth: null }),

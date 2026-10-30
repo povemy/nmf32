@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders } from "@/lib/session-client";
+import { signalSessionExpired } from "@/lib/session-events";
 import { useApp } from "@/lib/app-store";
 import { fontStack, nameSizePx, priceSizePx, fontLinkHref, type CardStyleTokens } from "@/lib/fonts";
 import {
@@ -234,6 +235,9 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
   }
   const b = body as { data?: T; error?: { code?: string; message?: string } } | null;
   if (!res.ok || !b || b.error) {
+    // 401 → the shopper session is gone (signed out elsewhere / expired /
+    // revoked). Signal app-root to re-check identity; guests stay guests.
+    if (res.status === 401) signalSessionExpired();
     throw new ApiFail(res.status, b?.error?.code ?? "ERROR", b?.error?.message ?? `Request failed (${res.status})`);
   }
   return (b.data ?? ({} as T)) as T;
@@ -257,6 +261,7 @@ export async function fetchEnvelope<T>(
   }
   const b = body as { data?: T; meta?: { page: number; size: number; total: number }; error?: { code?: string; message?: string } } | null;
   if (!res.ok || !b || b.error) {
+    if (res.status === 401) signalSessionExpired();
     throw new ApiFail(res.status, b?.error?.code ?? "ERROR", b?.error?.message ?? `Request failed (${res.status})`);
   }
   return { data: (b.data ?? ({} as T)) as T, meta: b.meta };

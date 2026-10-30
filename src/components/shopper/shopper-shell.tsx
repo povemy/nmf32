@@ -38,7 +38,6 @@ import {
   Plus,
   Gift,
 } from "lucide-react";
-import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,6 +58,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
 import { setSessionToken } from "@/lib/session-client";
+import { SIGNED_OUT_EVENT, SHOPPER_VIEW_KEY } from "@/lib/session-events";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import {
@@ -104,7 +104,7 @@ import {
 import { useChatUserRoom } from "@/lib/chat-presence";
 import NotificationBell from "./notification-bell";
 
-const VIEW_KEY = "sm_shopper_view";
+const VIEW_KEY = SHOPPER_VIEW_KEY;
 
 function isStoreChrome(view: ShopperView): boolean {
   return view.name === "storefront" || view.name === "store-page";
@@ -328,6 +328,28 @@ export default function ShopperShell() {
     }
   }, [activeStoreSlug, ready, setActiveStoreSlug]);
 
+  // ---- sign-out redirect: reset to the marketplace home --------------------
+  // The shared app-store logout() clears the persisted view and switches
+  // seller/admin surfaces here (fresh mount → default market view). When the
+  // SHOPPER surface is already mounted (buyer sign-out) the in-memory view
+  // survives — this listener drops it (and the back-stack) back to home so
+  // every portal lands on the homepage after signing out.
+  useEffect(() => {
+    const onSignedOut = () => {
+      viewStack.current = [];
+      viewRef.current = { name: "market" };
+      setView({ name: "market" });
+      try {
+        window.localStorage.setItem(VIEW_KEY, JSON.stringify({ name: "market" }));
+      } catch {
+        /* storage unavailable — in-memory reset already applied */
+      }
+      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    };
+    window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
+  }, []);
+
   const ctx = useMemo<ShopperCtx>(
     () => ({
       nav,
@@ -373,7 +395,6 @@ export default function ShopperShell() {
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
-      <Toaster position="top-center" richColors />
       <ShopperAuthDialog />
 
       {showChrome ? (
@@ -529,7 +550,6 @@ function MarketHeader({
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const logout = useApp((s) => s.logout);
-  const refreshMe = useApp((s) => s.refreshMe);
   const shopperSignedIn = Boolean(me.loaded && me.shopper);
   const unreadChats = useChatUnread(shopperSignedIn, view.name);
   // Task 30 — the Me page (MOBILE ONLY) swaps the header to an account bar:
@@ -830,8 +850,9 @@ function MarketHeader({
                       openShopperAuth();
                       return;
                     }
+                    // Shared logout — clears identity, re-checks the session
+                    // and redirects to the marketplace homepage.
                     await logout();
-                    await refreshMe();
                     toast.success("Signed out");
                   }}
                 >
@@ -854,7 +875,6 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const logout = useApp((s) => s.logout);
-  const refreshMe = useApp((s) => s.refreshMe);
   const shopper = me.loaded ? me.shopper : null;
 
   if (!shopper) {
@@ -902,8 +922,10 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
         <DropdownMenuItem
           className="min-h-[44px] text-rose-600"
           onClick={async () => {
+            // Shared logout — clears identity, re-checks the session and
+            // redirects to the marketplace homepage (view reset via the
+            // signed-out event listener in ShopperShell).
             await logout();
-            await refreshMe();
             toast.success("Signed out");
           }}
         >

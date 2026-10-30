@@ -393,17 +393,22 @@ function MobileNav({ nav, role }: { nav: AdminNav; role: string }) {
 /* ------------------------------------------------------------- top bar */
 
 function AdminMenu({ admin }: { admin: { id: string; email: string; name: string; role: string } }) {
-  const refreshMe = useApp((s) => s.refreshMe);
+  // Unified sign-out (reliability fix): previously this menu POSTed the
+  // logout directly and never cleared the localStorage Bearer token — leaving
+  // zombie state — and left the admin on the login card instead of the
+  // homepage. The shared app-store logout sends the captured token to the
+  // server, clears local identity, re-checks the session and redirects every
+  // portal to the marketplace homepage.
+  const logout = useApp((s) => s.logout);
   const [busy, setBusy] = useState(false);
 
-  const logout = async () => {
+  const signOut = async () => {
     setBusy(true);
     try {
-      await apiSend("/api/auth/logout", "POST");
+      await logout();
       toast.success("Signed out", { description: "Session ended — see you soon." });
-      await refreshMe();
-    } catch (e) {
-      toast.error("Logout failed", { description: e instanceof Error ? e.message : String(e) });
+    } catch {
+      toast.error("Sign out failed", { description: "Please try again." });
     } finally {
       setBusy(false);
     }
@@ -441,7 +446,7 @@ function AdminMenu({ admin }: { admin: { id: string; email: string; name: string
           </Badge>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={busy} onClick={() => void logout()} className="text-red-600 focus:text-red-600">
+        <DropdownMenuItem disabled={busy} onClick={() => void signOut()} className="text-red-600 focus:text-red-600">
           <LogOut className="h-4 w-4" /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

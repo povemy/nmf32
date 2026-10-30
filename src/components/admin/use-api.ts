@@ -4,6 +4,7 @@
 // (localStorage bridge) so auth works even where cookies are unavailable.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeaders } from "@/lib/session-client";
+import { signalSessionExpired } from "@/lib/session-events";
 
 export type ApiMeta = { page: number; size: number; total: number };
 
@@ -21,11 +22,21 @@ function bodyError(body: EnvelopeBody, status: number): string {
   return body.error?.message || `Request failed (${status})`;
 }
 
+/** A 401 means the admin session is gone/invalid — surface it so app-root can
+ *  re-check identity and the login gate takes over immediately (instead of
+ *  leaving a zombie command centre behind). Throttled in the emitter. */
+function noteUnauthorized(status: number): void {
+  if (status === 401) signalSessionExpired();
+}
+
 /** GET with the standard envelope; throws Error(message) on failure. */
 export async function apiGet<T>(url: string): Promise<{ data: T; meta?: ApiMeta }> {
   const res = await fetch(url, { cache: "no-store", headers: authHeaders() });
   const body = await parseBody(res);
-  if (!res.ok) throw new Error(bodyError(body, res.status));
+  if (!res.ok) {
+    noteUnauthorized(res.status);
+    throw new Error(bodyError(body, res.status));
+  }
   return { data: (body.data ?? null) as T, meta: body.meta };
 }
 
@@ -42,7 +53,10 @@ export async function apiSend<T = unknown>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const parsed = await parseBody(res);
-  if (!res.ok) throw new Error(bodyError(parsed, res.status));
+  if (!res.ok) {
+    noteUnauthorized(res.status);
+    throw new Error(bodyError(parsed, res.status));
+  }
   return (parsed.data ?? null) as T;
 }
 

@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatMinor, toMinor } from "@/lib/money";
 import { authHeaders } from "@/lib/session-client";
+import { signalSessionExpired } from "@/lib/session-events";
 import { Copy, Inbox } from "lucide-react";
 
 // ---------------------------------------------------------------- shared types
@@ -157,10 +158,20 @@ function withAuth(extra?: Record<string, string>): Record<string, string> {
   return { ...authHeaders(), ...(extra ?? {}) };
 }
 
+/** A 401 means the session is gone/invalid — surface it so app-root can
+ *  re-check identity and the portal auth gates take over immediately
+ *  (instead of leaving a zombie dashboard behind). Throttled in the emitter. */
+function noteUnauthorized(status: number): void {
+  if (status === 401) signalSessionExpired();
+}
+
 export async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store", headers: withAuth() });
   const body = (await res.json().catch(() => ({}))) as Envelope<T>;
-  if (!res.ok || body.error) throw new Error(body.error?.message ?? `Request failed (${res.status})`);
+  if (!res.ok || body.error) {
+    noteUnauthorized(res.status);
+    throw new Error(body.error?.message ?? `Request failed (${res.status})`);
+  }
   return body.data as T;
 }
 
@@ -168,7 +179,10 @@ export async function apiGet<T>(url: string): Promise<T> {
 export async function apiGetPaged<T>(url: string): Promise<{ rows: T; meta: { page: number; size: number; total: number } | null }> {
   const res = await fetch(url, { cache: "no-store", headers: withAuth() });
   const body = (await res.json().catch(() => ({}))) as Envelope<T> & { meta?: { page: number; size: number; total: number } };
-  if (!res.ok || body.error) throw new Error(body.error?.message ?? `Request failed (${res.status})`);
+  if (!res.ok || body.error) {
+    noteUnauthorized(res.status);
+    throw new Error(body.error?.message ?? `Request failed (${res.status})`);
+  }
   return { rows: body.data as T, meta: body.meta ?? null };
 }
 
@@ -179,7 +193,10 @@ export async function apiSend<T>(method: "POST" | "PATCH" | "PUT" | "DELETE", ur
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const payload = (await res.json().catch(() => ({}))) as Envelope<T>;
-  if (!res.ok || payload.error) throw new Error(payload.error?.message ?? `Request failed (${res.status})`);
+  if (!res.ok || payload.error) {
+    noteUnauthorized(res.status);
+    throw new Error(payload.error?.message ?? `Request failed (${res.status})`);
+  }
   return payload.data as T;
 }
 

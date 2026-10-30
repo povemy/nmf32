@@ -35,7 +35,6 @@ import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
 import SellerImports from "./imports";
 import SellerSeo from "./seo";
-import { Toaster } from "@/components/ui/sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,12 +160,7 @@ export default function SellerShell() {
   }
 
   if (!seller) {
-    return (
-      <>
-        <AuthScreen onAuthed={refreshMe} />
-        <Toaster position="bottom-right" richColors closeButton />
-      </>
-    );
+    return <AuthScreen onAuthed={refreshMe} />;
   }
 
   const status = seller.status;
@@ -189,21 +183,11 @@ export default function SellerShell() {
   }
 
   if (status === "onboarding" || status === "rejected") {
-    return (
-      <>
-        <OnboardingWizard onStatusChanged={refreshMe} />
-        <Toaster position="bottom-right" richColors closeButton />
-      </>
-    );
+    return <OnboardingWizard onStatusChanged={refreshMe} />;
   }
 
   if (status === "pending_review") {
-    return (
-      <>
-        <PendingReview onLogout={logout} />
-        <Toaster position="bottom-right" richColors closeButton />
-      </>
-    );
+    return <PendingReview onLogout={logout} />;
   }
 
   // ---------------------------------------------------------------- active
@@ -224,7 +208,6 @@ export default function SellerShell() {
 
   return (
     <div className="flex-1 flex min-h-0">
-      <Toaster position="bottom-right" richColors closeButton />
       {/* desktop sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white print:hidden">
         <div className="flex items-center gap-2.5 border-b border-slate-200/80 px-4 py-4">
