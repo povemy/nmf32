@@ -1,0 +1,269 @@
+{
+  "suite": "seller-attribution",
+  "ranAt": "2026-10-30T05:26:48.181Z",
+  "total": 52,
+  "passed": 52,
+  "failed": 0,
+  "results": [
+    {
+      "name": "setup: two [LT] sellers + live stores + products + shopper",
+      "ok": true,
+      "detail": "A=lt-mi-store-a-6 B=lt-mi-store-b-5"
+    },
+    {
+      "name": "A1 campaigns list requires auth (401 on bad token)",
+      "ok": true,
+      "detail": "got 401"
+    },
+    {
+      "name": "A2 campaign created (201) with code + slug + linkPath",
+      "ok": true,
+      "detail": "/?sf=lt-mi-store-a-6&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=social&nmcl=c164a4b3a30"
+    },
+    {
+      "name": "A2 linkPath targets the seller's storefront with utm_campaign",
+      "ok": true,
+      "detail": "/?sf=lt-mi-store-a-6&utm_campaign=raya-blast&utm_source=whatsapp&utm_medium=soci"
+    },
+    {
+      "name": "A2 default source/medium stamped into the link",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A3 duplicate name → unique slug suffix (-2)",
+      "ok": true,
+      "detail": "slug=raya-blast-2"
+    },
+    {
+      "name": "A3 missing name rejected 400",
+      "ok": true,
+      "detail": "got 400"
+    },
+    {
+      "name": "A4 seller B campaign list excludes A's campaigns (isolation)",
+      "ok": true,
+      "detail": "B has 0"
+    },
+    {
+      "name": "A4 seller B cannot PATCH A's campaign (404)",
+      "ok": true,
+      "detail": "got 404"
+    },
+    {
+      "name": "A5 invalid status rejected 400",
+      "ok": true,
+      "detail": "got 400"
+    },
+    {
+      "name": "A5 archive works, slug/code immutable",
+      "ok": true,
+      "detail": "status=archived"
+    },
+    {
+      "name": "A5 reactivation works",
+      "ok": true,
+      "detail": "status=active"
+    },
+    {
+      "name": "B1 beacon with no params → 200 captured:false (idempotent no-op)",
+      "ok": true,
+      "detail": "{\"captured\":false}"
+    },
+    {
+      "name": "B2 cross-site POST beacon rejected by CSRF gate (403)",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "B3 GET beacon not allowed (405)",
+      "ok": true,
+      "detail": "got 405"
+    },
+    {
+      "name": "B4 valid beacon → captured:true + nm_ins_attr cookie set (httpOnly, 30d)",
+      "ok": true,
+      "detail": "nm_ins_attr=%7B%22v%22%3A1%2C%22campaignId%22%3A%22cmvuj4x2n"
+    },
+    {
+      "name": "B4 cookie carries the resolved campaign + validated UTMs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B5 cross-store nmcl token ignored (captured:false — campaign does not resolve)",
+      "ok": true,
+      "detail": "{\"captured\":false}"
+    },
+    {
+      "name": "B6 control chars stripped + oversized values clamped on capture",
+      "ok": true,
+      "detail": "nm_ins_attr={\"v\":1,\"campaignId\":null,\"campaignName\":null,\"utmSource\":\"a b c\",\"utmMedium\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "C1 store_view event carries the campaign attribution",
+      "ok": true,
+      "detail": "{\"campaignId\":\"cmvuj4x2n006pr1xyr5l9upsq\",\"utmSource\":\"facebook\"}"
+    },
+    {
+      "name": "C1 store_view utmCampaign falls back to the campaign slug",
+      "ok": true,
+      "detail": "utmCampaign=raya-blast"
+    },
+    {
+      "name": "C1 product_view event carries the same attribution",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "C2 channel derived from utm_source (facebook → social)",
+      "ok": true,
+      "detail": "channel=social"
+    },
+    {
+      "name": "C3 untagged visit stays unattributed + legacy referrer classification intact",
+      "ok": true,
+      "detail": "channel=search"
+    },
+    {
+      "name": "D1 active session within window: SAME token, mintedAt refreshed (sliding fix)",
+      "ok": true,
+      "detail": "nm_ins_sid=abcdef0123456789abcdef0123456789.1793337995504; P"
+    },
+    {
+      "name": "D2 session past the 30-min window rotates to a NEW token",
+      "ok": true,
+      "detail": "nm_ins_sid=cb63df745b6b404168e219d4a98d7653.1793337995680; P"
+    },
+    {
+      "name": "E1 add_to_cart event carries attribution (fire-and-forget context intact)",
+      "ok": true,
+      "detail": "{\"campaignId\":\"cmvuj4x2n006pr1xyr5l9upsq\",\"utmSource\":\"facebook\"}"
+    },
+    {
+      "name": "E2 checkout created (single-seller)",
+      "ok": true,
+      "detail": "status=201 ref=ref_92615d78c055f04f total=2800"
+    },
+    {
+      "name": "E3 order froze the attribution snapshot at creation",
+      "ok": true,
+      "detail": "{\"c\":\"cmvuj4x2n006pr1xyr5l9upsq\",\"s\":\"facebook\",\"m\":\"paid_social\"}"
+    },
+    {
+      "name": "E4 payment webhook → order paid, attribution retained",
+      "ok": true,
+      "detail": "status=paid attr=cmvuj4x2n006pr1xyr5l9upsq"
+    },
+    {
+      "name": "F1 campaigns report requires auth (401)",
+      "ok": true,
+      "detail": "got 401"
+    },
+    {
+      "name": "F2 campaign row: attributed visits ≥1 (store_view with campaignId)",
+      "ok": true,
+      "detail": "visits=1"
+    },
+    {
+      "name": "F2 campaign row: attributed paid orders = 1 (authoritative)",
+      "ok": true,
+      "detail": "paidOrders=1"
+    },
+    {
+      "name": "F2 campaign row: gross sales = order totalMinor (authoritative money)",
+      "ok": true,
+      "detail": "got=2800 want=2800"
+    },
+    {
+      "name": "F2 campaign row: AOV = total / 1 order",
+      "ok": true,
+      "detail": "aov=2800"
+    },
+    {
+      "name": "F2 campaign row: conversion computed (mixed-basis, present not null)",
+      "ok": true,
+      "detail": "conv=100"
+    },
+    {
+      "name": "F2 campaign row: attributed orders (createdAt basis) = 1",
+      "ok": true,
+      "detail": "orders=1"
+    },
+    {
+      "name": "F2 campaign row: product views attributed",
+      "ok": true,
+      "detail": "views=1"
+    },
+    {
+      "name": "F3 seller B campaigns report: zero attributed everything (isolation)",
+      "ok": true,
+      "detail": "{\"campaigns\":0,\"attributedVisits\":0,\"attributedPaidOrders\":0,\"attributedGrossSalesMinor\":0,\"unclaimedPaidOrders\":0,\"unclaimedGrossSalesMinor\":0}"
+    },
+    {
+      "name": "F3 seller B report lists only B's campaigns",
+      "ok": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "F4 honesty notes present (attribution model, no-ROAS, tracking start)",
+      "ok": true,
+      "detail": "notes=6"
+    },
+    {
+      "name": "F5 raw-UTM visit (no campaign token) appears in unclaimed tagged traffic",
+      "ok": true,
+      "detail": "{\"source\":\"tiktok\",\"medium\":\"organic\",\"campaign\":\"bio-link\",\"visits\":1,\"visitSessions\":1,\"productViews\":0,\"addUnits\":0,\"attributedOrders\":0,\"paidOrders\":0,\"grossSalesMinor\":0}"
+    },
+    {
+      "name": "F5 unclaimed row not in seller A's report (isolation)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G1 funnel stages carry drop-off (absolute + %) — purchase vs checkout",
+      "ok": true,
+      "detail": "{\"co\":0,\"p\":0,\"pct\":0}"
+    },
+    {
+      "name": "G1 first stage has null drop-off (nothing before it)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G2 payment attempts exposed (authoritative PaymentIntent count ≥1)",
+      "ok": true,
+      "detail": "attempts=1"
+    },
+    {
+      "name": "H1 global (storeId:null) connection row invisible to seller A",
+      "ok": true,
+      "detail": "visible=0"
+    },
+    {
+      "name": "H2 seller disconnect does NOT mutate the global row",
+      "ok": true,
+      "detail": "status=connected"
+    },
+    {
+      "name": "H3 import centre connection list also excludes global rows",
+      "ok": true,
+      "detail": "conns=0"
+    },
+    {
+      "name": "I1 checkout total sane (2 × RM10 = 2000 minor + shipping)",
+      "ok": true,
+      "detail": "total=2800"
+    },
+    {
+      "name": "I2 seller A wallet healthy post-paid-order",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "B8 beacon rate-limited (429 after burst)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

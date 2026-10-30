@@ -130,3 +130,26 @@ Mission: Seller Insights & Marketing Intelligence (combined spec). Post-remediat
 1. Apply the schema diff via the established `db:push` flow (additive columns + one new model + 3 new indexes — no data migration; historical rows keep NULL attribution by design).
 2. No new env vars; no scheduler changes (analytics-tick already purges events including the new columns via the existing retention rule).
 3. Run CI/staging production build (not runnable in this sandbox) + re-run the four readiness suites there.
+
+## 5. Re-verification gate (2026-10-30)
+
+An independent re-audit of the combined scope against this report and `implementation-plan.md`, executed after implementation was reported complete.
+
+**Code presence re-verified:** schema attribution columns + `@@index([campaignId,createdAt])` / `@@index([storeId,attrCampaignId])`, `SellerCampaign` model, `src/lib/analytics/attribution.ts`, landing beacon route, shopper-shell mount capture, checkout-create freeze (`attrCampaignId`/`attrSource` …), campaigns CRUD + report routes, Insights Campaigns tab + funnel drop-off fields — all present in the current tree exactly as documented. No duplicate tables/events/APIs/UI were created by the re-audit.
+
+**Fresh test runs (all against the live dev deployment):**
+
+| Suite | Result | Archive |
+|---|---|---|
+| `seller-attribution.ts` | **ALL PASS (52/52)** | `performance/runs/2026-10-30-seller-attribution.json` |
+| `seller-insights.ts` | **ALL PASS (55/55)** — including immediately after the attribution suite (the previously-failing back-to-back sequence) | `performance/runs/2026-10-30-seller-insights.json` |
+| `finance-regression.ts` | **0 failures** (fault-injection retry checks included) | `performance/runs/2026-10-30-finance-regression.json` |
+| `deployment-smoke.ts` | **ALL PASS** | `performance/runs/2026-10-30-deployment-smoke.json` |
+| `bun run lint` | **0 errors** (20 warnings, all pre-existing k6/tooling) | — |
+| `tsc --noEmit` | **src 0 errors** (legacy `scripts/fin-*.ts` errors pre-date this feature and are outside the app build) | — |
+
+**Harness defect found & fixed (no app defect):** the first insights run after the attribution suite showed 8 failures (T5–T10) + a script crash. Root cause: both suites register fixtures through the shared 5/min/IP `auth-register` bucket (F-12), so the second suite's shopper registration was 429'd; the harness ignored the status and cascaded empty-cookie failures (no cart events, empty snapshot, checkout 401). An isolated re-run was ALL PASS before any change. Fix: `registerFetch()` 429-aware retry (waits the advertised `retryAfterSeconds`, max 2 waits) + non-2xx status guards on shopper registration in both suites. Back-to-back runs now pass deterministically.
+
+**Browser re-verification (agent-browser, real flows):** seller login → Insights renders all 6 tabs with correctly scoped real data — Overview (visits/visitors/views "New" badges; 15 paid orders / RM 2,123 gross authoritative), funnel drop-off rows + "gained 14" mixed-basis honesty + payment-sessions line, Markets state-default rows reconciling exactly with Sales totals (RM 1,695 net = 1,256 Selangor + 439 KL), Cart activity (real events + live snapshot), Sales (authoritative money, refunds RM 356 / 4). **Golden path end-to-end:** campaign "Raya Social Push" created via the seller UI → its share link opened as a visitor in the same browser → beacon `POST /api/analytics/landing` 200 → attributed `store_view` row in DB (campaignId + utmSource=instagram + channel=social) → seller Campaigns tab shows **1 attributed visit** + first-tagged-visit date 30/10/2026. Zero console errors; mobile 390 px + desktop 1280 px; dev.log clean (0 errors, 0 ×500). Screenshots: `tool-results/gate2-si-*.png`.
+
+**Operational notes:** the sandbox OOM-killer terminated next-server once during verification (Chrome + dev server memory pressure); `scripts/dev-supervisor.sh` (the established durable keepalive) was started and auto-revives it. Demo seller `lumina@nomofee.io` password was reset to the seed value `Seller123!` for browser login (dev fixture only). Production build remains NOT RUNNABLE in this sandbox — the CI/staging step in §4 is unchanged and still required.

@@ -26,6 +26,20 @@ async function jsonFetch(path: string, init: RequestInit = {}) {
   return { status: r.status, body: await r.json().catch(() => ({})), headers: r.headers };
 }
 
+/** Registration with 429-aware retry. Back-to-back suite runs share the 5/min
+ *  "auth-register" bucket (F-12), so a suite started right after another can
+ *  get throttled. Wait the advertised retryAfterSeconds (+1s) and retry (max 2
+ *  waits) instead of silently cascading empty-cookie failures downstream. */
+async function registerFetch(path: string, body: unknown) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await jsonFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (r.status !== 429 || attempt >= 2) return r;
+    const waitS = (r.body?.error?.details?.retryAfterSeconds ?? 12) + 1;
+    console.log(`  [register throttle] ${path} 429 — waiting ${waitS}s (attempt ${attempt + 1}/2)`);
+    await sleep(waitS * 1000);
+  }
+}
+
 function bearer(token: string) {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -42,11 +56,7 @@ async function flushEvents() {
 // ---------------------------------------------------------------------------
 async function registerLtSeller(tag: string) {
   const email = `lt-si-${tag}-${STAMP}@lt.test`;
-  const r = await jsonFetch("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "LtSeller123!", fullName: `${LT} SI Seller ${tag}`, storeName: `${LT} SI Store ${tag}` }),
-  });
+  const r = await registerFetch("/api/auth/register", { email, password: "LtSeller123!", fullName: `${LT} SI Seller ${tag}`, storeName: `${LT} SI Store ${tag}` });
   if (r.status !== 200 && r.status !== 201) throw new Error(`seller register failed ${r.status}: ${JSON.stringify(r.body).slice(0, 300)}`);
   const sellerId = r.body?.data?.seller?.id;
   const storeId = r.body?.data?.seller?.storeId;
@@ -66,11 +76,8 @@ async function registerLtSeller(tag: string) {
 
 async function registerLtShopper(tag: string) {
   const email = `lt-si-buyer-${tag}-${STAMP}@lt.test`;
-  const r = await jsonFetch("/api/auth/shopper/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "LtBuyer123!", fullName: `${LT} SI Buyer` }),
-  });
+  const r = await registerFetch("/api/auth/shopper/register", { email, password: "LtBuyer123!", fullName: `${LT} SI Buyer` });
+  if (r.status !== 200 && r.status !== 201) throw new Error(`shopper register failed ${r.status}: ${JSON.stringify(r.body).slice(0, 300)}`);
   const cookie = (r.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
   return { email, cookie };
 }
