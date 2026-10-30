@@ -18,7 +18,7 @@ import {
   Coins,
   CreditCard,
   Crown,
-  Gift,
+  HandCoins,
   Headset,
   Heart,
   History,
@@ -58,6 +58,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatMinor } from "@/lib/money";
+import AffiliateHubView from "./affiliate-hub";
 import { cn } from "@/lib/utils";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
@@ -198,7 +199,7 @@ type AddressT = {
   updatedAt: string;
 };
 
-type MeSub = "purchases" | "wallet" | "vouchers" | "likes" | "viewed" | "addresses";
+type MeSub = "purchases" | "wallet" | "vouchers" | "likes" | "viewed" | "addresses" | "affiliate";
 
 const PURCHASE_BUCKETS: { key: string; label: string; icon: typeof Package }[] = [
   { key: "to_pay", label: "To Pay", icon: Wallet },
@@ -351,6 +352,10 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
         return <ActivityGridView key="viewed" type="VIEWED" title="Recently Viewed" onBack={back} ctx={ctx} />;
       case "addresses":
         return <AddressesView onBack={back} />;
+      case "affiliate":
+        // Task 2-A — the affiliate hub is a full surface; the Me hub embeds it
+        // as a sub-view with its own back affordance.
+        return <AffiliateHubView ctx={ctx} onBack={back} />;
     }
   }
 
@@ -438,6 +443,7 @@ function Dashboard({
             <SideItem icon={MapPin} label="Delivery Addresses" onClick={() => onSub("addresses")} />
             <SideItem icon={Heart} label="My Likes" onClick={() => onSub("likes")} />
             <SideItem icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
+            <SideItem icon={HandCoins} label="Affiliate Hub" onClick={() => onSub("affiliate")} />
             <SideItem icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           </nav>
           <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
@@ -630,7 +636,7 @@ function Dashboard({
                 <ActivityTile icon={Sparkles} label="Sell / Generate" onClick={() => ctx.nav({ name: "generate" })} />
                 <ActivityTile icon={BellRing} label="Deal Alerts" isNew onClick={() => toast.info("Deal Alerts", { description: "Coming soon in this demo." })} />
                 <ActivityTile icon={Radio} label="Live Shopping" isNew onClick={() => toast.info("Live Shopping", { description: "Coming soon in this demo." })} />
-                <ActivityTile icon={Gift} label="Invite & Earn" onClick={() => toast.info("Invite & Earn", { description: "Coming soon in this demo." })} />
+                <ActivityTile icon={HandCoins} label="Affiliate Hub" onClick={() => onSub("affiliate")} />
               </div>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">

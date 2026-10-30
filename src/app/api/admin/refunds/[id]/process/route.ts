@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, notify, dispatchStoreWebhooks, transi
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { postRefund, walletTruth } from "@/lib/ledger";
+import { reverseAffiliateForRefund } from "@/lib/affiliate";
 import { allocateProportionally, divHalfUp, formatMinor } from "@/lib/money";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -299,9 +300,25 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     });
     const commissionReversalMinor = reversal.commissionReversalMinor;
 
+    // ---- AFFILIATE reversal — same derivation family as the commission
+    // reversal above (breakdown-snapshot-proportional, clamped to the
+    // remaining reversible affiliate pool). Applied INSIDE this tx so the
+    // entry updates commit atomically with the T5 affiliate debit line.
+    const priorAffiliateReversalFresh = fresh.refunds
+      .filter((r) => r.id !== refund.id && r.status === "processed")
+      .reduce((s, r) => s + r.affiliateReversalMinor, 0);
+    const affiliateReversal = await reverseAffiliateForRefund(tx, {
+      refundId: refund.id,
+      orderId: order.id,
+      refundAmountMinor: refund.amountMinor,
+      items: fresh.items,
+      priorAffiliateReversalMinor: priorAffiliateReversalFresh,
+    });
+
     // ---- T5 — ledger refund (balanced): DR seller payable + DR commission
-    // revenue | CR gateway. dedupKey `refund:refund:{refundId}` (FIN-1) makes
-    // replays converge on the original posting instead of double-posting.
+    // revenue [+ DR affiliate liability] | CR gateway. dedupKey
+    // `refund:refund:{refundId}` (FIN-1) makes replays converge on the
+    // original posting instead of double-posting.
     const txn = await postRefund({
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -309,14 +326,15 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       provider: order.paymentProvider ?? "fpx_toyyibpay",
       amountMinor: refund.amountMinor,
       commissionReversalMinor,
+      affiliateReversalMinor: affiliateReversal.affiliateReversalMinor,
       refundId: refund.id, // FIN-1: T5 dedup key is per Refund row
       tx,
     });
 
-    // Persist the reversal on the Refund row — the pre-FIN-3a flow stored it
+    // Persist the reversals on the Refund row — the pre-FIN-3a flow stored it
     // there (admin refunds list + audit consumers), so the semantics are
     // preserved; it commits atomically with the T5 that used the number.
-    await tx.refund.update({ where: { id: refund.id }, data: { commissionReversalMinor } });
+    await tx.refund.update({ where: { id: refund.id }, data: { commissionReversalMinor, affiliateReversalMinor: affiliateReversal.affiliateReversalMinor } });
 
     // ---- Order-level bookkeeping, same tx. totalRefunded counts PROCESSED
     // refunds including this one (response semantics preserved).

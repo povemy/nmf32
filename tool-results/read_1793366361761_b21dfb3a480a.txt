@@ -1,0 +1,892 @@
+     1→     1→"use client";
+     2→     2→// ============================================================================
+     3→     3→// Shopper surface — shared UI bits, types + cart plumbing (Task 2-e).
+     4→     4→// All money values are integer minor units; always format via formatMinor.
+     5→     5→// Task 10/11 rebuild: shipment-event timeline (StatusTimeline) + ViewProofButton
+     6→     6→// (POD photo dialog) shared by the buyer order detail / purchases surfaces.
+     7→     7→// ============================================================================
+     8→     8→import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+     9→     9→import { formatMinor } from "@/lib/money";
+    10→    10→import { deviceHeaders } from "@/lib/session-client";
+    11→    11→import { signalSessionExpired } from "@/lib/session-events";
+    12→    12→import { useApp } from "@/lib/app-store";
+    13→    13→import { fontStack, nameSizePx, priceSizePx, fontLinkHref, type CardStyleTokens } from "@/lib/fonts";
+    14→    14→import {
+    15→    15→  AlertTriangle,
+    16→    16→  Bike,
+    17→    17→  Camera,
+    18→    18→  ClipboardCheck,
+    19→    19→  Home,
+    20→    20→  MapPin,
+    21→    21→  PackageCheck,
+    22→    22→  PackageOpen,
+    23→    23→  Minus,
+    24→    24→  Plus,
+    25→    25→  RotateCcw,
+    26→    26→  Star,
+    27→    27→  StarHalf,
+    28→    28→  Truck,
+    29→    29→} from "lucide-react";
+    30→    30→import { Button } from "@/components/ui/button";
+    31→    31→import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+    32→    32→import { Skeleton } from "@/components/ui/skeleton";
+    33→    33→import { cn } from "@/lib/utils";
+    34→    34→
+    35→    35→// ---------------------------------------------------------------------------
+    36→    36→// Shopper state-machine view + nav context (shared by all shopper views)
+    37→    37→// ---------------------------------------------------------------------------
+    38→    38→
+    39→    39→export type ShopperView =
+    40→    40→  | { name: "market" }
+    41→    41→  | { name: "category"; categorySlug: string; label?: string }
+    42→    42→  | { name: "search"; q: string }
+    43→    43→  | { name: "storefront"; slug: string }
+    44→    44→  | { name: "pdp"; slug: string; pSlug: string }
+    45→    45→  | { name: "checkout" }
+    46→    46→  | { name: "pay"; ref: string }
+    47→    47→  | { name: "order-status"; orderNumber: string }
+    48→    48→  | { name: "orders" }
+    49→    49→  | { name: "lookup" }
+    50→    50→  | { name: "messages"; threadId?: string }
+    51→    51→  | { name: "store-page"; slug: string; pageSlug: string }
+    52→    52→  | { name: "generate" }
+    53→    53→  | { name: "me"; tab?: string }
+    54→    54→  | { name: "affiliate"; tab?: string }
+    55→    55→  | { name: "aff-showcase"; slug: string; linkCode?: string }
+    56→    56→  | { name: "aff-collection"; slug: string; linkCode?: string };
+    57→    57→
+    58→    58→export type ShopperCtx = {
+    59→    59→  nav: (v: ShopperView) => void;
+    60→    60→  /** Pop the internal history stack (back navigation on every page). */
+    61→    61→  back: () => void;
+    62→    62→  /** Open the global cart drawer; pass the store slug to load that seller's
+    63→    63→   *  customized cart experience (Shopify-style auto-open after add-to-cart). */
+    64→    64→  openCart: (storeSlug?: string) => void;
+    65→    65→};
+    66→    66→
+    67→    67→export function openProduct(ctx: ShopperCtx, p: { storeSlug: string; slug: string }) {
+    68→    68→  ctx.nav({ name: "pdp", slug: p.storeSlug, pSlug: p.slug });
+    69→    69→}
+    70→    70→
+    71→    71→// ---------------------------------------------------------------------------
+    72→    72→// Types (match /api/market/**, /api/sf/**, /api/cart, /api/orders/lookup)
+    73→    73→// ---------------------------------------------------------------------------
+    74→    74→
+    75→    75→export type ProductCardT = {
+    76→    76→  id: string;
+    77→    77→  slug: string;
+    78→    78→  title: string;
+    79→    79→  priceMinor: number;
+    80→    80→  compareAtPriceMinor: number | null;
+    81→    81→  imageUrl: string;
+    82→    82→  storeName: string;
+    83→    83→  storeSlug: string;
+    84→    84→  ratingAvg: number;
+    85→    85→  ratingCount: number;
+    86→    86→  salesCount: number;
+    87→    87→  categoryName: string | null;
+    88→    88→};
+    89→    89→
+    90→    90→export type StoreCardT = {
+    91→    91→  id: string;
+    92→    92→  name: string;
+    93→    93→  slug: string;
+    94→    94→  tagline: string | null;
+    95→    95→  logoUrl: string | null;
+    96→    96→  bannerUrl: string | null;
+    97→    97→  productCount: number;
+    98→    98→};
+    99→    99→
+   100→   100→export type CategoryT = {
+   101→   101→  id: string;
+   102→   102→  name: string;
+   103→   103→  slug: string;
+   104→   104→  imageUrl?: string | null;
+   105→   105→  children: { id: string; name: string; slug: string }[];
+   106→   106→};
+   107→   107→
+   108→   108→export type CartItemT = {
+   109→   109→  id: string;
+   110→   110→  variantId: string;
+   111→   111→  productId: string;
+   112→   112→  title: string;
+   113→   113→  productSlug: string;
+   114→   114→  variantLabel: string;
+   115→   115→  unitPriceMinor: number;
+   116→   116→  compareAtPriceMinor: number | null;
+   117→   117→  qty: number;
+   118→   118→  stock: number;
+   119→   119→  /** Seller-set minimum order quantity for this item (client-side clamp). */
+   120→   120→  moq: number;
+   121→   121→  lineTotalMinor: number;
+   122→   122→  imageUrl: string;
+   123→   123→  storeId: string;
+   124→   124→  storeSlug: string;
+   125→   125→  storeName: string;
+   126→   126→  /** Buyer's checkout selection — unchecked lines stay in the cart. */
+   127→   127→  selected: boolean;
+   128→   128→};
+   129→   129→
+   130→   130→export type CartStoreT = {
+   131→   131→  storeId: string;
+   132→   132→  storeSlug: string;
+   133→   133→  storeName: string;
+   134→   134→  itemCount: number;
+   135→   135→  subtotalMinor: number;
+   136→   136→};
+   137→   137→
+   138→   138→export type CartT = {
+   139→   139→  id: string | null;
+   140→   140→  storeId: string | null;
+   141→   141→  storeSlug: string | null;
+   142→   142→  storeName: string | null;
+   143→   143→  stores?: CartStoreT[];
+   144→   144→  items: CartItemT[];
+   145→   145→};
+   146→   146→
+   147→   147→export type LookupResultT = {
+   148→   148→  orderNumber: string;
+   149→   149→  status: string;
+   150→   150→  totalMinor: number;
+   151→   151→  storeName: string;
+   152→   152→  storeId?: string;
+   153→   153→  storeSlug?: string;
+   154→   154→  createdAt: string;
+   155→   155→  items: { title: string; qty: number; variantLabel?: string | null; unitPriceMinor?: number; lineTotalMinor?: number; imageUrl?: string | null }[];
+   156→   156→  history: { toStatus: string; createdAt: string }[];
+   157→   157→};
+   158→   158→
+   159→   159→// ---------------------------------------------------------------------------
+   160→   160→// Buyer order detail (GET /api/me/orders/[orderNumber]) + shipment timeline
+   161→   161→// types (Task 10/11). All optional except the lookup core — the guest lookup
+   162→   162→// payload (/api/orders/lookup) satisfies OrderDetailT too, so one render path
+   163→   163→// can serve both and upgrade itself when the account detail arrives.
+   164→   164→// ---------------------------------------------------------------------------
+   165→   165→
+   166→   166→export type ShipmentEventT = {
+   167→   167→  id?: string;
+   168→   168→  status: string;
+   169→   169→  description: string | null;
+   170→   170→  location: string | null;
+   171→   171→  occurredAt: string;
+   172→   172→  proofImageUrl?: string | null;
+   173→   173→};
+   174→   174→
+   175→   175→export type ShipmentT = {
+   176→   176→  status: string;
+   177→   177→  providerId?: string;
+   178→   178→  courierName: string | null;
+   179→   179→  awbNumber: string | null;
+   180→   180→  labelUrl?: string | null;
+   181→   181→  etaFrom?: string | null;
+   182→   182→  etaTo?: string | null;
+   183→   183→  bookedAt?: string | null;
+   184→   184→  deliveredAt?: string | null;
+   185→   185→  events: ShipmentEventT[];
+   186→   186→};
+   187→   187→
+   188→   188→export type OrderDetailT = LookupResultT & {
+   189→   189→  currency?: string;
+   190→   190→  subtotalMinor?: number;
+   191→   191→  discountMinor?: number;
+   192→   192→  shippingMinor?: number;
+   193→   193→  taxMinor?: number;
+   194→   194→  customerName?: string | null;
+   195→   195→  customerEmail?: string | null;
+   196→   196→  customerPhone?: string | null;
+   197→   197→  customerNote?: string | null;
+   198→   198→  shippingAddress?: { line1?: string; city?: string; state?: string; postcode?: string } | null;
+   199→   199→  paymentProvider?: string | null;
+   200→   200→  paidAt?: string | null;
+   201→   201→  shippedAt?: string | null;
+   202→   202→  deliveredAt?: string | null;
+   203→   203→  completedAt?: string | null;
+   204→   204→  trackingNumber?: string | null;
+   205→   205→  shipment?: ShipmentT | null;
+   206→   206→  shipmentStatus?: string | null;
+   207→   207→  shippingCourierName?: string | null;
+   208→   208→  dispute?: { id: string; reason: string; status: string; resolution?: string | null; createdAt: string } | null;
+   209→   209→};
+   210→   210→
+   211→   211→// ---------------------------------------------------------------------------
+   212→   212→// fetch helper — unwraps the {data} | {error} envelope
+   213→   213→// ---------------------------------------------------------------------------
+   214→   214→
+   215→   215→export class ApiFail extends Error {
+   216→   216→  status: number;
+   217→   217→  code: string;
+   218→   218→  constructor(status: number, code: string, message: string) {
+   219→   219→    super(message);
+   220→   220→    this.status = status;
+   221→   221→    this.code = code;
+   222→   222→  }
+   223→   223→}
+   224→   224→
+   225→   225→export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+   226→   226→  const res = await fetch(url, {
+   227→   227→    cache: "no-store",
+   228→   228→    ...init,
+   229→   229→    // Device identity headers (cart + shopper token) — keeps guest state working
+   230→   230→    // where cookies are unavailable (cross-site iframe preview panels).
+   231→   231→    headers: { ...deviceHeaders(), ...(init?.headers ?? {}) },
+   232→   232→  });
+   233→   233→  let body: unknown = null;
+   234→   234→  try {
+   235→   235→    body = await res.json();
+   236→   236→  } catch {
+   237→   237→    /* non-json */
+   238→   238→  }
+   239→   239→  const b = body as { data?: T; error?: { code?: string; message?: string } } | null;
+   240→   240→  if (!res.ok || !b || b.error) {
+   241→   241→    // 401 → the shopper session is gone (signed out elsewhere / expired /
+   242→   242→    // revoked). Signal app-root to re-check identity; guests stay guests.
+   243→   243→    if (res.status === 401) signalSessionExpired();
+   244→   244→    throw new ApiFail(res.status, b?.error?.code ?? "ERROR", b?.error?.message ?? `Request failed (${res.status})`);
+   245→   245→  }
+   246→   246→  return (b.data ?? ({} as T)) as T;
+   247→   247→}
+   248→   248→
+   249→   249→/** Like fetchJson but also returns the paged meta envelope. */
+   250→   250→export async function fetchEnvelope<T>(
+   251→   251→  url: string,
+   252→   252→  init?: RequestInit
+   253→   253→): Promise<{ data: T; meta?: { page: number; size: number; total: number } }> {
+   254→   254→  const res = await fetch(url, {
+   255→   255→    cache: "no-store",
+   256→   256→    ...init,
+   257→   257→    headers: { ...deviceHeaders(), ...(init?.headers ?? {}) },
+   258→   258→  });
+   259→   259→  let body: unknown = null;
+   260→   260→  try {
+   261→   261→    body = await res.json();
+   262→   262→  } catch {
+   263→   263→    /* non-json */
+   264→   264→  }
+   265→   265→  const b = body as { data?: T; meta?: { page: number; size: number; total: number }; error?: { code?: string; message?: string } } | null;
+   266→   266→  if (!res.ok || !b || b.error) {
+   267→   267→    if (res.status === 401) signalSessionExpired();
+   268→   268→    throw new ApiFail(res.status, b?.error?.code ?? "ERROR", b?.error?.message ?? `Request failed (${res.status})`);
+   269→   269→  }
+   270→   270→  return { data: (b.data ?? ({} as T)) as T, meta: b.meta };
+   271→   271→}
+   272→   272→
+   273→   273→export function postJson<T>(url: string, payload: unknown, headers?: Record<string, string>): Promise<T> {
+   274→   274→  return fetchJson<T>(url, {
+   275→   275→    method: "POST",
+   276→   276→    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+   277→   277→    body: JSON.stringify(payload),
+   278→   278→  });
+   279→   279→}
+   280→   280→
+   281→   281→export function patchJson<T>(url: string, payload: unknown): Promise<T> {
+   282→   282→  return fetchJson<T>(url, {
+   283→   283→    method: "PATCH",
+   284→   284→    headers: { "Content-Type": "application/json" },
+   285→   285→    body: JSON.stringify(payload),
+   286→   286→  });
+   287→   287→}
+   288→   288→
+   289→   289→export function deleteJson<T>(url: string): Promise<T> {
+   290→   290→  return fetchJson<T>(url, { method: "DELETE" });
+   291→   291→}
+   292→   292→
+   293→   293→// ---------------------------------------------------------------------------
+   294→   294→// Cart plumbing — "sm-cart-updated" window event keeps every badge in sync.
+   295→   295→// ---------------------------------------------------------------------------
+   296→   296→
+   297→   297→export const CART_EVENT = "sm-cart-updated";
+   298→   298→
+   299→   299→export function notifyCartUpdated() {
+   300→   300→  if (typeof window !== "undefined") window.dispatchEvent(new Event(CART_EVENT));
+   301→   301→}
+   302→   302→
+   303→   303→// ---------------------------------------------------------------------------
+   304→   304→// Local order tracking — this device's order refs (email + orderNumber only,
+   305→   305→// hydrated through the ownership-safe /api/orders/lookup endpoint).
+   306→   306→// ---------------------------------------------------------------------------
+   307→   307→
+   308→   308→export type OrderRefT = { orderNumber: string; email: string; at: number };
+   309→   309→export const ORDER_REFS_KEY = "sm_order_refs";
+   310→   310→
+   311→   311→export function trackOrderRef(orderNumber: string, email: string) {
+   312→   312→  if (typeof window === "undefined") return;
+   313→   313→  try {
+   314→   314→    const raw = JSON.parse(window.localStorage.getItem(ORDER_REFS_KEY) ?? "[]") as OrderRefT[];
+   315→   315→    const clean = raw.filter((r) => r.orderNumber !== orderNumber);
+   316→   316→    clean.unshift({ orderNumber, email: email.toLowerCase(), at: Date.now() });
+   317→   317→    window.localStorage.setItem(ORDER_REFS_KEY, JSON.stringify(clean.slice(0, 25)));
+   318→   318→  } catch {
+   319→   319→    /* corrupted list — ignore */
+   320→   320→  }
+   321→   321→}
+   322→   322→
+   323→   323→export function readOrderRefs(): OrderRefT[] {
+   324→   324→  if (typeof window === "undefined") return [];
+   325→   325→  try {
+   326→   326→    const raw = JSON.parse(window.localStorage.getItem(ORDER_REFS_KEY) ?? "[]") as OrderRefT[];
+   327→   327→    return Array.isArray(raw) ? raw.filter((r) => r && r.orderNumber && r.email) : [];
+   328→   328→  } catch {
+   329→   329→    return [];
+   330→   330→  }
+   331→   331→}
+   332→   332→
+   333→   333→/** Fetch the account cart and live-refresh on sm-cart-updated events + on any
+   334→   334→ *  sign-in / sign-out change (carts are account-scoped — guests have none).
+   335→   335→ *
+   336→   336→ *  Task 28: cart state lives in a MODULE-LEVEL shared store, so every useCart()
+   337→   337→ *  instance (drawer, header badge, checkout) renders from the same snapshot —
+   338→   338→ *  one fetch per event instead of one per instance — and checkout-selection
+   339→   339→ *  toggles can mutate it optimistically (mutateCartItems): the UI updates in
+   340→   340→ *  the same frame the user clicks while the PATCH rides in the background.
+   341→   341→ *  Zero network in the render path — same philosophy as the client-side
+   342→   342→ *  Messages list filter. */
+   343→   343→const EMPTY_CART: CartT = { id: null, storeId: null, storeSlug: null, storeName: null, items: [] };
+   344→   344→
+   345→   345→type CartState = { cart: CartT; loading: boolean };
+   346→   346→let cartState: CartState = { cart: EMPTY_CART, loading: true };
+   347→   347→const CART_SERVER_STATE: CartState = { cart: EMPTY_CART, loading: true };
+   348→   348→const cartSubs = new Set<() => void>();
+   349→   349→
+   350→   350→function emitCart() {
+   351→   351→  for (const fn of cartSubs) fn();
+   352→   352→}
+   353→   353→
+   354→   354→function subscribeCart(fn: () => void) {
+   355→   355→  cartSubs.add(fn);
+   356→   356→  return () => {
+   357→   357→    cartSubs.delete(fn);
+   358→   358→  };
+   359→   359→}
+   360→   360→
+   361→   361→/** Optimistically mutate the shared cart state — no network, no refetch.
+   362→   362→ *  Consumers must keep the failure path honest: revert via mutateCartItems
+   363→   363→ *  (guarded so it only undoes its own change) and surface a toast. */
+   364→   364→export function mutateCartItems(mutate: (items: CartItemT[]) => CartItemT[]) {
+   365→   365→  const cur = cartState.cart;
+   366→   366→  if (!cur) return;
+   367→   367→  cartState = { ...cartState, cart: { ...cur, items: mutate(cur.items) } };
+   368→   368→  emitCart();
+   369→   369→}
+   370→   370→
+   371→   371→/** Adopt a server cart payload directly into the shared store (no refetch).
+   372→   372→ *  Add-to-cart responses already carry the fresh cart — feeding it here keeps
+   373→   373→ *  every consumer (badge, drawer, checkout) in sync in the same frame without
+   374→   374→ *  the event-driven /api/cart refetch storm. */
+   375→   375→export function applyServerCart(cart: CartT | null | undefined) {
+   376→   376→  if (!cart) return;
+   377→   377→  cartState = { cart, loading: false };
+   378→   378→  emitCart();
+   379→   379→}
+   380→   380→
+   381→   381→/** Read-only snapshot of the shared cart (for non-render code paths, e.g. the
+   382→   382→ *  drawer's stock probe building the variant-id list). */
+   383→   383→export function cartSnapshot(): CartT {
+   384→   384→  return cartState.cart;
+   385→   385→}
+   386→   386→
+   387→   387→export function useCart() {
+   388→   388→  const me = useApp((s) => s.me);
+   389→   389→  const authed = Boolean(me.loaded && me.shopper);
+   390→   390→  const { cart, loading } = useSyncExternalStore(
+   391→   391→    subscribeCart,
+   392→   392→    () => cartState,
+   393→   393→    () => CART_SERVER_STATE
+   394→   394→  );
+   395→   395→
+   396→   396→  const refresh = useCallback(async () => {
+   397→   397→    try {
+   398→   398→      const data = await fetchJson<{ cart: CartT }>("/api/cart");
+   399→   399→      cartState = { cart: data.cart ?? EMPTY_CART, loading: false };
+   400→   400→    } catch {
+   401→   401→      cartState = { cart: EMPTY_CART, loading: false };
+   402→   402→    }
+   403→   403→    emitCart();
+   404→   404→  }, []);
+   405→   405→
+   406→   406→  useEffect(() => {
+   407→   407→    // Show the loader only when there is nothing to paint yet — data-bearing
+   408→   408→    // re-syncs (mounts, sign-in flips, sm-cart-updated events) stay silent so
+   409→   409→    // no surface ever flashes a skeleton over live data.
+   410→   410→    if (cartState.cart.items.length === 0) {
+   411→   411→      cartState = { ...cartState, loading: true };
+   412→   412→      emitCart();
+   413→   413→    }
+   414→   414→    void refresh();
+   415→   415→    const onEvt = () => void refresh();
+   416→   416→    window.addEventListener(CART_EVENT, onEvt);
+   417→   417→    return () => window.removeEventListener(CART_EVENT, onEvt);
+   418→   418→  }, [refresh, authed]);
+   419→   419→
+   420→   420→  const count = cart.items.reduce((s, i) => s + i.qty, 0);
+   421→   421→  const subtotal = cart.items.reduce((s, i) => s + i.lineTotalMinor, 0);
+   422→   422→  // Selection-aware figures — only checked lines proceed to checkout.
+   423→   423→  const selectedItems = cart.items.filter((i) => i.selected);
+   424→   424→  const selectedCount = selectedItems.reduce((s, i) => s + i.qty, 0);
+   425→   425→  const selectedSubtotal = selectedItems.reduce((s, i) => s + i.lineTotalMinor, 0);
+   426→   426→  return { cart, count, subtotal, selectedCount, selectedSubtotal, loading, refresh };
+   427→   427→}
+   428→   428→
+   429→   429→// ---------------------------------------------------------------------------
+   430→   430→// Seller card typography — fonts for product name/price on a seller's OWN
+   431→   431→// storefront (Feature: product card customization). Defaults keep the
+   432→   432→// platform look; the store payload carries cardStyle only when configured.
+   433→   433→// ---------------------------------------------------------------------------
+   434→   434→
+   435→   435→export type { CardStyleTokens };
+   436→   436→
+   437→   437→/** Idempotently inject a Google Fonts stylesheet for the given font ids. */
+   438→   438→export function ensureFontsLoaded(ids: (string | null | undefined)[]) {
+   439→   439→  if (typeof document === "undefined") return;
+   440→   440→  const href = fontLinkHref(ids);
+   441→   441→  if (!href) return;
+   442→   442→  if (!document.querySelector(`link[data-sm-fonts="${href}"]`)) {
+   443→   443→    const link = document.createElement("link");
+   444→   444→    link.rel = "stylesheet";
+   445→   445→    link.href = href;
+   446→   446→    link.dataset.smFonts = href;
+   447→   447→    document.head.appendChild(link);
+   448→   448→  }
+   449→   449→}
+   450→   450→
+   451→   451→// ---------------------------------------------------------------------------
+   452→   452→// Stars
+   453→   453→// ---------------------------------------------------------------------------
+   454→   454→
+   455→   455→export function Stars({ rating, count, className }: { rating: number; count?: number; className?: string }) {
+   456→   456→  const full = Math.floor(rating);
+   457→   457→  const half = rating - full >= 0.25 && rating - full < 0.75;
+   458→   458→  const rounded = rating - full >= 0.75 ? full + 1 : full;
+   459→   459→  return (
+   460→   460→    <span className={cn("inline-flex items-center gap-0.5", className)} aria-label={`Rated ${rating.toFixed(1)} out of 5`}>
+   461→   461→      {[0, 1, 2, 3, 4].map((i) =>
+   462→   462→        i < full || (i === full && rounded > full && !half) ? (
+   463→   463→          <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+   464→   464→        ) : i === full && half ? (
+   465→   465→          <span key={i} className="relative inline-flex">
+   466→   466→            <Star className="h-3.5 w-3.5 text-muted-foreground/40" />
+   467→   467→            <StarHalf className="h-3.5 w-3.5 absolute inset-0 fill-amber-400 text-amber-400" />
+   468→   468→          </span>
+   469→   469→        ) : (
+   470→   470→          <Star key={i} className="h-3.5 w-3.5 text-muted-foreground/40" />
+   471→   471→        )
+   472→   472→      )}
+   473→   473→      <span className="text-xs text-muted-foreground ml-1 tabular-nums">
+   474→   474→        {rating > 0 ? rating.toFixed(1) : "New"}
+   475→   475→        {typeof count === "number" && count > 0 ? ` (${count})` : ""}
+   476→   476→      </span>
+   477→   477→    </span>
+   478→   478→  );
+   479→   479→}
+   480→   480→
+   481→   481→// ---------------------------------------------------------------------------
+   482→   482→// ProductCard
+   483→   483→// ---------------------------------------------------------------------------
+   484→   484→
+   485→   485→export function ProductCard({
+   486→   486→  p,
+   487→   487→  onOpen,
+   488→   488→  // Task 28: vendor name no longer renders on product cards by default —
+   489→   489→  // cards are cleaner and the seller is always one tap away (store link in
+   490→   490→  // the cart groups, storefront header). Pass true to opt back in.
+   491→   491→  showStore = false,
+   492→   492→  hidePrice = false,
+   493→   493→  cardStyle,
+   494→   494→}: {
+   495→   495→  p: ProductCardT;
+   496→   496→  onOpen: (p: ProductCardT) => void;
+   497→   497→  showStore?: boolean;
+   498→   498→  hidePrice?: boolean;
+   499→   499→  /** Seller-customized typography — only passed on the seller's own storefront. */
+   500→   500→  cardStyle?: CardStyleTokens | null;
+   501→   501→}) {
+   502→   502→  const discount =
+   503→   503→    p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
+   504→   504→      ? Math.round(100 - (p.priceMinor / p.compareAtPriceMinor) * 100)
+   505→   505→      : null;
+   506→   506→  const nameCss: React.CSSProperties = cardStyle
+   507→   507→    ? { fontFamily: fontStack(cardStyle.nameFont), fontSize: `${nameSizePx(cardStyle.nameSize)}px`, textAlign: cardStyle.nameAlign as React.CSSProperties["textAlign"] }
+   508→   508→    : {};
+   509→   509→  const priceCss: React.CSSProperties = cardStyle
+   510→   510→    ? { fontFamily: fontStack(cardStyle.priceFont), fontSize: `${priceSizePx(cardStyle.priceSize)}px`, textAlign: cardStyle.priceAlign as React.CSSProperties["textAlign"] }
+   511→   511→    : {};
+   512→   512→  return (
+   513→   513→    <button
+   514→   514→      type="button"
+   515→   515→      onClick={() => onOpen(p)}
+   516→   516→      className="group text-left rounded-[8px] border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50"
+   517→   517→      aria-label={`${p.title} from ${p.storeName}, ${formatMinor(p.priceMinor)}`}
+   518→   518→    >
+   519→   519→      <div className="relative aspect-square overflow-hidden bg-muted">
+   520→   520→        {/* plain <img> (product mockups / placeholder service) — never next/image here */}
+   521→   521→        <img
+   522→   522→          src={p.imageUrl}
+   523→   523→          alt={p.title}
+   524→   524→          loading="lazy"
+   525→   525→          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+   526→   526→        />
+   527→   527→        {discount ? (
+   528→   528→          <span className="absolute top-1.5 left-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5">
+   529→   529→            -{discount}%
+   530→   530→          </span>
+   531→   531→        ) : null}
+   532→   532→      </div>
+   533→   533→      <div className="p-2.5 space-y-0.5">
+   534→   534→        <h3 className={cn("font-normal leading-snug line-clamp-2 min-h-[2rem]", !cardStyle && "text-xs")} style={nameCss}>{p.title}</h3>
+   535→   535→        {!hidePrice ? (
+   536→   536→          <div className="flex items-baseline gap-1.5 flex-wrap" style={cardStyle?.priceAlign === "center" ? { justifyContent: "center" } : cardStyle?.priceAlign === "right" ? { justifyContent: "flex-end" } : undefined}>
+   537→   537→            <span className={cn("font-bold text-teal-700", !cardStyle && "text-sm")} style={priceCss}>{formatMinor(p.priceMinor)}</span>
+   538→   538→            {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
+   539→   539→              <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+   540→   540→            ) : null}
+   541→   541→          </div>
+   542→   542→        ) : null}
+   543→   543→        {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
+   544→   544→        <div className="flex items-center justify-between gap-1 pt-0.5">
+   545→   545→          <Stars rating={p.ratingAvg} />
+   546→   546→          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+   547→   547→        </div>
+   548→   548→      </div>
+   549→   549→    </button>
+   550→   550→  );
+   551→   551→}
+   552→   552→
+   553→   553→export function ProductGridSkeleton({ n = 12 }: { n?: number }) {
+   554→   554→  return (
+   555→   555→    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+   556→   556→      {Array.from({ length: n }).map((_, i) => (
+   557→   557→        <div key={i} className="space-y-2">
+   558→   558→          <Skeleton className="aspect-square rounded-xl" />
+   559→   559→          <Skeleton className="h-3.5 w-4/5" />
+   560→   560→          <Skeleton className="h-3.5 w-2/5" />
+   561→   561→        </div>
+   562→   562→      ))}
+   563→   563→    </div>
+   564→   564→  );
+   565→   565→}
+   566→   566→
+   567→   567→// ---------------------------------------------------------------------------
+   568→   568→// QtyStepper
+   569→   569→// ---------------------------------------------------------------------------
+   570→   570→
+   571→   571→export function QtyStepper({
+   572→   572→  value,
+   573→   573→  onChange,
+   574→   574→  min = 1,
+   575→   575→  max = 99,
+   576→   576→  small = false,
+   577→   577→  xs = false,
+   578→   578→}: {
+   579→   579→  value: number;
+   580→   580→  onChange: (v: number) => void;
+   581→   581→  min?: number;
+   582→   582→  max?: number;
+   583→   583→  small?: boolean;
+   584→   584→  /** Cart-drawer minimalist size (Task 29): 24px buttons, 11px digits. */
+   585→   585→  xs?: boolean;
+   586→   586→}) {
+   587→   587→  const btn = xs ? "h-6 w-6" : small ? "h-8 w-8" : "h-10 w-10";
+   588→   588→  const icon = xs ? "h-3 w-3" : "h-3.5 w-3.5";
+   589→   589→  const field = xs ? "w-6" : small ? "w-8" : "w-10";
+   590→   590→  return (
+   591→   591→    <div className={cn("inline-flex items-center border", xs ? "rounded-md" : "rounded-lg")} role="group" aria-label="Quantity">
+   592→   592→      <Button
+   593→   593→        type="button"
+   594→   594→        variant="ghost"
+   595→   595→        size="icon"
+   596→   596→        className={cn(btn, "rounded-r-none")}
+   597→   597→        disabled={value <= min}
+   598→   598→        onClick={() => onChange(Math.max(min, value - 1))}
+   599→   599→        aria-label="Decrease quantity"
+   600→   600→      >
+   601→   601→        <Minus className={icon} />
+   602→   602→      </Button>
+   603→   603→      <span
+   604→   604→        className={cn(
+   605→   605→          "flex items-center justify-center font-semibold tabular-nums",
+   606→   606→          xs ? "w-6 text-[11px]" : "text-sm",
+   607→   607→          field
+   608→   608→        )}
+   609→   609→        aria-live="polite"
+   610→   610→      >
+   611→   611→        {value}
+   612→   612→      </span>
+   613→   613→      <Button
+   614→   614→        type="button"
+   615→   615→        variant="ghost"
+   616→   616→        size="icon"
+   617→   617→        className={cn(btn, "rounded-l-none")}
+   618→   618→        disabled={value >= max}
+   619→   619→        onClick={() => onChange(Math.min(max, value + 1))}
+   620→   620→        aria-label="Increase quantity"
+   621→   621→      >
+   622→   622→        <Plus className={icon} />
+   623→   623→      </Button>
+   624→   624→    </div>
+   625→   625→  );
+   626→   626→}
+   627→   627→
+   628→   628→// ---------------------------------------------------------------------------
+   629→   629→// EmptyState
+   630→   630→// ---------------------------------------------------------------------------
+   631→   631→
+   632→   632→export function EmptyState({
+   633→   633→  icon: Icon = PackageOpen,
+   634→   634→  title,
+   635→   635→  hint,
+   636→   636→  action,
+   637→   637→}: {
+   638→   638→  icon?: typeof PackageOpen;
+   639→   639→  title: string;
+   640→   640→  hint?: string;
+   641→   641→  action?: React.ReactNode;
+   642→   642→}) {
+   643→   643→  return (
+   644→   644→    <div className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
+   645→   645→      <div className="rounded-full bg-muted p-6">
+   646→   646→        <Icon className="h-10 w-10 text-muted-foreground" />
+   647→   647→      </div>
+   648→   648→      <h3 className="text-base font-semibold">{title}</h3>
+   649→   649→      {hint ? <p className="text-sm text-muted-foreground max-w-sm">{hint}</p> : null}
+   650→   650→      {action}
+   651→   651→    </div>
+   652→   652→  );
+   653→   653→}
+   654→   654→
+   655→   655→// ---------------------------------------------------------------------------
+   656→   656→// ViewProofButton — shared POD affordance: opens a dialog with the courier's
+   657→   657→// proof-of-delivery photo (proofImageUrl from the DELIVERED shipment event).
+   658→   658→// ---------------------------------------------------------------------------
+   659→   659→
+   660→   660→export function ViewProofButton({
+   661→   661→  url,
+   662→   662→  label = "View proof",
+   663→   663→  compact = false,
+   664→   664→}: {
+   665→   665→  url: string;
+   666→   666→  label?: string;
+   667→   667→  /** compact → smaller chip used inside timeline rows */
+   668→   668→  compact?: boolean;
+   669→   669→}) {
+   670→   670→  const [open, setOpen] = useState(false);
+   671→   671→  return (
+   672→   672→    <>
+   673→   673→      <Button
+   674→   674→        type="button"
+   675→   675→        variant="outline"
+   676→   676→        size="sm"
+   677→   677→        onClick={() => setOpen(true)}
+   678→   678→        className={cn(
+   679→   679→          "gap-1.5 border-teal-700/40 text-teal-800 hover:bg-teal-50",
+   680→   680→          compact ? "h-7 min-h-[28px] px-2 text-[11px]" : "min-h-[36px] px-3 text-xs"
+   681→   681→        )}
+   682→   682→        aria-haspopup="dialog"
+   683→   683→      >
+   684→   684→        <Camera className="h-3.5 w-3.5" aria-hidden />
+   685→   685→        {label}
+   686→   686→      </Button>
+   687→   687→      <Dialog open={open} onOpenChange={setOpen}>
+   688→   688→        <DialogContent className="max-w-sm">
+   689→   689→          <DialogHeader>
+   690→   690→            <DialogTitle>Proof of delivery</DialogTitle>
+   691→   691→            <DialogDescription>Captured by the courier when your parcel was delivered.</DialogDescription>
+   692→   692→          </DialogHeader>
+   693→   693→          {/* POD photos are data-URLs / same-origin placeholder images — plain <img>, never next/image */}
+   694→   694→          <img
+   695→   695→            src={url}
+   696→   696→            alt="Proof of delivery photo captured by the courier"
+   697→   697→            className="max-h-[60vh] w-full rounded-lg border bg-muted object-contain"
+   698→   698→          />
+   699→   699→        </DialogContent>
+   700→   700→      </Dialog>
+   701→   701→    </>
+   702→   702→  );
+   703→   703→}
+   704→   704→
+   705→   705→// ---------------------------------------------------------------------------
+   706→   706→// Shipment tracking timeline (Shopee-style, Task 10/11) — vertical event log
+   707→   707→// from shipment.events: icon + status + description + location + time, newest
+   708→   708→// first; the DELIVERED row carries the View-proof affordance when a POD photo
+   709→   709→// exists. The older order-flow progress stepper lives below as
+   710→   710→// OrderFlowTimeline (both are exported).
+   711→   711→// ---------------------------------------------------------------------------
+   712→   712→
+   713→   713→const SHIPMENT_EVENT_ICON: Record<string, typeof Truck> = {
+   714→   714→  BOOKED: ClipboardCheck,
+   715→   715→  PICKED_UP: PackageCheck,
+   716→   716→  IN_TRANSIT: Truck,
+   717→   717→  OUT_FOR_DELIVERY: Bike,
+   718→   718→  DELIVERED: Home,
+   719→   719→  EXCEPTION: AlertTriangle,
+   720→   720→  RETURNED: RotateCcw,
+   721→   721→};
+   722→   722→
+   723→   723→const SHIPMENT_EVENT_LABEL: Record<string, string> = {
+   724→   724→  BOOKED: "Label created",
+   725→   725→  PICKED_UP: "Picked up by courier",
+   726→   726→  IN_TRANSIT: "In transit",
+   727→   727→  OUT_FOR_DELIVERY: "Out for delivery",
+   728→   728→  DELIVERED: "Delivered",
+   729→   729→  EXCEPTION: "Delivery exception",
+   730→   730→  RETURNED: "Returned to sender",
+   731→   731→};
+   732→   732→
+   733→   733→export function shipmentEventLabel(s: string): string {
+   734→   734→  return SHIPMENT_EVENT_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase();
+   735→   735→}
+   736→   736→
+   737→   737→export function StatusTimeline({ events, className }: { events: ShipmentEventT[]; className?: string }) {
+   738→   738→  if (!events || events.length === 0) return null;
+   739→   739→  const ordered = [...events].reverse(); // newest first, Shopee-style
+   740→   740→  return (
+   741→   741→    <ol className={cn("space-y-0", className)} aria-label="Shipment tracking timeline">
+   742→   742→      {ordered.map((e, i) => {
+   743→   743→        const Icon = SHIPMENT_EVENT_ICON[e.status] ?? PackageCheck;
+   744→   744→        const isLatest = i === 0;
+   745→   745→        const hasProof = e.status === "DELIVERED" && !!e.proofImageUrl;
+   746→   746→        return (
+   747→   747→          <li key={e.id ?? `${e.status}-${e.occurredAt}-${i}`} className="relative flex gap-3 pb-6 last:pb-0">
+   748→   748→            {i < ordered.length - 1 ? (
+   749→   749→              <span className="absolute bottom-0 left-[15px] top-9 w-px bg-border" aria-hidden />
+   750→   750→            ) : null}
+   751→   751→            <span
+   752→   752→              className={cn(
+   753→   753→                "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
+   754→   754→                isLatest ? "border-teal-600 bg-teal-600 text-white shadow-sm" : "border-teal-600/25 bg-teal-50 text-teal-700"
+   755→   755→              )}
+   756→   756→            >
+   757→   757→              <Icon className="h-4 w-4" aria-hidden />
+   758→   758→            </span>
+   759→   759→            <div className="min-w-0 flex-1">
+   760→   760→              <div className="flex flex-wrap items-center gap-2">
+   761→   761→                <p className={cn("text-sm leading-6", isLatest ? "font-bold text-foreground" : "font-semibold text-muted-foreground")}>
+   762→   762→                  {shipmentEventLabel(e.status)}
+   763→   763→                </p>
+   764→   764→                {hasProof && e.proofImageUrl ? <ViewProofButton url={e.proofImageUrl} compact /> : null}
+   765→   765→              </div>
+   766→   766→              {e.description ? <p className="text-xs leading-snug text-muted-foreground">{e.description}</p> : null}
+   767→   767→              <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+   768→   768→                {e.location ? (
+   769→   769→                  <span className="inline-flex items-center gap-1">
+   770→   770→                    <MapPin className="h-3 w-3" aria-hidden />
+   771→   771→                    {e.location}
+   772→   772→                  </span>
+   773→   773→                ) : null}
+   774→   774→                <span>{fmtDateTime(e.occurredAt)}</span>
+   775→   775→              </p>
+   776→   776→            </div>
+   777→   777→          </li>
+   778→   778→        );
+   779→   779→      })}
+   780→   780→    </ol>
+   781→   781→  );
+   782→   782→}
+   783→   783→
+   784→   784→// ---------------------------------------------------------------------------
+   785→   785→// Order status timeline (order-flow progress stepper, shared by order-status
+   786→   786→// + lookup views) — named OrderFlowTimeline to free `StatusTimeline` for the
+   787→   787→// shipment-event log above.
+   788→   788→// ---------------------------------------------------------------------------
+   789→   789→
+   790→   790→const FLOW = ["payment_pending", "paid", "processing", "shipped", "delivered"];
+   791→   791→
+   792→   792→const STATUS_LABEL: Record<string, string> = {
+   793→   793→  payment_pending: "Awaiting payment",
+   794→   794→  paid: "Payment confirmed",
+   795→   795→  processing: "Being prepared",
+   796→   796→  shipped: "Shipped",
+   797→   797→  delivered: "Delivered",
+   798→   798→  completed: "Completed",
+   799→   799→  cancelled: "Cancelled",
+   800→   800→  refunded: "Refunded",
+   801→   801→  partially_refunded: "Partially refunded",
+   802→   802→};
+   803→   803→
+   804→   804→export function statusLabel(s: string): string {
+   805→   805→  return STATUS_LABEL[s] ?? s.replace(/_/g, " ");
+   806→   806→}
+   807→   807→
+   808→   808→export function StatusBadge({ status }: { status: string }) {
+   809→   809→  const tone =
+   810→   810→    status === "delivered" || status === "completed"
+   811→   811→      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+   812→   812→      : status === "cancelled" || status === "refunded"
+   813→   813→        ? "bg-rose-100 text-rose-800 border-rose-200"
+   814→   814→        : status === "payment_pending" || status === "failed"
+   815→   815→          ? "bg-amber-100 text-amber-800 border-amber-200"
+   816→   816→          : "bg-teal-100 text-teal-800 border-teal-200";
+   817→   817→  return (
+   818→   818→    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", tone)}>
+   819→   819→      {statusLabel(status)}
+   820→   820→    </span>
+   821→   821→  );
+   822→   822→}
+   823→   823→
+   824→   824→export function OrderFlowTimeline({ history, current }: { history: { toStatus: string; createdAt: string }[]; current: string }) {
+   825→   825→  const special = ["cancelled", "refunded", "partially_refunded"].includes(current);
+   826→   826→  const reachedAt = new Map<string, string>();
+   827→   827→  for (const h of history) reachedAt.set(h.toStatus, h.createdAt);
+   828→   828→  const flow = special ? [] : FLOW;
+   829→   829→  const currentIdx = flow.indexOf(current === "completed" ? "delivered" : current);
+   830→   830→
+   831→   831→  return (
+   832→   832→    <ol className="space-y-0" aria-label="Order status timeline">
+   833→   833→      {flow.map((step, i) => {
+   834→   834→        const done = currentIdx >= i && currentIdx !== -1;
+   835→   835→        const ts = reachedAt.get(step);
+   836→   836→        const isLast = i === flow.length - 1;
+   837→   837→        return (
+   838→   838→          <li key={step} className="relative flex gap-3 pb-5 last:pb-0">
+   839→   839→            {!isLast ? <span className={cn("absolute left-[9px] top-5 bottom-0 w-px", done ? "bg-teal-600" : "bg-border")} /> : null}
+   840→   840→            <span
+   841→   841→              className={cn(
+   842→   842→                "relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+   843→   843→                done ? "border-teal-600 bg-teal-600" : "border-muted-foreground/30 bg-background"
+   844→   844→              )}
+   845→   845→            >
+   846→   846→              {done ? (
+   847→   847→                <svg viewBox="0 0 10 8" className="h-2.5 w-2.5 fill-none stroke-white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+   848→   848→                  <path d="M1 4l2.5 2.5L9 1" />
+   849→   849→                </svg>
+   850→   850→              ) : null}
+   851→   851→            </span>
+   852→   852→            <div className="min-w-0">
+   853→   853→              <p className={cn("text-sm font-medium leading-5", done ? "text-foreground" : "text-muted-foreground")}>
+   854→   854→                {statusLabel(step)}
+   855→   855→              </p>
+   856→   856→              {ts ? (
+   857→   857→                <p className="text-xs text-muted-foreground">{new Date(ts).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}</p>
+   858→   858→              ) : null}
+   859→   859→            </div>
+   860→   860→          </li>
+   861→   861→        );
+   862→   862→      })}
+   863→   863→      {special ? (
+   864→   864→        <li className="flex items-center gap-2">
+   865→   865→          <StatusBadge status={current} />
+   866→   866→          <span className="text-xs text-muted-foreground">This order was closed with status above.</span>
+   867→   867→        </li>
+   868→   868→      ) : null}
+   869→   869→    </ol>
+   870→   870→  );
+   871→   871→}
+   872→   872→
+   873→   873→// ---------------------------------------------------------------------------
+   874→   874→// misc
+   875→   875→// ---------------------------------------------------------------------------
+   876→   876→
+   877→   877→export function dateShort(iso: string | Date | null | undefined): string {
+   878→   878→  if (!iso) return "";
+   879→   879→  return new Date(iso).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+   880→   880→}
+   881→   881→
+   882→   882→/** "12 Oct 2026, 2:56 pm" — used by chat timestamps. */
+   883→   883→export function fmtDateTime(iso: string | Date | null | undefined): string {
+   884→   884→  if (!iso) return "";
+   885→   885→  return new Intl.DateTimeFormat("en-MY", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kuala_Lumpur" }).format(new Date(iso));
+   886→   886→}
+   887→   887→
+   888→   888→export function discountPercent(price: number, compareAt: number | null | undefined): number | null {
+   889→   889→  if (compareAt && compareAt > price) return Math.round(100 - (price / compareAt) * 100);
+   890→   890→  return null;
+   891→   891→}
+   892→   892→

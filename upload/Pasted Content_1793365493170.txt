@@ -1,0 +1,1692 @@
+# NOMOFEE — COMPLETE AFFILIATE HUB & ONE-LEVEL SPONSOR REFERRAL SYSTEM
+## Master Architecture, Audit, Implementation & Verification Instruction
+
+### 1. MISSION
+
+Build a complete Affiliate System and Affiliate Hub for NOMOFEE.
+
+NOMOFEE is a multi-vendor e-commerce marketplace combining marketplace-style product discovery and checkout with independent seller storefronts.
+
+The objective is to allow ordinary registered users to become affiliates without needing to own a seller store, maintain inventory, purchase products, handle fulfilment or operate their own e-commerce business.
+
+Affiliates should be able to discover participating seller products, generate promotional links, share them externally through social media and messaging platforms, introduce new affiliates to NOMOFEE, and earn commissions from eligible customer purchases.
+
+The system must support the following commercial model:
+
+1. Seller-funded product affiliate commissions.
+2. Unlimited direct affiliate referrals.
+3. One direct sponsor per affiliate, at most.
+4. A fixed 90% / 10% commission allocation:
+   - 90% to the affiliate directly attributed to the eligible product sale.
+   - 10% to that affiliate's immediate direct sponsor.
+5. No commission beyond the immediate sponsor.
+6. No rewards for registration, recruitment, clicks, account creation or merely introducing another person.
+7. All affiliate commission liabilities must originate from genuine eligible product sales.
+
+Build this as a proper, integrated NOMOFEE subsystem, not a standalone demonstration or a collection of hardcoded screens.
+
+The implementation must integrate correctly with the existing:
+- User authentication and account system.
+- Seller and store authorization.
+- Product and product-variant structure.
+- Cart and multi-store checkout.
+- Order and OrderItem records.
+- Payment confirmation and idempotency.
+- Inventory and fulfilment lifecycle.
+- Seller settlement.
+- Wallet and financial ledger.
+- Refund and cancellation processing.
+- Analytics and reporting.
+- Admin configuration and audit logs.
+
+Do not disrupt existing checkout, payment, inventory, wallet, seller settlement or refund functionality.
+
+---
+
+# 2. MANDATORY EXECUTION APPROACH
+
+Do not begin by creating database tables or UI screens based only on this specification.
+
+First audit the actual current codebase.
+
+The existing implementation reports and documentation are useful background, but the actual current code, database schema and runtime behaviour are the source of truth.
+
+Verify the current stack, existing helpers, models, routes, architecture and financial workflows before making implementation decisions.
+
+The known architecture has included:
+- Next.js App Router.
+- TypeScript.
+- Bun.
+- Prisma.
+- Supabase PostgreSQL.
+- Seller-session authorization helpers.
+- First-party analytics collection.
+- A mini-service scheduler.
+- Existing checkout admission and payment idempotency controls.
+- Existing financial ledger and seller wallet functionality.
+
+Verify all of these against the current tree rather than assuming they remain unchanged.
+
+### Phase 0 — Read-only architecture audit
+
+Inspect at minimum:
+
+**Users and authorization**
+- User registration and account activation.
+- User roles and seller/buyer separation.
+- Session and authorization helpers.
+- Existing seller onboarding.
+- Account suspension and status checks.
+- Admin authorization.
+
+**Products and sellers**
+- Store ownership.
+- Product and variant relationships.
+- Product availability and stock.
+- Product pricing and discounts.
+- Seller-specific settings.
+- Seller storefront routing.
+- Product publication and archive rules.
+
+**Commerce**
+- Cart structure.
+- How one checkout creates multiple seller orders.
+- Order and OrderItem snapshots.
+- PaymentGroup and payment confirmation.
+- Idempotency keys.
+- Checkout transaction boundaries.
+- Order completion and fulfilment states.
+- COD collection confirmation, if supported.
+
+**Financial architecture**
+- Seller settlement calculations.
+- Seller wallet and available/pending balance.
+- Financial ledger and journal entries.
+- Existing commission calculations.
+- Refund and partial-refund processing.
+- PSP reconciliation.
+- Payout request and payout execution.
+- Existing rounding and money precision rules.
+
+**Analytics**
+- AnalyticsEvent and its current schema.
+- Event tracking and deduplication.
+- SellerCampaign and UTM attribution.
+- Existing analytics cookies.
+- Analytics retention and scheduler.
+- Existing rate limiting and caching.
+- Existing seller analytics APIs.
+
+**Security and operations**
+- CSRF and proxy-gate requirements.
+- Rate limiting.
+- Existing audit logs.
+- Data retention.
+- Background job patterns.
+- Database connection budget.
+- Existing security findings and unresolved remediation work.
+
+### Required audit deliverables
+
+Create:
+
+- `docs/affiliate/architecture-audit.md`
+- `docs/affiliate/implementation-plan.md`
+- `docs/affiliate/commission-definitions.md`
+- `docs/affiliate/security-and-fraud-rules.md`
+- `docs/affiliate/rollout-checklist.md`
+
+The architecture audit must classify relevant existing functionality as:
+- Implemented and reusable.
+- Implemented but requires extension.
+- Partially implemented.
+- Missing.
+- Unsafe to reuse without refactoring.
+- Blocked by an unresolved business or operational decision.
+
+Identify any conflicts between this specification and existing code.
+
+Do not silently invent missing order states, refund signals, payout capabilities or financial facts.
+
+After the audit, proceed with implementation in the phases below. Do not create duplicate analytics systems, payment systems or wallet systems merely because this specification uses different terminology.
+
+If a critical financial or security dependency cannot be implemented safely, document the blocker and do not fake its functionality.
+
+---
+
+# 3. PRODUCT STRUCTURE — AFFILIATE HUB
+
+Create a dedicated Affiliate Hub for users who participate in the affiliate programme.
+
+An affiliate is an ordinary NOMOFEE user. Affiliate status must not require seller status or store ownership.
+
+The Affiliate Hub should have the following sections.
+
+### A. Affiliate Overview
+
+Display:
+
+- Total product-link clicks.
+- Estimated unique visitors, where supported by reliable tracking.
+- Product views attributed to the affiliate.
+- Add-to-cart activity, where available.
+- Total attributed orders.
+- Paid attributed orders.
+- Eligible merchandise sales.
+- Personal affiliate commission.
+- Sponsor/referral commission.
+- Pending commission.
+- Approved commission.
+- Available commission.
+- Paid commission.
+- Reversed commission.
+- Direct referral count.
+- Activated direct affiliates.
+- Direct affiliates generating eligible sales.
+- Monthly referral-generated sales.
+- Date-filtered performance charts.
+
+Separate the following earnings sources throughout the application:
+
+1. Personal product promotion earnings.
+2. Direct sponsor/referral earnings.
+
+Never combine these into one unexplained commission figure.
+
+Clearly label estimated analytics versus authoritative paid-order and financial figures.
+
+Historical traffic and affiliate data must begin from actual tracking release. Never fabricate or backfill activity that was not historically collected.
+
+### B. Discover Products
+
+Create an affiliate product-discovery experience.
+
+Affiliates should be able to browse participating products without needing to become sellers.
+
+Provide useful filters:
+- Product category.
+- Product name.
+- Seller/store.
+- Price.
+- Affiliate commission percentage.
+- Estimated commission amount.
+- Popularity or sales, where genuine data is available.
+- Newly added products.
+- Featured products.
+- Products with attractive commission rates.
+
+Each product card should display:
+
+- Product image.
+- Product name.
+- Seller/store.
+- Price.
+- Affiliate eligibility.
+- Commission rate.
+- Estimated earnings for an example qualifying sale.
+
+Do not display a commission opportunity for products that are not enrolled in the seller affiliate programme.
+
+Provide an easy action to generate or copy a promotional link.
+
+### C. My Promotional Links
+
+Allow affiliates to create, manage, copy and track promotional links.
+
+Support these link types:
+
+**1. Product link**
+- Promotes one specific product.
+- Commission attribution is limited to that product.
+
+**2. Store link**
+- Promotes an individual seller storefront.
+- Commission attribution applies only to eligible products belonging to that store.
+
+**3. Curated collection link**
+- Promotes a collection created by the affiliate.
+- Commission attribution applies only to products included in the eligible collection scope.
+- Consider versioning or snapshotting collection membership at the relevant attribution point so that later collection edits cannot improperly alter past attribution.
+
+**4. Affiliate showcase link**
+- Opens the affiliate's public recommendation page.
+- It is not a seller store.
+- Products subsequently selected or clicked by the visitor should receive attribution only within the valid showcase attribution scope.
+- Do not attribute unrelated purchases across the entire marketplace merely because someone opened an affiliate profile.
+
+Every link should contain a secure affiliate identifier or signed token.
+
+Support tracking labels for different external channels, for example:
+- TikTok.
+- Threads.
+- Facebook.
+- Telegram.
+- WhatsApp.
+- Blog.
+- Website.
+- Other.
+
+Channel labels are for reporting and do not change the commission split.
+
+Provide:
+- Copy-link action.
+- Generate-new-link action.
+- Link performance.
+- Link status.
+- Archive/deactivate where appropriate.
+- QR code generation if straightforward with existing dependencies.
+
+Do not require the affiliate to connect their social accounts.
+
+Do not claim that NOMOFEE is integrated with TikTok, Meta, Telegram or other external platforms unless a real integration exists.
+
+### D. My Collections
+
+Allow affiliates to create curated product collections.
+
+Examples:
+- Best Home Essentials.
+- My Favourite Gadgets.
+- Recommended Skincare.
+- Budget-Friendly Products.
+- Raya Shopping Recommendations.
+
+Features:
+- Create collection.
+- Edit title and description.
+- Add/remove eligible products.
+- Reorder products.
+- Preview.
+- Publish/unpublish.
+- Generate shareable link.
+- Archive collection.
+
+A collection is promotional content, not a seller catalogue.
+
+Only products that are currently eligible for affiliate promotion should generate new affiliate commissions.
+
+Preserve historical order attribution if a product later becomes unavailable or is removed from a collection.
+
+### E. My Public Showcase
+
+Create an optional public affiliate page with a friendly URL, for example:
+
+`nomofee.my/@username`
+
+The page may display:
+- Affiliate display name.
+- Profile image, subject to existing privacy rules.
+- Short biography.
+- Published collections.
+- Recommended products.
+- Affiliate promotional links.
+
+It must clearly appear as an affiliate recommendation page, not an official seller store.
+
+Only expose information the affiliate has explicitly made public.
+
+Provide appropriate report, moderation and abuse controls.
+
+### F. My Network
+
+This section displays the affiliate's **direct referrals only**.
+
+The user may have unlimited direct referrals.
+
+Display:
+- Total direct referrals.
+- Registered referrals.
+- Activated affiliates.
+- Affiliates who have generated eligible sales.
+- Direct sponsor commission earned.
+- Monthly performance.
+- Referral conversion statistics.
+
+Where privacy permits, show a limited affiliate identity such as username or display name.
+
+Do not expose email addresses, phone numbers, addresses, payout information or other personal data.
+
+Do not construct a recursive downline commission tree.
+
+An affiliate should not see second-generation members as commission-earning members of their network.
+
+If an affiliate B refers D, D belongs directly to B. A must never receive commission from D's sales.
+
+### G. Earnings
+
+Display separate sections for:
+
+**Personal promotion earnings**
+- 90% direct affiliate allocation.
+- Relevant product/order references.
+- Commission rate.
+- Commissionable value.
+- Commission status.
+
+**Direct sponsor earnings**
+- 10% of the eligible commission pool from qualifying sales generated by directly referred affiliates.
+- Referral affiliate reference.
+- Relevant product/order reference.
+- Commission status.
+
+Display:
+- Pending.
+- Approved.
+- Available.
+- Paid.
+- Reversed.
+- Held/under review, where necessary.
+
+Do not expose buyer personal information unnecessarily.
+
+### H. Payouts
+
+Inspect the existing payout infrastructure first.
+
+Support:
+- Available earnings.
+- Minimum payout threshold, if configured.
+- Payout method and eligibility.
+- Withdrawal request.
+- Processing status.
+- Payout history.
+- PSP/provider reference where applicable.
+- Failed payout and retry status.
+
+Do not invent an automated bank transfer capability.
+
+Reuse the existing payment/payout provider only if it genuinely supports the required operation.
+
+If manual payout is currently the only safe supported process, implement a properly controlled manual payout workflow with audit references rather than falsely claiming automatic payouts.
+
+---
+
+# 4. ONE-LEVEL SPONSOR REFERRAL STRUCTURE
+
+This section is fundamental. Implement the business rules exactly.
+
+The referral network can grow without a predefined limit, but commission attribution travels up by only one generation.
+
+Example:
+
+Affiliate A refers B and C.
+
+Affiliate B refers D and E.
+
+Affiliate C refers F.
+
+Relationships:
+
+- B's sponsor is A.
+- C's sponsor is A.
+- D's sponsor is B.
+- E's sponsor is B.
+- F's sponsor is C.
+
+Commission examples:
+
+- B's eligible product sales: B receives 90%, A receives 10%.
+- C's eligible product sales: C receives 90%, A receives 10%.
+- D's eligible product sales: D receives 90%, B receives 10%.
+- E's eligible product sales: E receives 90%, B receives 10%.
+- F's eligible product sales: F receives 90%, C receives 10%.
+
+A receives nothing from D, E or F.
+
+Never create a second-generation or deeper sponsor override.
+
+### Sponsor relationship rules
+
+1. An affiliate may have zero or one direct sponsor.
+2. A sponsor may have unlimited direct referrals.
+3. A sponsor must be an eligible NOMOFEE affiliate when the referral is activated.
+4. A sponsor cannot refer themselves.
+5. Cycles and self-referential relationships are impossible by design.
+6. Existing sponsor relationships cannot be casually modified.
+7. Affiliates cannot purchase, sell, transfer or trade referral relationships.
+8. Administrative correction is allowed only with authorised audit logging and documented reason.
+9. An affiliate's inactivity or lack of personal product sales does not automatically remove their sponsor entitlement.
+10. No recruitment-only bonus exists.
+
+The database must enforce the one-sponsor-per-affiliate rule with appropriate foreign keys and uniqueness constraints.
+
+Do not rely on UI validation alone.
+
+### Sponsor relationship lifecycle
+
+A sponsor should be eligible to receive the override only under the programme's documented eligibility rules.
+
+Proposed policy:
+
+- Sponsor is approved and active when the referred affiliate activates.
+- Sponsor relationship remains recorded permanently.
+- No personal sales or login requirement is imposed on the sponsor.
+- If the sponsor's payout verification is incomplete, hold their commission until verified.
+- If the sponsor is temporarily suspended for suspected fraud or compliance review, hold the sponsor's 10% separately.
+- A legitimate direct promoter's 90% should not automatically be penalised because their sponsor is under investigation.
+- If a sponsor voluntarily leaves or is permanently disqualified before a future sale, do not transfer their entitlement to another upline.
+- Any unallocated sponsor share must remain unallocated and be treated according to the agreed seller-funded commission policy. Never silently increase another beneficiary's entitlement.
+
+Document these rules in the affiliate terms and financial definitions.
+
+---
+
+# 5. AFFILIATE REGISTRATION ATTRIBUTION
+
+This is different from product-sale attribution.
+
+The purpose is to establish who introduced a new affiliate to NOMOFEE.
+
+### Referral registration link
+
+Each approved affiliate receives a unique registration link, for example:
+
+`nomofee.my/join?ref=AFFILIATE123`
+
+Support:
+- Copy link.
+- Share link.
+- QR code if appropriate.
+- Channel tracking parameters.
+- Registration conversion reporting.
+
+### Proposed registration attribution policy
+
+Use **first valid referral touch wins** for sponsor attribution.
+
+Example:
+
+- New user opens A's valid referral link.
+- Later, the same user opens B's referral link.
+- A remains the recorded sponsor if A's valid referral touch has not expired.
+
+Recommended attribution window: 30 days.
+
+The referral click does not immediately create an affiliate relationship.
+
+The relationship should only be recorded when the new user completes the appropriate affiliate activation flow.
+
+### Existing NOMOFEE users
+
+A registered buyer who has never joined the affiliate programme should be allowed to activate as an affiliate.
+
+If they have a valid sponsor referral touch, use it.
+
+If no referral touch exists, allow an optional one-time valid referral code entry during their first affiliate activation, subject to validation.
+
+An already-active affiliate must not be able to attach a sponsor retrospectively.
+
+### Sponsor assignment confirmation
+
+Before activation, show:
+
+"You were invited by @username."
+
+Explain that this creates a permanent direct sponsor relationship under the programme rules.
+
+The user must confirm before activation.
+
+After activation:
+- Sponsor relationship is permanently locked.
+- No subsequent referral click can overwrite it.
+- No automatic reassignment.
+- No seller or admin tool can casually change it.
+
+### Fraud and account integrity
+
+Implement:
+- Unique account validation.
+- Email/phone verification using existing mechanisms.
+- Registration rate limiting.
+- Bot and suspicious activity detection.
+- Self-referral detection.
+- Duplicate account investigation.
+- Referral abuse monitoring.
+
+Do not automatically ban users only because multiple accounts share an IP address.
+
+Families, offices, universities and public networks can share IP addresses.
+
+Avoid invasive device fingerprinting unless explicitly justified, proportionate and reviewed for privacy and legal compliance.
+
+Do not reward clicks or registrations.
+
+---
+
+# 6. PRODUCT-SALE ATTRIBUTION
+
+This is a separate mechanism from affiliate registration attribution.
+
+It determines who receives credit for an eligible customer purchase.
+
+### Proposed product attribution policy
+
+Use:
+- Last eligible affiliate click.
+- 30-day attribution window.
+- First-party tracking.
+- Server-validated affiliate tokens.
+- Product-level attribution snapshots.
+
+Example:
+
+1. Customer clicks Affiliate B's product link.
+2. Customer later clicks Affiliate D's valid link for the same product.
+3. Customer purchases.
+4. D receives direct attribution.
+5. D's direct sponsor receives the 10% sponsor allocation.
+
+B receives nothing from that sale.
+
+### Attribution scope
+
+Product link:
+- Only the specified product.
+
+Store link:
+- Eligible products belonging to that store.
+
+Collection link:
+- Products within the collection's validated attribution scope.
+
+Affiliate showcase:
+- Only eligible products selected or clicked within the showcase flow.
+- No automatic attribution to unrelated marketplace purchases.
+
+### Multiple products and multiple sellers
+
+NOMOFEE supports a single checkout containing products from different stores.
+
+Therefore:
+
+**Affiliate attribution must be captured independently for each OrderItem.**
+
+Example:
+
+| OrderItem | Product | Seller | Attributed affiliate | Sponsor |
+|---|---|---|---|---|
+| 1 | Product A | Seller 1 | Affiliate B | Affiliate A |
+| 2 | Product B | Seller 2 | Affiliate D | Affiliate C |
+| 3 | Product C | Seller 3 | None | None |
+
+Each item must be evaluated independently.
+
+One checkout may therefore contain:
+- One affiliate-attributed item.
+- Multiple items attributed to different affiliates.
+- Items with no affiliate attribution.
+- Items from different sellers with different commission rates.
+
+Never assign one affiliate to the entire checkout merely because one product link was clicked.
+
+### Attribution storage
+
+Use a secure first-party attribution mechanism.
+
+Inspect existing cookie and analytics infrastructure before creating anything.
+
+Use server-side validation, tamper-resistant tokens and reasonable retention.
+
+Do not trust client-supplied affiliate IDs during checkout.
+
+The final attribution snapshot must be validated and written server-side.
+
+A later click for another product must not incorrectly overwrite attribution for an unrelated product.
+
+A later eligible affiliate click for the same product should follow the documented last-click rule.
+
+### SellerCampaign separation
+
+NOMOFEE already has SellerCampaign, UTM tracking and marketing attribution infrastructure.
+
+Affiliate attribution is a separate commercial mechanism.
+
+Do not:
+- Use SellerCampaign as the affiliate commission ledger.
+- Convert all UTM campaign visits into affiliate commission attribution.
+- Let an affiliate referral code overwrite unrelated seller marketing attribution.
+- Duplicate existing analytics functionality unnecessarily.
+
+Campaign attribution and affiliate attribution may coexist on the same customer journey, but must remain independently defined and reported.
+
+---
+
+# 7. SELLER AFFILIATE PROGRAMME
+
+Sellers must control which products participate.
+
+Build seller-side configuration into the existing Seller Centre.
+
+### Seller programme controls
+
+Allow sellers to:
+
+- Enable or disable participation in the affiliate programme.
+- Set a default affiliate commission rate, if supported by the product model.
+- Set individual product commission rates.
+- Override the default rate at product level.
+- Review participating products.
+- Pause individual products.
+- Resume previously participating products.
+- View affiliate-generated traffic and sales.
+- View affiliate commission liabilities.
+- View refunds and reversals affecting commission.
+
+The platform must enforce configured minimum/maximum rate constraints if such controls are introduced.
+
+Inspect current financial precision and rate conventions before choosing the storage representation.
+
+Prefer established integer basis-point or equivalent fixed-precision arithmetic.
+
+Never use floating-point money calculations.
+
+### Commission changes
+
+Commission rate changes apply to future eligible orders only.
+
+Every order item must retain the commission rate and calculation applicable when the sale was created/confirmed according to the existing payment lifecycle.
+
+Historic orders must never be recalculated using a seller's new commission setting.
+
+### Seller-facing reports
+
+Show:
+- Participating products.
+- Commission rates.
+- Attributed product clicks and views.
+- Eligible paid orders.
+- Commissionable merchandise value.
+- Total affiliate pool.
+- Direct promoter allocation.
+- Sponsor allocation.
+- Refund/reversal amounts.
+- Current affiliate liabilities.
+
+Do not expose another seller's affiliate information or confidential customer data.
+
+### Seller-funded commission
+
+The seller funds the commission pool.
+
+NOMOFEE must not accidentally pay seller-funded affiliate commissions from platform operating revenue.
+
+Inspect existing seller settlement logic and establish how commission liabilities are reserved or deducted from seller proceeds.
+
+The pool must be accounted for before the corresponding seller funds become freely available for withdrawal.
+
+Do not create an accounting entry that makes affiliate commission appear as platform revenue.
+
+---
+
+# 8. COMMISSION CALCULATION — FIXED 90/10 SPLIT
+
+The 90/10 split applies to the affiliate commission pool, not directly to the product selling price.
+
+Example:
+
+Product commissionable value: RM100
+
+Seller commission rate: 10%
+
+Total commission pool: RM10
+
+Direct affiliate: RM9
+
+Immediate sponsor: RM1
+
+### Formula
+
+Let:
+
+- B = eligible merchandise commissionable base in minor currency units.
+- R = seller's snapshotted commission rate.
+- P = total commission pool.
+- D = direct affiliate allocation.
+- S = immediate sponsor allocation.
+
+Calculate:
+
+P = B × R, using the platform's established fixed-precision rate convention.
+
+If an eligible sponsor exists:
+
+S = floor(P × 10 / 100)
+
+D = P - S
+
+If no sponsor exists:
+
+D = P
+
+S = 0
+
+This rounding rule ensures:
+
+D + S = P
+
+and prevents the allocation from exceeding the original pool.
+
+Use integer sen for MYR and the established currency minor-unit rules for any future supported currency.
+
+### Commissionable base
+
+The default intended base is eligible merchandise value after applicable seller-funded discounts, excluding:
+- Shipping.
+- Taxes.
+- Non-merchandise fees.
+
+However, inspect the actual order and seller settlement snapshots to determine how platform-funded discounts, seller-funded discounts, vouchers and other adjustments affect seller-recognised merchandise value.
+
+Use the actual authoritative amount that the seller is credited for.
+
+If the existing model cannot correctly distinguish these amounts, document the limitation and do not invent a commission base.
+
+### Commission snapshot
+
+At the appropriate checkout/payment transaction boundary, freeze:
+
+- Order ID.
+- OrderItem ID.
+- Store ID.
+- Product ID.
+- Direct affiliate ID.
+- Sponsor affiliate ID.
+- Attribution source/link ID.
+- Commission rate.
+- Commissionable base.
+- Total commission pool.
+- Direct affiliate amount.
+- Sponsor amount.
+- Currency.
+- Rounding information.
+- Relevant timestamps.
+- Attribution policy/version.
+
+Never recalculate an existing order's commission using today's rates or sponsor relationships.
+
+### No sponsor
+
+If the affiliate has no sponsor recorded, the direct affiliate receives 100% of the pool.
+
+### Sponsor temporarily ineligible
+
+If the sponsor's account is undergoing a temporary verification or risk review, hold the sponsor's 10% separately.
+
+Do not automatically redirect this amount to the direct affiliate.
+
+If the sponsor has permanently left or is disqualified before a future sale, use the documented unallocated-share policy.
+
+---
+
+# 9. COMMISSION ACCOUNTING AND LEDGER
+
+This is a financial subsystem, not a cosmetic dashboard balance.
+
+Inspect existing wallet and ledger infrastructure first.
+
+Reuse proven financial posting and payout components where safe, but ensure affiliate liabilities are distinguishable from:
+- Seller proceeds.
+- Seller commission deductions.
+- Platform fee revenue.
+- Buyer refunds.
+- PSP settlement funds.
+
+Do not simply add affiliate commission to an existing seller wallet balance.
+
+### Required accounting capabilities
+
+Support:
+- Pending commission liability.
+- Approved commission.
+- Available affiliate balance.
+- Paid commission.
+- Reversed commission.
+- Held commission.
+- Recovery adjustment for late refunds.
+- Payout references.
+- Immutable audit history.
+
+Use append-only financial records or the existing equivalent immutable accounting model.
+
+Never silently overwrite an original commission entry.
+
+Use unique idempotency references based on the underlying order item and commission allocation type.
+
+Repeated payment webhooks or background retries must not create duplicate commission liability.
+
+The system must support:
+- One order item.
+- Two beneficiary allocations at most.
+- Multiple order items.
+- Multiple affiliates in one checkout.
+- Multiple sellers in one checkout.
+- Independent refunds.
+- Duplicate event delivery.
+- Concurrent processing.
+
+### Financial reconciliation
+
+Create an auditable reconciliation report that compares:
+
+1. Seller-funded affiliate commission expected.
+2. Affiliate commission allocated.
+3. Affiliate commission held.
+4. Affiliate commission available.
+5. Affiliate payouts completed.
+6. Refund/reversal adjustments.
+7. Remaining affiliate liabilities.
+
+The total allocated amount must never exceed the original eligible commission pool.
+
+Provide an admin reconciliation view or export.
+
+---
+
+# 10. COMMISSION RELEASE POLICY
+
+Use the following lifecycle:
+
+Pending → Approved → Available → Paid
+
+Reversed or Held may apply when required.
+
+### Pending
+
+A genuine eligible order payment has been confirmed.
+
+The commission allocation is created and accounted for.
+
+The corresponding seller-funded commission liability must be reserved or deducted appropriately under the existing settlement model.
+
+Pending does not mean immediately withdrawable.
+
+### Approved
+
+The relevant order item has reached an authoritative fulfilment/completion state.
+
+Inspect the actual existing order lifecycle.
+
+Do not invent a delivery timestamp or assume an order has been delivered simply because a certain number of days passed.
+
+### Available
+
+The applicable return/refund review period has elapsed, relevant disputes are resolved, and the commission has passed all release checks.
+
+### Paid
+
+The payout has actually been processed and reconciled.
+
+Record the payout reference and actual completion status.
+
+### COD
+
+If cash on delivery is supported, do not approve commission merely because the order was created.
+
+Require an authoritative successful collection/payment confirmation.
+
+### Existing operational limitation
+
+Previous Seller Insights work identified that trustworthy carrier delivery timestamps were not available at that time.
+
+Re-audit the current system.
+
+If reliable fulfilment evidence is still unavailable:
+- Do not invent it.
+- Do not automatically release commission on a guessed schedule.
+- Keep affected commission pending or under controlled review.
+- Document the missing integration or event required for release.
+
+Admin must be able to understand why an amount is still pending.
+
+---
+
+# 11. REFUNDS, CANCELLATIONS AND CHARGEBACKS
+
+Commission reversals must be calculated against the original immutable allocations.
+
+| Situation | Treatment |
+|---|---|
+| Payment fails | No commission |
+| Order expires unpaid | No commission |
+| Full item refund | Reverse full item commission |
+| Partial item refund | Reverse affected portion proportionally |
+| Shipping-only refund | No product commission reversal |
+| Cancellation before eligibility | Reverse pending allocation |
+| Chargeback | Hold or reverse affected allocation |
+| Duplicate webhook | No duplicate commission or reversal |
+| Late refund after payout | Create recoverable adjustment |
+
+### Partial refunds
+
+Example:
+
+Original item commission pool: RM10
+
+Direct affiliate: RM9
+
+Sponsor: RM1
+
+If 50% of the eligible merchandise value is refunded:
+
+- Direct affiliate reversal: RM4.50.
+- Sponsor reversal: RM0.50.
+
+Use the original allocation snapshot and authoritative refund amounts.
+
+If the refund model cannot accurately identify which product or amount was refunded, do not create a guessed item-level reversal.
+
+Hold the affected amount for reconciliation or follow the established manual adjustment process.
+
+### Late refunds
+
+If the commission has already been paid:
+- Create a documented negative/recovery entry.
+- Offset future earnings where permitted by the affiliate agreement.
+- Provide a visible explanation.
+- Preserve the original payout and commission history.
+
+Do not silently debit an affiliate's bank account.
+
+Any recovery process must be reviewed against the applicable affiliate terms and law.
+
+### Sponsor-specific reversals
+
+If the underlying product sale is invalid, reverse both allocations.
+
+If only the sponsor is under investigation, hold the sponsor's 10% separately without automatically reversing a legitimate direct promoter's 90%.
+
+---
+
+# 12. ADMINISTRATION AND OPERATIONS
+
+Build appropriate admin functionality using existing admin authorization and audit patterns.
+
+Administrators should be able to:
+
+- Enable/disable the affiliate programme.
+- Configure global programme limits.
+- Configure the maximum permitted commission rate.
+- Enable/disable sponsor overrides independently.
+- Review affiliate accounts.
+- Suspend or reinstate affiliates.
+- Review suspicious referral activity.
+- Review suspicious commission activity.
+- Investigate disputed referral assignments.
+- Inspect affiliate commission allocations.
+- Inspect reversals.
+- Review payout requests.
+- Approve/reject permitted manual adjustments.
+- Reconcile affiliate liabilities.
+- Export financial reports.
+- View affiliate performance and programme activity.
+- Audit all administrative changes.
+
+No administrative financial adjustment should happen without:
+- Authorised user.
+- Reason.
+- Amount.
+- Beneficiary.
+- Relevant order/reference.
+- Timestamp.
+- Immutable audit record.
+
+Create an appropriate global kill switch.
+
+The production affiliate programme must remain disabled until the required financial, operational and legal launch gates are satisfied.
+
+---
+
+# 13. AFFILIATE TERMS, DISCLOSURES AND LEGAL SAFEGUARDS
+
+Provide clear affiliate programme terms and acceptance records.
+
+The system must communicate:
+
+- Affiliates earn only from eligible completed customer purchases.
+- Registration itself does not earn commission.
+- Recruitment alone does not generate commission.
+- There are no compulsory purchases.
+- There are no inventory purchases or monthly sales quotas.
+- The direct promoter receives 90% of the commission pool.
+- The direct sponsor may receive 10% of the pool.
+- No deeper-generation commission exists.
+- Refunded or cancelled product commissions are reversed according to policy.
+- Self-purchases and fraudulent activity are not eligible.
+- Affiliates must accurately disclose their commercial relationship when promoting products.
+- Misleading product claims and spam are prohibited.
+- NOMOFEE may suspend accounts or investigate suspicious activities under documented procedures.
+
+Do not claim that the programme is legally "not MLM".
+
+The one-level sponsor override must be reviewed by Malaysian legal counsel familiar with direct-selling and network-marketing regulation.
+
+Identify potential requirements under the Direct Sales and Anti-Pyramid Scheme Act 1993 and obtain appropriate KPDN clarification where required.
+
+Build the system so the sponsor override can be disabled without corrupting direct affiliate commission records.
+
+Do not activate the sponsor compensation programme in production until legal clearance and required operational approvals are documented.
+
+---
+
+# 14. DATA MODEL AND DATABASE DESIGN
+
+Do not blindly follow suggested model names. Design the schema based on the actual existing models.
+
+The design must represent the following concepts:
+
+### Affiliate identity
+- Affiliate profile associated with a NOMOFEE user.
+- Affiliate status.
+- Activation timestamp.
+- Terms acceptance/version.
+- Public affiliate username/slug, where applicable.
+- Payout eligibility status.
+
+### Sponsor relationship
+- Referred affiliate.
+- Direct sponsor affiliate.
+- Referral code/source.
+- Referral attribution timestamp.
+- Relationship activation timestamp.
+- Relationship status.
+- Immutable sponsor history/audit.
+
+Constraints:
+- One sponsor maximum per affiliate.
+- No self-sponsor.
+- No cycles.
+- Efficient lookup of direct referrals.
+- Indexed sponsor and referred affiliate identifiers.
+
+### Referral registration tracking
+- Referral link/code.
+- Validated referral touch.
+- First-touch timestamp.
+- Expiration.
+- Activation result.
+- Channel/source where collected.
+
+### Promotional links
+- Affiliate ID.
+- Link type.
+- Target product/store/collection/showcase.
+- Unique code/token.
+- Creation and status.
+- Channel tracking metadata.
+- Click and performance statistics.
+
+### Collections and showcase
+- Affiliate ownership.
+- Collection metadata.
+- Product membership.
+- Public/private status.
+- Stable URL.
+- Appropriate versioning or historical preservation strategy.
+
+### Product-sale attribution
+- Affiliate attribution to the individual product/order item.
+- Link and source references.
+- Attribution timestamp.
+- Attribution window information.
+- Sponsor snapshot.
+- Attribution policy/version.
+
+### Commission
+- OrderItem reference.
+- Commissionable merchandise base.
+- Rate snapshot.
+- Pool amount.
+- Direct beneficiary and amount.
+- Sponsor beneficiary and amount.
+- Status.
+- Idempotency key.
+- Currency.
+- Creation/reversal timestamps.
+
+### Financial adjustments
+- Refund references.
+- Chargeback references.
+- Commission reversal.
+- Recovery entries.
+- Payout allocation references.
+
+### Payout
+- Affiliate.
+- Amount.
+- Status.
+- Payment provider/method if actually supported.
+- External reference.
+- Idempotency and retry information.
+- Audit history.
+
+Use appropriate indexes for expected high-volume queries.
+
+Avoid N+1 queries.
+
+Avoid unbounded scans.
+
+Do not store unnecessary PII in event logs.
+
+Do not introduce daily rollups prematurely unless measured event volume justifies them.
+
+Provide retention policies for click/event data while preserving required financial records for the appropriate retention period.
+
+---
+
+# 15. ANALYTICS AND PERFORMANCE REPORTING
+
+Affiliate reports should distinguish:
+
+**Acquisition**
+- Referral link clicks.
+- Registration visits.
+- New NOMOFEE registrations.
+- First-time affiliate activations.
+- Valid direct referrals.
+- Activation conversion.
+
+**Promotion**
+- Product link clicks.
+- Product views.
+- Store link visits.
+- Collection views.
+- Showcase visits.
+- Channel performance.
+
+**Commerce**
+- Attributed cart activity where available.
+- Attributed checkout orders.
+- Paid attributed orders.
+- Gross attributed merchandise sales.
+- Refunds and cancellations.
+
+**Finance**
+- Total commission pool.
+- Direct affiliate allocations.
+- Sponsor allocations.
+- Pending commissions.
+- Approved commissions.
+- Available commissions.
+- Paid commissions.
+- Reversed commissions.
+
+Clearly distinguish:
+- Clicks from unique visitors.
+- Registration from affiliate activation.
+- Orders from paid orders.
+- Gross sales from net sales.
+- Estimated analytics from financial ledger amounts.
+
+Do not make attribution claims beyond the collected evidence.
+
+Do not claim that a channel caused a sale simply because it was associated with a tracked referral.
+
+Use existing analytics collection infrastructure where it genuinely fits. If the existing AnalyticsEvent schema cannot safely support global affiliate referral events, propose a minimal extension or purpose-built event model and explain why.
+
+Do not duplicate SellerCampaign attribution.
+
+Respect the existing analytics retention setting and scheduled purge process.
+
+---
+
+# 16. SECURITY REQUIREMENTS
+
+Apply the current NOMOFEE security standards.
+
+At minimum:
+
+- All affiliate-private APIs require authenticated user sessions.
+- Every affiliate query is scoped to the logged-in affiliate.
+- Sellers can only manage their own stores and products.
+- Admin functions require proper admin authorisation.
+- No client-supplied affiliate ID is trusted for financial decisions.
+- Sponsor assignment is performed server-side.
+- Product-sale attribution is validated server-side.
+- CSRF/proxy-gate requirements are respected.
+- Mutating endpoints require existing same-origin/JSON validation patterns where applicable.
+- Registration, link creation, activation, payout and admin operations are rate-limited appropriately.
+- Public showcase pages reveal only approved public information.
+- Private network and commission data must never be publicly enumerable.
+- Referral tokens must be sufficiently unpredictable or cryptographically validated.
+- All commission creation and reversal is idempotent.
+- All money mutations are transactional and auditable.
+
+Do not weaken existing security controls for convenience.
+
+Do not reuse seller marketplace-connection records as affiliate accounts or referral relationships.
+
+Do not introduce third-party social OAuth unless a later, separately approved feature requires it.
+
+---
+
+# 17. PERFORMANCE AND SCALE REQUIREMENTS
+
+Design for the possibility of a major influencer referring 10,000 or more affiliates.
+
+This is a design target, not a claim that current infrastructure has already demonstrated this capacity.
+
+The database must support:
+- Unlimited direct referral relationships within practical platform limits.
+- Efficient sponsor lookup.
+- Efficient direct-referral listing and pagination.
+- High-volume referral-link resolution.
+- Large affiliate performance reports.
+- Commission posting for many OrderItems.
+- Multiple affiliates in one multi-store checkout.
+- Background reconciliation and payout processing.
+
+Do not recursively traverse referral relationships to calculate commissions.
+
+A sale requires at most:
+- One direct affiliate lookup.
+- One direct sponsor lookup.
+- Two allocation records.
+
+Use:
+- Indexed queries.
+- Pagination.
+- Bounded background jobs.
+- Batch processing where appropriate.
+- Idempotent retries.
+- Existing caching patterns where safe.
+- Database connection-budget awareness.
+
+Avoid increasing connection pool limits without measuring the actual database topology.
+
+Do not perform unnecessary expensive analytics queries in the checkout transaction.
+
+Keep financial work bounded and consistent with existing payment transaction rules.
+
+---
+
+# 18. REQUIRED IMPLEMENTATION PHASES
+
+Implement in dependency order.
+
+### Phase 1 — Affiliate foundation
+
+- Schema and migrations using the established database change process.
+- Affiliate profile.
+- Affiliate activation.
+- Affiliate terms acceptance.
+- Referral code generation.
+- Registration attribution.
+- Permanent direct sponsor relationship.
+- One-level sponsor restrictions.
+- Affiliate authentication and authorization.
+
+### Phase 2 — Affiliate promotional tools
+
+- Product discovery.
+- Product affiliate links.
+- Store affiliate links.
+- Collections.
+- Public affiliate showcase pages.
+- Channel-labelled links.
+- Copy/share functionality.
+- Social link preview metadata.
+- Affiliate link analytics.
+
+### Phase 3 — Product attribution and checkout integration
+
+- First-party affiliate click tracking.
+- Last eligible click attribution.
+- Per-product attribution.
+- Multi-store checkout support.
+- OrderItem attribution snapshots.
+- Sponsor snapshots.
+- Commission-rate snapshots.
+- Validation against seller product eligibility.
+- No changes that weaken existing checkout/payment correctness.
+
+### Phase 4 — Commission accounting
+
+- Seller-funded commission pool.
+- 90/10 calculation.
+- No-sponsor 100% direct allocation.
+- Sponsor eligibility handling.
+- Pending/approved/available/paid states.
+- Immutable ledger.
+- Idempotent commission posting.
+- Seller settlement integration.
+- Reconciliation.
+
+### Phase 5 — Refund and payout integration
+
+- Cancellation reversals.
+- Partial-refund calculations.
+- Full-refund reversals.
+- Chargeback handling.
+- Late-refund recovery entries.
+- Payout requests.
+- Actual payout execution only where existing provider capability is verified.
+- Payout reconciliation and audit.
+
+### Phase 6 — Seller Centre
+
+- Seller programme settings.
+- Default/product-level rates.
+- Product eligibility.
+- Pause/resume.
+- Seller affiliate performance.
+- Commission liabilities and refunds.
+- Seller isolation.
+
+### Phase 7 — Affiliate Hub and admin interfaces
+
+Complete the Affiliate Hub sections described above.
+
+Build admin programme configuration, affiliate review, financial review, fraud controls and reconciliation.
+
+Ensure the interface is responsive at desktop and mobile widths.
+
+Do not create decorative charts that display fabricated figures.
+
+### Phase 8 — Final verification and launch gate
+
+Run the complete verification programme below.
+
+The programme must remain behind the appropriate production feature gates until legal, financial and staging requirements are satisfied.
+
+---
+
+# 19. MANDATORY TESTING
+
+Create durable readiness test suites using the existing NOMOFEE test conventions.
+
+Archive machine-readable results in the established `performance/runs/` structure.
+
+### A. Sponsor relationship tests
+
+- A refers B.
+- A refers C.
+- B refers D.
+- Sponsor B for D is recorded.
+- A receives nothing from D.
+- B earns the 10% sponsor share from D.
+- A can have 10,000 direct referrals without recursive commission depth.
+- Duplicate sponsor assignment is rejected.
+- Existing sponsor cannot be overwritten by a later referral click.
+- Expired referral touch is rejected.
+- Invalid/referral code is rejected.
+- Self-referral is rejected.
+- Sponsor cycle is impossible.
+- Existing active affiliate cannot attach a sponsor retroactively.
+- New affiliate activation creates the relationship exactly once.
+
+### B. Referral attribution tests
+
+- First valid sponsor referral touch wins.
+- Competing sponsor link does not overwrite the first valid touch.
+- 30-day expiry is respected.
+- Channel metadata is recorded correctly.
+- Direct registration creates no sponsor.
+- Existing buyer's first affiliate activation supports the documented code-entry flow.
+- Duplicate registration and retry are idempotent.
+
+### C. Product attribution tests
+
+- Product link attributes only the correct product.
+- Store link attributes only eligible products from that store.
+- Collection link respects collection scope.
+- Showcase link respects its limited attribution scope.
+- Last eligible click wins for the same product.
+- A different product click does not overwrite unrelated product attribution.
+- Expired attribution is rejected.
+- Invalid or tampered affiliate token is rejected.
+- Seller-disabled product does not generate commission.
+- A seller rate change does not rewrite an existing order snapshot.
+
+### D. Financial tests
+
+Test the exact RM100 / 10% example:
+
+- Commission pool RM10.
+- Direct affiliate RM9.
+- Sponsor RM1.
+- Total allocation RM10.
+
+Test:
+- No sponsor: direct affiliate gets RM10.
+- Different product commission rates.
+- Small commission amounts and sen rounding.
+- RM0.05 pool.
+- Multiple products.
+- Multiple sellers.
+- Different sponsors.
+- Items with no attribution.
+- Discounts and vouchers.
+- Currency precision.
+- Rate snapshot consistency.
+- Duplicate payment confirmation.
+- Duplicate webhook delivery.
+- Concurrent commission posting.
+- Commission allocation cannot exceed the original pool.
+
+### E. Multi-store checkout tests
+
+Use one checkout containing products from multiple sellers.
+
+Verify that:
+- Each OrderItem has its own attribution.
+- Each OrderItem uses its own seller commission rate.
+- Different affiliates can be credited within the same checkout.
+- Each affiliate's own sponsor receives only their corresponding 10%.
+- Unattributed products create no commission.
+- Seller settlement remains correct.
+- No unrelated product receives affiliate attribution.
+
+### F. Refund and payout tests
+
+- Unpaid order: no commission.
+- Failed payment: no commission.
+- Cancellation: correct reversal.
+- Full item refund: correct reversal.
+- 50% item refund: proportional reversal.
+- Shipping-only refund: no commission reversal.
+- Late refund after payout: recoverable adjustment.
+- Duplicate refund event: no duplicate reversal.
+- Sponsor under review: sponsor share held independently.
+- Direct promoter retains legitimate earnings.
+- Payout cannot exceed available balance.
+- Duplicate payout request cannot pay twice.
+- Failed payout remains auditable and retry-safe.
+
+### G. Security tests
+
+- Unauthenticated API calls rejected.
+- Affiliate A cannot access Affiliate B's private data.
+- Affiliate cannot alter sponsor assignment.
+- Affiliate cannot edit another affiliate's links or collections.
+- Seller A cannot manage Seller B's affiliate settings.
+- Seller cannot edit commission snapshots for existing orders.
+- Public showcase does not expose private data.
+- Admin endpoints reject non-admin users.
+- CSRF protections remain effective.
+- Rate limits work.
+- Tampered link tokens fail closed.
+- Duplicate and fraudulent referral attempts are handled safely.
+
+### H. Financial regression tests
+
+Re-run existing finance and payment readiness suites.
+
+Verify:
+- Checkout idempotency unchanged.
+- Payment confirmation correctness unchanged.
+- Seller wallet balances unchanged except for correctly accounted affiliate liabilities.
+- Inventory correctness unchanged.
+- Refund processing remains correct.
+- Ledger invariants remain correct.
+- No duplicate payouts.
+- No seller financial regression.
+
+### I. Performance tests
+
+Test realistic scenarios:
+
+- 10,000 affiliate registrations through a controlled load scenario.
+- Large direct-referral lists.
+- Referral-link resolution under burst traffic.
+- Large affiliate dashboard pagination.
+- Many commissions posted concurrently.
+- Multi-store checkouts.
+- Refund/reconciliation batches.
+
+Separate registration burst tests from concurrent checkout tests.
+
+Use a real load-test setup where available.
+
+Clearly label dev-mode, local and production measurements separately.
+
+Do not claim production capacity based on development sandbox results.
+
+### J. Browser verification
+
+Verify:
+- Affiliate registration and activation.
+- Referral sponsor confirmation.
+- Product discovery.
+- Link creation.
+- Link sharing and copying.
+- Collections.
+- Public showcase.
+- My Network.
+- Earnings.
+- Payout history.
+- Seller commission settings.
+- Seller performance.
+- Admin controls.
+- Mobile layout.
+- Desktop layout.
+- Empty/loading/error states.
+- No console errors on clean reload.
+
+---
+
+# 20. IMPLEMENTATION REPORT REQUIREMENTS
+
+At completion create:
+
+`docs/affiliate/implementation-report.md`
+
+The report must include:
+
+1. Initial architecture audit.
+2. Reused systems and why they were reused.
+3. New database models and changes.
+4. API routes.
+5. UI sections.
+6. Attribution rules actually implemented.
+7. Commission calculation and rounding.
+8. Sponsor eligibility rules.
+9. Seller settlement integration.
+10. Refund and reversal integration.
+11. Payout integration and actual provider capability.
+12. Security controls.
+13. Performance considerations.
+14. Test suites and archived results.
+15. Browser verification evidence.
+16. Remaining limitations.
+17. Known risks and unresolved decisions.
+18. Production deployment instructions.
+19. Legal and operational launch blockers.
+
+Be explicit about what is:
+- Implemented.
+- Runtime tested.
+- Browser verified.
+- Partially implemented.
+- Not tested.
+- Deferred.
+- Blocked.
+
+Do not call something complete merely because the UI exists.
+
+Do not use fake historical activity or test data in production analytics.
+
+Do not claim production readiness without the actual production build, staging verification, required credentials, scheduled jobs and relevant provider integrations being tested.
+
+---
+
+# 21. IMPORTANT SCOPE BOUNDARIES
+
+Do not build a conventional multi-generation MLM compensation tree.
+
+Do not add second-level or deeper sponsor overrides.
+
+Do not pay registration bonuses.
+
+Do not pay recruitment bonuses.
+
+Do not pay commissions for clicks or impressions.
+
+Do not introduce compulsory affiliate purchases, joining fees, inventory purchases or sales quotas.
+
+Do not introduce platform-funded bonuses in the initial implementation. Keep the accounting architecture extensible so they can be added later as a separately funded programme.
+
+Do not implement coupon-code commission attribution in the initial release unless the audit identifies a genuinely necessary existing capability that can be reused safely. Keep it as a later enhancement.
+
+Do not implement Meta, TikTok, Google or other advertising account integrations as part of this scope.
+
+Do not build social-media account connections simply to enable link sharing.
+
+Do not mix affiliate commission liabilities with SellerCampaign attribution or platform revenue.
+
+Do not duplicate the existing seller analytics, checkout, wallet or payment infrastructure.
+
+Do not create a second unrelated financial ledger if the existing immutable accounting infrastructure can safely support a distinct affiliate subledger/account type.
+
+Do not weaken existing security, transaction or rate-limiting controls to make the new system easier to implement.
+
+---
+
+# 22. FINAL EXPECTATION
+
+I want a complete, functional and integrated NOMOFEE Affiliate System.
+
+The user experience should make it easy for an ordinary person to:
+
+1. Join the affiliate programme.
+2. Receive a personal sponsor/referral link.
+3. Introduce other people to NOMOFEE.
+4. Discover products from participating sellers.
+5. Generate product, store and collection links.
+6. Share links externally.
+7. Track their own product sales.
+8. See their direct referral network.
+9. Earn 90% from eligible personal product promotion sales.
+10. Earn 10% from eligible product sales generated by their directly referred affiliates.
+11. Track pending, approved, available and paid commission.
+12. Request and receive payouts through actually supported payment infrastructure.
+
+The seller should be able to:
+
+1. Opt into the affiliate programme.
+2. Select eligible products.
+3. Configure commission rates.
+4. Pause participation.
+5. See genuine affiliate traffic and sales.
+6. Understand the commission liability deducted from seller proceeds.
+
+NOMOFEE administrators should be able to:
+
+1. Control programme availability.
+2. Set programme-wide rules.
+3. Review affiliates.
+4. Investigate fraud.
+5. Review financial liabilities.
+6. Reconcile commission allocation and payouts.
+7. Audit changes and adjustments.
+
+**The most important financial principle:**
+
+Every affiliate commission must be traceable to a genuine eligible product sale.
+
+For each eligible OrderItem, the combined direct affiliate and immediate sponsor allocation must never exceed the original seller-funded commission pool.
+
+The sponsor relationship must never extend beyond one generation for commission purposes.
+
+The system must remain correct when one checkout contains products from different sellers, attributed to different affiliates, with different sponsors and different commission rates.
+
+Build this carefully, verify it against the current codebase, and preserve the integrity of every existing NOMOFEE financial workflow.

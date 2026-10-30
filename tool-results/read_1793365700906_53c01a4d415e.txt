@@ -1,0 +1,196 @@
+     1→     1→# Affiliate Programme — Security & Fraud Controls (§16 Requirements Mapping)
+     2→     2→
+     3→     3→**Scope:** Every §16 requirement of the affiliate specification mapped to a concrete, verifiable control in the NOMOFEE codebase or the affiliate build. Each control names the enforcing file or mechanism, the phase that lands it (`implementation-plan.md`), and how it is tested. Companion documents: `architecture-audit.md` (existing security posture), `commission-definitions.md` (money-path rules), `rollout-checklist.md` (launch gates).
+     4→     4→
+     5→     5→**Existing platform security baseline (inherited, verified):** DB-backed revocable sessions (`src/lib/auth.ts`); CSRF proxy gate over all `/api/*` mutations (`src/proxy.ts`); HMAC-signed, replay-windowed payment webhooks with claim-first Serializable processing (`src/app/api/webhooks/payments/process.ts`); admin RBAC capability matrix with a single shared source (`src/lib/admin-caps.ts`, `requireCap` in `src/lib/auth.ts`); immutable double-entry ledger with dedupKey idempotency (`src/lib/ledger.ts`); admin audit log with before/after snapshots and a platform activity log (`auditAdmin` / `logActivity` in `src/lib/api.ts`); pseudonymous first-party analytics cookies with an explicit no-PII/no-fingerprinting posture (`src/lib/analytics/identity.ts`); fail-closed cron authentication (`src/lib/cron-auth.ts`); fail-closed webhook secret in production (503 `WEBHOOK_SECRET_UNSET`).
+     6→     6→
+     7→     7→**Threat model summary:** the affiliate programme's specific abuse surfaces are (1) forged attribution (claiming commissions for traffic one did not send), (2) self-dealing (self-purchase / self-referral loops), (3) money-path tampering (client-supplied beneficiary ids, replayed postings), (4) enumeration/scraping of public affiliate surfaces, (5) PII leakage through network views, and (6) structural drift toward multi-level rewards (the MLM boundary). The controls below address each; §12 states residual risks honestly.
+     8→     8→
+     9→     9→---
+    10→    10→
+    11→    11→## 1. Session-scoped queries (`requireAffiliate`)
+    12→    12→
+    13→    13→**Requirement §16:** every affiliate data access is scoped to the authenticated affiliate session; no id-scoped trust from the client.
+    14→    14→
+    15→    15→**Controls:**
+    16→    16→- `requireAffiliate()` helper (`src/lib/affiliate/auth.ts`, Phase 1): calls `requireShopper()` (`src/lib/auth.ts` — DB-backed session lookup by `sm_session` cookie or Bearer token, `Session` token unique, 7-day TTL, rejects shoppers whose account status is not `active`), then loads the `AffiliateProfile` filtered **by `shopperId: me.id`** and gates on profile status (`active`; else 403 with a reason code such as `AFFILIATE_SUSPENDED`). The helper returns the profile — routes never accept an affiliate id parameter for self-scoped access.
+    17→    17→- Every affiliate query filters `where: { affiliateId: <from requireAffiliate> }`. This is the exact scoping discipline of the existing shopper routes (`src/app/api/me/orders/route.ts`, `src/app/api/me/wallet/route.ts`, cart routes keyed off `requireShopper`/cart ownership).
+    18→    18→- Object-level authorisation is server-side and per-row: links, collections, commissions, payouts and network data are all fetched with the affiliate scope in the `WHERE` clause, never filtered after the fact in JS (no "fetch all, then check owner" patterns).
+    19→    19→- Admin affiliate routes use `requireCap("affiliate.manage")` (`src/lib/auth.ts`; capability matrix `src/lib/admin-caps.ts`) and may address any profile by id — with every mutation audited (§6).
+    20→    20→- Suspension takes effect on the **next request** (status re-checked per request inside `requireAffiliate`) — the same immediate-effect semantics the platform applies to suspended sellers (`requireActiveSellerStore` blocks suspended/terminated sellers server-side in `src/lib/auth.ts`).
+    21→    21→- Session-fixation/rotation semantics are inherited unchanged (`rotateSession` deletes-first; logout retires both cookie and Bearer tokens — F-03 remediation in `src/lib/auth.ts`).
+    22→    22→
+    23→    23→**Tests:** attempt to read another affiliate's links/commissions/payouts by guessing ids → 404/403, no data; suspended affiliate's token → 403 on next call.
+    24→    24→
+    25→    25→## 2. Server-side sponsor assignment only
+    26→    26→
+    27→    27→**Requirement §16:** sponsor assignment is never client-controlled.
+    28→    28→
+    29→    29→**Controls:**
+    30→    30→- The ONLY writer of `AffiliateProfile.sponsorProfileId` is `src/lib/affiliate/activation.ts` (Phase 1). It derives the sponsor from an unconsumed, in-window `AffiliateReferralTouch` recorded by the landing beacon — first-touch-wins inside `affiliate.sponsor_window_days` — inside the activation transaction. Touch consumption (`consumedAt`, `consumedUserId`) is marked in the same transaction, so a touch binds exactly one registration and cannot re-bind.
+    31→    31→- The activation route body contains **no sponsor field**: any `sponsor`, `sponsorId`, `referrer`, or `ref` keys in the payload are ignored (never read into the write path). Mass-assignment is structurally impossible because the Prisma `create` input is built field-by-field in the service, not spread from the body.
+    32→    32→- Post-activation the field is immutable at the service layer: **no shopper-facing route writes it**, in any phase. The sole mutation path is the admin correction route (`POST /api/admin/affiliate/sponsors/correct`), which requires a free-text `reason`, caps `affiliate.manage`, rejects cycle-forming corrections (walk-up check), and triple-audits: `AffiliateSponsorAudit` row + `AdminAuditLog` (via `auditAdmin`, before/after JSON) + `ActivityLog` (via `logActivity`).
+    33→    33→- **No retroactive attach:** a correction affects future postings only (`commission-definitions.md` §4.1). There is no code path anywhere in the programme that recomputes an existing `AffiliateCommissionEntry`'s beneficiary or re-splits a posted commission.
+    34→    34→
+    35→    35→**Tests:** activation with a spoofed sponsor field → binding still derived from the touch (or none); admin correction without reason → 400; correction attempt that would create a cycle → 409.
+    36→    36→
+    37→    37→## 3. No client-supplied affiliate ids in money paths
+    38→    38→
+    39→    39→**Requirement §16:** attribution and beneficiary identity in money paths come exclusively from server-recorded state.
+    40→    40→
+    41→    41→**Controls:**
+    42→    42→- **Attribution source of truth:** affiliate touches are recorded server-side from the **httpOnly `nm_ins_vid` visitor cookie** (`src/lib/analytics/identity.ts` — httpOnly, SameSite=None, Secure, random 16-byte hex token, 365-day life; explicitly no IP, no UA, no fingerprinting, no PII). The track endpoint resolves the link code server-side and writes the touch with the cookie's visitorId.
+    43→    43→- **Checkout resolution is server-side only:** `src/app/api/checkout/create/route.ts` (Phase 3) reads `cookies()` and queries `AffiliateAttributionTouch` for `(visitorId, productId)` — last valid touch within `affiliate.attr_window_days`. This is the identical pattern the codebase already uses for marketing attribution: `resolveAttribution()` reads the `nm_ins_attr` cookie server-side and the result is frozen onto `Order.attr*` columns (verified at `src/app/api/checkout/create/route.ts` lines 196, 276–281). The checkout request body has **no affiliate fields**; any that appear are ignored.
+    44→    44→- **Money-path identity chain:** `OrderItem.affiliateId` (frozen snapshot) → `AffiliateCommission.affiliateId` (copied at posting) → entry beneficiaries (profile rows). No request payload participates at posting, payout, or reversal time. The webhook payload cannot influence affiliate identity — it authenticates via HMAC and carries only provider ref/event/amount/ts.
+    45→    45→- **Fail-closed resolution:** missing/invalid cookie, expired window, deactivated link, inactive or suspended affiliate → unattributed (or `no_touch`/`not_enabled` exclusion), never an error surfaced to the buyer. Pattern: `resolveCampaignToken` in `src/lib/analytics/attribution.ts` returns null on any doubt (including cross-store tokens).
+    46→    46→- **Buyer cannot choose attribution:** commissions cannot be "donated" to an arbitrary affiliate by adding a URL parameter — only actually recorded touches (from real link landings, keyed to the buyer's own httpOnly visitor cookie) can win.
+    47→    47→
+    48→    48→**Tests:** checkout with an `affiliate` field in the body → ignored; checkout with no visitor cookie → unattributed; checkout after cookie clear between click and purchase → unattributed (fails closed).
+    49→    49→
+    50→    50→## 4. CSRF gate compliance
+    51→    51→
+    52→    52→**Requirement §16:** all affiliate fetches comply with the platform CSRF gate.
+    53→    53→
+    54→    54→**Controls:**
+    55→    55→- The Next.js 16 proxy (`src/proxy.ts`, `matcher: ["/api/:path*"]`) gates every non-safe API method with ordered rules: self-authenticated route prefixes exempt → Bearer header allow → `X-SM-Client: web` marker allow → `Sec-Fetch-Site` (same-origin/same-site/none allow, cross-site 403) → Origin host match → JSON-only bodies (415) → non-browser clients allow. Every new affiliate route lives under `/api/` and inherits the gate **with zero configuration**.
+    56→    56→- All SPA affiliate fetches go through the existing client helpers (`src/lib/session-client.ts`): `authHeaders()` (Bearer when present + the `X-SM-Client: web` marker always) and `deviceHeaders()` (marker + cart/shopper device tokens). Pre-auth requests (e.g. the activation dialog before login edge cases) still carry the marker — the documented pre-auth coverage of rule (2).
+    57→    57→- **Code-review gate (Phase 7):** no affiliate component may issue a bare `fetch()` to `/api/affiliate/**` without the marker headers; the shared client wrapper is the only sanctioned path.
+    58→    58→- The affiliate **track/landing** endpoint is a top-level **GET** navigation (`GET /api/affiliate/track?code=…&redirectTo=…`) — safe methods pass the proxy by design (`SAFE_METHODS` in `src/proxy.ts`). It performs no money movement and only appends evidence rows under rate limiting and validation. The redirect target is validated against a server-side allowlist of SPA paths (`/?sf=…&sp=…&af=…` shapes) — no open redirect.
+    59→    59→- The affiliate hub's landing beacon (`POST /api/affiliate/landing`) is a same-origin beacon from the SPA mount — exactly the pattern of the `nmcl` beacon (`src/components/shopper/shopper-shell.tsx` → `POST /api/analytics/landing`, documented as CSRF-gated).
+    60→    60→- **Exemption discipline:** NO affiliate route is added to `SELF_AUTHENTICATED_PREFIXES` in `src/proxy.ts`. The affiliate cron endpoint (`POST /api/cron/affiliate-tick`) lives under the already-exempt `/api/cron/` prefix and authenticates with `x-cron-secret` via `assertCronAuth` (`src/lib/cron-auth.ts`) — fail-closed in production when `CRON_SECRET` is missing (503), timing-safe comparison when set.
+    61→    61→
+    62→    62→**Tests:** cross-site POST to an affiliate mutation → 403 `CSRF_REJECTED`; urlencoded form POST → 415; beacon without marker from a foreign page → blocked by Sec-Fetch-Site rule.
+    63→    63→
+    64→    64→## 5. Rate limits per endpoint
+    65→    65→
+    66→    66→**Requirement §16:** per-endpoint limits — activation 5/min, link create 30/min, track 60/min, payout request 3/min, admin ops 30/min.
+    67→    67→
+    68→    68→**Controls:**
+    69→    69→- **Refactor first (audit §3.16):** the platform has TWO limiters, both IP-keyed — `src/lib/rate-limit.ts` (`rateLimit(req, bucket, limit, windowMs)`, synchronous throw `ApiError 429 RATE_LIMITED`, in-memory Map or optional Redis via `RATE_LIMIT_REDIS_URL`) and `src/lib/ratelimit.ts` (`rateLimit(req, {limit, windowMs})` returning `{ok, retryAfterSec}`, per-IP+path, single-process — used by financial mutation routes). **Neither satisfies affiliate needs verbatim** because affiliate abuse is account-driven: an abusive affiliate rotating IPs defeats an IP bucket, and a shared NAT punishes honest users. The affiliate build lands `src/lib/affiliate/rate-limit-affiliate.ts`: one keyed limiter over a unified store with key = `bucket:{shopperId|adminId}` when authenticated, `bucket:{ip}` otherwise, preserving the synchronous-throw contract.
+    70→    70→- **Bucket table (enforced at the top of each handler, before side effects — the documented ordering discipline of the existing call sites):**
+    71→    71→
+    72→    72→| Endpoint | Key | Limit | Rationale |
+    73→    73→|---|---|---|---|
+    74→    74→| `POST /api/affiliate/activate` | account | 5 / min | activation is once-ever; bursts = scripting |
+    75→    75→| `POST /api/affiliate/links` | account | 30 / min | link creation spam control |
+    76→    76→| `GET /api/affiliate/track` | IP | 60 / min | public anonymous surface |
+    77→    77→| `POST /api/affiliate/payouts` | account | 3 / min | money-adjacent request path |
+    78→    78→| `POST /api/admin/affiliate/**` mutations | admin account | 30 / min | console abuse / fat-finger storms |
+    79→    79→| `POST /api/affiliate/landing` | IP | 60 / min | registration-touch beacon |
+    80→    80→| `PUT /api/affiliate/profile` | account | 10 / min | display-name churn control |
+    81→    81→
+    82→    82→- 429 responses carry `retryAfterSeconds` in the error details (existing convention, `src/lib/rate-limit.ts` `ApiError` details) so the hub can render a countdown.
+    83→    83→- **Known limitation, stated honestly:** without `RATE_LIMIT_REDIS_URL`, limits are per-process (single instance). The Redis adapter exists in `src/lib/rate-limit.ts` (shadow-counter convergence, degrade-to-memory on failure) but is **unproven in staging** (documented in that file's header). Production multi-instance deployment must configure and verify the Redis store or document gateway-level limiting as the compensating control — this is a launch-gate item (`rollout-checklist.md` §7).
+    84→    84→
+    85→    85→**Tests:** per-account bucket keys off the authenticated principal (two accounts on one IP get separate buckets); unauthenticated track keys off IP; 429 payload includes retry seconds.
+    86→    86→
+    87→    87→## 6. Token unpredictability & idempotency
+    88→    88→
+    89→    89→**Requirement §16:** affiliate codes are unguessable; money mutations are idempotent.
+    90→    90→
+    91→    91→**Controls:**
+    92→    92→- **Link codes:** `AffiliateLink.code = randomToken(12)` — `randomBytes(12).toString("hex")` (`src/lib/password.ts`), 96 bits of entropy, globally `@@unique`, resolved server-side with fail-closed ownership/type checks. Code enumeration is infeasible; the track bucket's 60/min IP limit additionally throttles probing, and invalid codes return 404 with no oracle distinguishing "expired", "deactivated", and "never existed".
+    93→    93→- **Ledger idempotency (money layer):** every affiliate posting rides the existing `postTransaction` dedupKey discipline (`src/lib/ledger.ts`): unique `dedupKey`, P2002 → replay recovery returns the ORIGINAL posting (`wasReplay()`). Keys: T1's affiliate line under `order_paid:order:{orderId}`; T5's reversal under `refund:refund:{refundId}`; T-A3/T-A4/T-A4f under `affiliate_payout_{initiated,confirmed,failed}:payout:{id}`.
+    94→    94→- **Commission idempotency (row layer):** `AffiliateCommission.orderItemId @unique` — one commission row per order item, structurally. Three independent guards make duplicate commissions impossible on webhook redelivery: the webhook's claim-first conditional `paymentGroup.updateMany` (loser writes nothing), the T1 dedupKey, and the unique `orderItemId`.
+    95→    95→- **Payout idempotency:** claim-first conditional status transitions inside the posting transaction (`processing → paid` guarded `updateMany`, count 0 → 409 `CONFLICT`) — the verified pattern of `src/app/api/admin/payouts/[id]/mark-paid/route.ts` — plus the T-A4 dedupKey backstop. One-open-request enforcement for affiliate payout creation uses the Serializable tx + bounded P2034 retry shape proven in `POST /api/store/payouts` (`src/app/api/store/payouts/route.ts`).
+    96→    96→- **Touch idempotency (evidence layer):** touches are append-only and rate-limited; duplicate landings cannot multiply money because attribution resolves "last touch" once at checkout. The track endpoint is safe to be called twice by a double-click.
+    97→    97→- **Notification idempotency** (affiliate emails) uses the `(channel, dedupKey)` unique on `NotificationLog` — the FIN-2b pattern already in `prisma/schema.prisma`.
+    98→    98→
+    99→    99→**Tests:** webhook replay storm → one commission set, one T1; double mark-paid → 409 + single T-A4; double track click → two touches, one attribution.
+   100→   100→
+   101→   101→## 7. Privacy rules for network view & public surfaces
+   102→   102→
+   103→   103→**Requirement §16:** network views expose display names only; no PII leakage from public affiliate surfaces.
+   104→   104→
+   105→   105→**Controls:**
+   106→   106→- `GET /api/affiliate/network` returns per referred profile: **`displayName` only** — plus aggregate counts (activated referrals) and lifetime pool generated through them. No emails, phones, full names, order numbers, item-level purchase detail, or addresses. The projection is a fixed server-side `select`; it is not a filter applied to a broader payload after fetch.
+   107→   107→- Referred affiliates' `ShopperUserDTO` fields (id/email/fullName/phone, `src/lib/auth.ts`) never enter affiliate responses: affiliate reads select from `AffiliateProfile` (which carries only `displayName` as public surface text).
+   108→   108→- **Public showcase exposure limits** (`GET /api/affiliate/showcase/[slug]`, Phase 2): serves affiliate display name, collection title/description, public product cards (the same fields the marketplace already exposes via `/api/market/**` and `/api/sf/**` — no seller-internal data), affiliate-authored product notes (length-capped ≤200 chars, control-character-stripped and clamped on write — the `sanitizeUtm` pattern from `src/lib/analytics/attribution.ts`), `rel="nofollow"` on external links. Server-enforced caps: max public collections per affiliate (setting, default 3), max 50 items per collection, `isPublic` required for the route to resolve. Showcases of suspended affiliates 404.
+   109→   109→- Affiliate display names are set at activation, editable only via the rate-limited profile route — moderated surface text treated like public UGC (length cap, sanitisation, admin visibility for review).
+   110→   110→- **No invasive tracking (affirmative, inherited):** the attribution pipeline uses only the pseudonymous first-party cookies `nm_ins_vid`/`nm_ins_sid` (`src/lib/analytics/identity.ts` — "NO IP addresses, NO user-agent, NO fingerprinting, NO PII"). The affiliate build introduces **no** new identifiers, no fingerprinting, no cross-site trackers, no third-party pixels on showcase pages.
+   111→   111→- Analytics events carrying affiliate fields (`affiliateLinkCode`) live under the same retention purge (`analytics.retention_days`) — affiliate analytics storage does not silently outlive the documented analytics retention.
+   112→   112→
+   113→   113→**Tests:** network response JSON diffed against an allowlist of keys; showcase HTML contains no email/phone patterns; note field with control characters is stripped at write.
+   114→   114→
+   115→   115→## 8. Self-referral & cycle prevention
+   116→   116→
+   117→   117→**Requirement §16:** an affiliate cannot become their own sponsor; referral cycles cannot form; no retroactive attach.
+   118→   118→
+   119→   119→**Controls:**
+   120→   120→- **Self-FK check:** activation rejects a sponsor binding where the touch's affiliate id equals the activating shopper's own (existing or concurrently created) `AffiliateProfile.id` — self-referral rejection in `src/lib/affiliate/activation.ts`.
+   121→   121→- **One-sponsor rule:** `AffiliateProfile.sponsorProfileId` is a single nullable FK — structurally one sponsor, written once at activation, unwritable by shoppers (§2).
+   122→   122→- **Cycle prevention by construction:** sponsor binding happens ONLY at the activation of a NEW profile, and the sponsor must already be an activated profile at that moment. The sponsor edge therefore always points from a newer profile to an older one; chains are acyclic because a profile cannot sponsor before it exists and binding happens exactly once. Admin corrections additionally walk up the sponsor chain and reject any correction that would create a cycle (cheap at one-level depth, defensive forever).
+   123→   123→- **Self-purchase exclusion (checkout, hard money-path exclusion):** at checkout create, if the winning attribution touch's affiliate === the buyer's own affiliate profile, the item is excluded with reason `self_purchase` — no affiliate snapshot, no pool, no commission, no T1 affiliate line. It is never a post-hoc reversal: the money never recognises. The exclusion reason is frozen on `OrderItem.affiliateExclusion` so audits distinguish policy exclusions from missing attribution.
+   124→   124→- **No recruitment bonuses / no click rewards (structural):** the ONLY money source is `AffiliateCommission` rows born inside the payment webhook's transaction from order-item snapshots. No code path pays on activation, on click, on referral count, or on any event other than a paid, attributed, non-excluded order item. The 10% sponsor share exists only as a **split of an already-earned pool** (`commission-definitions.md` §3) — one generation, bounded by the pool, never additive to it. There is no second-level lookup anywhere in the money path (single `sponsorProfileId` hop, no recursion).
+   125→   125→- Anonymous/guest self-purchase edge: checkout is account-only (`requireShopper` — verified at the top of `src/app/api/checkout/create/route.ts`), so the buyer's identity is always known at snapshot time; there is no guest-checkout blind spot.
+   126→   126→
+   127→   127→**Tests:** self-referral landing → activation with no sponsor; sponsor graph remains acyclic under adversarial admin corrections; self-purchase checkout → `affiliateExclusion = self_purchase`, T1 posts 3 lines.
+   128→   128→
+   129→   129→## 9. Fraud monitoring points
+   130→   130→
+   131→   131→**Requirement §16:** defined monitoring without invasive automation.
+   132→   132→
+   133→   133→**Controls:**
+   134→   134→- **Self-purchase exclusion at checkout** (§8) — monitored as a *rate*: the monitoring report surfaces per-affiliate `self_purchase` exclusion counts from `OrderItem.affiliateExclusion`. A high rate flags boundary-gaming behaviour for review (each individual case is legitimate-and-excluded — the exclusion did its job).
+   135→   135→- **Duplicate account investigation is MANUAL.** The platform performs **no automatic IP banning, no device fingerprinting, no automated sibling-account detection**. The monitoring report lists human-review signals only:
+   136→   136→  - multiple profiles sharing one sponsor with closely timed activations;
+   137→   137→  - concentration of a sponsor's downline commissions on a small number of buyer accounts;
+   138→   138→  - self-purchase exclusion rate per affiliate;
+   139→   139→  - refund rate on attributed orders vs platform baseline;
+   140→   140→  - track-to-sale conversion outliers (near-100% conversion on a link = self-dealing signal);
+   141→   141→  - 429 telemetry per affiliate bucket (probe/automation behaviour).
+   142→   142→- Investigators act exclusively through the audited controls — suspension (§10), sponsor correction (§2), payout hold via the manual workflow — never automated punishment. Evidence for any action is the immutable record set (touches, snapshots, ledger, audit logs).
+   143→   143→- **Held sponsor share on suspension:** suspending a sponsor freezes future share accrual and holds unpaid shares without touching downline direct affiliates (§10) — the containment tool for sponsor-side fraud while investigation proceeds.
+   144→   144→- **Money-side integrity monitoring** is the reconciliation report (`commission-definitions.md` §10, 7 points) — separate from behavioural monitoring; both run on the cadence in `rollout-checklist.md` §7. Neither performs predictive scoring of users.
+   145→   145→
+   146→   146→**Tests:** monitoring queries return the signal list without PII beyond display names; no enforcement automation exists to trigger accidentally.
+   147→   147→
+   148→   148→## 10. Suspension semantics & kill switch
+   149→   149→
+   150→   150→**Requirement §16:** suspension holds the sponsor share separately; the direct 90% is unaffected; a programme kill switch exists.
+   151→   151→
+   152→   152→**Controls — suspension** (`POST /api/admin/affiliate/suspend`, caps `affiliate.manage`, `suspendedReason` required, audited via `AdminAuditLog` + `ActivityLog`, `suspendedAt` recorded):
+   153→   153→- the affiliate's links deactivate (`isActive=false` — no new touches from their links resolve);
+   154→   154→- their commissions stop advancing (the affiliate tick skips non-`active` profiles — clocks pause, nothing is forfeited automatically);
+   155→   155→- **if the affiliate sponsors others:** their share of *newly posted* downline commissions is created with entry status `held` — reserved in `PLATFORM:AFFILIATE_LIABILITY`, excluded from the sponsor's available balance, excluded from payout requests — while the downline direct affiliate's 90% is completely unaffected and proceeds through its normal lifecycle (`commission-definitions.md` §4.3, §6);
+   156→   156→- existing paid amounts are never clawed back (recovery obligations arise only from refunds, `commission-definitions.md` §7);
+   157→   157→- reinstatement (`reinstate`) resumes clocks and releases held shares onto their normal lifecycle; termination forfeits held shares via an audited adjustment recipe — **never redistribution** (unallocated share policy, `commission-definitions.md` §4.4).
+   158→   158→
+   159→   159→**Controls — kill switch:**
+   160→   160→- Setting `affiliate.enabled` (boolean, default false), changed only by superadmin through the settings registry (`src/lib/settings-registry.ts` group `affiliate`, rendered by admin System→Settings — `src/components/admin/system.tsx`, gated `settings.manage`), every change landing in the admin audit trail with actor and timestamp. It is a **runtime setting, not a deploy flag** — flippable during an incident without a release.
+   161→   161→- When false: every `/api/affiliate/**` route returns 403 `AFFILIATE_DISABLED` (checked before rate-limit buckets are consumed; the CSRF proxy still runs first); checkout create performs no affiliate resolution and writes no affiliate snapshots (equivalent to every item excluded `not_enabled` — new orders post the historical 3-line T1 exactly as today); the affiliate tick idles; payout requests are refused.
+   162→   162→- **Existing records are immutable and preserved:** frozen `OrderItem` snapshots, `AffiliateCommission`/entry rows, ledger lines, payout history, audit trails all remain intact and queryable. Re-enabling resumes the programme with no data repair (rollback plan, `rollout-checklist.md` §9).
+   163→   163→- The narrower switch `affiliate.sponsor_enabled` (default false; BLOCKED on the legal review — `rollout-checklist.md` §1) disables only the sponsor share: pools post as `D = P`, no held entries are created, existing sponsor entries continue their normal lifecycle.
+   164→   164→
+   165→   165→**Tests:** suspension mid-lifecycle → direct entries advance, sponsor entries hold; kill switch → full inertness sweep + snapshot-preservation check; re-enable → no repair needed.
+   166→   166→
+   167→   167→## 11. Control-to-requirement traceability matrix
+   168→   168→
+   169→   169→| §16 requirement | Control(s) | Enforcing artefacts | Phase |
+   170→   170→|---|---|---|---|
+   171→   171→| Session-scoped queries | `requireAffiliate` per-request scoping; WHERE-clause object-level authz | `src/lib/affiliate/auth.ts` over `src/lib/auth.ts` | P1 |
+   172→   172→| Server-side sponsor assignment | Activation-only binding; ignored client fields; audited admin corrections | `src/lib/affiliate/activation.ts`, `AffiliateSponsorAudit`, `auditAdmin` | P1 |
+   173→   173→| No client affiliate ids in money paths | Server-recorded touches keyed by httpOnly cookie; snapshot-driven posting; fail-closed resolution | `src/lib/analytics/identity.ts`, `src/app/api/checkout/create/route.ts`, `AffiliateAttributionTouch` | P3/P4 |
+   174→   174→| CSRF gate compliance | Inherited proxy gate + client marker headers; GET-only public track; no new exemptions | `src/proxy.ts`, `src/lib/session-client.ts` | all |
+   175→   175→| Rate limits (5/30/60/3/30) | Per-account keyed limiter refactor over the unified store | `src/lib/affiliate/rate-limit-affiliate.ts` over `src/lib/rate-limit.ts` | P1 |
+   176→   176→| Token unpredictability | `randomToken` codes, globally unique, no-oracle 404s | `src/lib/password.ts`, `AffiliateLink.code @@unique` | P2 |
+   177→   177→| Idempotency | dedupKeys + unique `orderItemId` + claim-first transitions + one-open-request Serializable create | `src/lib/ledger.ts`, webhook process route, payout routes | P4/P5 |
+   178→   178→| Immutable audit | Triple audit on sponsor ops; audit on every admin mutation; append-only acceptance records | `AffiliateSponsorAudit`, `AdminAuditLog`, `ActivityLog`, `termsVersion` | P1+ |
+   179→   179→| Self-referral/cycle prevention | Self-FK check, one-sponsor rule, activation-ordering acyclicity, no retroactive attach | `src/lib/affiliate/activation.ts` | P1 |
+   180→   180→| Self-purchase exclusion | Hard checkout exclusion, frozen reason, 3-line T1 | `OrderItem.affiliateExclusion = self_purchase` | P3 |
+   181→   181→| Privacy: display name only | Fixed server-side projections, allowlist-tested | `GET /api/affiliate/network` | P7 |
+   182→   182→| Public showcase limits | Server-enforced caps, sanitised copy, nofollow, suspended 404 | `AffiliateCollection.isPublic` + settings caps | P2 |
+   183→   183→| Suspension semantics | Held sponsor share, direct 90% unaffected, paused clocks, audited reinstatement | `AffiliateCommissionEntry.status = held`, affiliate tick | P4/P7 |
+   184→   184→| Fraud monitoring (manual, non-invasive) | Signal reports; no IP bans; no fingerprinting; no automated enforcement | monitoring queries over `OrderItem.affiliateExclusion` + admin console | P7 |
+   185→   185→| Kill switch | Runtime Setting gating every surface; records preserved | `affiliate.enabled` in settings registry + per-route checks | P1+ |
+   186→   186→| No MLM depth / no recruitment pay / no click pay | Structural: single-hop sponsor, pool-bounded split, webhook-born commissions only | `commission-definitions.md` §1/§3, schema (single nullable FK) | all |
+   187→   187→
+   188→   188→## 12. Residual risks (stated honestly)
+   189→   189→
+   190→   190→1. **IP-keyed track endpoint:** the 60/min track bucket is IP-keyed (anonymous public surface). A distributed click farm can inflate `clickCount` and create touch spam. Mitigations: touches are cheap append-only rows under retention purge; attribution is last-click on the buyer's own httpOnly visitor cookie, which the attacker does not control — injected touches can only *win* attribution for visitors the attacker genuinely sends. Click inflation skews displayed counters, never money.
+   191→   191→2. **Per-process rate limits without Redis** (§5) — acceptable for launch only if deployment is single-instance; multi-instance requires the shared store configured and verified (launch gate). The in-memory limitation is a documented property of both existing limiter modules.
+   192→   192→3. **Visitor cookie is the attribution root:** a buyer who clears cookies between click and checkout is unattributed — under-attribution, never over-attribution (fails closed). ITP-class cookie blocking shortens the 365-day life; this is an accuracy limitation inherited from the existing analytics identity design (`src/lib/analytics/identity.ts`), not a security hole.
+   193→   193→4. **Manual fraud response latency:** by design there is no automated punishment; a determined abuse pattern persists until an investigator acts. The monitoring cadence (`rollout-checklist.md` §7) is the compensating control, and the kill switch bounds worst-case exposure programme-wide.
+   194→   194→5. **Sponsor legal exposure:** until the Direct Sales and Anti-Pyramid Scheme Act 1993 / KPDN review concludes, `affiliate.sponsor_enabled` must remain false in production. The technical capability existing in code while disabled is an accepted, gated risk (`rollout-checklist.md` §1).
+   195→   195→6. **Carrier delivery proof is mock** (`architecture-audit.md` §3.6): affiliate approval keys on order status, not carrier-verified delivery — a seller colluding with an affiliate could mark orders delivered prematurely. Mitigations: the review window (`affiliate.review_days`) delays availability past delivery; refund reversal handles buyer disputes after approval; seller-side abuse patterns surface in the monitoring signals (refund rates on attributed orders). No automated seller-affiliate collusion detection exists — stated plainly.
+   196→   196→

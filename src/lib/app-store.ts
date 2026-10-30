@@ -56,7 +56,10 @@ export const useApp = create<AppState>((set, get) => ({
     // the storefront a customer would see, and the visit is attributed.
     try {
       const params = new URLSearchParams(window.location.search);
-      if (params.has("sf") || params.has("claim_job")) {
+      // Task 2-A: affiliate landings (?al= link / ?ref= join / ?aff= showcase /
+      // ?affc= collection) are shopper-surface pages for this load, same rule
+      // as ?sf= and claim links.
+      if (params.has("sf") || params.has("claim_job") || params.has("al") || params.has("ref") || params.has("aff") || params.has("affc")) {
         set({ surface: "shopper" });
         return;
       }

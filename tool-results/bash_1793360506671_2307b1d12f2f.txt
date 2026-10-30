@@ -1,0 +1,794 @@
+=== /home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
+import { requireCap } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { postPayoutConfirmed } from "@/lib/ledger";
+import { assertTransition } from "@/lib/payout-state";
+import { rateLimit } from "@/lib/ratelimit";
+import { readBody, reqStr } from "@/app/api/admin/_helpers";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// POST /api/admin/payouts/[id]/mark-paid {referenceNo} — T4 (RBAC payouts.manage)
+//
+// FIN-2a ATOMIC CLAIM PATTERN: the conditional updateMany (processing → paid)
+// inside the tx is the concurrency guard — a second concurrent mark-paid (or a
+// racing PSP webhook doing the same transition) matches 0 rows and gets a 409
+// instead of double-posting T4. The FIN-1 dedupKey on T4
+// (`payout_confirmed:payout:{id}`) backstops ledger-level exactly-once.
+export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
+  const admin = await requireCap("payouts.manage");
+  const { id } = await ctx.params;
+  const body = await readBody(req);
+  const referenceNo = reqStr(body, "referenceNo", "referenceNo (bank transfer reference)");
+
+  const payout = await db.payout.findUnique({ where: { id } });
+  if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
+  assertTransition(payout.status, "paid");
+
+  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  const txn = await db.$transaction(async (tx) => {
+    // CLAIM — atomic race guard before any ledger movement.
+    const claim = await tx.payout.updateMany({
+      where: { id, status: "processing" },
+      data: { status: "paid" },
+    });
+    if (claim.count === 0) {
+      throw new ApiError(409, "CONFLICT", "Payout is not in processing state (or already claimed)");
+    }
+    // T4 — DR PAYOUT_CLEARING | CR BANK_MAIN (clearing settles to bank).
+    const t = await postPayoutConfirmed({
+      walletId: payout.walletId,
+      payoutId: payout.id,
+      referenceNo: payout.referenceNo,
+      amountMinor: payout.amountMinor,
+      tx,
+    });
+    // Remaining fields — same tx so paidAt/providerRef commit with the claim + T4.
+    await tx.payout.update({
+      where: { id },
+      data: { paidAt: new Date(), providerRef: referenceNo },
+    });
+    return t;
+  });
+
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route): stable
+  // `{event}.{channel}:{payoutId}` keys so webhook/ops replays converge on the
+  // first delivered copy. Inapp subject mirrors the email wording.
+  await notify({
+    event: "payout.paid",
+    channel: "email",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} on the way`,
+    dedupKey: `payout.paid.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.paid",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} on the way`,
+    dedupKey: `payout.paid.inapp:${payout.id}`,
+  });
+
+  await auditAdmin({
+    adminId: admin.id,
+    adminEmail: admin.email,
+    action: "payout.mark_paid",
+    entityType: "payout",
+    entityId: id,
+    before: { status: payout.status, referenceNo: payout.referenceNo, amountMinor: payout.amountMinor },
+    after: { status: "paid", providerRef: referenceNo, txnId: txn.id },
+  });
+
+  const updated = await db.payout.findUnique({ where: { id } });
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  return ok(updated);
+});
+=== /home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
+import { requireCap } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { postPayoutFailed } from "@/lib/ledger";
+import { assertTransition } from "@/lib/payout-state";
+import { rateLimit } from "@/lib/ratelimit";
+import { readBody, reqStr } from "@/app/api/admin/_helpers";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// POST /api/admin/payouts/[id]/fail {reason} — T4f reversal (RBAC payouts.manage)
+//
+// FIN-2a ATOMIC CLAIM PATTERN: the conditional updateMany (processing → failed)
+// inside the tx is the concurrency guard — a racing fail/mark-paid/webhook
+// matches 0 rows and gets a 409 instead of double-posting T4f. The FIN-1
+// dedupKey on T4f (`payout_failed:payout:{id}`) backstops ledger-level
+// exactly-once.
+export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
+  const admin = await requireCap("payouts.manage");
+  const { id } = await ctx.params;
+  const body = await readBody(req);
+  const reason = reqStr(body, "reason", "reason");
+
+  const payout = await db.payout.findUnique({ where: { id } });
+  if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
+  assertTransition(payout.status, "failed");
+
+  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  const txn = await db.$transaction(async (tx) => {
+    // CLAIM — atomic race guard before any ledger movement.
+    const claim = await tx.payout.updateMany({
+      where: { id, status: "processing" },
+      data: { status: "failed" },
+    });
+    if (claim.count === 0) {
+      throw new ApiError(409, "CONFLICT", "Payout is not in processing state (or already claimed)");
+    }
+    // T4f — reversal of T3: DR PAYOUT_CLEARING | CR SELLER:PAYABLE (money returns).
+    const t = await postPayoutFailed({
+      walletId: payout.walletId,
+      payoutId: payout.id,
+      referenceNo: payout.referenceNo,
+      amountMinor: payout.amountMinor,
+      reason,
+      tx,
+    });
+    // Remaining fields — same tx so failReason commits with the claim + T4f.
+    await tx.payout.update({
+      where: { id },
+      data: { failReason: reason },
+    });
+    return t;
+  });
+
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route). NOTE: this route has
+  // TWO email recipients (ops + seller); dedupKey uniqueness is (channel, dedupKey)
+  // so the ops copy carries a recipient-scoped key (`…:ops`, FIN-2-a convention) —
+  // reusing the seller's key here would silently suppress the seller email.
+  await notify({
+    event: "payout.failed",
+    channel: "email",
+    recipient: "ops@nomofee.io",
+    subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.email:${payout.id}:ops`,
+  });
+  await notify({
+    event: "payout.failed",
+    channel: "email",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.failed",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout ${payout.referenceNo} failed`,
+    dedupKey: `payout.failed.inapp:${payout.id}`,
+  });
+
+  await auditAdmin({
+    adminId: admin.id,
+    adminEmail: admin.email,
+    action: "payout.fail",
+    entityType: "payout",
+    entityId: id,
+    before: { status: payout.status, referenceNo: payout.referenceNo, amountMinor: payout.amountMinor },
+    after: { status: "failed", reason, txnId: txn.id },
+  });
+
+  const updated = await db.payout.findUnique({ where: { id } });
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  return ok(updated);
+});
+=== /home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
+import { requireCap } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { refreshWalletCache } from "@/lib/ledger";
+import { assertTransition } from "@/lib/payout-state";
+import { rateLimit } from "@/lib/ratelimit";
+import { readBody, reqStr } from "@/app/api/admin/_helpers";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// POST /api/admin/payouts/[id]/reject {reason} — seller payout request → rejected.
+// No ledger movement: a request never moved money (T3 posts at approve time),
+// so rejection simply releases the request and the balance stays available.
+//
+// FIN-2a ATOMIC CLAIM PATTERN: the conditional updateMany (requested → rejected)
+// is the concurrency guard — a losing concurrent reject/approve matches 0 rows
+// and gets a 409 instead of double-transitioning the payout.
+export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
+  const admin = await requireCap("payouts.manage");
+  const { id } = await ctx.params;
+  const body = await readBody(req);
+  const reason = reqStr(body, "reason", "reason");
+
+  const payout = await db.payout.findUnique({ where: { id } });
+  if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
+  assertTransition(payout.status, "rejected");
+
+  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  // Keep ledger truth fresh so the wallet page immediately shows the released balance.
+  await refreshWalletCache(payout.walletId);
+
+  await db.$transaction(async (tx) => {
+    // CLAIM — atomic guard (no money moves here, but the transition itself must
+    // stay exactly-once even under concurrent approve/reject).
+    const claim = await tx.payout.updateMany({
+      where: { id, status: "requested" },
+      data: { status: "rejected" },
+    });
+    if (claim.count === 0) {
+      throw new ApiError(409, "CONFLICT", "Payout is not in requested state (or already claimed)");
+    }
+    // Remaining fields — same tx so reason and status commit together.
+    await tx.payout.update({ where: { id }, data: { failReason: reason } });
+  });
+
+  // FIN-3b (3b.1) — dedupKey pattern (see approve route): stable
+  // `{event}.{channel}:{payoutId}` keys; rejection replays stay single-delivery.
+  await notify({
+    event: "payout.rejected",
+    channel: "email",
+    recipient: seller.email,
+    subject: `Payout request ${payout.referenceNo} not approved`,
+    dedupKey: `payout.rejected.email:${payout.id}`,
+  });
+  await notify({
+    event: "payout.rejected",
+    channel: "inapp",
+    recipient: seller.email,
+    subject: `Payout request ${payout.referenceNo} not approved`,
+    dedupKey: `payout.rejected.inapp:${payout.id}`,
+  });
+
+  await auditAdmin({
+    adminId: admin.id,
+    adminEmail: admin.email,
+    action: "payout.request.reject",
+    entityType: "payout",
+    entityId: id,
+    before: { status: payout.status, amountMinor: payout.amountMinor },
+    after: { status: "rejected", reason },
+  });
+
+  const updated = await db.payout.findUnique({ where: { id } });
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  return ok(updated);
+});
+=== /home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
+import { requireCap } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { walletTruth, buildLedgerStatementFromLedger } from "@/lib/ledger";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+// POST /api/admin/payouts/[id]/sync — READ-ONLY reconciliation (RBAC payouts.manage).
+//
+// FIN-2a: payouts today are 100% manual — "the PSP is a human" (finance marks
+// paid/failed from bank evidence). This endpoint is the reconciliation hook:
+// it recomputes ledger truth vs the wallet cache, verifies the expected ledger
+// postings exist (T3/T4/T4f via FIN-1 dedupKeys), and rebuilds the payout
+// statement if it is missing or not ledger-derived. When a REAL PSP adapter
+// lands, THIS is where provider-API status retrieval plugs in (fetch the PSP
+// transfer state here, then drive transitions through the normal claim
+// pattern — the endpoint itself still never flips status on its own).
+//
+// HARD RULES: never transitions status, never posts money, never touches the
+// wallet cache. The ONLY write allowed is `statementJson` — a derived field.
+export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
+  const admin = await requireCap("payouts.manage");
+  const { id } = await ctx.params;
+
+  const payout = await db.payout.findUnique({ where: { id } });
+  if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+  const wallet = await db.wallet.findUnique({ where: { id: payout.walletId } });
+  if (!wallet) throw new ApiError(404, "NOT_FOUND", "Wallet not found");
+
+  const findings: string[] = [];
+
+  // ---------------------------------------------------------- wallet truth vs cache
+  const truth = await walletTruth(payout.walletId);
+  const cacheMatches = truth.availableMinor === wallet.availableMinor && truth.pendingMinor === wallet.pendingMinor;
+  if (!cacheMatches) {
+    findings.push(
+      `wallet cache drift: available cache=${wallet.availableMinor} truth=${truth.availableMinor}, pending cache=${wallet.pendingMinor} truth=${truth.pendingMinor}`
+    );
+  }
+
+  // ---------------------------------------------------------- expected ledger postings
+  // dedupKeys are FIN-1 contract: payout_{initiated,confirmed,failed}:payout:{id}
+  const [t3, t4, t4f] = await Promise.all([
+    db.ledgerTransaction.findUnique({ where: { dedupKey: `payout_initiated:payout:${id}` }, select: { id: true } }),
+    db.ledgerTransaction.findUnique({ where: { dedupKey: `payout_confirmed:payout:${id}` }, select: { id: true } }),
+    db.ledgerTransaction.findUnique({ where: { dedupKey: `payout_failed:payout:${id}` }, select: { id: true } }),
+  ]);
+  const expectedTxns = { T3: t3 != null, T4: t4 != null, T4f: t4f != null };
+
+  const status = payout.status;
+  if (["processing", "paid", "failed"].includes(status)) {
+    // T3 must exist for anything past "requested" (failed keeps T3 + T4f).
+    if (!t3) findings.push(`T3 (payout_initiated) missing but status is ${status}`);
+  } else if (t3) {
+    findings.push(`T3 (payout_initiated) present but status is ${status} — no money should have moved yet`);
+  }
+  if (status === "paid" && !t4) findings.push("T4 (payout_confirmed) missing but status is paid");
+  if (status === "failed" && !t4f) findings.push("T4f (payout_failed) missing but status is failed");
+  if (status === "processing" && t4) findings.push("T4 (payout_confirmed) present but status is processing");
+  if (status === "processing" && t4f) findings.push("T4f (payout_failed) present but status is processing");
+  if (status === "rejected" && (t3 || t4 || t4f)) {
+    findings.push("ledger postings exist but status is rejected — rejected requests never move money");
+  }
+  if (status === "returned" || status === "reversed") {
+    findings.push(`status ${status} is webhook-only/future — no PSP adapter wired yet, postings not reconciled`);
+  }
+
+  // ---------------------------------------------------------- statement rebuild (the only allowed write)
+  let statementRebuilt = false;
+  if ((status === "processing" || status === "paid") && !statementLooksValid(payout.statementJson)) {
+    const seller = await db.seller.findUnique({
+      where: { id: payout.sellerId },
+      include: { store: { select: { id: true, name: true } } },
+    });
+    if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+    // Same period logic as approve: since the seller's previous PAID payout
+    // (fallback: wallet creation → 30d). For an already-paid payout we must
+    // exclude ITSELF from the prevPaid lookup or the period would start at its
+    // own paidAt and aggregate nothing.
+    const prevPaid = await db.payout.findFirst({
+      where: { walletId: payout.walletId, status: "paid", id: { not: payout.id } },
+      orderBy: { paidAt: "desc" },
+      select: { paidAt: true },
+    });
+    const periodFrom = prevPaid?.paidAt ?? wallet.createdAt ?? new Date(Date.now() - 30 * 86400000);
+    const periodTo = new Date();
+    const periodFromSafe = periodFrom > periodTo ? new Date(Date.now() - 30 * 86400000) : periodFrom;
+    const orderCount = await db.order.count({
+      where: { storeId: seller.store?.id, paidAt: { not: null, gte: periodFromSafe, lte: periodTo } },
+    });
+    const statementJson = await buildLedgerStatementFromLedger({
+      walletId: payout.walletId,
+      sellerName: seller.store?.name ?? seller.displayName,
+      payoutAmountMinor: payout.amountMinor,
+      orderCount,
+      periodFrom: periodFromSafe,
+      periodTo,
+    });
+    await db.payout.update({ where: { id: payout.id }, data: { statementJson } });
+    statementRebuilt = true;
+    findings.push("statementJson rebuilt from ledger (was missing/malformed or not ledger-derived)");
+  }
+
+  const report = {
+    payoutId: id,
+    status,
+    walletTruth: truth,
+    cacheMatches,
+    expectedTxns,
+    statementRebuilt,
+    findings,
+  };
+
+  await auditAdmin({
+    adminId: admin.id,
+    adminEmail: admin.email,
+    action: "payout.sync",
+    entityType: "payout",
+    entityId: id,
+    before: null,
+    after: report,
+  });
+
+  return ok(report);
+});
+
+/** A statement is valid only if it is the ledger-derived shape
+ *  (buildLedgerStatementFromLedger output: reconciled + lines + periodFrom).
+ *  Legacy buildPayoutStatement snapshots (decorated numbers) and the "{}"
+ *  default are treated as malformed → rebuilt from the ledger. */
+function statementLooksValid(json: string | null | undefined): boolean {
+  if (!json) return false;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const p = parsed as { reconciled?: unknown; lines?: unknown; periodFrom?: unknown };
+    return p.reconciled === true && Array.isArray(p.lines) && typeof p.periodFrom === "string";
+  } catch {
+    return false;
+  }
+}
+=== /home/z/my-project/src/app/api/admin/payouts/due/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { refreshWalletCache } from "@/lib/ledger";
+import { parseMaybeJson } from "@/app/api/admin/_helpers";
+
+export const dynamic = "force-dynamic";
+
+// GET /api/admin/payouts/due — who is owed money RIGHT NOW.
+// This is the source of truth behind the dashboard "Payouts due" card: wallets
+// are re-derived from the LEDGER (refreshWalletCache) exactly like a real
+// batch run does, so this panel always matches what "Run payout batch" would
+// sweep. The dashboard card and this page can never disagree again.
+export const GET = handle(async (_req: NextRequest) => {
+  await requireAdmin();
+
+  const inSetting, modeSetting] = await Promise.all([
+    db.setting.findUnique({ where: { key: "payout.min_minor" } }),
+    db.setting.findUnique({ where: { key: "payout.mode" } }),
+  ]);
+  const minMinor = parseMaybeJson<number>(minSetting?.valueJson, 1000);
+  const mode = parseMaybeJson<string>(modeSetting?.valueJson, "manual_csv");
+
+  // refresh every wallet cache from ledger truth (same as POST payout-batches)
+  const wallets = await db.wallet.findMany({
+    include: {
+      seller: {
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          store: { select: { id: true, name: true } },
+          bankAccounts: { select: { id: true, bankName: true, holderName: true, accountNumberMasked: true, verified: true } },
+        },
+      },
+    },
+  });
+  const refreshed: {
+    w: (typeof wallets)[number];
+    truth: Awaited<ReturnType<typeof refreshWalletCache>>;
+  }[] = [];
+  for (const w of wallets) {
+    const truth = await refreshWalletCache(w.id);
+    refreshed.push({ w, truth });
+  }
+
+  // last paid payout per wallet for the "last paid" column
+  const lastPaid = await db.payout.findMany({
+    where: { status: "paid" },
+    orderBy: { paidAt: "desc" },
+    select: { walletId: true, amountMinor: true, paidAt: true },
+  });
+  const lastPaidByWallet = new Map<string, { amountMinor: number; paidAt: Date }>();
+  for (const p of lastPaid) {
+    if (p.paidAt && !lastPaidByWallet.has(p.walletId)) lastPaidByWallet.set(p.walletId, { amountMinor: p.amountMinor, paidAt: p.paidAt });
+  }
+
+  // seller-initiated payout requests: still part of "available" (no T3 posted
+  // yet) but already promised to the seller — surfaced per wallet so the
+  // admin sees how much of the due total is committed.
+  const requestedRows = await db.payout.findMany({
+    where: { status: "requested", method: "seller_request" },
+    select: { walletId: true, amountMinor: true, referenceNo: true },
+  });
+  const requestedByWallet = new Map<string, { amountMinor: number; referenceNo: string }>();
+  for (const r of requestedRows) {
+    const prev = requestedByWallet.get(r.walletId);
+    requestedByWallet.set(r.walletId, {
+      amountMinor: (prev?.amountMinor ?? 0) + r.amountMinor,
+      referenceNo: prev ? `${prev.referenceNo}, ${r.referenceNo}` : r.referenceNo,
+    });
+  }
+
+  const bankOf = (accounts: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean }[]) =>
+    accounts.find((b) => b.verified) ?? accounts[0] ?? null;
+
+  const due = refreshed
+    .filter(({ truth }) => truth.availableMinor >= minMinor)
+    .map(({ w, truth }) => {
+      const bank = bankOf(w.seller.bankAccounts);
+      const last = lastPaidByWallet.get(w.id) ?? null;
+      const req = requestedByWallet.get(w.id) ?? null;
+      return {
+        walletId: w.id,
+        sellerId: w.seller.id,
+        sellerName: w.seller.displayName,
+        storeName: w.seller.store?.name ?? null,
+        availableMinor: truth.availableMinor,
+        requestedMinor: req?.amountMinor ?? 0,
+        requestedRef: req?.referenceNo ?? null,
+        bank: bank
+          ? { id: bank.id, bankName: bank.bankName, holderName: bank.holderName, accountNumberMasked: bank.accountNumberMasked, verified: bank.verified }
+          : null,
+        lastPayout: last ? { amountMinor: last.amountMinor, paidAt: last.paidAt.toISOString() } : null,
+      };
+    })
+    .sort((a, b) => b.availableMinor - a.availableMinor);
+
+  const pendingTotalMinor = refreshed.reduce((s, { truth }) => s + truth.pendingMinor, 0);
+  const belowMin = refreshed.filter(({ truth }) => truth.availableMinor > 0 && truth.availableMinor < minMinor);
+  const requestedTotalMinor = [...requestedByWallet.values()].reduce((s, r) => s + r.amountMinor, 0);
+
+  return ok({
+    minMinor,
+    mode,
+    asOf: new Date().toISOString(),
+    dueTotalMinor: due.reduce((s, d) => s + d.availableMinor, 0),
+    dueCount: due.length,
+    due,
+    requestedTotalMinor,
+    pendingTotalMinor,
+    belowMinCount: belowMin.length,
+    belowMinTotalMinor: belowMin.reduce((s, { truth }) => s + truth.availableMinor, 0),
+  });
+});
+=== /home/z/my-project/src/app/api/admin/payouts/requests/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+// GET /api/admin/payouts/requests — seller-initiated payout requests
+// (Payout rows with method "seller_request"). Split into an "open" queue
+// (requested → needs approve/reject) and "recent" history (processing /
+// paid / failed / rejected) so the admin payouts page can render both.
+export const GET = handle(async (_req: NextRequest) => {
+  await requireAdmin();
+
+  const rows = await db.payout.findMany({
+    where: { method: "seller_request" },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    include: {
+      bankAccount: { select: { id: true, bankName: true, holderName: true, accountNumberMasked: true, verified: true } },
+    },
+  });
+
+  // seller info resolved manually (no relation declared on Payout)
+  const sellerIds = [...new Set(rows.map((p) => p.sellerId))];
+  const sellers = sellerIds.length
+    ? await db.seller.findMany({
+        where: { id: { in: sellerIds } },
+        select: { id: true, email: true, displayName: true, store: { select: { id: true, name: true, slug: true } } },
+      })
+    : [];
+  const sMap = new Map(sellers.map((s) => [s.id, s]));
+
+  const shaped = rows.map((p) => {
+    const s = sMap.get(p.sellerId);
+    return {
+      ...p,
+      seller: s ? { id: s.id, email: s.email, displayName: s.displayName } : null,
+      storeName: s?.store?.name ?? null,
+    };
+  });
+
+  return ok({
+    open: shaped.filter((p) => p.status === "requested"),
+    recent: shaped.filter((p) => p.status !== "requested"),
+  });
+});
+=== /home/z/my-project/src/app/api/admin/payouts/sweep/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok, ApiError, logActivity } from "@/lib/api";
+import { requireCap } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { runLedgerInvariants } from "@/lib/ledger";
+import { processPaymentWebhook } from "@/app/api/webhooks/payments/process";
+import { rateLimit } from "@/lib/ratelimit";
+import { parseMaybeJson } from "@/app/api/admin/_helpers";
+
+// POST /api/admin/payouts/sweep — bounded, repeatable operations sweep (RBAC payouts.manage).
+//
+// FIN-2a. Five rules baked in:
+//   • BOUNDED  — caps: 50 stuck payouts, 25 webhooks per run.
+//   • REPEATABLE — stuck payouts alert once (activity-log dedup by payout id);
+//     re-running is a no-op until something NEW goes stale.
+//   • NO AUTO-RETRY-MONEY — stuck payouts are only DETECTED + alerted; a human
+//     decides (mark-paid / fail / reject). No status is ever overwritten here.
+//   • PROCESSOR OWNS STATE — unprocessed webhooks are re-run through the shared
+//     processor (signature-verified, idempotent via dedupKey); this route never
+//     touches PaymentWebhookLog.processed or ledger state by hand. Note: the
+//     original unprocessed log rows stay untouched by design — the processor
+//     marks its own new rows, duplicates converge on ledger dedupKeys.
+//   • VERIFIED — every run ends with runLedgerInvariants() (balance + cache drift).
+export const POST = handle(async (req: NextRequest) => {
+  const rl = rateLimit(req, { limit: 6, windowMs: 60000 });
+  if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
+
+  const admin = await requireCap("payouts.manage");
+
+  // ---------------------------------------------------------------- (a) stuck payouts
+  // Setting key `payout.stuck_hours` (default 72) — parsed like the other
+  // payout settings (parseMaybeJson).
+  const stuckSetting = await db.setting.findUnique({ where: { key: "payout.stuck_hours" } });
+  const stuckHours = parseMaybeJson<number>(stuckSetting?.valueJson, 72);
+  const stuckCutoff = new Date(Date.now() - stuckHours * 3600000);
+  const stuckRows = await db.payout.findMany({
+    where: { status: "processing", updatedAt: { lt: stuckCutoff } },
+    orderBy: { updatedAt: "asc" },
+    take: 50,
+    select: { id: true, referenceNo: true, updatedAt: true },
+  });
+
+  // Alert-once: skip payouts that already have a stuck_detected activity row.
+  const priorAlerts = stuckRows.length
+    ? await db.activityLog.findMany({
+        where: { action: "payout.stuck_detected", entityId: { in: stuckRows.map((s) => s.id) } },
+        select: { entityId: true },
+      })
+    : [];
+  const alertedIds = new Set(priorAlerts.map((a) => a.entityId));
+
+  const stuck: Array<{ payoutId: string; referenceNo: string; hoursStuck: number; updatedAt: string; alerted: boolean }> = [];
+  let stuckNewlyDetected = 0;
+  for (const p of stuckRows) {
+    const hoursStuck = Math.floor((Date.now() - p.updatedAt.getTime()) / 3600000);
+    const isNew = !alertedIds.has(p.id);
+    if (isNew) {
+      await logActivity({
+        actorType: "system",
+        action: "payout.stuck_detected",
+        entityType: "payout",
+        entityId: p.id,
+        meta: { referenceNo: p.referenceNo, hoursStuck },
+      });
+      stuckNewlyDetected++;
+    }
+    stuck.push({ payoutId: p.id, referenceNo: p.referenceNo, hoursStuck, updatedAt: p.updatedAt.toISOString(), alerted: isNew });
+  }
+
+  // ---------------------------------------------------------------- (b) unprocessed webhooks
+  // Older than 1h, still processed=false, cap 25. signatureValid=false rows are
+  // skipped (counted) — replaying an unverified payload is exactly what we must
+  // never do. Valid ones go through the shared processor, which re-verifies the
+  // signature and owns every state transition + ledger posting (idempotent).
+  const webhookCutoff = new Date(Date.now() - 3600000);
+  const unprocessed = await db.paymentWebhookLog.findMany({
+    where: { processed: false, createdAt: { lt: webhookCutoff } },
+    orderBy: { createdAt: "asc" },
+    take: 25,
+  });
+  let reprocessed = 0;
+  let stillFailing = 0;
+  let skipped = 0;
+  for (const log of unprocessed) {
+    if (!log.signatureValid) {
+      skipped++;
+      continue;
+    }
+    try {
+      const body = JSON.parse(log.payloadJson) as { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string };
+      await processPaymentWebhook({ provider: log.provider, body, rawBody: log.payloadJson });
+      reprocessed++;
+    } catch {
+      // BAD_SIGNATURE / UNKNOWN_EVENT / AMOUNT_MISMATCH / unknown ref … — the
+      // processor already logged its own row; this attempt stays unprocessed.
+      stillFailing++;
+    }
+  }
+
+  // ---------------------------------------------------------------- (c) ledger invariants
+  const invariants = await runLedgerInvariants();
+
+  await logActivity({
+    actorType: "admin",
+    actorId: admin.id,
+    actorLabel: admin.email,
+    action: "payout.sweep.run",
+    entityType: "system",
+    meta: {
+      stuckScanned: stuckRows.length,
+      stuckNewlyDetected,
+      webhooks: { scanned: unprocessed.length, reprocessed, stillFailing, skipped },
+      invariantsOk: invariants.ok,
+    },
+  });
+
+  return ok({
+    stuck,
+    stuckHours,
+    webhooks: { scanned: unprocessed.length, reprocessed, stillFailing, skipped },
+    invariants,
+    ranAt: new Date().toISOString(),
+  });
+});
+=== /home/z/my-project/src/app/api/admin/ledger/accounts/route.ts ===
+import { NextRequest } from "next/server";
+import { handle, ok } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+// GET /api/admin/ledger/accounts — accounts with summed debit/credit balances
+export const GET = handle(async (req: NextRequest) => {
+  await requireAdmin();
+
+  const [accounts, grouped] = await Promise.all([
+    db.ledgerAccount.findMany({ orderBy: { code: "asc" } }),
+    db.ledgerLine.groupBy({
+      by: ["accountCode"],
+      _sum: { amountMinor: true },
+      _count: { _all: true },
+    }),
+  ]);
+
+  // split by direction for signed balances
+  const lines = await db.ledgerLine.findMany({ select: { accountCode: true, direction: true, amountMinor: true } });
+  const sums = new Map<string, { debit: number; credit: number }>();
+  for (const l of lines) {
+    const cur = sums.get(l.accountCode) ?? { debit: 0, credit: 0 };
+    if (l.direction === "debit") cur.debit += l.amountMinor;
+    else cur.credit += l.amountMinor;
+    sums.set(l.accountCode, cur);
+  }
+
+  const meta = new Map(grouped.map((g) => [g.accountCode, { count: g._count._all }]));
+
+  const data = accounts.map((a) => {
+    const s = sums.get(a.code) ?? { debit: 0, credit: 0 };
+    // asset accounts: debit-positive; liability/revenue: credit-positive
+    const balanceMinor = a.type === "asset" ? s.debit - s.credit : s.credit - s.debit;
+    return {
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      walletId: a.walletId,
+      debitMinor: s.debit,
+      creditMinor: s.credit,
+      balanceMinor,
+      lineCount: meta.get(a.code)?.count ?? 0,
+    };
+  });
+
+  return ok(data);
+});
+=== /home/z/my-project/src/app/api/admin/ledger/transactions/route.ts ===
+import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
+import { handle, ok } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+// GET /api/admin/ledger/transactions?type=&walletId=&cursor= — latest 100, cursor by id desc
+export const GET = handle(async (req: NextRequest) => {
+  await requireAdmin();
+  const url = new URL(req.url);
+  const type = url.searchParams.get("type");
+  const walletId = url.searchParams.get("walletId");
+  const cursor = url.searchParams.get("cursor");
+
+  const where: Prisma.LedgerTransactionWhereInput = {
+    ...(type && type !== "all" ? { txnType: type } : {}),
+    ...(walletId ? { lines: { some: { walletId } } } : {}),
+    ...(cursor ? { id: { lt: cursor } } : {}),
+  };
+
+  const txns = await db.ledgerTransaction.findMany({
+    where,
+    include: { lines: { orderBy: { id: "asc" } } },
+    orderBy: { id: "desc" },
+    take: 101,
+  });
+
+  const hasMore = txns.length > 100;
+  const items = hasMore ? txns.slice(0, 100) : txns;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+  return ok({ items, nextCursor, count: items.length });
+});

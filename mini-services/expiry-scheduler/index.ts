@@ -43,7 +43,7 @@ const ALERT_RING = 50;
 const STATE_FILE = `${import.meta.dir}/state.json`;
 const PROJECT_ENV = "/home/z/my-project/.env";
 
-type Kind = "expiry" | "refund" | "analytics";
+type Kind = "expiry" | "refund" | "analytics" | "affiliate";
 type EndpointState = {
   lastTickAt: string | null;
   lastSuccessAt: string | null;
@@ -91,7 +91,7 @@ function freshState(): State {
     service: "expiry-scheduler",
     startedAt: new Date().toISOString(),
     intervalMs: INTERVAL_MS,
-    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint() },
+    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint() },
     alerts: [],
   };
 }
@@ -108,7 +108,7 @@ try {
       startedAt: new Date().toISOString(),
       intervalMs: INTERVAL_MS,
       alerts: raw.alerts ?? [],
-      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint() },
+      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint() },
     };
   }
 } catch {
@@ -137,6 +137,7 @@ const ROUTES: Record<Kind, string> = {
   expiry: `${APP_BASE}/api/cron/expiry-sweep`,
   refund: `${APP_BASE}/api/cron/refund-reconcile`,
   analytics: `${APP_BASE}/api/cron/analytics-tick`,
+  affiliate: `${APP_BASE}/api/cron/affiliate-tick`,
 };
 
 async function tick(kind: Kind) {
@@ -185,7 +186,7 @@ async function tick(kind: Kind) {
 
 function monitor() {
   const now = Date.now();
-  for (const kind of ["expiry", "refund", "analytics"] as Kind[]) {
+  for (const kind of ["expiry", "refund", "analytics", "affiliate"] as Kind[]) {
     const st = state.endpoints[kind];
     if (st.lastSuccessAt) {
       const age = now - Date.parse(st.lastSuccessAt);

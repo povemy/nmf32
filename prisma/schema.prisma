@@ -176,6 +176,7 @@ model ShopperUser {
   vouchers        UserVoucher[]
   follows         StoreFollow[]
   notifications   Notification[]
+  affiliateProfile AffiliateProfile?
 }
 
 model ChatThread {
@@ -245,6 +246,12 @@ model Store {
   followers        StoreFollow[]
   vouchers         Voucher[]
   fsPriceAdjustMinor Int                    @default(0) // seller-funded free-shipping cost recovery (v1)
+  // AFFILIATE — seller programme opt-in + default per-product rate (bps).
+  // Per-product override lives on Product.affiliateRateBps; the effective
+  // rate = product override ?? store default, clamped to the platform max
+  // (affiliate.max_rate_bps Setting) at every read.
+  affiliateOptIn          Boolean         @default(false)
+  affiliateDefaultRateBps Int             @default(0)
   seller           Seller?                 @relation(fields: [sellerId], references: [id])
   claims           StoreClaim[]
   domains          StoreDomain[]
@@ -329,6 +336,10 @@ model Product {
   isFixture                 Boolean             @default(false)
   lastSyncedAt              DateTime?
   overridesJson             String              @default("{}")
+  // AFFILIATE — per-product programme enrollment + rate override (bps).
+  // affiliateRateBps NULL ⇒ inherit Store.affiliateDefaultRateBps.
+  affiliateEnabled          Boolean             @default(false)
+  affiliateRateBps          Int?
   seoTitle                  String?
   seoDescription            String?
   createdAt                 DateTime            @default(now())
@@ -338,6 +349,7 @@ model Product {
   featuredSlots             FeaturedSlot[]
   importItems               ImportJobItem[]
   orderItems                OrderItem[]
+  affiliateCollectionItems  AffiliateCollectionItem[]
   category                  Category?           @relation(fields: [categoryId], references: [id])
   store                     Store               @relation(fields: [storeId], references: [id])
   images                    ProductImage[]
@@ -528,6 +540,7 @@ model Order {
   history             OrderStatusHistory[]
   paymentIntents      PaymentIntent[]
   refunds             Refund[]
+  affiliateCommissions AffiliateCommission[]
 
   @@index([shopperId])
   @@index([paymentGroupId])
@@ -636,6 +649,19 @@ model OrderItem {
   sellerNetMinor    Int             @default(0)
   breakdownJson     String          @default("{}")
   refundedMinor     Int             @default(0)
+  // ---------------------------------------------------------------------
+  // AFFILIATE (Hub & one-level sponsor referral). Snapshot frozen at
+  // checkout creation — EXACTLY the commission contract above: never
+  // recomputed, never backfilled. Written server-side from validated
+  // attribution touches (lib/affiliate-attribution.ts); client-supplied
+  // affiliate ids are never trusted. All nullable/zero when the item has no
+  // affiliate attribution (unattributed, programme disabled, product not
+  // enrolled, or self-purchase).
+  affiliateDirectId   String? // direct affiliate (profile id) — 90% beneficiary
+  affiliateSponsorId  String? // their one-level sponsor (profile id) — 10% candidate
+  affiliateLinkId     String? // promotional link that earned the attribution
+  affiliateRateBps    Int?    // snapshotted seller affiliate rate (basis points)
+  affiliatePoolMinor  Int     @default(0) // seller-funded pool carved from sellerNet
   variant           ProductVariant? @relation(fields: [variantId], references: [id])
   product           Product?        @relation(fields: [productId], references: [id])
   order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -643,6 +669,7 @@ model OrderItem {
   // Seller Insights: relation lookups (order -> items) previously had no FK index.
   @@index([orderId])
   @@index([productId])
+  @@index([affiliateDirectId])
 }
 
 model OrderStatusHistory {
@@ -718,6 +745,10 @@ model Refund {
   requestedBy             String    @default("seller")
   restock                 Boolean   @default(true)
   commissionReversalMinor Int       @default(0)
+  // AFFILIATE — affiliate pool reversal booked by this refund (mirrors
+  // commissionReversalMinor; derived proportionally from the frozen
+  // OrderItem.affiliatePoolMinor snapshots, clamped to remaining reversible).
+  affiliateReversalMinor  Int       @default(0)
   processedAt             DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
@@ -1433,11 +1464,18 @@ model AnalyticsEvent {
   utmCampaign  String?
   utmTerm      String?
   utmContent   String?
+  // AFFILIATE — advisory attribution only (money-grade attribution lives in
+  // AffiliateAttributionTouch + OrderItem snapshots). Populated from the
+  // httpOnly nm_aff_last cookie resolved at event time (lib/analytics/track.ts
+  // base()); plain strings (no FK) matching the campaign columns' style.
+  affiliateId     String?
+  affiliateLinkId String?
   createdAt    DateTime @default(now())
 
   @@index([storeId, eventType, createdAt])
   @@index([storeId, createdAt])
   @@index([campaignId, createdAt])
+  @@index([affiliateId, eventType, createdAt])
 }
 
 // Seller-generated campaign tracking links (Marketing Intelligence).
@@ -1461,4 +1499,295 @@ model SellerCampaign {
 
   @@unique([storeId, slug])
   @@index([storeId, status])
+}
+
+// ===========================================================================
+// AFFILIATE HUB & ONE-LEVEL SPONSOR REFERRAL SYSTEM
+// docs/affiliate/*.md — audit, plan, commission definitions, security rules.
+//
+// Commercial model: seller-funded commission pool per eligible OrderItem
+// (rate in basis points, product override ?? store default, platform max
+// enforced); fixed 90/10 split of the POOL (S = floor(P*10/100), D = P - S;
+// no sponsor ⇒ D = P); commission attribution travels UP exactly one
+// generation; no recruitment/click/registration rewards of any kind.
+//
+// Money integrity: pool snapshots freeze on OrderItem at checkout (same
+// contract as platform commission); AffiliateCommission rows post ONCE per
+// order item at payment confirmation (unique orderItemId = idempotency);
+// every mutation rides the existing immutable ledger (T1 gains a 4th line,
+// T5 gains an affiliate reversal line, new affiliate payout recipes).
+// ===========================================================================
+
+// Affiliate identity — one per ShopperUser. An affiliate is an ordinary
+// registered user: NO seller status or store ownership required.
+model AffiliateProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  // active | suspended | terminated (suspension holds NEW commission; the
+  // sponsor share of in-flight pools is held separately — never the direct
+  // promoter's 90%).
+  status          String    @default("active")
+  // Globally-unique referral code (?ref=) — unpredictable random token.
+  code            String    @unique
+  // Public showcase slug (?aff=) — unique, URL-safe, user-chosen/derived.
+  slug            String    @unique
+  displayName     String
+  bio             String?
+  avatarUrl       String?
+  // Payout eligibility (manual payout workflow): display-only reference the
+  // affiliate provides (e.g. bank nickname/last-4); admins record the actual
+  // transfer reference on the payout row. Verified by finance review.
+  payoutRef       String?
+  payoutVerifiedAt DateTime?
+  // Affiliate terms acceptance (version + timestamp) — required at activation.
+  termsVersion    Int       @default(1)
+  termsAcceptedAt DateTime
+  activatedAt     DateTime  @default(now())
+  suspendedAt     DateTime?
+  suspendedReason String?
+  // ---- ONE-LEVEL SPONSOR (nullable self-FK: 0 or 1 sponsor, never more) ----
+  // Immutable after activation except through the audited admin correction
+  // route (AffiliateSponsorAudit). No cycles are possible: a sponsor must be
+  // an ACTIVE affiliate BEFORE the referral activates, so a cycle would
+  // require time travel. Self-sponsor is rejected at assignment.
+  sponsorId       String?
+  sponsorAssignedAt DateTime?
+  sponsorSource   String? // referral_touch | code_entry | admin_correction
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            ShopperUser @relation(fields: [userId], references: [id])
+  sponsor         AffiliateProfile? @relation("SponsorRefs", fields: [sponsorId], references: [id])
+  referrals       AffiliateProfile[] @relation("SponsorRefs")
+  // Read-model relations for admin/public queries (scalar FKs above).
+  commissionsDirect AffiliateCommission[] @relation("AffiliateCommissionDirect")
+  payouts           AffiliatePayout[]
+
+  @@index([sponsorId])
+  @@index([status])
+}
+
+// Immutable audit trail for every sponsor relationship change. Rows are
+// append-only; admin corrections REQUIRE a documented reason.
+model AffiliateSponsorAudit {
+  id            String   @id @default(cuid())
+  affiliateId   String
+  fromSponsorId String?
+  toSponsorId   String?
+  reason        String
+  actorType     String // admin
+  actorId       String
+  createdAt     DateTime @default(now())
+
+  @@index([affiliateId, createdAt])
+}
+
+// Registration attribution — FIRST valid referral touch wins (30-day window).
+// The click itself creates NO relationship and pays NOTHING; the sponsor is
+// only recorded when the invited user completes affiliate activation
+// (POST /api/affiliate/activate validates the nm_aff_ref cookie against this
+// table). The cookie is only set when no valid touch exists yet (first-touch).
+model AffiliateReferralTouch {
+  id            String    @id @default(cuid())
+  code          String
+  affiliateId   String
+  visitorId     String
+  channel       String?
+  touchedAt     DateTime  @default(now())
+  expiresAt     DateTime
+  // Filled when a user activates using this touch (exactly once).
+  consumedAt    DateTime?
+  consumedUserId String?
+  createdAt     DateTime  @default(now())
+
+  @@index([affiliateId, touchedAt])
+  @@index([visitorId, touchedAt])
+}
+
+// Promotional links — product | store | collection | showcase. `code` is an
+// unpredictable random token carried in the URL (?al=). Channel labels are
+// reporting metadata ONLY — they never change the commission split.
+model AffiliateLink {
+  id            String    @id @default(cuid())
+  affiliateId   String
+  type          String // product | store | collection | showcase
+  code          String    @unique
+  productId     String?
+  storeId       String?
+  collectionId  String?
+  // Reporting label for the external channel (tiktok|threads|facebook|
+  // telegram|whatsapp|blog|website|other) — no account connection implied.
+  channel       String    @default("other")
+  label         String?
+  status        String    @default("active") // active | archived
+  clicks        Int       @default(0)
+  lastClickAt   DateTime?
+  createdAt     DateTime  @default(now())
+  archivedAt    DateTime?
+
+  @@index([affiliateId, createdAt])
+  @@index([status, code])
+}
+
+// Curated product collections (promotional content, NOT a seller catalogue).
+// `version` bumps on membership edits so attribution touches can snapshot the
+// membership scope they were validated against — later edits never rewrite
+// past attribution.
+model AffiliateCollection {
+  id            String    @id @default(cuid())
+  affiliateId   String
+  title         String
+  description   String?
+  slug          String    @unique
+  status        String    @default("draft") // draft | published | archived
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  publishedAt   DateTime?
+  archivedAt    DateTime?
+  items         AffiliateCollectionItem[]
+
+  @@index([affiliateId, status])
+}
+
+model AffiliateCollectionItem {
+  id           String   @id @default(cuid())
+  collectionId String
+  productId    String
+  position     Int      @default(0)
+  addedAt      DateTime @default(now())
+  collection   AffiliateCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product      Product             @relation(fields: [productId], references: [id])
+
+  @@unique([collectionId, productId])
+  @@index([productId])
+}
+
+// Product-sale attribution touches — LAST eligible click wins, per PRODUCT,
+// keyed by the httpOnly first-party visitor cookie (nm_ins_vid). Recorded
+// server-side on link resolution; the client never supplies affiliate ids.
+// Scope rows:
+//   product link  → productId set (scope = that product)
+//   store link    → storeId set, productId null (scope = that store's eligible products)
+//   collection    → collectionId + scopeProductIds JSON snapshot (scope = the
+//                   member products AT CLICK TIME with the collection version)
+//   showcase      → a showcase VISIT row has no product scope (attributes
+//                   nothing by itself); products clicked inside the showcase
+//                   record PRODUCT-scope rows via the same tracking endpoint.
+model AffiliateAttributionTouch {
+  id              String   @id @default(cuid())
+  visitorId       String
+  affiliateId     String
+  linkId          String
+  linkType        String // product | store | collection | showcase
+  productId       String?
+  storeId         String?
+  collectionId    String?
+  collectionVersion Int?
+  scopeProductIds String? // JSON array snapshot (collection links)
+  channel         String?
+  clickedAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([visitorId, productId, clickedAt])
+  @@index([visitorId, storeId, clickedAt])
+  @@index([affiliateId, clickedAt])
+  @@index([clickedAt])
+}
+
+// Commission POOL record — exactly ONE per attributed OrderItem (unique
+// orderItemId = the idempotency guarantee: duplicate webhooks / retries can
+// never double-post). All monetary fields are frozen snapshots of the
+// checkout-time OrderItem columns; the 90/10 SPLIT is computed at posting
+// from the then-current sponsor-override flag + sponsor eligibility (never
+// rewritten afterwards).
+model AffiliateCommission {
+  id                    String   @id @default(cuid())
+  orderItemId           String   @unique
+  orderId               String
+  orderNumber           String
+  storeId               String
+  productId             String?
+  // Direct affiliate + their one-level sponsor AT CHECKOUT (snapshot).
+  affiliateId           String
+  sponsorId             String?
+  linkId                String?
+  linkType              String?
+  channel               String?
+  // Frozen financials (mirror the OrderItem snapshot).
+  commissionableBaseMinor Int
+  rateBps               Int
+  poolMinor             Int
+  currency              String   @default("MYR")
+  attributionPolicy     String   @default("v1:lc30d")
+  status                String   @default("pending") // pending|approved|available|paid|reversed|held
+  createdAt             DateTime @default(now())
+  approvedAt            DateTime?
+  paidAt                DateTime?
+  reversedAt            DateTime?
+  breakdownJson         String   @default("{}")
+  entries               AffiliateCommissionEntry[]
+  affiliate             AffiliateProfile @relation("AffiliateCommissionDirect", fields: [affiliateId], references: [id])
+  order                 Order            @relation(fields: [orderId], references: [id])
+
+  @@index([affiliateId, createdAt])
+  @@index([sponsorId, createdAt])
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@index([storeId, createdAt])
+}
+
+// Beneficiary allocations — AT MOST TWO rows per commission (unique
+// commissionId+role): direct (90%) and sponsor (10%). Independent status so
+// a sponsor under review can be HELD without touching the direct promoter's
+// legitimate 90%. `availableAt` is the pending→available maturity clock
+// (approvedAt + affiliate.review_days).
+model AffiliateCommissionEntry {
+  id                     String   @id @default(cuid())
+  commissionId           String
+  beneficiaryAffiliateId String
+  role                   String // direct | sponsor
+  amountMinor            Int
+  status                 String   @default("pending") // pending|approved|available|paid|reversed|held
+  reversedMinor          Int      @default(0)
+  availableAt            DateTime?
+  holdReason             String?
+  paidAt                 DateTime?
+  payoutId               String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  commission             AffiliateCommission @relation(fields: [commissionId], references: [id], onDelete: Cascade)
+
+  @@unique([commissionId, role])
+  @@index([beneficiaryAffiliateId, status])
+  @@index([status, availableAt])
+  @@index([payoutId])
+}
+
+// Affiliate payout — MANUAL controlled workflow (the audited reality: no
+// automated PSP payout capability exists; finance executes transfers from
+// bank evidence and records the reference here). State machine mirrors the
+// seller Payout flow: requested → processing → paid | failed; requested →
+// rejected. Ledger: T-A3 on approve, T-A4 on mark-paid, T-A4f on fail.
+model AffiliatePayout {
+  id            String   @id @default(cuid())
+  affiliateId   String
+  amountMinor   Int
+  currency      String   @default("MYR")
+  status        String   @default("requested") // requested|processing|paid|failed|rejected
+  method        String   @default("manual_bank")
+  reference     String? // bank/PSP transfer reference recorded by finance
+  note          String?
+  failReason    String?
+  // Ledger-derived statement (entries covered, balances) — built from
+  // AffiliateCommissionEntry rows at request/approve time, never hand-edited.
+  statementJson String   @default("{}")
+  requestedAt   DateTime @default(now())
+  processedAt   DateTime?
+  processedBy   String? // admin user id
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  affiliate     AffiliateProfile @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId, status])
+  @@index([status, requestedAt])
 }

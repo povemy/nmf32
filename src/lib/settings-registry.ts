@@ -99,6 +99,13 @@ export const SETTING_GROUPS: SettingGroup[] = [
     order: 7,
   },
   {
+    id: "affiliate",
+    label: "Affiliate",
+    description: "Affiliate programme availability, rates and payout rules.",
+    icon: "banknote",
+    order: 8,
+  },
+  {
     id: "advanced",
     label: "Advanced",
     description: "Unrecognised keys — edit as raw JSON. Shown for forward compatibility.",
@@ -313,6 +320,79 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
     wiredNote:
       "Enforced by /api/cron/analytics-tick (reads THIS key; env SI_RETENTION_DAYS is only the fallback when the row is absent — F-11). Called by the expiry scheduler service.",
     danger: true,
+  },
+
+  // ----------------------------------------------------------- Affiliate
+  {
+    key: "affiliate.enabled",
+    group: "affiliate",
+    label: "Affiliate programme enabled",
+    description:
+      "Master switch (kill switch). When off: no new commission liabilities are computed at checkout or posted at payment, promotional links still navigate but stop recording attribution, and the Affiliate Hub shows the programme as paused. Existing commission records are immutable and unaffected.",
+    field: { kind: "boolean", default: true },
+    wired: true,
+    wiredNote: "Read by lib/affiliate.ts getAffiliateSettings() at checkout, payment posting, activation, discovery and hub gates.",
+    danger: true,
+  },
+  {
+    key: "affiliate.sponsor_enabled",
+    group: "affiliate",
+    label: "One-level sponsor override enabled (90/10 split)",
+    description:
+      "When on, the direct affiliate receives 90% of the commission pool and their one direct sponsor receives 10%. When off, the direct affiliate receives 100%. Existing commission records keep their original split — disabling never rewrites history. PRODUCTION LAUNCH GATE: legal clearance required before enabling (see docs/affiliate/rollout-checklist.md).",
+    field: { kind: "boolean", default: false },
+    wired: true,
+    wiredNote: "Read at commission POSTING time (webhook payment confirmation) — the split is computed once, then frozen.",
+    danger: true,
+  },
+  {
+    key: "affiliate.max_rate_bps",
+    group: "affiliate",
+    label: "Maximum commission rate (basis points)",
+    description:
+      "Platform ceiling for seller-funded affiliate commission rates. Seller product/store rates are clamped to this at every read (checkout, discovery, seller settings). 1000 = 10% (launch ceiling).",
+    field: { kind: "integer", default: 1000, min: 0, max: 10000 },
+    wired: true,
+    wiredNote: "Enforced by effectiveAffiliateRateBps() (lib/affiliate.ts) at checkout and by the seller settings route.",
+  },
+  {
+    key: "affiliate.attr_window_days",
+    group: "affiliate",
+    label: "Product attribution window (days)",
+    description:
+      "How long a promotional-link click stays eligible for last-click product-sale attribution. Default 30 days.",
+    field: { kind: "integer", default: 30, min: 1, max: 365 },
+    wired: true,
+    wiredNote: "Applied when attribution touches are recorded and re-validated at checkout resolution.",
+  },
+  {
+    key: "affiliate.sponsor_window_days",
+    group: "affiliate",
+    label: "Referral attribution window (days)",
+    description:
+      "How long a first-touch referral visit stays valid for sponsor assignment when the visitor activates as an affiliate. Default 30 days, first valid touch wins.",
+    field: { kind: "integer", default: 30, min: 1, max: 365 },
+    wired: true,
+    wiredNote: "Applied at referral-touch recording and activation validation (lib/affiliate.ts activateAffiliate).",
+  },
+  {
+    key: "affiliate.review_days",
+    group: "affiliate",
+    label: "Commission review window (days)",
+    description:
+      "Days after an order reaches an authoritative delivered/completed state before the approved affiliate commission becomes available for payout (return/refund review period).",
+    field: { kind: "integer", default: 14, min: 0, max: 365 },
+    wired: true,
+    wiredNote: "Sets entry availableAt at approval (deliver/receive routes + /api/cron/affiliate-tick sweep).",
+  },
+  {
+    key: "affiliate.min_payout_minor",
+    group: "affiliate",
+    label: "Minimum payout amount",
+    description: "Minimum requestable affiliate payout. Payouts are executed manually by finance (bank transfer reference recorded on the payout row).",
+    field: { kind: "integer", default: 1000, min: 0, max: 10000000, major: { label: "RM", factor: 100, decimals: 2 } },
+    wired: true,
+    wiredNote: "Enforced at payout request (lib/affiliate.ts requestAffiliatePayout).",
   },
 
   // ---------------------------------------------- hidden internal keys

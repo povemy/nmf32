@@ -28,6 +28,12 @@ export const ADMIN_CAPS: Record<string, string[]> = {
   "campaigns.manage": ["superadmin", "ops"],
   /** Bulk PII + money CSV export (/api/admin/export) — Phase 3 extension. */
   "reports.export": ["superadmin", "finance"],
+  /** Affiliate programme operations — review/suspend affiliates, sponsor
+   *  corrections (audited), commission hold/release, fraud review. */
+  "affiliate.manage": ["superadmin", "ops"],
+  /** Affiliate financial operations — payouts (approve/mark-paid/fail),
+   *  reconciliation, financial exports. Same tier as payouts.manage. */
+  "affiliate.finance": ["superadmin", "finance"],
 };
 
 export type AdminCap = keyof typeof ADMIN_CAPS;

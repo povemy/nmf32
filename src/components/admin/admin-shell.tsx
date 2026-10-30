@@ -73,6 +73,13 @@ import { OrdersView, RefundsView, DisputesView } from "./orders";
 import { OrderDetailView } from "./order-detail";
 import { CommissionView, SimulatorView } from "./commission";
 import { OverridesView, FeeHolidaysView } from "./finance";
+import {
+  AffiliateAccountsView,
+  AffiliateCommissionsView,
+  AffiliateOverviewView,
+  AffiliatePayoutsView,
+  AffiliateReconciliationView,
+} from "./affiliate";
 import { WalletsView, LedgerView } from "./wallets-ledger";
 import { PayoutsView, PayoutDetailView } from "./payouts";
 import { BanksView } from "./banks";
@@ -130,6 +137,21 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Task 2-B affiliate console. Nav caps mirror the SERVER route guards via
+    // the same matrix (nav.ts contract — UI == API): overview + commissions
+    // are requireAnyCap(affiliate.manage, affiliate.finance); accounts is
+    // affiliate.manage ONLY and payouts + reconciliation are affiliate.finance
+    // ONLY on the server (lib/auth.ts), so their nav entries gate identically.
+    label: "Affiliate",
+    items: [
+      { view: "affiliate-overview", label: "Programme", icon: Megaphone, caps: ["affiliate.manage", "affiliate.finance"] },
+      { view: "affiliate-accounts", label: "Accounts", icon: Users, caps: ["affiliate.manage"] },
+      { view: "affiliate-commissions", label: "Commissions", icon: ScrollText, caps: ["affiliate.manage", "affiliate.finance"] },
+      { view: "affiliate-payouts", label: "Payouts", icon: Banknote, caps: ["affiliate.finance"] },
+      { view: "affiliate-reconciliation", label: "Reconciliation", icon: Scale, caps: ["affiliate.finance"] },
+    ],
+  },
+  {
     label: "Marketing",
     items: [
       { view: "banners", label: "Banners", icon: Megaphone },
@@ -175,6 +197,11 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   overrides: OverridesView,
   holidays: FeeHolidaysView,
   simulator: SimulatorView,
+  "affiliate-overview": AffiliateOverviewView,
+  "affiliate-accounts": AffiliateAccountsView,
+  "affiliate-commissions": AffiliateCommissionsView,
+  "affiliate-payouts": AffiliatePayoutsView,
+  "affiliate-reconciliation": AffiliateReconciliationView,
   wallets: WalletsView,
   ledger: LedgerView,
   payouts: PayoutsView,

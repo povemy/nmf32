@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, transitionOrder } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { fastForwardDelivery, mockPodUrl } from "@/lib/shipping";
+import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
     await fastForwardDelivery(order.id, new Date(), mockPodUrl(shipment.awbNumber ?? order.orderNumber));
   }
 
+  // AFFILIATE — completed is an authoritative completion state (see deliver).
+  try { await approveAffiliateCommissionsForOrder(order.id); } catch { /* best-effort */ }
   await transitionOrder({
     orderId: order.id,
     toStatus: "completed",

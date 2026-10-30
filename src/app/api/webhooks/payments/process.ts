@@ -36,6 +36,7 @@ import { hmacSha256Hex } from "@/lib/password";
 import { transitionOrder, dispatchStoreWebhooks, notify, logActivity } from "@/lib/api";
 import { getCommissionSettings } from "@/lib/commission";
 import { postOrderPaid, postGatewaySettlement, postPayoutConfirmed, postPayoutFailed, refreshWalletCache, AUTO_SETTLE_SETTING_KEY } from "@/lib/ledger";
+import { postAffiliateCommissionsForOrder } from "@/lib/affiliate";
 import { assertTransition } from "@/lib/payout-state";
 import { resolvePspProvider } from "@/lib/psp";
 import { recordLatePaymentObligation } from "@/lib/psp-refund";
@@ -331,6 +332,10 @@ export async function processPaymentWebhook(input: {
             const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
             const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
             const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+            // AFFILIATE — seller-funded pool (T1 4th line; 0 ⇒ legacy 3-line
+            // posting stays byte-compatible) + the commission rows themselves
+            // (exactly once per order item: unique orderItemId idempotency).
+            const affiliateMinor = order.items.reduce((s, i) => s + i.affiliatePoolMinor, 0);
             if (wallet) walletIdsTouched.add(wallet.id);
             await postOrderPaid({
               orderId: order.id,
@@ -340,12 +345,14 @@ export async function processPaymentWebhook(input: {
               totalMinor: order.totalMinor,
               sellerNetMinor,
               commissionMinor,
+              affiliateMinor,
               holdUntil,
               currency: order.currency,
               occurredAt: paidAt,
               tx,
               refreshCache: false, // post-commit below — keeps the wallet row out of this tx's conflict domain
             });
+            await postAffiliateCommissionsForOrder(tx, order, paidAt);
           }
           postedOrders.push({ order, sellerEmail: seller?.email ?? null });
         }
@@ -568,6 +575,8 @@ export async function processPaymentWebhook(input: {
         const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
         const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
         const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+        // AFFILIATE — pool + commission rows (see group-path note).
+        const affiliateMinor = order.items.reduce((s, i) => s + i.affiliatePoolMinor, 0);
         walletIdsTouched.add(wallet.id);
         await postOrderPaid({
           orderId: order.id,
@@ -577,12 +586,14 @@ export async function processPaymentWebhook(input: {
           totalMinor: intent.amountMinor,
           sellerNetMinor,
           commissionMinor,
+          affiliateMinor,
           holdUntil,
           currency: order.currency,
           occurredAt: paidAt,
           tx,
           refreshCache: false, // post-commit below (F1)
         });
+        await postAffiliateCommissionsForOrder(tx, order, paidAt);
       }
 
       // Notification/audit fan-out moved POST-COMMIT (group-path F1 note):

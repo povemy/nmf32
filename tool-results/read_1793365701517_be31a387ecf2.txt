@@ -1,0 +1,726 @@
+     1→     1→"use client";
+     2→     2→// Seller affiliate programme (spec §7): store opt-in + default commission rate
+     3→     3→// (Programme tab), per-product enrollment / rate overrides (Products tab) and
+     4→     4→// attributed performance + commission liabilities (Report tab). The tab
+     5→     5→// discriminator rides on SellerNav.affiliateTab — same pattern as settingsTab
+     6→     6→// and walletTab, so deep links keep working.
+     7→     7→import { useEffect, useState } from "react";
+     8→     8→import { toast } from "sonner";
+     9→     9→import {
+    10→    10→  apiSend,
+    11→    11→  CardsSkeleton,
+    12→    12→  EmptyState,
+    13→    13→  RowsSkeleton,
+    14→    14→  StatCard,
+    15→    15→  StatusChip,
+    16→    16→  fmtCommissionPercent,
+    17→    17→  fmtDate,
+    18→    18→  formatMinor,
+    19→    19→  runMutation,
+    20→    20→  useApi,
+    21→    21→  useDebouncedCallback,
+    22→    22→  type AffiliateTab,
+    23→    23→  type SellerNav,
+    24→    24→} from "./ui-bits";
+    25→    25→import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+    26→    26→import { Badge } from "@/components/ui/badge";
+    27→    27→import { Button } from "@/components/ui/button";
+    28→    28→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+    29→    29→import { Input } from "@/components/ui/input";
+    30→    30→import { Label } from "@/components/ui/label";
+    31→    31→import { Skeleton } from "@/components/ui/skeleton";
+    32→    32→import { Switch } from "@/components/ui/switch";
+    33→    33→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    34→    34→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    35→    35→import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+    36→    36→import {
+    37→    37→  Banknote,
+    38→    38→  ChartColumn,
+    39→    39→  CirclePause,
+    40→    40→  Coins,
+    41→    41→  Eye,
+    42→    42→  HandCoins,
+    43→    43→  ImageIcon,
+    44→    44→  Loader2,
+    45→    45→  MousePointerClick,
+    46→    46→  Network,
+    47→    47→  Package,
+    48→    48→  ReceiptText,
+    49→    49→  RotateCcw,
+    50→    50→  Save,
+    51→    51→  Search,
+    52→    52→  Share2,
+    53→    53→  ShoppingBag,
+    54→    54→  UserCheck,
+    55→    55→  Wallet2,
+    56→    56→  X,
+    57→    57→} from "lucide-react";
+    58→    58→import { cn } from "@/lib/utils";
+    59→    59→
+    60→    60→// ---------------------------------------------------------------- types
+    61→    61→
+    62→    62→type ProgrammeData = {
+    63→    63→  programmeEnabled: boolean;
+    64→    64→  maxRateBps: number;
+    65→    65→  optIn: boolean;
+    66→    66→  defaultRateBps: number;
+    67→    67→  enrolledProducts: number;
+    68→    68→  totalProducts: number;
+    69→    69→};
+    70→    70→
+    71→    71→type AffiliateProduct = {
+    72→    72→  id: string;
+    73→    73→  title: string;
+    74→    74→  slug: string;
+    75→    75→  status: string;
+    76→    76→  priceMinor: number;
+    77→    77→  affiliateEnabled: boolean;
+    78→    78→  effectiveRateBps: number;
+    79→    79→  rateSource: "product" | "store_default";
+    80→    80→  salesCount: number;
+    81→    81→  image: string | null;
+    82→    82→};
+    83→    83→
+    84→    84→type AffiliateProductsPage = {
+    85→    85→  total: number;
+    86→    86→  page: number;
+    87→    87→  maxRateBps: number;
+    88→    88→  storeOptIn: boolean;
+    89→    89→  storeDefaultRateBps: number;
+    90→    90→  products: AffiliateProduct[];
+    91→    91→};
+    92→    92→
+    93→    93→type CommissionRow = {
+    94→    94→  orderNumber: string;
+    95→    95→  createdAt: string;
+    96→    96→  status: string;
+    97→    97→  baseMinor: number;
+    98→    98→  rateBps: number;
+    99→    99→  poolMinor: number;
+   100→   100→  directMinor: number;
+   101→   101→  sponsorMinor: number;
+   102→   102→  reversedMinor: number;
+   103→   103→};
+   104→   104→
+   105→   105→type ReportData = {
+   106→   106→  days: number;
+   107→   107→  enrolledCount: number;
+   108→   108→  totalProducts: number;
+   109→   109→  clicks: number;
+   110→   110→  productViews: number;
+   111→   111→  attributedOrders: number;
+   112→   112→  eligibleSalesMinor: number;
+   113→   113→  totalPoolMinor: number;
+   114→   114→  directAllocationMinor: number;
+   115→   115→  sponsorAllocationMinor: number;
+   116→   116→  reversalMinor: number;
+   117→   117→  currentLiabilityMinor: number;
+   118→   118→  recentCommissions: CommissionRow[];
+   119→   119→};
+   120→   120→
+   121→   121→// ---------------------------------------------------------------- helpers
+   122→   122→
+   123→   123→/** 850 → "8.5" (1 decimal) — seed value for the percent inputs. */
+   124→   124→function bpsToPercentInput(bps: number): string {
+   125→   125→  return (bps / 100).toFixed(1);
+   126→   126→}
+   127→   127→
+   128→   128→/** Percent text → basis points, or null when blank/unparseable/out of range. */
+   129→   129→function percentTextToBps(text: string, maxRateBps: number): number | null {
+   130→   130→  const trimmed = text.trim();
+   131→   131→  if (trimmed === "") return null;
+   132→   132→  const pct = Number(trimmed);
+   133→   133→  if (!Number.isFinite(pct)) return null;
+   134→   134→  const bps = Math.round(pct * 100);
+   135→   135→  if (bps < 0 || bps > maxRateBps) return null;
+   136→   136→  return bps;
+   137→   137→}
+   138→   138→
+   139→   139→// Commission statuses come raw from the API (pending|approved|available|paid|
+   140→   140→// reversed|held). Same approach as the wallet's payout chip: a small local map
+   141→   141→// so wording and tones stay consistent across the report table.
+   142→   142→const COMMISSION_STATUS_LABELS: Record<string, string> = {
+   143→   143→  pending: "Pending",
+   144→   144→  approved: "Approved",
+   145→   145→  available: "Available",
+   146→   146→  paid: "Paid",
+   147→   147→  reversed: "Reversed",
+   148→   148→  held: "Held",
+   149→   149→};
+   150→   150→
+   151→   151→const COMMISSION_CHIP_CLASS: Record<string, string> = {
+   152→   152→  pending: "bg-amber-100 text-amber-800 border-amber-200",
+   153→   153→  held: "bg-amber-100 text-amber-800 border-amber-200",
+   154→   154→  approved: "bg-emerald-100 text-emerald-800 border-emerald-200",
+   155→   155→  available: "bg-emerald-100 text-emerald-800 border-emerald-200",
+   156→   156→  paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
+   157→   157→  reversed: "bg-rose-100 text-rose-800 border-rose-200",
+   158→   158→};
+   159→   159→
+   160→   160→function CommissionStatusChip({ status, className }: { status: string; className?: string }) {
+   161→   161→  const s = (status ?? "").toLowerCase();
+   162→   162→  return (
+   163→   163→    <Badge
+   164→   164→      variant="outline"
+   165→   165→      className={cn("border font-medium", COMMISSION_CHIP_CLASS[s] ?? "bg-muted text-muted-foreground border-border", className)}
+   166→   166→    >
+   167→   167→      {COMMISSION_STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
+   168→   168→    </Badge>
+   169→   169→  );
+   170→   170→}
+   171→   171→
+   172→   172→// ---------------------------------------------------------------- root view
+   173→   173→
+   174→   174→export default function SellerAffiliate({
+   175→   175→  affiliateTab,
+   176→   176→  onNavigate,
+   177→   177→}: {
+   178→   178→  affiliateTab?: AffiliateTab;
+   179→   179→  onNavigate: (n: SellerNav) => void;
+   180→   180→}) {
+   181→   181→  return (
+   182→   182→    <Tabs value={affiliateTab ?? "program"} onValueChange={(v) => onNavigate({ view: "affiliate", affiliateTab: v as AffiliateTab })}>
+   183→   183→      <TabsList className="mb-4">
+   184→   184→        <TabsTrigger value="program" className="min-h-[44px] gap-1.5">
+   185→   185→          <Share2 className="h-3.5 w-3.5" aria-hidden /> Programme
+   186→   186→        </TabsTrigger>
+   187→   187→        <TabsTrigger value="products" className="min-h-[44px] gap-1.5">
+   188→   188→          <Package className="h-3.5 w-3.5" aria-hidden /> Products
+   189→   189→        </TabsTrigger>
+   190→   190→        <TabsTrigger value="report" className="min-h-[44px] gap-1.5">
+   191→   191→          <ChartColumn className="h-3.5 w-3.5" aria-hidden /> Report
+   192→   192→        </TabsTrigger>
+   193→   193→      </TabsList>
+   194→   194→      <TabsContent value="program" className="mt-0">
+   195→   195→        <ProgrammeTab />
+   196→   196→      </TabsContent>
+   197→   197→      <TabsContent value="products" className="mt-0">
+   198→   198→        <ProductsTab />
+   199→   199→      </TabsContent>
+   200→   200→      <TabsContent value="report" className="mt-0">
+   201→   201→        <ReportTab />
+   202→   202→      </TabsContent>
+   203→   203→    </Tabs>
+   204→   204→  );
+   205→   205→}
+   206→   206→
+   207→   207→// ---------------------------------------------------------------- programme tab
+   208→   208→
+   209→   209→function ProgrammeTab() {
+   210→   210→  const { data, loading, error, refetch } = useApi<ProgrammeData>("/api/store/affiliate");
+   211→   211→  const [optIn, setOptIn] = useState(false);
+   212→   212→  const [rateText, setRateText] = useState("");
+   213→   213→  const [busy, setBusy] = useState(false);
+   214→   214→
+   215→   215→  // hydrate the controls from the server state (and re-seed after every save —
+   216→   216→  // the refetch writes back the persisted opt-in + default rate)
+   217→   217→  useEffect(() => {
+   218→   218→    if (!data) return;
+   219→   219→    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   220→   220→    setOptIn(data.optIn);
+   221→   221→  }, [data?.optIn]);
+   222→   222→  useEffect(() => {
+   223→   223→    if (!data) return;
+   224→   224→    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   225→   225→    setRateText(bpsToPercentInput(data.defaultRateBps));
+   226→   226→  }, [data?.defaultRateBps]);
+   227→   227→
+   228→   228→  if (loading) {
+   229→   229→    return (
+   230→   230→      <div className="space-y-4">
+   231→   231→        <Skeleton className="h-24 w-full" />
+   232→   232→        <Skeleton className="h-40 w-full" />
+   233→   233→      </div>
+   234→   234→    );
+   235→   235→  }
+   236→   236→  if (error || !data) {
+   237→   237→    return (
+   238→   238→      <Card>
+   239→   239→        <CardContent className="p-6 text-sm text-rose-600">Could not load the affiliate programme{error ? `: ${error}` : ""}</CardContent>
+   240→   240→      </Card>
+   241→   241→    );
+   242→   242→  }
+   243→   243→
+   244→   244→  const paused = !data.programmeEnabled;
+   245→   245→  const maxPercent = fmtCommissionPercent(data.maxRateBps / 100);
+   246→   246→
+   247→   247→  const saveOptIn = async (next: boolean) => {
+   248→   248→    setOptIn(next);
+   249→   249→    const ok = await runMutation(
+   250→   250→      () => apiSend("PATCH", "/api/store/affiliate", { optIn: next }),
+   251→   251→      next ? "Your store joined the affiliate programme" : "Your store left the affiliate programme"
+   252→   252→    );
+   253→   253→    if (!ok) setOptIn(!next);
+   254→   254→    else refetch();
+   255→   255→  };
+   256→   256→
+   257→   257→  const saveRate = async () => {
+   258→   258→    const bps = percentTextToBps(rateText, data.maxRateBps);
+   259→   259→    if (bps == null) {
+   260→   260→      toast.error(`Rate must be between 0% and ${maxPercent}`);
+   261→   261→      return;
+   262→   262→    }
+   263→   263→    setBusy(true);
+   264→   264→    const ok = await runMutation(
+   265→   265→      () => apiSend("PATCH", "/api/store/affiliate", { defaultRateBps: bps }),
+   266→   266→      `Default commission rate saved at ${fmtCommissionPercent(bps / 100)}`
+   267→   267→    );
+   268→   268→    setBusy(false);
+   269→   269→    if (ok) refetch();
+   270→   270→  };
+   271→   271→
+   272→   272→  return (
+   273→   273→    <div className="space-y-4">
+   274→   274→      {paused ? (
+   275→   275→        <Alert>
+   276→   276→          <CirclePause />
+   277→   277→          <AlertTitle>Affiliate programme paused</AlertTitle>
+   278→   278→          <AlertDescription>
+   279→   279→            The affiliate programme is currently paused platform-wide. Your opt-in, default rate and product enrollments are preserved — controls
+   280→   280→            are disabled until it resumes.
+   281→   281→          </AlertDescription>
+   282→   282→        </Alert>
+   283→   283→      ) : null}
+   284→   284→
+   285→   285→      {/* summary chips */}
+   286→   286→      <div className="flex flex-wrap items-center gap-2">
+   287→   287→        <Badge
+   288→   288→          variant="outline"
+   289→   289→          className={cn(
+   290→   290→            "border font-semibold",
+   291→   291→            data.optIn ? "bg-emerald-50 text-emerald-700 border-emerald-200/70" : "bg-slate-100 text-slate-600 border-slate-200/70"
+   292→   292→          )}
+   293→   293→        >
+   294→   294→          {data.optIn ? "Store opted in" : "Store not opted in"}
+   295→   295→        </Badge>
+   296→   296→        <Badge variant="outline" className="border bg-slate-100 font-semibold text-slate-600 border-slate-200/70">
+   297→   297→          Enrolled products · {data.enrolledProducts} of {data.totalProducts}
+   298→   298→        </Badge>
+   299→   299→      </div>
+   300→   300→
+   301→   301→      {/* participation */}
+   302→   302→      <Card>
+   303→   303→        <CardHeader>
+   304→   304→          <CardTitle className="flex items-center gap-2 text-sm">
+   305→   305→            <HandCoins className="h-4 w-4 text-primary" /> Store participation
+   306→   306→          </CardTitle>
+   307→   307→        </CardHeader>
+   308→   308→        <CardContent>
+   309→   309→          <div className="flex items-start justify-between gap-4 rounded-xl border p-4">
+   310→   310→            <div>
+   311→   311→              <p className="text-sm font-medium">Let buyers earn commission promoting your products</p>
+   312→   312→              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+   313→   313→                When enabled, buyers can earn commission promoting your enrolled products. Commission is deducted from your proceeds at checkout —
+   314→   314→                never from platform revenue.
+   315→   315→              </p>
+   316→   316→            </div>
+   317→   317→            <Switch checked={optIn} onCheckedChange={saveOptIn} disabled={paused} aria-label="Affiliate programme participation" />
+   318→   318→          </div>
+   319→   319→        </CardContent>
+   320→   320→      </Card>
+   321→   321→
+   322→   322→      {/* default rate */}
+   323→   323→      <Card>
+   324→   324→        <CardHeader>
+   325→   325→          <CardTitle className="flex items-center gap-2 text-sm">
+   326→   326→            <Coins className="h-4 w-4 text-primary" /> Default commission rate
+   327→   327→          </CardTitle>
+   328→   328→        </CardHeader>
+   329→   329→        <CardContent className="space-y-3.5">
+   330→   330→          <div className="max-w-sm space-y-1.5">
+   331→   331→            <Label htmlFor="aff-default-rate">Default rate (%)</Label>
+   332→   332→            <div className="flex gap-2">
+   333→   333→              <div className="relative w-32">
+   334→   334→                <Input
+   335→   335→                  id="aff-default-rate"
+   336→   336→                  inputMode="decimal"
+   337→   337→                  value={rateText}
+   338→   338→                  onChange={(e) => setRateText(e.target.value.replace(/[^0-9.]/g, ""))}
+   339→   339→                  placeholder={bpsToPercentInput(data.defaultRateBps)}
+   340→   340→                  disabled={paused}
+   341→   341→                  className="pr-7 tabular-nums"
+   342→   342→                />
+   343→   343→                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+   344→   344→              </div>
+   345→   345→              <Button onClick={saveRate} disabled={paused || busy || rateText.trim() === ""} className="min-h-[44px] gap-2">
+   346→   346→                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save rate
+   347→   347→              </Button>
+   348→   348→            </div>
+   349→   349→            <p className="text-xs text-muted-foreground">
+   350→   350→              Current default {fmtCommissionPercent(data.defaultRateBps / 100)} · platform max {maxPercent}. Enrolled products without a per-product
+   351→   351→              rate inherit this.
+   352→   352→            </p>
+   353→   353→          </div>
+   354→   354→          <p className="text-xs text-muted-foreground">Changes apply to future orders only. Existing order snapshots are never recalculated.</p>
+   355→   355→        </CardContent>
+   356→   356→      </Card>
+   357→   357→    </div>
+   358→   358→  );
+   359→   359→}
+   360→   360→
+   361→   361→// ---------------------------------------------------------------- products tab
+   362→   362→
+   363→   363→type EnrolledFilter = "all" | "enrolled" | "notEnrolled";
+   364→   364→
+   365→   365→function ProductsTab() {
+   366→   366→  const [search, setSearch] = useState("");
+   367→   367→  const [query, setQuery] = useState("");
+   368→   368→  const [filter, setFilter] = useState<EnrolledFilter>("all");
+   369→   369→  const [page, setPage] = useState(1);
+   370→   370→  const { run: debouncedSearch } = useDebouncedCallback((v: string) => {
+   371→   371→    setQuery(v);
+   372→   372→    setPage(1);
+   373→   373→  }, 350);
+   374→   374→
+   375→   375→  const params = new URLSearchParams();
+   376→   376→  if (filter === "enrolled") params.set("enrolled", "true");
+   377→   377→  if (filter === "notEnrolled") params.set("enrolled", "false");
+   378→   378→  if (query.trim()) params.set("q", query.trim());
+   379→   379→  params.set("page", String(page));
+   380→   380→  params.set("size", "10");
+   381→   381→
+   382→   382→  const { data, loading, error, refetch } = useApi<AffiliateProductsPage>(`/api/store/affiliate/products?${params.toString()}`);
+   383→   383→
+   384→   384→  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 10));
+   385→   385→  const filtering = query.trim() !== "" || filter !== "all";
+   386→   386→
+   387→   387→  return (
+   388→   388→    <div className="space-y-4">
+   389→   389→      <p className="text-sm text-muted-foreground">
+   390→   390→        Choose which products buyers can promote, and set per-product commission rates. Products without their own rate use your store default.
+   391→   391→      </p>
+   392→   392→
+   393→   393→      {!loading && data && !data.storeOptIn ? (
+   394→   394→        <Alert>
+   395→   395→          <HandCoins />
+   396→   396→          <AlertDescription className="text-xs">
+   397→   397→            Your store has not opted in yet — enable participation on the Programme tab before enrolling products. Per-product rates can still be
+   398→   398→            prepared ahead.
+   399→   399→          </AlertDescription>
+   400→   400→        </Alert>
+   401→   401→      ) : null}
+   402→   402→
+   403→   403→      <div className="flex flex-wrap items-center gap-2">
+   404→   404→        <div className="relative min-w-52 flex-1">
+   405→   405→          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   406→   406→          <Input
+   407→   407→            placeholder="Search products…"
+   408→   408→            className="pl-8"
+   409→   409→            value={search}
+   410→   410→            onChange={(e) => {
+   411→   411→              setSearch(e.target.value);
+   412→   412→              debouncedSearch(e.target.value);
+   413→   413→            }}
+   414→   414→          />
+   415→   415→        </div>
+   416→   416→        <ToggleGroup
+   417→   417→          type="single"
+   418→   418→          variant="outline"
+   419→   419→          value={filter}
+   420→   420→          onValueChange={(v) => {
+   421→   421→            if (!v) return;
+   422→   422→            setFilter(v as EnrolledFilter);
+   423→   423→            setPage(1);
+   424→   424→          }}
+   425→   425→          aria-label="Filter products by enrollment"
+   426→   426→        >
+   427→   427→          <ToggleGroupItem value="all" className="min-h-[44px] px-3">
+   428→   428→            All
+   429→   429→          </ToggleGroupItem>
+   430→   430→          <ToggleGroupItem value="enrolled" className="min-h-[44px] px-3">
+   431→   431→            Enrolled
+   432→   432→          </ToggleGroupItem>
+   433→   433→          <ToggleGroupItem value="notEnrolled" className="min-h-[44px] px-3">
+   434→   434→            Not enrolled
+   435→   435→          </ToggleGroupItem>
+   436→   436→        </ToggleGroup>
+   437→   437→      </div>
+   438→   438→
+   439→   439→      {loading ? (
+   440→   440→        <RowsSkeleton rows={5} />
+   441→   441→      ) : error || !data ? (
+   442→   442→        <Card>
+   443→   443→          <CardContent className="p-6 text-sm text-rose-600">Could not load products{error ? `: ${error}` : ""}</CardContent>
+   444→   444→        </Card>
+   445→   445→      ) : data.products.length === 0 ? (
+   446→   446→        <EmptyState
+   447→   447→          icon={<Package className="h-8 w-8" />}
+   448→   448→          title={filtering ? "No matching products" : "No products yet"}
+   449→   449→          hint={filtering ? "Try clearing the search or switching the enrollment filter." : "Create products first — then enroll them so buyers can earn commission promoting them."}
+   450→   450→        />
+   451→   451→      ) : (
+   452→   452→        <div className="space-y-2">
+   453→   453→          {data.products.map((p) => (
+   454→   454→            <AffiliateProductRow
+   455→   455→              key={p.id}
+   456→   456→              product={p}
+   457→   457→              maxRateBps={data.maxRateBps}
+   458→   458→              storeDefaultRateBps={data.storeDefaultRateBps}
+   459→   459→              storeOptIn={data.storeOptIn}
+   460→   460→              onChanged={refetch}
+   461→   461→            />
+   462→   462→          ))}
+   463→   463→        </div>
+   464→   464→      )}
+   465→   465→
+   466→   466→      {!loading && data && data.products.length > 0 ? (
+   467→   467→        <div className="flex items-center justify-between text-sm text-muted-foreground">
+   468→   468→          <span>
+   469→   469→            {data.total} product{data.total === 1 ? "" : "s"} · page {page} of {totalPages}
+   470→   470→          </span>
+   471→   471→          <div className="flex gap-2">
+   472→   472→            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+   473→   473→              Previous
+   474→   474→            </Button>
+   475→   475→            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+   476→   476→              Next
+   477→   477→            </Button>
+   478→   478→          </div>
+   479→   479→        </div>
+   480→   480→      ) : null}
+   481→   481→    </div>
+   482→   482→  );
+   483→   483→}
+   484→   484→
+   485→   485→function AffiliateProductRow({
+   486→   486→  product,
+   487→   487→  maxRateBps,
+   488→   488→  storeDefaultRateBps,
+   489→   489→  storeOptIn,
+   490→   490→  onChanged,
+   491→   491→}: {
+   492→   492→  product: AffiliateProduct;
+   493→   493→  maxRateBps: number;
+   494→   494→  storeDefaultRateBps: number;
+   495→   495→  storeOptIn: boolean;
+   496→   496→  onChanged: () => void;
+   497→   497→}) {
+   498→   498→  const [enabled, setEnabled] = useState(product.affiliateEnabled);
+   499→   499→  const [rateText, setRateText] = useState(product.rateSource === "product" ? bpsToPercentInput(product.effectiveRateBps) : "");
+   500→   500→  const [busy, setBusy] = useState(false);
+   501→   501→
+   502→   502→  // re-seed the inline controls whenever the server row changes (post-save
+   503→   503→  // refetch writes new affiliateEnabled / rateSource / effectiveRateBps)
+   504→   504→  useEffect(() => {
+   505→   505→    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   506→   506→    setEnabled(product.affiliateEnabled);
+   507→   507→  }, [product.affiliateEnabled]);
+   508→   508→  useEffect(() => {
+   509→   509→    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
+   510→   510→    setRateText(product.rateSource === "product" ? bpsToPercentInput(product.effectiveRateBps) : "");
+   511→   511→  }, [product.rateSource, product.effectiveRateBps]);
+   512→   512→
+   513→   513→  const toggleEnrollment = async (next: boolean) => {
+   514→   514→    setEnabled(next);
+   515→   515→    const ok = await runMutation(
+   516→   516→      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { enabled: next }),
+   517→   517→      next ? `${product.title} enrolled — buyers can now earn commission on it` : `${product.title} paused from the affiliate programme`
+   518→   518→    );
+   519→   519→    if (ok) onChanged();
+   520→   520→    else setEnabled(!next);
+   521→   521→  };
+   522→   522→
+   523→   523→  const applyRate = async () => {
+   524→   524→    const bps = percentTextToBps(rateText, maxRateBps);
+   525→   525→    if (bps == null) {
+   526→   526→      toast.error(`Rate must be between 0% and ${fmtCommissionPercent(maxRateBps / 100)}`);
+   527→   527→      return;
+   528→   528→    }
+   529→   529→    setBusy(true);
+   530→   530→    const ok = await runMutation(
+   531→   531→      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: bps }),
+   532→   532→      `${product.title} commission rate set to ${fmtCommissionPercent(bps / 100)}`
+   533→   533→    );
+   534→   534→    setBusy(false);
+   535→   535→    if (ok) onChanged();
+   536→   536→  };
+   537→   537→
+   538→   538→  // X = "reset to store default": drops the drafted text and, when the product
+   539→   539→  // carries its own override, sends rateBps: null so it inherits the store rate.
+   540→   540→  const resetRate = async () => {
+   541→   541→    setRateText("");
+   542→   542→    if (product.rateSource !== "product") return;
+   543→   543→    setBusy(true);
+   544→   544→    const ok = await runMutation(
+   545→   545→      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: null }),
+   546→   546→      `${product.title} reset to the store default rate`
+   547→   547→    );
+   548→   548→    setBusy(false);
+   549→   549→    if (ok) onChanged();
+   550→   550→  };
+   551→   551→
+   552→   552→  const canReset = rateText.trim() !== "" || product.rateSource === "product";
+   553→   553→
+   554→   554→  return (
+   555→   555→    <div className="rounded-xl border bg-card p-3 sm:p-4">
+   556→   556→      <div className="flex flex-wrap items-center gap-3">
+   557→   557→        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+   558→   558→          {product.image ? (
+   559→   559→            <img src={product.image} alt={product.title} className="h-full w-full object-cover" />
+   560→   560→          ) : (
+   561→   561→            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+   562→   562→          )}
+   563→   563→        </span>
+   564→   564→        <div className="min-w-0 flex-1">
+   565→   565→          <p className="max-w-64 truncate font-medium">{product.title}</p>
+   566→   566→          <p className="text-xs text-muted-foreground">
+   567→   567→            {formatMinor(product.priceMinor)} · {product.salesCount} sale{product.salesCount === 1 ? "" : "s"}
+   568→   568→          </p>
+   569→   569→        </div>
+   570→   570→        <StatusChip status={product.status} />
+   571→   571→        <Badge variant="outline" className="font-semibold">
+   572→   572→          {fmtCommissionPercent(product.effectiveRateBps / 100)} · {product.rateSource === "product" ? "product rate" : "store default"}
+   573→   573→        </Badge>
+   574→   574→      </div>
+   575→   575→      <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+   576→   576→        <Switch
+   577→   577→          checked={enabled}
+   578→   578→          onCheckedChange={toggleEnrollment}
+   579→   579→          disabled={busy || !storeOptIn}
+   580→   580→          aria-label={`Affiliate enrollment for ${product.title}`}
+   581→   581→        />
+   582→   582→        <span className="text-xs font-medium text-muted-foreground">{enabled ? "Enrolled" : "Paused"}</span>
+   583→   583→        {!storeOptIn ? <span className="text-xs text-amber-600">Enable the programme on the Programme tab to enroll products</span> : null}
+   584→   584→        <div className="ml-auto flex items-center gap-2">
+   585→   585→          <div className="relative w-28">
+   586→   586→            <Input
+   587→   587→              inputMode="decimal"
+   588→   588→              value={rateText}
+   589→   589→              onChange={(e) => setRateText(e.target.value.replace(/[^0-9.]/g, ""))}
+   590→   590→              placeholder={bpsToPercentInput(storeDefaultRateBps)}
+   591→   591→              disabled={busy}
+   592→   592→              aria-label={`Commission rate override for ${product.title}`}
+   593→   593→              className="pr-7 tabular-nums"
+   594→   594→            />
+   595→   595→            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+   596→   596→          </div>
+   597→   597→          {canReset ? (
+   598→   598→            <Button
+   599→   599→              variant="ghost"
+   600→   600→              size="icon"
+   601→   601→              className="h-8 w-8 text-muted-foreground"
+   602→   602→              onClick={resetRate}
+   603→   603→              disabled={busy}
+   604→   604→              aria-label={`Reset ${product.title} to the store default rate`}
+   605→   605→              title="Reset to store default rate"
+   606→   606→            >
+   607→   607→              <X className="h-4 w-4" />
+   608→   608→            </Button>
+   609→   609→          ) : null}
+   610→   610→          <Button variant="outline" size="sm" onClick={applyRate} disabled={busy || rateText.trim() === ""} className="gap-1.5">
+   611→   611→            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Apply
+   612→   612→          </Button>
+   613→   613→        </div>
+   614→   614→      </div>
+   615→   615→    </div>
+   616→   616→  );
+   617→   617→}
+   618→   618→
+   619→   619→// ---------------------------------------------------------------- report tab
+   620→   620→
+   621→   621→const DAY_WINDOWS = [7, 30, 90];
+   622→   622→
+   623→   623→function ReportTab() {
+   624→   624→  const [days, setDays] = useState(30);
+   625→   625→  const { data, loading, error } = useApi<ReportData>(`/api/store/affiliate/report?days=${days}`);
+   626→   626→
+   627→   627→  return (
+   628→   628→    <div className="space-y-4">
+   629→   629→      <div className="flex flex-wrap items-center justify-between gap-2">
+   630→   630→        <p className="text-sm text-muted-foreground">
+   631→   631→          Attributed traffic, orders and commission liabilities for the last {days} day{days === 1 ? "" : "s"}.
+   632→   632→        </p>
+   633→   633→        <ToggleGroup
+   634→   634→          type="single"
+   635→   635→          variant="outline"
+   636→   636→          value={String(days)}
+   637→   637→          onValueChange={(v) => v && setDays(Number(v))}
+   638→   638→          aria-label="Report window"
+   639→   639→        >
+   640→   640→          {DAY_WINDOWS.map((d) => (
+   641→   641→            <ToggleGroupItem key={d} value={String(d)} className="min-h-[44px] px-3">
+   642→   642→              {d} days
+   643→   643→            </ToggleGroupItem>
+   644→   644→          ))}
+   645→   645→        </ToggleGroup>
+   646→   646→      </div>
+   647→   647→
+   648→   648→      {loading ? (
+   649→   649→        <div className="space-y-4">
+   650→   650→          <CardsSkeleton count={6} />
+   651→   651→          <RowsSkeleton rows={5} />
+   652→   652→        </div>
+   653→   653→      ) : error || !data ? (
+   654→   654→        <Card>
+   655→   655→          <CardContent className="p-6 text-sm text-rose-600">Could not load the affiliate report{error ? `: ${error}` : ""}</CardContent>
+   656→   656→        </Card>
+   657→   657→      ) : (
+   658→   658→        <>
+   659→   659→          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   660→   660→            <StatCard label="Attributed clicks" value={String(data.clicks)} sub="Affiliate link clicks" icon={<MousePointerClick className="h-4 w-4" />} />
+   661→   661→            <StatCard label="Product views" value={String(data.productViews)} sub="Product views via affiliate links" icon={<Eye className="h-4 w-4" />} />
+   662→   662→            <StatCard label="Attributed orders" value={String(data.attributedOrders)} sub="Orders that earned commission" icon={<ShoppingBag className="h-4 w-4" />} />
+   663→   663→            <StatCard label="Eligible sales" value={formatMinor(data.eligibleSalesMinor)} sub="Commissionable order value" icon={<Banknote className="h-4 w-4" />} />
+   664→   664→            <StatCard label="Commission pool" value={formatMinor(data.totalPoolMinor)} sub="Commission owed at checkout" icon={<Coins className="h-4 w-4" />} />
+   665→   665→            <StatCard label="Direct allocation" value={formatMinor(data.directAllocationMinor)} sub="90% to the referring affiliate" icon={<UserCheck className="h-4 w-4" />} />
+   666→   666→            <StatCard label="Sponsor allocation" value={formatMinor(data.sponsorAllocationMinor)} sub="10% to the referring affiliate's sponsor" icon={<Network className="h-4 w-4" />} />
+   667→   667→            <StatCard label="Reversals" value={formatMinor(data.reversalMinor)} sub="Clawed back on processed refunds" icon={<RotateCcw className="h-4 w-4" />} />
+   668→   668→            <StatCard label="Current liability" value={formatMinor(data.currentLiabilityMinor)} sub="Owed to affiliates, net of reversals" icon={<Wallet2 className="h-4 w-4" />} />
+   669→   669→          </div>
+   670→   670→
+   671→   671→          <div>
+   672→   672→            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   673→   673→              <h2 className="text-sm font-semibold">Recent commissions</h2>
+   674→   674→              <Badge variant="outline" className="font-semibold">
+   675→   675→                Enrolled products · {data.enrolledCount} of {data.totalProducts}
+   676→   676→              </Badge>
+   677→   677→            </div>
+   678→   678→            {data.recentCommissions.length === 0 ? (
+   679→   679→              <EmptyState
+   680→   680→                icon={<ReceiptText className="h-8 w-8" />}
+   681→   681→                title="No affiliate orders yet"
+   682→   682→                hint="Affiliate-attributed orders will appear here once buyers purchase through affiliate links."
+   683→   683→              />
+   684→   684→            ) : (
+   685→   685→              <div className="overflow-x-auto rounded-xl border">
+   686→   686→                <Table>
+   687→   687→                  <TableHeader>
+   688→   688→                    <TableRow>
+   689→   689→                      <TableHead>Order</TableHead>
+   690→   690→                      <TableHead>Date</TableHead>
+   691→   691→                      <TableHead>Status</TableHead>
+   692→   692→                      <TableHead className="text-right">Base</TableHead>
+   693→   693→                      <TableHead className="text-right">Rate</TableHead>
+   694→   694→                      <TableHead className="text-right">Pool</TableHead>
+   695→   695→                      <TableHead className="text-right">Direct</TableHead>
+   696→   696→                      <TableHead className="text-right">Sponsor</TableHead>
+   697→   697→                      <TableHead className="text-right">Reversed</TableHead>
+   698→   698→                    </TableRow>
+   699→   699→                  </TableHeader>
+   700→   700→                  <TableBody>
+   701→   701→                    {data.recentCommissions.map((c, i) => (
+   702→   702→                      <TableRow key={`${c.orderNumber}-${i}`}>
+   703→   703→                        <TableCell className="font-mono text-sm font-semibold">{c.orderNumber}</TableCell>
+   704→   704→                        <TableCell className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</TableCell>
+   705→   705→                        <TableCell>
+   706→   706→                          <CommissionStatusChip status={c.status} />
+   707→   707→                        </TableCell>
+   708→   708→                        <TableCell className="text-right tabular-nums">{formatMinor(c.baseMinor)}</TableCell>
+   709→   709→                        <TableCell className="text-right tabular-nums">{fmtCommissionPercent(c.rateBps / 100)}</TableCell>
+   710→   710→                        <TableCell className="text-right tabular-nums">{formatMinor(c.poolMinor)}</TableCell>
+   711→   711→                        <TableCell className="text-right tabular-nums">{formatMinor(c.directMinor)}</TableCell>
+   712→   712→                        <TableCell className="text-right tabular-nums">{formatMinor(c.sponsorMinor)}</TableCell>
+   713→   713→                        <TableCell className="text-right tabular-nums">{c.reversedMinor > 0 ? formatMinor(c.reversedMinor) : "—"}</TableCell>
+   714→   714→                      </TableRow>
+   715→   715→                    ))}
+   716→   716→                  </TableBody>
+   717→   717→                </Table>
+   718→   718→              </div>
+   719→   719→            )}
+   720→   720→          </div>
+   721→   721→        </>
+   722→   722→      )}
+   723→   723→    </div>
+   724→   724→  );
+   725→   725→}
+   726→   726→

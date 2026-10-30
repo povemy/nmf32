@@ -10,6 +10,7 @@ import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryIn
 import { withCheckoutAdmission } from "@/lib/checkout-gate";
 import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
 import { resolveAttribution } from "@/lib/analytics/attribution";
+import { resolveAffiliateAttributionForCart } from "@/lib/affiliate-attribution";
 
 export const dynamic = "force-dynamic";
 
@@ -162,6 +163,18 @@ export const POST = handle(async (req: Request) => {
   // Computed on the VOUCHER-ADJUSTED totals so the discount reaches the ledger.
   // A live store always has an owner — the ?? "" is a defensive fallback that
   // resolves to default commission settings instead of throwing.
+  //
+  // AFFILIATE (Hub): money-grade per-item attribution is resolved server-side
+  // FIRST (last eligible click per product from the visitor-cookie touch
+  // table, 30-day window, self-purchases excluded, enrollment re-checked),
+  // then fed into the commission computation so the seller-funded affiliate
+  // pool is carved from seller proceeds in the SAME snapshot math. The client
+  // never supplies affiliate ids.
+  const affiliateMap = await resolveAffiliateAttributionForCart({
+    shopperId: me.id,
+    lines: pricing.groups.flatMap((g) => g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, storeId: g.storeId }))),
+  }).catch(() => new Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>());
+
   const groupCommissions = await Promise.all(
     adjustedGroups.map((g) =>
       computeOrderCommissions({
@@ -173,6 +186,7 @@ export const POST = handle(async (req: Request) => {
           variantLabel: l.variantLabel,
           unitPriceMinor: l.unitPriceMinor,
           qty: l.qty,
+          affiliate: affiliateMap.get(l.variantId) ?? null,
         })),
         orderDiscountMinor: g.discountMinor,
         shippingMinorTotal: g.shippingMinor,
@@ -313,6 +327,7 @@ export const POST = handle(async (req: Request) => {
       await tx.orderItem.createMany({
         data: g.lines.map((l, i) => {
           const c = comm.items[i];
+          const aff = affiliateMap.get(l.variantId) ?? null;
           return {
             orderId: order.id,
             productId: l.productId,
@@ -329,6 +344,14 @@ export const POST = handle(async (req: Request) => {
             fixedFeeMinor: c.fixedFeeMinor,
             sellerNetMinor: c.sellerNetMinor,
             breakdownJson: toJson(c.breakdown),
+            // AFFILIATE snapshot — frozen here, never recomputed (identical
+            // contract to the commission columns above). Zero/nullable when
+            // the line has no valid affiliate attribution.
+            affiliateDirectId: aff?.affiliateId ?? null,
+            affiliateSponsorId: aff?.sponsorId ?? null,
+            affiliateLinkId: aff?.linkId ?? null,
+            affiliateRateBps: aff?.rateBps ?? null,
+            affiliatePoolMinor: c.affiliatePoolMinor,
           };
         }),
       });

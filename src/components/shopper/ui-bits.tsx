@@ -50,7 +50,10 @@ export type ShopperView =
   | { name: "messages"; threadId?: string }
   | { name: "store-page"; slug: string; pageSlug: string }
   | { name: "generate" }
-  | { name: "me"; tab?: string };
+  | { name: "me"; tab?: string }
+  | { name: "affiliate"; tab?: string }
+  | { name: "aff-showcase"; slug: string; linkCode?: string }
+  | { name: "aff-collection"; slug: string; linkCode?: string };
 
 export type ShopperCtx = {
   nav: (v: ShopperView) => void;

@@ -37,6 +37,7 @@ import {
   Flame,
   Plus,
   Gift,
+  HandCoins,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,8 @@ import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
 import GenerateStoreView, { ClaimView } from "./generate";
 import MeHubView from "./me-hub";
+import AffiliateHubView from "./affiliate-hub";
+import { AffiliateShowcaseView, AffiliateCollectionView } from "./affiliate-public";
 import {
   ChatHeader,
   ChatListItem,
@@ -255,6 +258,61 @@ export default function ShopperShell() {
           setReady(true);
           return;
         }
+        // ---- affiliate public landings (Task 2-A) — BEFORE ?sf= -------------
+        // ?al={code}: promotional link landing. The server resolves the code,
+        // records the money-grade attribution touch (visitor-cookie keyed) and
+        // returns the navigation target. Invalid codes fail closed → we fall
+        // back to the default restore below, never a fake page.
+        const al = params.get("al");
+        if (al) {
+          setReady(true);
+          void (async () => {
+            try {
+              const r = await postJson<{
+                target:
+                  | { kind: "product"; storeSlug: string; productSlug: string }
+                  | { kind: "store"; storeSlug: string }
+                  | { kind: "collection"; collectionSlug: string }
+                  | { kind: "showcase"; affiliateSlug: string };
+              }>("/api/affiliate/track", { code: al });
+              const t = r.target;
+              if (t.kind === "product") setView({ name: "pdp", slug: t.storeSlug, pSlug: t.productSlug });
+              else if (t.kind === "store") setView({ name: "storefront", slug: t.storeSlug });
+              else if (t.kind === "collection") setView({ name: "aff-collection", slug: t.collectionSlug, linkCode: al });
+              else setView({ name: "aff-showcase", slug: t.affiliateSlug, linkCode: al });
+            } catch {
+              /* invalid/tampered code — stay on the default view (fail closed) */
+            }
+          })();
+          return;
+        }
+        // ?ref={code}: referral join landing — fire the first-touch beacon
+        // (best-effort, non-blocking; the server sets the nm_aff_ref cookie),
+        // then open the affiliate hub (gate/activation reads “invited by @X”).
+        const refCode = params.get("ref");
+        if (refCode) {
+          const channel = params.get("src");
+          void postJson("/api/affiliate/track-referral", { code: refCode, channel: channel ?? undefined }).catch(() => {
+            /* best-effort */
+          });
+          setView({ name: "affiliate" });
+          setReady(true);
+          return;
+        }
+        // ?aff={slug}: public affiliate showcase page
+        const aff = params.get("aff");
+        if (aff) {
+          setView({ name: "aff-showcase", slug: aff });
+          setReady(true);
+          return;
+        }
+        // ?affc={slug}: public affiliate collection page
+        const affc = params.get("affc");
+        if (affc) {
+          setView({ name: "aff-collection", slug: affc });
+          setReady(true);
+          return;
+        }
         // SEO deep links (sitemap): /?sf={storeSlug} and /?sf={storeSlug}&sp={productSlug}
         const sf = params.get("sf");
         if (sf) {
@@ -411,7 +469,7 @@ export default function ShopperShell() {
 
       <AnimatePresence mode="wait">
         <motion.main
-          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" ? view.tab ?? "" : ""}`}
+          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" || view.name === "affiliate" ? view.tab ?? "" : ""}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
@@ -436,6 +494,23 @@ export default function ShopperShell() {
               {view.name === "lookup" ? <LookupView ctx={ctx} /> : null}
               {view.name === "messages" ? <MessagesView ctx={ctx} initialThreadId={view.threadId} /> : null}
               {view.name === "me" ? <MeHubView ctx={ctx} initialTab={view.tab} /> : null}
+              {view.name === "affiliate" ? (
+                <AffiliateHubView
+                  ctx={ctx}
+                  initialTab={view.tab}
+                  onTabChange={(t) => {
+                    // Persist the tab without touching the in-memory view or the
+                    // back-stack — reloads then restore the hub on the same tab.
+                    try {
+                      window.localStorage.setItem(VIEW_KEY, JSON.stringify({ name: "affiliate", tab: t }));
+                    } catch {
+                      /* storage unavailable */
+                    }
+                  }}
+                />
+              ) : null}
+              {view.name === "aff-showcase" ? <AffiliateShowcaseView ctx={ctx} slug={view.slug} linkCode={view.linkCode} /> : null}
+              {view.name === "aff-collection" ? <AffiliateCollectionView ctx={ctx} slug={view.slug} linkCode={view.linkCode} /> : null}
             </>
           )}
           {claimLink ? <ClaimView jobId={claimLink.jobId} token={claimLink.token} onExit={() => setClaimLink(null)} /> : null}
@@ -486,6 +561,7 @@ function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: Shoppe
       onClick: () => (signedIn ? nav({ name: "me", tab: "purchases" }) : openShopperAuth()),
     },
     { key: "cart", label: "Cart", icon: ShoppingCart, active: false, badge: count, onClick: openCart },
+    { key: "earn", label: "Earn", icon: HandCoins, active: view.name === "affiliate", badge: 0, onClick: () => nav({ name: "affiliate" }) },
     { key: "chat", label: "Chat", icon: MessagesSquare, active: view.name === "messages", badge: unreadChats, onClick: () => (signedIn ? nav({ name: "messages" }) : openShopperAuth()) },
     { key: "me", label: "Me", icon: User, active: view.name === "me", badge: 0, onClick: () => nav({ name: "me" }) },
   ];
@@ -496,7 +572,7 @@ function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: Shoppe
       className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid max-w-lg grid-cols-5">
+      <div className="mx-auto grid max-w-lg grid-cols-6">
         {items.map((it) => {
           const Icon = it.icon;
           return (

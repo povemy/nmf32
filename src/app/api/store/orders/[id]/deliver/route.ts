@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, transitionOrder, dispatchStoreWebhooks, notify, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { fastForwardDelivery, mockPodUrl, validateProofDataUrl } from "@/lib/shipping";
+import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
 
   const now = new Date();
   const shipment = await db.shipment.findUnique({ where: { orderId: order.id } });
+  // AFFILIATE — delivered is an authoritative completion state: pending
+  // commission entries for this order become approved (best-effort; the
+  // affiliate lifecycle cron sweep also covers this path).
+  try { await approveAffiliateCommissionsForOrder(order.id); } catch { /* best-effort */ }
   let platformBooking = false;
 
   if (shipment && shipment.providerId === "mock") {

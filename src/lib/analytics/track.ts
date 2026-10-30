@@ -18,6 +18,7 @@ import { resolveInsightsIdentity } from "./identity";
 import { classifyReferrer } from "./referrer";
 import { enqueueAnalyticsEvent } from "./queue";
 import { resolveAttribution, channelFromAttribution, type Attribution } from "./attribution";
+import { resolveAffiliateEventTag } from "@/lib/affiliate-attribution";
 
 function hourBucket(d = new Date()): string {
   return d.toISOString().slice(0, 13); // "2026-10-28T07" (UTC server time)
@@ -41,10 +42,15 @@ function attrFields(attr: Attribution | null) {
 async function base(
   req: Request,
   opts: { shopperId?: string | null } = {}
-): Promise<{ visitorId: string; sessionId: string; shopperId: string | null; referrerHost: string | null; channel: string; attr: Attribution | null }> {
+): Promise<{ visitorId: string; sessionId: string; shopperId: string | null; referrerHost: string | null; channel: string; attr: Attribution | null; affiliate: { affiliateId: string | null; linkId: string | null } }> {
   const identity = await resolveInsightsIdentity();
   const ref = classifyReferrer(req);
   const attr = await resolveAttribution();
+  // AFFILIATE advisory tag — from the httpOnly nm_aff_last cookie set at
+  // promotional-link resolution. Money-grade attribution never reads this;
+  // it only attributes store_view/product_view/cart events to the affiliate
+  // for hub reporting ("product views attributed to the affiliate").
+  const affiliate = await resolveAffiliateEventTag();
   // Tagged visits classify their channel from the validated utm_source (the
   // SPA's same-origin fetches make the Referer useless for external landings);
   // untagged traffic keeps the legacy referrer classification.
@@ -56,6 +62,7 @@ async function base(
     referrerHost: ref.referrerHost,
     channel,
     attr,
+    affiliate,
   };
 }
 
@@ -78,6 +85,8 @@ export async function trackStoreView(req: Request, storeId: string): Promise<voi
       referrerHost: b.referrerHost,
       channel: b.channel,
       ...attrFields(b.attr),
+      affiliateId: b.affiliate.affiliateId,
+      affiliateLinkId: b.affiliate.linkId,
     });
   } catch { /* never break the host request */ }
 }
@@ -100,6 +109,8 @@ export async function trackProductView(req: Request, storeId: string, productId:
       referrerHost: b.referrerHost,
       channel: b.channel,
       ...attrFields(b.attr),
+      affiliateId: b.affiliate.affiliateId,
+      affiliateLinkId: b.affiliate.linkId,
     });
   } catch { /* never break the host request */ }
 }
@@ -127,6 +138,8 @@ export async function trackViewCart(
         shopperId: shopperId ?? null,
         qty: s.itemCount,
         ...attrFields(b.attr),
+      affiliateId: b.affiliate.affiliateId,
+      affiliateLinkId: b.affiliate.linkId,
       });
     }
   } catch { /* never break the host request */ }
@@ -148,6 +161,7 @@ export async function trackAddToCart(input: {
     // Fire-and-forget context: cookies() resolves from the request's async
     // context (captured at call time); any failure → untagged event.
     const attr = await resolveAttribution().catch(() => null);
+    const aff = await resolveAffiliateEventTag().catch(() => ({ affiliateId: null, linkId: null }));
     enqueueAnalyticsEvent({
       dedupKey: `ac:${input.cartItemId}:${input.preQty}->${input.postQty}`,
       eventType: "add_to_cart",
@@ -157,6 +171,8 @@ export async function trackAddToCart(input: {
       shopperId: input.shopperId,
       qty: delta,
       ...attrFields(attr),
+      affiliateId: aff.affiliateId,
+      affiliateLinkId: aff.linkId,
     });
   } catch { /* never break the host request */ }
 }
@@ -172,6 +188,7 @@ export async function trackRemoveFromCart(input: {
 }): Promise<void> {
   try {
     const attr = await resolveAttribution().catch(() => null);
+    const aff = await resolveAffiliateEventTag().catch(() => ({ affiliateId: null, linkId: null }));
     enqueueAnalyticsEvent({
       dedupKey: `rc:${input.cartItemId}:${input.qty}`,
       eventType: "remove_from_cart",
@@ -181,6 +198,8 @@ export async function trackRemoveFromCart(input: {
       shopperId: input.shopperId,
       qty: input.qty,
       ...attrFields(attr),
+      affiliateId: aff.affiliateId,
+      affiliateLinkId: aff.linkId,
     });
   } catch { /* never break the host request */ }
 }

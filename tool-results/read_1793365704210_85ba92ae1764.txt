@@ -1,0 +1,727 @@
+     1→// ============================================================================
+     2→// AFFILIATE HUB & ONE-LEVEL SPONSOR REFERRAL SYSTEM — core domain library.
+     3→// docs/affiliate/*.md are the authoritative design docs.
+     4→//
+     5→// COMMERCIAL MODEL (fixed, spec §1/§8):
+     6→//   • Seller-funded commission pool per eligible OrderItem: P = B × R (bps,
+     7→//     integer sen). The pool is carved OUT of seller proceeds at checkout
+     8→//     (sellerNet already subtracts it — see computeOrderCommissions).
+     9→//   • Split of the POOL: S = floor(P × 10 / 100) to the direct affiliate's
+    10→//     ONE-LEVEL sponsor; D = P − S to the direct affiliate. No sponsor ⇒
+    11→//     D = P, S = 0. D + S = P ALWAYS (never exceeds the pool).
+    12→//   • Attribution travels UP exactly one generation. No recruitment bonuses,
+    13→//     no click rewards, no registration rewards — liabilities only ever
+    14→//     originate from genuine eligible paid sales.
+    15→//
+    16→// INTEGRITY CONTRACTS:
+    17→//   • Pool snapshots freeze on OrderItem at checkout (commission contract).
+    18→//   • AffiliateCommission rows post EXACTLY ONCE per order item at payment
+    19→//     confirmation (unique orderItemId; duplicate webhooks are no-ops).
+    20→//   • The 90/10 SPLIT is computed at POSTING time from the then-current
+    21→//     sponsor-override flag + sponsor eligibility, then never rewritten —
+    22→//     so the override can be disabled without corrupting existing records.
+    23→//   • Every money mutation rides the immutable ledger (lib/ledger.ts).
+    24→// ============================================================================
+    25→import { cookies } from "next/headers";
+    26→import { db } from "@/lib/db";
+    27→import { ApiError } from "@/lib/api";
+    28→import { randomToken } from "@/lib/password";
+    29→import { divHalfUp } from "@/lib/money";
+    30→import { getSession } from "@/lib/auth";
+    31→import { parseJson } from "@/lib/json";
+    32→import type { Prisma } from "@prisma/client";
+    33→
+    34→// ---------------------------------------------------------------------------
+    35→// Settings (Setting rows, registry-rendered in admin System → Settings).
+    36→// Sandbox defaults keep the programme demonstrable; the PRODUCTION launch
+    37→// gate (docs/affiliate/rollout-checklist.md) requires explicitly reviewing
+    38→// affiliate.enabled / affiliate.sponsor_enabled before enabling live.
+    39→// ---------------------------------------------------------------------------
+    40→export const AFFILIATE_SETTING_KEYS = {
+    41→  enabled: "affiliate.enabled",
+    42→  sponsorEnabled: "affiliate.sponsor_enabled",
+    43→  maxRateBps: "affiliate.max_rate_bps",
+    44→  attrWindowDays: "affiliate.attr_window_days",
+    45→  sponsorWindowDays: "affiliate.sponsor_window_days",
+    46→  reviewDays: "affiliate.review_days",
+    47→  minPayoutMinor: "affiliate.min_payout_minor",
+    48→} as const;
+    49→
+    50→export type AffiliateSettings = {
+    51→  enabled: boolean;
+    52→  sponsorEnabled: boolean;
+    53→  maxRateBps: number;
+    54→  attrWindowDays: number;
+    55→  sponsorWindowDays: number;
+    56→  reviewDays: number;
+    57→  minPayoutMinor: number;
+    58→};
+    59→
+    60→const DEFAULTS: AffiliateSettings = {
+    61→  enabled: true,
+    62→  sponsorEnabled: true,
+    63→  maxRateBps: 3000, // 30% platform ceiling
+    64→  attrWindowDays: 30,
+    65→  sponsorWindowDays: 30,
+    66→  reviewDays: 7,
+    67→  minPayoutMinor: 1000, // RM 10.00
+    68→};
+    69→
+    70→function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+    71→  const n = typeof v === "number" ? v : Number(v);
+    72→  if (!Number.isFinite(n)) return fallback;
+    73→  return Math.min(max, Math.max(min, Math.round(n)));
+    74→}
+    75→
+    76→export async function getAffiliateSettings(): Promise<AffiliateSettings> {
+    77→  const rows = await db.setting.findMany({ where: { key: { in: Object.values(AFFILIATE_SETTING_KEYS) } } });
+    78→  const map = new Map(rows.map((r) => [r.key, r.valueJson]));
+    79→  const bool = (k: string, d: boolean) => {
+    80→    const v = parseJson<unknown>(map.get(k) ?? null, d);
+    81→    return typeof v === "boolean" ? v : d;
+    82→  };
+    83→  return {
+    84→    enabled: bool(AFFILIATE_SETTING_KEYS.enabled, DEFAULTS.enabled),
+    85→    sponsorEnabled: bool(AFFILIATE_SETTING_KEYS.sponsorEnabled, DEFAULTS.sponsorEnabled),
+    86→    maxRateBps: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.maxRateBps) ?? null, DEFAULTS.maxRateBps), 0, 10000, DEFAULTS.maxRateBps),
+    87→    attrWindowDays: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.attrWindowDays) ?? null, DEFAULTS.attrWindowDays), 1, 365, DEFAULTS.attrWindowDays),
+    88→    sponsorWindowDays: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.sponsorWindowDays) ?? null, DEFAULTS.sponsorWindowDays), 1, 365, DEFAULTS.sponsorWindowDays),
+    89→    reviewDays: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.reviewDays) ?? null, DEFAULTS.reviewDays), 0, 365, DEFAULTS.reviewDays),
+    90→    minPayoutMinor: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.minPayoutMinor) ?? null, DEFAULTS.minPayoutMinor), 0, 10_000_000, DEFAULTS.minPayoutMinor),
+    91→  };
+    92→}
+    93→
+    94→/** Effective seller affiliate rate (bps) for a product, honouring every gate.
+    95→ *  0 ⇒ not enrolled (no commission). Product override ?? store default,
+    96→ *  clamped to the platform max; programme master switch must be on. */
+    97→export function effectiveAffiliateRateBps(
+    98→  s: AffiliateSettings,
+    99→  store: { affiliateOptIn: boolean; affiliateDefaultRateBps: number },
+   100→  product: { affiliateEnabled: boolean; affiliateRateBps: number | null }
+   101→): number {
+   102→  if (!s.enabled || !store.affiliateOptIn || !product.affiliateEnabled) return 0;
+   103→  const rate = product.affiliateRateBps ?? store.affiliateDefaultRateBps;
+   104→  return Math.max(0, Math.min(rate, s.maxRateBps));
+   105→}
+   106→
+   107→// ---------------------------------------------------------------------------
+   108→// Commission math — the spec's exact formulas (§8).
+   109→// ---------------------------------------------------------------------------
+   110→/** Pool P = B × R in integer sen, half-up rounding (platform convention). */
+   111→export function affiliatePoolMinor(baseMinor: number, rateBps: number): number {
+   112→  if (baseMinor <= 0 || rateBps <= 0) return 0;
+   113→  return divHalfUp(baseMinor * rateBps, 10000);
+   114→}
+   115→
+   116→/** 90/10 split of the POOL: S = floor(P × 10 / 100); D = P − S (D + S = P). */
+   117→export function splitAffiliatePool(poolMinor: number): { directMinor: number; sponsorMinor: number } {
+   118→  if (poolMinor <= 0) return { directMinor: 0, sponsorMinor: 0 };
+   119→  const sponsorMinor = Math.floor((poolMinor * 10) / 100);
+   120→  return { directMinor: poolMinor - sponsorMinor, sponsorMinor };
+   121→}
+   122→
+   123→// ---------------------------------------------------------------------------
+   124→// Identity & authorization.
+   125→// ---------------------------------------------------------------------------
+   126→export type AffiliateCtx = {
+   127→  id: string;
+   128→  userId: string;
+   129→  status: string;
+   130→  code: string;
+   131→  slug: string;
+   132→  displayName: string;
+   133→  bio: string | null;
+   134→  sponsorId: string | null;
+   135→};
+   136→
+   137→/** Session → active affiliate profile. Throws 401/403 style ApiErrors. */
+   138→export async function requireAffiliate(): Promise<AffiliateCtx> {
+   139→  const sess = await getSession();
+   140→  if (!sess || sess.userType !== "shopper") {
+   141→    throw new ApiError(401, "UNAUTHORIZED", "Affiliate session required");
+   142→  }
+   143→  const profile = await db.affiliateProfile.findUnique({ where: { userId: sess.userId } });
+   144→  if (!profile) throw new ApiError(403, "NOT_AFFILIATE", "Activate your affiliate account first");
+   145→  if (profile.status === "suspended") {
+   146→    throw new ApiError(403, "AFFILIATE_SUSPENDED", "This affiliate account is suspended");
+   147→  }
+   148→  if (profile.status === "terminated") {
+   149→    throw new ApiError(403, "AFFILIATE_TERMINATED", "This affiliate account is terminated");
+   150→  }
+   151→  return {
+   152→    id: profile.id, userId: profile.userId, status: profile.status, code: profile.code,
+   153→    slug: profile.slug, displayName: profile.displayName, bio: profile.bio, sponsorId: profile.sponsorId,
+   154→  };
+   155→}
+   156→
+   157→// ---------------------------------------------------------------------------
+   158→// Activation + one-level sponsor assignment (spec §4/§5).
+   159→// ---------------------------------------------------------------------------
+   160→export const AFFILIATE_TERMS_VERSION = 1;
+   161→const REFERRAL_COOKIE = "nm_aff_ref";
+   162→
+   163→function slugifyAffiliate(name: string): string {
+   164→  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+   165→  return base || "affiliate";
+   166→}
+   167→
+   168→async function uniqueSlug(base: string): Promise<string> {
+   169→  let candidate = base;
+   170→  for (let i = 0; i < 20; i++) {
+   171→    const clash = await db.affiliateProfile.findUnique({ where: { slug: candidate }, select: { id: true } });
+   172→    if (!clash) return candidate;
+   173→    candidate = `${base}-${randomToken(2)}`;
+   174→  }
+   175→  return `aff-${randomToken(4)}`;
+   176→}
+   177→
+   178→/** Read the FIRST-TOUCH referral cookie and validate it against the touch
+   179→ *  table (unexpired, unconsumed). Returns the sponsor profile or null. */
+   180→export async function resolveReferralCookie(): Promise<{ affiliateId: string; displayName: string; code: string } | null> {
+   181→  try {
+   182→    const store = await cookies();
+   183→    const raw = store.get(REFERRAL_COOKIE)?.value;
+   184→    if (!raw) return null;
+   185→    const parsed = parseJson<{ code?: string }>(raw, {});
+   186→    if (!parsed?.code) return null;
+   187→    const touch = await db.affiliateReferralTouch.findFirst({
+   188→      where: { code: parsed.code, consumedAt: null, expiresAt: { gt: new Date() } },
+   189→      orderBy: { touchedAt: "desc" },
+   190→      select: { affiliateId: true, code: true },
+   191→    });
+   192→    const profile = touch
+   193→      ? await db.affiliateProfile.findUnique({ where: { id: touch.affiliateId }, select: { id: true, displayName: true, code: true } })
+   194→      : null;
+   195→    if (!profile || profile.status !== "active") return null;
+   196→    return { affiliateId: profile.id, displayName: profile.displayName, code: profile.code };
+   197→  } catch {
+   198→    return null;
+   199→  }
+   200→}
+   201→
+   202→/** Validate a sponsor candidate by referral code — used by activation (cookie
+   203→ *  touch OR one-time manual entry) and by the admin correction route. */
+   204→export async function findAffiliateByCode(code: string) {
+   205→  const normalized = code.trim().toLowerCase();
+   206→  if (!normalized) return null;
+   207→  const byCode = await db.affiliateProfile.findUnique({ where: { code: normalized } });
+   208→  if (byCode) return byCode;
+   209→  return null;
+   210→}
+   211→
+   212→export type ActivationInput = {
+   213→  userId: string;
+   214→  email: string;
+   215→  fullName: string;
+   216→  displayName?: string;
+   217→  bio?: string;
+   218→  slug?: string;
+   219→  /** One-time manual sponsor code entry (only valid when NO referral touch). */
+   220→  sponsorCode?: string;
+   221→  /** Explicit confirmation that the sponsor relationship was shown & accepted. */
+   222→  sponsorConfirmed?: boolean;
+   223→};
+   224→
+   225→/** Activate the current shopper as an affiliate. Idempotent (already-active →
+   226→ *  error with the existing profile). Sponsor precedence (spec §5):
+   227→ *  1. Valid first-touch referral cookie (30-day window, unconsumed);
+   228→ *  2. Else a one-time manual code entry — confirmed explicitly;
+   229→ *  3. Else no sponsor (recorded permanently as none).
+   230→ *  The relationship locks forever after activation: no click, seller or admin
+   231→ *  tool can casually change it (admin corrections are separately audited). */
+   232→export async function activateAffiliate(input: ActivationInput) {
+   233→  const settings = await getAffiliateSettings();
+   234→  if (!settings.enabled) {
+   235→    throw new ApiError(403, "AFFILIATE_DISABLED", "The affiliate programme is currently paused");
+   236→  }
+   237→
+   238→  const existing = await db.affiliateProfile.findUnique({ where: { userId: input.userId } });
+   239→  if (existing) {
+   240→    throw new ApiError(409, "ALREADY_AFFILIATE", "This account is already an affiliate");
+   241→  }
+   242→
+   243→  // ---- Sponsor resolution (server-side only) -----------------------------
+   244→  let sponsor: { id: string; displayName: string } | null = null;
+   245→  let sponsorSource: string | null = null;
+   246→
+   247→  const touch = await resolveReferralCookie();
+   248→  if (touch) {
+   249→    const profile = await db.affiliateProfile.findUnique({ where: { id: touch.affiliateId } });
+   250→    if (profile && profile.status === "active" && profile.userId !== input.userId) {
+   251→      sponsor = { id: profile.id, displayName: profile.displayName };
+   252→      sponsorSource = "referral_touch";
+   253→    }
+   254→  }
+   255→  if (!sponsor && input.sponsorCode) {
+   256→    const candidate = await findAffiliateByCode(input.sponsorCode);
+   257→    if (!candidate) throw new ApiError(400, "INVALID_SPONSOR_CODE", "That referral code was not found");
+   258→    if (candidate.userId === input.userId) {
+   259→      throw new ApiError(400, "SELF_REFERRAL", "You cannot refer yourself");
+   260→    }
+   261→    if (candidate.status !== "active") {
+   262→      throw new ApiError(400, "SPONSOR_INACTIVE", "That sponsor is not currently eligible");
+   263→    }
+   264→    if (!input.sponsorConfirmed) {
+   265→      throw new ApiError(400, "SPONSOR_CONFIRMATION_REQUIRED", "Confirm the sponsor relationship before activating");
+   266→    }
+   267→    sponsor = { id: candidate.id, displayName: candidate.displayName };
+   268→    sponsorSource = "code_entry";
+   269→  }
+   270→
+   271→  const code = randomToken(5); // 10-hex-char referral code, unpredictable
+   272→  const slug = await uniqueSlug(slugifyAffiliate(input.slug || input.displayName || input.fullName));
+   273→
+   274→  const profile = await db.$transaction(async (tx) => {
+   275→    // Re-check inside the tx (concurrent double-submit).
+   276→    const dupe = await tx.affiliateProfile.findUnique({ where: { userId: input.userId } });
+   277→    if (dupe) throw new ApiError(409, "ALREADY_AFFILIATE", "This account is already an affiliate");
+   278→
+   279→    const created = await tx.affiliateProfile.create({
+   280→      data: {
+   281→        userId: input.userId,
+   282→        code,
+   283→        slug,
+   284→        displayName: (input.displayName || input.fullName).slice(0, 60),
+   285→        bio: input.bio?.slice(0, 500) ?? null,
+   286→        status: "active",
+   287→        termsVersion: AFFILIATE_TERMS_VERSION,
+   288→        termsAcceptedAt: new Date(),
+   289→        activatedAt: new Date(),
+   290→        sponsorId: sponsor?.id ?? null,
+   291→        sponsorAssignedAt: sponsor ? new Date() : null,
+   292→        sponsorSource,
+   293→      },
+   294→    });
+   295→
+   296→    // Consume the referral touch exactly once (relationship now recorded).
+   297→    if (sponsor && sponsorSource === "referral_touch" && touch) {
+   298→      await tx.affiliateReferralTouch.updateMany({
+   299→        where: { code: touch.code, consumedAt: null },
+   300→        data: { consumedAt: new Date(), consumedUserId: input.userId },
+   301→      });
+   302→    }
+   303→    return created;
+   304→  });
+   305→
+   306→  return { profile, sponsor, sponsorSource };
+   307→}
+   308→
+   309→/** Admin-only sponsor correction — audited, with documented reason. Cycle
+   310→ *  guard: with one-level relationships a 2-cycle (A↔B) is the only possible
+   311→ *  loop; rejecting `newSponsor.sponsorId === affiliateId` kills it. */
+   312→export async function correctSponsor(input: {
+   313→  affiliateId: string;
+   314→  newSponsorId: string | null;
+   315→  reason: string;
+   316→  adminId: string;
+   317→}) {
+   318→  if (!input.reason || input.reason.trim().length < 10) {
+   319→    throw new ApiError(400, "VALIDATION", "A documented reason (≥10 chars) is required for sponsor corrections");
+   320→  }
+   321→  const affiliate = await db.affiliateProfile.findUnique({ where: { id: input.affiliateId } });
+   322→  if (!affiliate) throw new ApiError(404, "NOT_FOUND", "Affiliate not found");
+   323→  if (input.newSponsorId === affiliate.id) {
+   324→    throw new ApiError(400, "SELF_REFERRAL", "An affiliate cannot sponsor themselves");
+   325→  }
+   326→  if (input.newSponsorId) {
+   327→    const sponsor = await db.affiliateProfile.findUnique({ where: { id: input.newSponsorId } });
+   328→    if (!sponsor) throw new ApiError(404, "NOT_FOUND", "New sponsor not found");
+   329→    if (sponsor.sponsorId === affiliate.id) {
+   330→      throw new ApiError(400, "SPONSOR_CYCLE", "This correction would create a sponsor cycle");
+   331→    }
+   332→  }
+   333→  return db.$transaction(async (tx) => {
+   334→    const updated = await tx.affiliateProfile.update({
+   335→      where: { id: input.affiliateId },
+   336→      data: {
+   337→        sponsorId: input.newSponsorId,
+   338→        sponsorAssignedAt: input.newSponsorId ? new Date() : null,
+   339→        sponsorSource: "admin_correction",
+   340→      },
+   341→    });
+   342→    await tx.affiliateSponsorAudit.create({
+   343→      data: {
+   344→        affiliateId: input.affiliateId,
+   345→        fromSponsorId: affiliate.sponsorId,
+   346→        toSponsorId: input.newSponsorId,
+   347→        reason: input.reason.trim(),
+   348→        actorType: "admin",
+   349→        actorId: input.adminId,
+   350→      },
+   351→    });
+   352→    return updated;
+   353→  });
+   354→}
+   355→
+   356→// ---------------------------------------------------------------------------
+   357→// Commission posting — called from the payment-confirmation transaction
+   358→// (webhooks/payments/process.ts). EXACTLY ONCE per order item.
+   359→// ---------------------------------------------------------------------------
+   360→type Tx = Prisma.TransactionClient;
+   361→
+   362→/** Post AffiliateCommission rows for one paid order. Idempotent: unique
+   363→ *  orderItemId + find-first guard. Split computed HERE (posting time) from
+   364→ *  the then-current sponsor flag + sponsor eligibility. */
+   365→export async function postAffiliateCommissionsForOrder(
+   366→  tx: Tx,
+   367→  order: { id: string; orderNumber: string; storeId: string; items: { id: string; affiliateDirectId: string | null; affiliateSponsorId: string | null; affiliateLinkId: string | null; affiliateRateBps: number | null; affiliatePoolMinor: number; breakdownJson: string }[] },
+   368→  paidAt: Date
+   369→): Promise<number> {
+   370→  const attributed = order.items.filter((i) => i.affiliateDirectId && i.affiliatePoolMinor > 0);
+   371→  if (attributed.length === 0) return 0;
+   372→
+   373→  const settings = await getAffiliateSettings();
+   374→  if (!settings.enabled) return 0; // kill switch: no NEW liabilities
+   375→
+   376→  // Sponsor profiles snapshot (status at posting decides hold vs pending).
+   377→  const sponsorIds = [...new Set(attributed.map((i) => i.affiliateSponsorId).filter((s): s is string => Boolean(s)))];
+   378→  const sponsors = sponsorIds.length
+   379→    ? new Map((await tx.affiliateProfile.findMany({ where: { id: { in: sponsorIds } }, select: { id: true, status: true } })).map((p) => [p.id, p.status]))
+   380→    : new Map<string, string>();
+   381→
+   382→  let posted = 0;
+   383→  for (const item of attributed) {
+   384→    const existing = await tx.affiliateCommission.findUnique({ where: { orderItemId: item.id }, select: { id: true } });
+   385→    if (existing) continue; // idempotent replay
+   386→
+   387→    const pool = item.affiliatePoolMinor;
+   388→    let sponsorMinor = 0;
+   389→    let sponsorHeld = false;
+   390→    if (item.affiliateSponsorId && settings.sponsorEnabled) {
+   391→      const status = sponsors.get(item.affiliateSponsorId) ?? "missing";
+   392→      if (status === "active") {
+   393→        sponsorMinor = Math.floor((pool * 10) / 100);
+   394→      } else {
+   395→        // Sponsor under review / gone: HOLD the 10% separately — the direct
+   396→        // promoter's 90% must NOT absorb it and must NOT be penalised.
+   397→        sponsorMinor = Math.floor((pool * 10) / 100);
+   398→        sponsorHeld = true;
+   399→      }
+   400→    }
+   401→    const directMinor = pool - sponsorMinor; // D + S = P always
+   402→    const bd = parseJson<{ base?: number }>(item.breakdownJson, {});
+   403→
+   404→    const commission = await tx.affiliateCommission.create({
+   405→      data: {
+   406→        orderItemId: item.id,
+   407→        orderId: order.id,
+   408→        orderNumber: order.orderNumber,
+   409→        storeId: order.storeId,
+   410→        affiliateId: item.affiliateDirectId!,
+   411→        sponsorId: item.affiliateSponsorId ?? null,
+   412→        linkId: item.affiliateLinkId ?? null,
+   413→        commissionableBaseMinor: Math.max(0, bd.base ?? 0),
+   414→        rateBps: item.affiliateRateBps ?? 0,
+   415→        poolMinor: pool,
+   416→        status: "pending",
+   417→        breakdownJson: item.breakdownJson,
+   418→      },
+   419→    });
+   420→
+   421→    await tx.affiliateCommissionEntry.create({
+   422→      data: {
+   423→        commissionId: commission.id,
+   424→        beneficiaryAffiliateId: item.affiliateDirectId!,
+   425→        role: "direct",
+   426→        amountMinor: directMinor,
+   427→        status: "pending",
+   428→      },
+   429→    });
+   430→    if (item.affiliateSponsorId && sponsorMinor > 0) {
+   431→      await tx.affiliateCommissionEntry.create({
+   432→        data: {
+   433→          commissionId: commission.id,
+   434→          beneficiaryAffiliateId: item.affiliateSponsorId,
+   435→          role: "sponsor",
+   436→          amountMinor: sponsorMinor,
+   437→          status: sponsorHeld ? "held" : "pending",
+   438→          holdReason: sponsorHeld ? "sponsor_under_review" : null,
+   439→        },
+   440→      });
+   441→    }
+   442→    posted++;
+   443→  }
+   444→  return posted;
+   445→}
+   446→
+   447→// ---------------------------------------------------------------------------
+   448→// Lifecycle: pending → approved (order delivered/completed) → available
+   449→// (review window elapsed) → paid. Reversals from refunds. Holds from review.
+   450→// ---------------------------------------------------------------------------
+   451→/** Approve an order's pending entries (authoritative delivered/completed). */
+   452→export async function approveAffiliateCommissionsForOrder(orderId: string, tx?: Tx): Promise<number> {
+   453→  const client = tx ?? db;
+   454→  const commissions = await client.affiliateCommission.findMany({
+   455→    where: { orderId, status: "pending" },
+   456→    select: { id: true },
+   457→  });
+   458→  if (commissions.length === 0) return 0;
+   459→  const settings = await getAffiliateSettings();
+   460→  const now = new Date();
+   461→  const availableAt = new Date(now.getTime() + settings.reviewDays * 86400000);
+   462→  let approved = 0;
+   463→  for (const c of commissions) {
+   464→    const res = await client.affiliateCommissionEntry.updateMany({
+   465→      where: { commissionId: c.id, status: "pending" },
+   466→      data: { status: "approved", availableAt },
+   467→    });
+   468→    if (res.count > 0) {
+   469→      await client.affiliateCommission.update({ where: { id: c.id }, data: { status: "approved", approvedAt: now } });
+   470→      approved += res.count;
+   471→    }
+   472→  }
+   473→  return approved;
+   474→}
+   475→
+   476→/** Batch sweep (cron): approve commissions on delivered/completed orders +
+   477→ *  mature approved entries whose review window elapsed. Bounded batches. */
+   478→export async function sweepAffiliateLifecycle(): Promise<{ approved: number; matured: number }> {
+   479→  const settings = await getAffiliateSettings();
+   480→  if (!settings.enabled) return { approved: 0, matured: 0 };
+   481→
+   482→  // 1) Orders delivered/completed with pending commissions → approve.
+   483→  const pendingCommissions = await db.affiliateCommission.findMany({
+   484→    where: { status: "pending" },
+   485→    select: { orderId: true },
+   486→    distinct: ["orderId"],
+   487→    take: 50,
+   488→  });
+   489→  let approved = 0;
+   490→  if (pendingCommissions.length > 0) {
+   491→    const orderIds = pendingCommissions.map((c) => c.orderId);
+   492→    const eligible = await db.order.findMany({
+   493→      where: { id: { in: orderIds }, status: { in: ["delivered", "completed"] } },
+   494→      select: { id: true },
+   495→    });
+   496→    for (const o of eligible) {
+   497→      approved += await approveAffiliateCommissionsForOrder(o.id);
+   498→    }
+   499→  }
+   500→
+   501→  // 2) Matured approved entries → available (clock transition, CAS-guarded).
+   502→  const now = new Date();
+   503→  const matured = await db.affiliateCommissionEntry.updateMany({
+   504→    where: { status: "approved", availableAt: { lte: now } },
+   505→    data: { status: "available" },
+   506→  });
+   507→  if (matured.count > 0) {
+   508→    await db.affiliateCommission.updateMany({
+   509→      where: { status: "approved", entries: { some: { status: "available" } } },
+   510→      data: { status: "available" },
+   511→    });
+   512→  }
+   513→  return { approved, matured: matured.count };
+   514→}
+   515→
+   516→// ---------------------------------------------------------------------------
+   517→// Balances (affiliate-side truth = AffiliateCommissionEntry rows; the ledger
+   518→// mirrors totals on PLATFORM:AFFILIATE_LIABILITY for double-entry integrity).
+   519→// ---------------------------------------------------------------------------
+   520→export type AffiliateBalances = {
+   521→  pendingMinor: number;
+   522→  approvedMinor: number; // approved but review window not elapsed
+   523→  availableMinor: number; // matured, not yet claimed by a payout
+   524→  payoutInFlightMinor: number; // claimed by requested/processing payouts
+   525→  paidMinor: number;
+   526→  reversedMinor: number;
+   527→  heldMinor: number;
+   528→  recoveryMinor: number; // reversals booked against already-paid entries
+   529→  requestableMinor: number; // available − recovery, floored at 0
+   530→};
+   531→
+   532→export async function affiliateBalances(affiliateId: string): Promise<AffiliateBalances> {
+   533→  const entries = await db.affiliateCommissionEntry.findMany({
+   534→    where: { beneficiaryAffiliateId: affiliateId },
+   535→    select: { status: true, amountMinor: true, reversedMinor: true, availableAt: true, payoutId: true },
+   536→  });
+   537→  const now = Date.now();
+   538→  const b: AffiliateBalances = {
+   539→    pendingMinor: 0, approvedMinor: 0, availableMinor: 0, payoutInFlightMinor: 0,
+   540→    paidMinor: 0, reversedMinor: 0, heldMinor: 0, recoveryMinor: 0, requestableMinor: 0,
+   541→  };
+   542→  for (const e of entries) {
+   543→    const matured = (e.availableAt?.getTime() ?? 0) <= now;
+   544→    switch (e.status) {
+   545→      case "pending":
+   546→      case "approved":
+   547→        if (e.status === "pending" || !matured) {
+   548→          if (e.status === "pending") b.pendingMinor += e.amountMinor - e.reversedMinor;
+   549→          else b.approvedMinor += e.amountMinor - e.reversedMinor;
+   550→          break;
+   551→        }
+   552→        // fallthrough: matured approved
+   553→      case "available":
+   554→        if (e.payoutId) b.payoutInFlightMinor += e.amountMinor - e.reversedMinor;
+   555→        else b.availableMinor += e.amountMinor - e.reversedMinor;
+   556→        break;
+   557→      case "paid":
+   558→        b.paidMinor += e.amountMinor;
+   559→        b.recoveryMinor += e.reversedMinor; // late refund after payout
+   560→        break;
+   561→      case "reversed":
+   562→        b.reversedMinor += e.amountMinor;
+   563→        break;
+   564→      case "held":
+   565→        b.heldMinor += e.amountMinor - e.reversedMinor;
+   566→        break;
+   567→    }
+   568→  }
+   569→  b.requestableMinor = Math.max(0, b.availableMinor - b.recoveryMinor);
+   570→  return b;
+   571→}
+   572→
+   573→// ---------------------------------------------------------------------------
+   574→// Refund reversals — proportional against the ORIGINAL immutable allocations
+   575→// (spec §11). Shipping-only refunds book no product-commission reversal (the
+   576→// pool base excluded shipping by construction). Late refunds after payout
+   577→// become recovery entries: reversedMinor accumulates on the PAID entry and
+   578→// offsets future earnings — the original payout history is never rewritten.
+   579→// ---------------------------------------------------------------------------
+   580→export async function reverseAffiliateForRefund(
+   581→  tx: Tx,
+   582→  input: {
+   583→    refundId: string;
+   584→    orderId: string;
+   585→    refundAmountMinor: number;
+   586→    /** Fresh order items (with affiliate snapshots) under the lock. */
+   587→    items: { id: string; lineSubtotalMinor: number; refundedMinor: number; breakdownJson: string; affiliatePoolMinor: number }[];
+   588→    /** Σ affiliateReversalMinor of prior PROCESSED refunds on this order. */
+   589→    priorAffiliateReversalMinor: number;
+   590→  }
+   591→): Promise<{ affiliateReversalMinor: number; rule: string }> {
+   592→  const attributed = input.items.filter((i) => i.affiliatePoolMinor > 0);
+   593→  if (attributed.length === 0) return { affiliateReversalMinor: 0, rule: "no_affiliate" };
+   594→
+   595→  // Customer-paid gross per item (breakdown-proportional, mirroring
+   596→  // deriveCommissionReversal's allocation family).
+   597→  const grossArr = attributed.map((it) => {
+   598→    const bd = parseJson<{ discount_allocated?: number; shipping_allocated?: number }>(it.breakdownJson, {});
+   599→    return Math.max(0, it.lineSubtotalMinor - (bd.discount_allocated ?? 0) + (bd.shipping_allocated ?? 0));
+   600→  });
+   601→  const allocs: number[] = [];
+   602→  {
+   603→    // floor + remainder-to-largest (same as allocateProportionally)
+   604→    const totalGross = grossArr.reduce((s, v) => s + v, 0);
+   605→    if (totalGross <= 0) {
+   606→      attributed.forEach(() => allocs.push(0));
+   607→    } else {
+   608→      let allocated = 0;
+   609→      for (let i = 0; i < attributed.length; i++) {
+   610→        const a = Math.floor((input.refundAmountMinor * grossArr[i]) / totalGross);
+   611→        allocs.push(a);
+   612→        allocated += a;
+   613→      }
+   614→      let rem = input.refundAmountMinor - allocated;
+   615→      while (rem > 0) {
+   616→        let maxIdx = 0;
+   617→        for (let i = 1; i < grossArr.length; i++) if (grossArr[i] > grossArr[maxIdx]) maxIdx = i;
+   618→        allocs[maxIdx] += 1;
+   619→        rem -= 1;
+   620→      }
+   621→    }
+   622→  }
+   623→
+   624→  // Per-item affiliate reversal, clamped to the remaining reversible pool.
+   625→  const orderPool = attributed.reduce((s, it) => s + it.affiliatePoolMinor, 0);
+   626→  const remainingReversible = Math.max(0, orderPool - input.priorAffiliateReversalMinor);
+   627→  let total = 0;
+   628→  const perItem: { item: (typeof attributed)[number]; reversal: number }[] = [];
+   629→  for (let i = 0; i < attributed.length; i++) {
+   630→    if (grossArr[i] <= 0 || allocs[i] <= 0) {
+   631→      perItem.push({ item: attributed[i], reversal: 0 });
+   632→      continue;
+   633→    }
+   634→    const r = Math.min(divHalfUp(allocs[i] * attributed[i].affiliatePoolMinor, grossArr[i]), attributed[i].affiliatePoolMinor);
+   635→    perItem.push({ item: attributed[i], reversal: r });
+   636→    total += r;
+   637→  }
+   638→  total = Math.min(Math.max(0, total), input.refundAmountMinor, remainingReversible);
+   639→
+   640→  // Apply to the commission + entries (proportional split within each pool).
+   641→  if (total > 0) {
+   642→    // Scale per-item reversals down proportionally if the clamp reduced total.
+   643→    const rawTotal = perItem.reduce((s, p) => s + p.reversal, 0);
+   644→    const scale = rawTotal > 0 ? total / rawTotal : 0;
+   645→    let applied = 0;
+   646→    for (const p of perItem) {
+   647→      const itemReversal = p.reversal === 0 ? 0 : Math.min(p.reversal, Math.round(p.reversal * scale));
+   648→      if (itemReversal <= 0) continue;
+   649→      const commission = await tx.affiliateCommission.findUnique({ where: { orderItemId: p.item.id }, include: { entries: true } });
+   650→      if (!commission) continue; // pre-affiliate legacy rows: nothing to reverse
+   651→      const direct = commission.entries.find((e) => e.role === "direct");
+   652→      const sponsor = commission.entries.find((e) => e.role === "sponsor");
+   653→      // Split proportionally to the frozen allocation shares.
+   654→      const directShare = direct ? Math.min(direct.amountMinor - direct.reversedMinor, divHalfUp(itemReversal * direct.amountMinor, commission.poolMinor)) : 0;
+   655→      const sponsorShare = sponsor ? Math.min(sponsor.amountMinor - sponsor.reversedMinor, itemReversal - directShare) : 0;
+   656→      for (const [entry, share] of [[direct, directShare], [sponsor, sponsorShare]] as const) {
+   657→        if (!entry || share <= 0) continue;
+   658→        const newReversed = Math.min(entry.amountMinor, entry.reversedMinor + share);
+   659→        const fullyReversed = newReversed >= entry.amountMinor;
+   660→        await tx.affiliateCommissionEntry.update({
+   661→          where: { id: entry.id },
+   662→          data: {
+   663→            reversedMinor: newReversed,
+   664→            // PAID entries stay paid — the reversal is a recovery entry that
+   665→            // offsets future earnings (spec §11 late refunds); pending/
+   666→            // approved/available entries flip to reversed.
+   667→            ...(entry.status !== "paid" && fullyReversed ? { status: "reversed" as const } : {}),
+   668→          },
+   669→        });
+   670→      }
+   671→      const anyLive = commission.entries.some((e) => e.status !== "reversed");
+   672→      if (!anyLive) {
+   673→        await tx.affiliateCommission.update({
+   674→          where: { id: commission.id },
+   675→          data: { status: "reversed", reversedAt: new Date() },
+   676→        });
+   677→      }
+   678→      applied += itemReversal;
+   679→    }
+   680→    void applied;
+   681→  }
+   682→
+   683→  return { affiliateReversalMinor: total, rule: "breakdown_snapshot_proportional" };
+   684→}
+   685→export async function requestAffiliatePayout(affiliateId: string): Promise<{ payoutId: string; amountMinor: number }> {
+   686→  const settings = await getAffiliateSettings();
+   687→  if (!settings.enabled) throw new ApiError(403, "AFFILIATE_DISABLED", "The affiliate programme is currently paused");
+   688→
+   689→  return db.$transaction(async (tx) => {
+   690→    // One open request per affiliate — re-checked INSIDE the transaction so a
+   691→    // concurrent double-submit cannot create two claims.
+   692→    const open = await tx.affiliatePayout.findFirst({
+   693→      where: { affiliateId, status: { in: ["requested", "processing"] } },
+   694→      select: { id: true },
+   695→    });
+   696→    if (open) throw new ApiError(409, "PAYOUT_OPEN", "You already have a payout request in progress");
+   697→
+   698→    const balances = await affiliateBalances(affiliateId);
+   699→    if (balances.requestableMinor < settings.minPayoutMinor) {
+   700→      throw new ApiError(400, "BELOW_MIN_PAYOUT", `Minimum payout is RM ${(settings.minPayoutMinor / 100).toFixed(2)}`);
+   701→    }
+   702→
+   703→    const amountMinor = balances.requestableMinor;
+   704→    const now = new Date();
+   705→    // Claim every matured, unclaimed entry; bind to the payout row we create.
+   706→    const toClaim = await tx.affiliateCommissionEntry.findMany({
+   707→      where: {
+   708→        beneficiaryAffiliateId: affiliateId,
+   709→        status: { in: ["approved", "available"] },
+   710→        availableAt: { lte: now },
+   711→        payoutId: null,
+   712→      },
+   713→      select: { id: true, amountMinor: true, reversedMinor: true },
+   714→    });
+   715→    const payout = await tx.affiliatePayout.create({
+   716→      data: { affiliateId, amountMinor, status: "requested", method: "manual_bank" },
+   717→    });
+   718→    if (toClaim.length > 0) {
+   719→      await tx.affiliateCommissionEntry.updateMany({
+   720→        where: { id: { in: toClaim.map((e) => e.id) } },
+   721→        data: { payoutId: payout.id },
+   722→      });
+   723→    }
+   724→    return { payoutId: payout.id, amountMinor };
+   725→  });
+   726→}
+   727→

@@ -1,0 +1,1039 @@
+     1→"use client";
+     2→// FIN-07 Payout Batches (run + preview + history) and Payout Batch Detail
+     3→// (per-payout statement trace, mark paid / mark failed with ledger T4 posts).
+     4→import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+     5→import { toast } from "sonner";
+     6→import { AlertTriangle, Check, ChevronDown, ChevronRight, HandCoins, Landmark, PlayCircle, PlusCircle, ShieldCheck, X } from "lucide-react";
+     7→import { Badge } from "@/components/ui/badge";
+     8→import { Button } from "@/components/ui/button";
+     9→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogDescription,
+    14→  DialogFooter,
+    15→  DialogHeader,
+    16→  DialogTitle,
+    17→} from "@/components/ui/dialog";
+    18→import { Input } from "@/components/ui/input";
+    19→import { Label } from "@/components/ui/label";
+    20→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    21→import { Textarea } from "@/components/ui/textarea";
+    22→import { formatMinor } from "@/lib/money";
+    23→import { cn } from "@/lib/utils";
+    24→import { apiSend, parseJsonSafe, useApi } from "./use-api";
+    25→import type { AdminNav } from "./nav";
+    26→import {
+    27→  EmptyState,
+    28→  ErrorState,
+    29→  Money,
+    30→  PageHeader,
+    31→  ReasonDialog,
+    32→  StatusChip,
+    33→  TableSkeleton,
+    34→  TONE_CLASS,
+    35→  fmtDT,
+    36→  statusTone,
+    37→  timeAgo,
+    38→} from "./ui-bits";
+    39→
+    40→/* ------------------------------------------------------------------ types */
+    41→
+    42→type PayoutRow = {
+    43→  id: string;
+    44→  batchId: string;
+    45→  referenceNo: string;
+    46→  amountMinor: number;
+    47→  status: string;
+    48→  method: string;
+    49→  providerRef?: string | null;
+    50→  failReason?: string | null;
+    51→  paidAt?: string | null;
+    52→  statementJson?: string | null;
+    53→  createdAt?: string;
+    54→  sellerName?: string | null;
+    55→  sellerEmail?: string | null;
+    56→  bankAccount?: { id: string; bankName: string; holderName: string; accountNumberMasked: string } | null;
+    57→};
+    58→
+    59→type PayoutBatch = {
+    60→  id: string;
+    61→  runType: string;
+    62→  status: string;
+    63→  currency: string;
+    64→  totalMinor: number;
+    65→  payoutCount: number;
+    66→  startedAt?: string;
+    67→  finishedAt?: string | null;
+    68→  payouts?: PayoutRow[];
+    69→};
+    70→
+    71→type Statement = {
+    72→  sellerName?: string;
+    73→  periodFrom?: string;
+    74→  periodTo?: string;
+    75→  salesMinor?: number;
+    76→  commissionMinor?: number;
+    77→  refundsMinor?: number;
+    78→  adjustmentsMinor?: number;
+    79→  negativeCarryMinor?: number;
+    80→  orderCount?: number;
+    81→  reconciled?: boolean;
+    82→  lines?: { label: string; amountMinor: number }[];
+    83→};
+    84→
+    85→type DryRunBody = {
+    86→  dryRun: boolean;
+    87→  minMinor: number;
+    88→  mode: string;
+    89→  eligibleCount: number;
+    90→  eligibleTotalMinor: number;
+    91→  eligible: {
+    92→    walletId: string;
+    93→    sellerId: string;
+    94→    sellerName: string;
+    95→    storeName: string | null;
+    96→    availableMinor: number;
+    97→    bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
+    98→  }[];
+    99→  skipped?: {
+   100→    walletId: string;
+   101→    sellerName: string;
+   102→    storeName: string | null;
+   103→    availableMinor: number;
+   104→    reason: string;
+   105→  }[];
+   106→};
+   107→
+   108→/** GET /api/admin/payouts/due — mirrors the dashboard "Payouts due" card:
+   109→ *  wallets re-derived from ledger truth with the same minimum as a batch run. */
+   110→type PayoutsDueBody = {
+   111→  minMinor: number;
+   112→  mode: string;
+   113→  asOf: string;
+   114→  dueTotalMinor: number;
+   115→  dueCount: number;
+   116→  due: {
+   117→    walletId: string;
+   118→    sellerId: string;
+   119→    sellerName: string;
+   120→    storeName: string | null;
+   121→    availableMinor: number;
+   122→    requestedMinor: number;
+   123→    requestedRef: string | null;
+   124→    bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
+   125→    lastPayout: { amountMinor: number; paidAt: string } | null;
+   126→  }[];
+   127→  requestedTotalMinor: number;
+   128→  pendingTotalMinor: number;
+   129→  belowMinCount: number;
+   130→  belowMinTotalMinor: number;
+   131→};
+   132→
+   133→/** GET /api/admin/payouts/requests — seller-initiated payout requests. */
+   134→type RequestRow = {
+   135→  id: string;
+   136→  referenceNo: string;
+   137→  amountMinor: number;
+   138→  status: string;
+   139→  method: string;
+   140→  failReason?: string | null;
+   141→  paidAt?: string | null;
+   142→  createdAt: string;
+   143→  seller: { id: string; email: string; displayName: string } | null;
+   144→  storeName: string | null;
+   145→  bankAccount: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
+   146→};
+   147→
+   148→type RequestsBody = { open: RequestRow[]; recent: RequestRow[] };
+   149→
+   150→/* ------------------------------------------------ payout status labels (FIN-3b) */
+   151→
+   152→/** FIN-3b (3b.3) — payout-status labels shared with the seller wallet
+   153→ * (src/components/seller/wallet.tsx) so admin and seller render the SAME
+   154→ * wording for a payout state; the admin view stays richer (method,
+   155→ * referenceNo, failReason as before). Display-only: raw status strings still
+   156→ * come from the API. Batch status chips stay on the generic StatusChip —
+   157→ * batch statuses (running/completed/…) are a different vocabulary. */
+   158→const PAYOUT_STATUS_LABELS: Record<string, string> = {
+   159→  requested: "Awaiting approval",
+   160→  processing: "Processing",
+   161→  paid: "Paid",
+   162→  failed: "Failed",
+   163→  rejected: "Rejected",
+   164→  returned: "Returned",
+   165→  reversed: "Reversed",
+   166→};
+   167→
+   168→function PayoutStatusChip({ status, className }: { status: string; className?: string }) {
+   169→  const s = (status ?? "").toLowerCase();
+   170→  return (
+   171→    <Badge variant="outline" className={cn(TONE_CLASS[statusTone(s)], className)}>
+   172→      {PAYOUT_STATUS_LABELS[s] ?? s.replace(/_/g, " ")}
+   173→    </Badge>
+   174→  );
+   175→}
+   176→
+   177→/* ------------------------------------------------------------ PayoutsView */
+   178→
+   179→export function PayoutsView({ nav }: { nav: AdminNav }) {
+   180→  const { data, error, loading, refetch } = useApi<PayoutBatch[]>("/api/admin/payout-batches");
+   181→  // Due-now panel: same ledger-derived truth the dashboard card shows, so the
+   182→  // two always tally (this used to be the missing piece — the card navigated
+   183→  // straight to batch HISTORY, which only shows payouts already run).
+   184→  const due = useApi<PayoutsDueBody>("/api/admin/payouts/due");
+   185→  const requests = useApi<RequestsBody>("/api/admin/payouts/requests");
+   186→  const rows = useMemo(() => data ?? [], [data]);
+   187→  const dueRows = useMemo(() => due.data?.due ?? [], [due.data]);
+   188→  const openRequests = useMemo(() => requests.data?.open ?? [], [requests.data]);
+   189→  const recentRequests = useMemo(() => requests.data?.recent ?? [], [requests.data]);
+   190→
+   191→  const [rejectTarget, setRejectTarget] = useState<RequestRow | null>(null);
+   192→  const [busyId, setBusyId] = useState<string | null>(null);
+   193→
+   194→  const refreshAllPanels = useCallback(() => {
+   195→    void requests.refetch();
+   196→    void due.refetch();
+   197→  }, [requests, due]);
+   198→
+   199→  const approveRequest = useCallback(
+   200→    async (r: RequestRow) => {
+   201→      setBusyId(r.id);
+   202→      try {
+   203→        await apiSend(`/api/admin/payouts/${r.id}/approve`, "POST", {});
+   204→        toast.success(`${r.referenceNo} approved`, {
+   205→          description: `${formatMinor(r.amountMinor)} moved to payout clearing (T3) — mark it paid once the transfer lands.`,
+   206→        });
+   207→        refreshAllPanels();
+   208→      } catch (e) {
+   209→        toast.error("Not approved", { description: e instanceof Error ? e.message : String(e) });
+   210→      } finally {
+   211→        setBusyId(null);
+   212→      }
+   213→    },
+   214→    [refreshAllPanels]
+   215→  );
+   216→
+   217→  const rejectRequest = useCallback(
+   218→    async (r: RequestRow, reason: string) => {
+   219→      setBusyId(r.id);
+   220→      try {
+   221→        await apiSend(`/api/admin/payouts/${r.id}/reject`, "POST", { reason });
+   222→        toast.success(`${r.referenceNo} rejected`, { description: "The seller's available balance is untouched (no ledger movement)." });
+   223→        setRejectTarget(null);
+   224→        refreshAllPanels();
+   225→      } catch (e) {
+   226→        toast.error("Not rejected", { description: e instanceof Error ? e.message : String(e) });
+   227→      } finally {
+   228→        setBusyId(null);
+   229→      }
+   230→    },
+   231→    [refreshAllPanels]
+   232→  );
+   233→
+   234→  const [open, setOpen] = useState(false);
+   235→  const [preview, setPreview] = useState<DryRunBody | null>(null);
+   236→  const [previewLoading, setPreviewLoading] = useState(false);
+   237→  const [previewError, setPreviewError] = useState<string | null>(null);
+   238→  const [running, setRunning] = useState(false);
+   239→
+   240→  const loadPreview = useCallback(async () => {
+   241→    setPreviewLoading(true);
+   242→    setPreviewError(null);
+   243→    try {
+   244→      const body = await apiSend<DryRunBody>("/api/admin/payout-batches", "POST", { dryRun: true });
+   245→      setPreview(body);
+   246→    } catch (e) {
+   247→      setPreview(null);
+   248→      setPreviewError(e instanceof Error ? e.message : "Preview failed");
+   249→    } finally {
+   250→      setPreviewLoading(false);
+   251→    }
+   252→  }, []);
+   253→
+   254→  useEffect(() => {
+   255→    if (open) void loadPreview();
+   256→  }, [open, loadPreview]);
+   257→
+   258→  const runBatch = async () => {
+   259→    setRunning(true);
+   260→    try {
+   261→      const body = await apiSend<{ batch?: PayoutBatch; payouts?: PayoutRow[] }>("/api/admin/payout-batches", "POST", { dryRun: false });
+   262→      const count = body?.payouts?.length ?? body?.batch?.payoutCount ?? 0;
+   263→      toast.success("Payout batch created", {
+   264→        description: `${count} payout${count === 1 ? "" : "s"} queued · ${formatMinor(body?.batch?.totalMinor ?? 0)} — ledger T3 posted per wallet.`,
+   265→      });
+   266→      setOpen(false);
+   267→      void refetch();
+   268→      void due.refetch(); // sweep happened → the due-now list shrinks
+   269→    } catch (e) {
+   270→      const msg = e instanceof Error ? e.message : String(e);
+   271→      toast.error("Batch not created", { description: msg });
+   272→      // A 409 NO_ELIGIBLE_WALLETS leaves the dialog open with a fresh preview.
+   273→      void loadPreview();
+   274→    } finally {
+   275→      setRunning(false);
+   276→    }
+   277→  };
+   278→
+   279→  return (
+   280→    <div className="space-y-4">
+   281→      <PageHeader
+   282→        title="Payouts"
+   283→        description="Who is owed money right now, plus settlement run history — wallets above the minimum are swept to seller banks (T3 → T4)."
+   284→        actions={
+   285→          <Button size="sm" className="min-h-[44px]" onClick={() => setOpen(true)}>
+   286→            <PlusCircle className="h-4 w-4" /> New Payout Batch
+   287→          </Button>
+   288→        }
+   289→      />
+   290→
+   291→      {/* Due now — mirrors the dashboard "Payouts due" card (same ledger-derived
+   292→          truth, same minimum setting). This closes the gap that made the two
+   293→          disagree: this page used to show only batch HISTORY. */}
+   294→      <Card className="py-0">
+   295→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   296→          <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+   297→            <Landmark className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+   298→            Due now
+   299→            {due.data ? (
+   300→              <>
+   301→                <span className="text-sm font-bold text-teal-700 dark:text-teal-300">
+   302→                  <Money minor={due.data.dueTotalMinor} bold />
+   303→                </span>
+   304→                <Badge variant="outline" className="font-normal text-muted-foreground">
+   305→                  across {due.data.dueCount} seller{due.data.dueCount === 1 ? "" : "s"}
+   306→                </Badge>
+   307→              </>
+   308→            ) : null}
+   309→            <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+   310→              min payout <Money minor={due.data?.minMinor ?? 1000} muted /> · {due.data?.mode ?? "manual_csv"}
+   311→            </span>
+   312→          </CardTitle>
+   313→          <CardDescription>
+   314→            Wallet available balances derived from the ledger — exactly what “Run payout batch” will sweep.
+   315→          </CardDescription>
+   316→        </CardHeader>
+   317→        <CardContent className="px-0 pb-2">
+   318→          {due.error ? (
+   319→            <div className="px-4 sm:px-6">
+   320→              <ErrorState message={due.error} onRetry={() => void due.refetch()} />
+   321→            </div>
+   322→          ) : due.loading ? (
+   323→            <TableSkeleton rows={2} cols={4} />
+   324→          ) : dueRows.length === 0 ? (
+   325→            <div className="px-4 sm:px-6">
+   326→              <EmptyState
+   327→                title="No payouts due right now"
+   328→                hint={
+   329→                  due.data
+   330→                    ? `${due.data.pendingTotalMinor > 0 ? `${formatMinor(due.data.pendingTotalMinor)} is still in the holding period` : "No funds available"}${due.data.belowMinCount > 0 ? ` · ${formatMinor(due.data.belowMinTotalMinor)} across ${due.data.belowMinCount} wallet${due.data.belowMinCount === 1 ? "" : "s"} below the minimum` : ""}.`
+   331→                    : undefined
+   332→                }
+   333→              />
+   334→            </div>
+   335→          ) : (
+   336→            <Table>
+   337→              <TableHeader>
+   338→                <TableRow>
+   339→                  <TableHead>Seller</TableHead>
+   340→                  <TableHead className="text-right">Available</TableHead>
+   341→                  <TableHead className="text-right">Requested</TableHead>
+   342→                  <TableHead className="hidden md:table-cell">Bank account</TableHead>
+   343→                  <TableHead className="hidden text-right lg:table-cell">Last paid</TableHead>
+   344→                </TableRow>
+   345→              </TableHeader>
+   346→              <TableBody>
+   347→                {dueRows.map((d) => (
+   348→                  <TableRow key={d.walletId}>
+   349→                    <TableCell>
+   350→                      <p className="truncate text-sm font-medium">{d.storeName ?? d.sellerName}</p>
+   351→                      <p className="truncate text-xs text-muted-foreground">{d.sellerName}</p>
+   352→                    </TableCell>
+   353→                    <TableCell className="text-right">
+   354→                      <Money minor={d.availableMinor} bold />
+   355→                    </TableCell>
+   356→                    <TableCell className="text-right">
+   357→                      {d.requestedMinor > 0 ? (
+   358→                        <span title={d.requestedRef ?? undefined}>
+   359→                          <Money minor={d.requestedMinor} />
+   360→                          <p className="text-[10px] text-muted-foreground">seller request</p>
+   361→                        </span>
+   362→                      ) : (
+   363→                        <span className="text-xs text-muted-foreground">—</span>
+   364→                      )}
+   365→                    </TableCell>
+   366→                    <TableCell className="hidden md:table-cell">
+   367→                      {d.bank ? (
+   368→                        <span className="text-xs">
+   369→                          {d.bank.bankName} · {d.bank.accountNumberMasked}
+   370→                          {d.bank.verified ? (
+   371→                            <ShieldCheck className="ml-1 inline h-3 w-3 text-emerald-600" aria-label="Verified" />
+   372→                          ) : (
+   373→                            <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-600" aria-label="Unverified" />
+   374→                          )}
+   375→                        </span>
+   376→                      ) : (
+   377→                        <span className="text-xs text-muted-foreground">No bank account on file</span>
+   378→                      )}
+   379→                    </TableCell>
+   380→                    <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">
+   381→                      {d.lastPayout ? (
+   382→                        <>
+   383→                          {formatMinor(d.lastPayout.amountMinor)} · {fmtDT(d.lastPayout.paidAt)}
+   384→                        </>
+   385→                      ) : (
+   386→                        "never"
+   387→                      )}
+   388→                    </TableCell>
+   389→                  </TableRow>
+   390→                ))}
+   391→              </TableBody>
+   392→            </Table>
+   393→          )}
+   394→          {due.data && (due.data.pendingTotalMinor > 0 || due.data.belowMinCount > 0) ? (
+   395→            <p className="px-4 pb-3 pt-2 text-xs text-muted-foreground sm:px-6">
+   396→              Where the rest is: {formatMinor(due.data.pendingTotalMinor)} pending in the holding period (released after the hold)
+   397→              {due.data.belowMinCount > 0
+   398→                ? ` · ${formatMinor(due.data.belowMinTotalMinor)} below the ${(due.data.minMinor / 100).toFixed(0)} MYR minimum across ${due.data.belowMinCount} wallet${due.data.belowMinCount === 1 ? "" : "s"}`
+   399→                : " · no wallets below the minimum"}
+   400→              .
+   401→            </p>
+   402→          ) : null}
+   403→        </CardContent>
+   404→      </Card>
+   405→
+   406→      {/* Seller payout requests — seller-initiated withdrawals awaiting action.
+   407→          Approve posts T3 (available → clearing) exactly like a batch run;
+   408→          reject releases the request with no ledger movement. */}
+   409→      <Card className="py-0">
+   410→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   411→          <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+   412→            <HandCoins className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden />
+   413→            Seller requests
+   414→            {openRequests.length > 0 ? (
+   415→              <Badge className="font-semibold">{openRequests.length} awaiting action</Badge>
+   416→            ) : (
+   417→              <Badge variant="outline" className="font-normal text-muted-foreground">none pending</Badge>
+   418→            )}
+   419→          </CardTitle>
+   420→          <CardDescription>
+   421→            Payouts sellers requested from their own wallets. Approve posts T3; reject needs a reason and moves nothing.
+   422→          </CardDescription>
+   423→        </CardHeader>
+   424→        <CardContent className="px-0 pb-2">
+   425→          {requests.error ? (
+   426→            <div className="px-4 sm:px-6">
+   427→              <ErrorState message={requests.error} onRetry={() => void requests.refetch()} />
+   428→            </div>
+   429→          ) : requests.loading ? (
+   430→            <TableSkeleton rows={2} cols={4} />
+   431→          ) : openRequests.length === 0 ? (
+   432→            <div className="px-4 sm:px-6">
+   433→              <EmptyState
+   434→                title="No seller payout requests"
+   435→                hint="Sellers can request a payout from their Wallet & Payouts page — requests land here for approval."
+   436→              />
+   437→            </div>
+   438→          ) : (
+   439→            <Table>
+   440→              <TableHeader>
+   441→                <TableRow>
+   442→                  <TableHead>Request</TableHead>
+   443→                  <TableHead>Seller / Store</TableHead>
+   444→                  <TableHead className="text-right">Amount</TableHead>
+   445→                  <TableHead className="hidden md:table-cell">Bank account</TableHead>
+   446→                  <TableHead className="hidden text-right lg:table-cell">Requested</TableHead>
+   447→                  <TableHead className="text-right">Actions</TableHead>
+   448→                </TableRow>
+   449→              </TableHeader>
+   450→              <TableBody>
+   451→                {openRequests.map((r) => (
+   452→                  <TableRow key={r.id} className={busyId === r.id ? "opacity-60" : undefined}>
+   453→                    <TableCell className="font-mono text-xs font-semibold">{r.referenceNo}</TableCell>
+   454→                    <TableCell>
+   455→                      <p className="truncate text-sm font-medium">{r.storeName ?? r.seller?.displayName ?? "—"}</p>
+   456→                      <p className="truncate text-xs text-muted-foreground">{r.seller?.email ?? ""}</p>
+   457→                    </TableCell>
+   458→                    <TableCell className="text-right">
+   459→                      <Money minor={r.amountMinor} bold />
+   460→                    </TableCell>
+   461→                    <TableCell className="hidden md:table-cell">
+   462→                      {r.bankAccount ? (
+   463→                        <span className="text-xs">
+   464→                          {r.bankAccount.bankName} · {r.bankAccount.accountNumberMasked}
+   465→                          {r.bankAccount.verified ? (
+   466→                            <ShieldCheck className="ml-1 inline h-3 w-3 text-emerald-600" aria-label="Verified" />
+   467→                          ) : (
+   468→                            <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-600" aria-label="Unverified" />
+   469→                          )}
+   470→                        </span>
+   471→                      ) : (
+   472→                        <span className="text-xs text-muted-foreground">No bank account</span>
+   473→                      )}
+   474→                    </TableCell>
+   475→                    <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{timeAgo(r.createdAt)}</TableCell>
+   476→                    <TableCell className="text-right">
+   477→                      <div className="flex justify-end gap-1.5">
+   478→                        <Button
+   479→                          size="sm"
+   480→                          className="h-8 min-h-[36px] gap-1"
+   481→                          disabled={busyId === r.id}
+   482→                          onClick={() => void approveRequest(r)}
+   483→                        >
+   484→                          <Check className="h-3.5 w-3.5" /> Approve
+   485→                        </Button>
+   486→                        <Button
+   487→                          size="sm"
+   488→                          variant="outline"
+   489→                          className="h-8 min-h-[36px] gap-1 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+   490→                          disabled={busyId === r.id}
+   491→                          onClick={() => setRejectTarget(r)}
+   492→                        >
+   493→                          <X className="h-3.5 w-3.5" /> Reject
+   494→                        </Button>
+   495→                      </div>
+   496→                    </TableCell>
+   497→                  </TableRow>
+   498→                ))}
+   499→              </TableBody>
+   500→            </Table>
+   501→          )}
+   502→          {recentRequests.length > 0 ? (
+   503→            <div className="border-t px-4 pb-3 pt-3 sm:px-6">
+   504→              <p className="pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recently actioned</p>
+   505→              <Table>
+   506→                <TableHeader>
+   507→                  <TableRow>
+   508→                    <TableHead>Request</TableHead>
+   509→                    <TableHead>Seller</TableHead>
+   510→                    <TableHead className="text-right">Amount</TableHead>
+   511→                    <TableHead>Status</TableHead>
+   512→                    <TableHead className="hidden text-right md:table-cell">Updated</TableHead>
+   513→                  </TableRow>
+   514→                </TableHeader>
+   515→                <TableBody>
+   516→                  {recentRequests.slice(0, 6).map((r) => (
+   517→                    <TableRow key={r.id}>
+   518→                      <TableCell className="font-mono text-xs">{r.referenceNo}</TableCell>
+   519→                      <TableCell className="max-w-48 truncate text-sm">{r.storeName ?? r.seller?.displayName ?? "—"}</TableCell>
+   520→                      <TableCell className="text-right">
+   521→                        <Money minor={r.amountMinor} />
+   522→                      </TableCell>
+   523→                      <TableCell>
+   524→                        <PayoutStatusChip status={r.status} />
+   525→                        {r.failReason ? (
+   526→                          <p className="max-w-48 truncate text-[11px] text-muted-foreground" title={r.failReason}>
+   527→                            {r.failReason}
+   528→                          </p>
+   529→                        ) : null}
+   530→                      </TableCell>
+   531→                      <TableCell className="hidden text-right text-xs text-muted-foreground md:table-cell">
+   532→                        {r.paidAt ? fmtDT(r.paidAt) : timeAgo(r.createdAt)}
+   533→                      </TableCell>
+   534→                    </TableRow>
+   535→                  ))}
+   536→                </TableBody>
+   537→              </Table>
+   538→              <p className="pt-2 text-[11px] text-muted-foreground">
+   539→                Processing requests are marked paid / failed from the batch detail once the bank transfer confirms.
+   540→              </p>
+   541→            </div>
+   542→          ) : null}
+   543→        </CardContent>
+   544→      </Card>
+   545→
+   546→      <Card className="py-0">
+   547→        <CardContent className="p-4">
+   548→          <div className="overflow-x-auto">
+   549→            {error ? (
+   550→              <ErrorState message={error} onRetry={() => void refetch()} />
+   551→            ) : loading ? (
+   552→              <TableSkeleton rows={5} cols={6} />
+   553→            ) : rows.length === 0 ? (
+   554→              <EmptyState title="No payout batches yet" hint="Run your first batch — eligible wallets are previewed before anything is written." />
+   555→            ) : (
+   556→              <Table>
+   557→                <TableHeader>
+   558→                  <TableRow>
+   559→                    <TableHead>Batch</TableHead>
+   560→                    <TableHead>Run type</TableHead>
+   561→                    <TableHead>Status</TableHead>
+   562→                    <TableHead className="text-right">Payouts</TableHead>
+   563→                    <TableHead className="text-right">Total</TableHead>
+   564→                    <TableHead className="hidden md:table-cell">Started</TableHead>
+   565→                    <TableHead className="hidden text-right lg:table-cell">Finished</TableHead>
+   566→                  </TableRow>
+   567→                </TableHeader>
+   568→                <TableBody>
+   569→                  {rows.map((b) => (
+   570→                    <TableRow
+   571→                      key={b.id}
+   572→                      className="cursor-pointer"
+   573→                      onClick={() => nav.navigate("payout-detail", { batchId: b.id })}
+   574→                    >
+   575→                      <TableCell className="font-mono text-xs font-semibold">{b.id.slice(0, 8)}…</TableCell>
+   576→                      <TableCell className="capitalize">{b.runType ?? "—"}</TableCell>
+   577→                      <TableCell><StatusChip status={b.status} /></TableCell>
+   578→                      <TableCell className="text-right tabular-nums">{b.payoutCount ?? b.payouts?.length ?? 0}</TableCell>
+   579→                      <TableCell className="text-right"><Money minor={b.totalMinor} bold /></TableCell>
+   580→                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">{b.startedAt ? fmtDT(b.startedAt) : "—"}</TableCell>
+   581→                      <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{b.finishedAt ? fmtDT(b.finishedAt) : "—"}</TableCell>
+   582→                    </TableRow>
+   583→                  ))}
+   584→                </TableBody>
+   585→              </Table>
+   586→            )}
+   587→          </div>
+   588→        </CardContent>
+   589→      </Card>
+   590→
+   591→      {/* new batch dialog */}
+   592→      <Dialog open={open} onOpenChange={setOpen}>
+   593→        <DialogContent className="sm:max-w-2xl">
+   594→          <DialogHeader>
+   595→            <DialogTitle className="flex items-center gap-2">
+   596→              <PlayCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" /> New payout batch
+   597→            </DialogTitle>
+   598→            <DialogDescription>
+   599→              Dry-run preview first — nothing is written until you confirm. Eligibility: wallet available ≥ minimum payout setting.
+   600→            </DialogDescription>
+   601→          </DialogHeader>
+   602→
+   603→          {previewLoading ? (
+   604→            <div className="space-y-2 py-2">
+   605→              {Array.from({ length: 3 }).map((_, i) => (
+   606→                <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />
+   607→              ))}
+   608→            </div>
+   609→          ) : previewError ? (
+   610→            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+   611→              {previewError}
+   612→            </div>
+   613→          ) : preview ? (
+   614→            <div className="space-y-3">
+   615→              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+   616→                <span>min payout <Money minor={preview.minMinor} muted /></span>
+   617→                <span>mode <Badge variant="outline" className="ml-1">{preview.mode}</Badge></span>
+   618→                <span>{preview.eligibleCount} eligible wallet{preview.eligibleCount === 1 ? "" : "s"}</span>
+   619→                <span>total <Money minor={preview.eligibleTotalMinor} muted bold /></span>
+   620→              </div>
+   621→              {preview.eligible.length === 0 ? (
+   622→                <EmptyState
+   623→                  title="No eligible wallets"
+   624→                  hint={`No wallet currently meets the ${formatMinor(preview.minMinor)} minimum — the live run would return 409 NO_ELIGIBLE_WALLETS.`}
+   625→                />
+   626→              ) : (
+   627→                <div className="max-h-[320px] overflow-y-auto rounded-lg border [scrollbar-width:thin]">
+   628→                  <Table>
+   629→                    <TableHeader>
+   630→                      <TableRow>
+   631→                        <TableHead>Seller / Store</TableHead>
+   632→                        <TableHead className="text-right">Available</TableHead>
+   633→                        <TableHead className="text-right">Will pay</TableHead>
+   634→                        <TableHead className="hidden sm:table-cell">Bank</TableHead>
+   635→                      </TableRow>
+   636→                    </TableHeader>
+   637→                    <TableBody>
+   638→                      {preview.eligible.map((e) => (
+   639→                        <TableRow key={e.walletId}>
+   640→                          <TableCell>
+   641→                            <p className="font-medium">{e.sellerName}</p>
+   642→                            <p className="text-xs text-muted-foreground">{e.storeName ?? "—"}</p>
+   643→                          </TableCell>
+   644→                          <TableCell className="text-right"><Money minor={e.availableMinor} muted /></TableCell>
+   645→                          <TableCell className="text-right"><Money minor={e.availableMinor} bold /></TableCell>
+   646→                          <TableCell className="hidden sm:table-cell">
+   647→                            {e.bank ? (
+   648→                              <span className="text-xs">
+   649→                                {e.bank.bankName} · <span className="font-mono">{e.bank.accountNumberMasked}</span>
+   650→                                {!e.bank.verified ? <Badge variant="outline" className="ml-1.5 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">unverified</Badge> : null}
+   651→                              </span>
+   652→                            ) : (
+   653→                              <span className="text-xs text-red-600 dark:text-red-400">no bank on file</span>
+   654→                            )}
+   655→                          </TableCell>
+   656→                        </TableRow>
+   657→                      ))}
+   658→                    </TableBody>
+   659→                  </Table>
+   660→                </div>
+   661→              )}
+   662→              {preview.skipped && preview.skipped.length > 0 ? (
+   663→                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+   664→                  <p className="font-semibold">
+   665→                    {preview.skipped.length} wallet{preview.skipped.length === 1 ? "" : "s"} skipped — seller payout request pending
+   666→                  </p>
+   667→                  {preview.skipped.map((s) => (
+   668→                    <p key={s.walletId} className="mt-1">
+   669→                      {s.storeName ?? s.sellerName} ({formatMinor(s.availableMinor)}) — {s.reason}
+   670→                    </p>
+   671→                  ))}
+   672→                </div>
+   673→              ) : null}
+   674→            </div>
+   675→          ) : null}
+   676→
+   677→          <DialogFooter>
+   678→            <Button variant="outline" onClick={() => setOpen(false)} disabled={running} className="min-h-[44px] sm:min-h-0">
+   679→              Cancel
+   680→            </Button>
+   681→            <Button onClick={() => void runBatch()} disabled={running || previewLoading || !preview || preview.eligibleCount === 0} className="min-h-[44px] sm:min-h-0">
+   682→              {running ? "Running…" : `Confirm run (${preview?.eligibleCount ?? 0})`}
+   683→            </Button>
+   684→          </DialogFooter>
+   685→        </DialogContent>
+   686→      </Dialog>
+   687→
+   688→      {/* reject reason dialog */}
+   689→      <ReasonDialog
+   690→        open={rejectTarget != null}
+   691→        onOpenChange={(o) => !o && setRejectTarget(null)}
+   692→        title={`Reject payout request ${rejectTarget?.referenceNo ?? ""}`}
+   693→        description="No money has moved — the request is released and the seller keeps the balance. The reason is emailed to the seller."
+   694→        placeholder="e.g. Bank account unverified — verify it and re-request"
+   695→        submitLabel="Reject request"
+   696→        destructive
+   697→        loading={busyId === rejectTarget?.id}
+   698→        onSubmit={(reason) => rejectTarget && void rejectRequest(rejectTarget, reason)}
+   699→      />
+   700→    </div>
+   701→  );
+   702→}
+   703→
+   704→/* -------------------------------------------------------- PayoutDetailView */
+   705→
+   706→export function PayoutDetailView({ nav, batchId }: { nav: AdminNav; batchId: string }) {
+   707→  const batches = useApi<PayoutBatch[]>("/api/admin/payout-batches");
+   708→  const payoutsReq = useApi<PayoutRow[]>(`/api/admin/payouts?batchId=${encodeURIComponent(batchId)}`);
+   709→  const batch = useMemo(
+   710→    () => (batches.data ?? []).find((b) => b.id === batchId) ?? null,
+   711→    [batches.data, batchId]
+   712→  );
+   713→  const payouts = payoutsReq.data ?? [];
+   714→
+   715→  const [expanded, setExpanded] = useState<string | null>(null);
+   716→  const [payTarget, setPayTarget] = useState<PayoutRow | null>(null);
+   717→  const [failTarget, setFailTarget] = useState<PayoutRow | null>(null);
+   718→
+   719→  const done = () => {
+   720→    void payoutsReq.refetch();
+   721→    void batches.refetch();
+   722→  };
+   723→
+   724→  return (
+   725→    <div className="space-y-4">
+   726→      <Button variant="ghost" size="sm" className="-ml-2 min-h-[44px] sm:min-h-0" onClick={() => nav.navigate("payouts")}>
+   727→        ← All payout batches
+   728→      </Button>
+   729→
+   730→      {batches.error ? (
+   731→        <Card className="py-0"><CardContent className="p-4"><ErrorState message={batches.error} onRetry={() => void batches.refetch()} /></CardContent></Card>
+   732→      ) : batches.loading ? (
+   733→        <div className="h-10 w-64 animate-pulse rounded bg-muted" />
+   734→      ) : batch ? (
+   735→        <Card className="py-0">
+   736→          <CardContent className="p-4">
+   737→            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+   738→              <div>
+   739→                <p className="text-xs text-muted-foreground">Batch</p>
+   740→                <p className="font-mono text-xs font-semibold">{batch.id}</p>
+   741→              </div>
+   742→              <div>
+   743→                <p className="text-xs text-muted-foreground">Status</p>
+   744→                <StatusChip status={batch.status} />
+   745→              </div>
+   746→              <div>
+   747→                <p className="text-xs text-muted-foreground">Total</p>
+   748→                <Money minor={batch.totalMinor} bold />
+   749→              </div>
+   750→              <div>
+   751→                <p className="text-xs text-muted-foreground">Payouts</p>
+   752→                <p className="tabular-nums">{batch.payoutCount ?? payouts.length}</p>
+   753→              </div>
+   754→              <div>
+   755→                <p className="text-xs text-muted-foreground">Started</p>
+   756→                <p className="text-xs">{fmtDT(batch.startedAt)}</p>
+   757→              </div>
+   758→              <div>
+   759→                <p className="text-xs text-muted-foreground">Finished</p>
+   760→                <p className="text-xs">{batch.finishedAt ? fmtDT(batch.finishedAt) : "—"}</p>
+   761→              </div>
+   762→            </div>
+   763→          </CardContent>
+   764→        </Card>
+   765→      ) : (
+   766→        <Card className="py-0">
+   767→          <CardContent className="p-4">
+   768→            <p className="text-sm text-muted-foreground">Batch not found — it may have been removed.</p>
+   769→          </CardContent>
+   770→        </Card>
+   771→      )}
+   772→
+   773→      <Card className="py-0">
+   774→        <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-5">
+   775→          <CardTitle className="text-base">Payouts in this batch</CardTitle>
+   776→          <CardDescription>Click a payout to inspect its settlement statement, then mark it paid or failed.</CardDescription>
+   777→        </CardHeader>
+   778→        <CardContent className="p-0">
+   779→          <div className="overflow-x-auto">
+   780→            {payoutsReq.error ? (
+   781→              <ErrorState message={payoutsReq.error} onRetry={() => void payoutsReq.refetch()} />
+   782→            ) : payoutsReq.loading ? (
+   783→              <TableSkeleton rows={4} cols={6} />
+   784→            ) : payouts.length === 0 ? (
+   785→              <EmptyState title="No payouts in this batch" />
+   786→            ) : (
+   787→              <Table>
+   788→                <TableHeader>
+   789→                  <TableRow>
+   790→                    <TableHead className="w-8" />
+   791→                    <TableHead>Reference</TableHead>
+   792→                    <TableHead>Seller</TableHead>
+   793→                    <TableHead className="text-right">Amount</TableHead>
+   794→                    <TableHead>Status</TableHead>
+   795→                    <TableHead className="hidden md:table-cell">Method</TableHead>
+   796→                    <TableHead className="hidden text-right lg:table-cell">Updated</TableHead>
+   797→                  </TableRow>
+   798→                </TableHeader>
+   799→                <TableBody>
+   800→                  {payouts.map((p) => (
+   801→                    <Fragment key={p.id}>
+   802→                      <TableRow className="cursor-pointer" onClick={() => setExpanded(expanded === p.id ? null : p.id)}>
+   803→                        <TableCell>{expanded === p.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
+   804→                        <TableCell className="font-mono text-xs font-semibold">{p.referenceNo}</TableCell>
+   805→                        <TableCell>
+   806→                          <p className="font-medium">{p.sellerName ?? "—"}</p>
+   807→                          <p className="text-xs text-muted-foreground">{p.sellerEmail ?? ""}</p>
+   808→                        </TableCell>
+   809→                        <TableCell className="text-right"><Money minor={p.amountMinor} bold /></TableCell>
+   810→                        <TableCell>
+   811→                          <PayoutStatusChip status={p.status} />
+   812→                          {p.failReason ? <p className="mt-1 max-w-[180px] truncate text-[11px] text-red-600 dark:text-red-400">{p.failReason}</p> : null}
+   813→                        </TableCell>
+   814→                        <TableCell className="hidden text-sm capitalize md:table-cell">{p.method?.replace(/_/g, " ") ?? "—"}</TableCell>
+   815→                        <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">{timeAgo(p.paidAt ?? p.createdAt)}</TableCell>
+   816→                      </TableRow>
+   817→                      {expanded === p.id ? (
+   818→                        <TableRow>
+   819→                          <TableCell colSpan={7} className="bg-muted/30">
+   820→                            <PayoutExpand
+   821→                              payout={p}
+   822→                              onMarkPaid={() => setPayTarget(p)}
+   823→                              onMarkFailed={() => setFailTarget(p)}
+   824→                            />
+   825→                          </TableCell>
+   826→                        </TableRow>
+   827→                      ) : null}
+   828→                    </Fragment>
+   829→                  ))}
+   830→                </TableBody>
+   831→              </Table>
+   832→            )}
+   833→          </div>
+   834→        </CardContent>
+   835→      </Card>
+   836→
+   837→      {/* mark paid */}
+   838→      <MarkPaidDialog
+   839→        payout={payTarget}
+   840→        onClose={() => setPayTarget(null)}
+   841→        onDone={() => {
+   842→          setPayTarget(null);
+   843→          done();
+   844→        }}
+   845→      />
+   846→
+   847→      {/* mark failed */}
+   848→      <ReasonDialog
+   849→        open={failTarget !== null}
+   850→        onOpenChange={(o) => !o && setFailTarget(null)}
+   851→        title="Mark payout as failed"
+   852→        description={
+   853→          failTarget
+   854→            ? `${failTarget.referenceNo} · ${formatMinor(failTarget.amountMinor)} — the debit is reversed in the ledger (T4f) and funds return to the seller wallet.`
+   855→            : ""
+   856→        }
+   857→        placeholder="Reason (e.g. bank account closed)…"
+   858→        submitLabel="Mark failed"
+   859→        destructive
+   860→        onSubmit={(reason) => {
+   861→          if (!failTarget) return;
+   862→          apiSend(`/api/admin/payouts/${failTarget.id}/fail`, "POST", { reason })
+   863→            .then(() => {
+   864→              toast.success("Payout marked failed", { description: "Ledger reversal posted; funds returned to wallet." });
+   865→              setFailTarget(null);
+   866→              done();
+   867→            })
+   868→            .catch((e: unknown) => toast.error("Failed to update payout", { description: e instanceof Error ? e.message : String(e) }));
+   869→        }}
+   870→      />
+   871→    </div>
+   872→  );
+   873→}
+   874→
+   875→function PayoutExpand({
+   876→  payout,
+   877→  onMarkPaid,
+   878→  onMarkFailed,
+   879→}: {
+   880→  payout: PayoutRow;
+   881→  onMarkPaid: () => void;
+   882→  onMarkFailed: () => void;
+   883→}) {
+   884→  const st = parseJsonSafe<Statement>(payout.statementJson, {});
+   885→  const lines = st.lines ?? [];
+   886→  // Reconciliation audit: statement lines must sum EXACTLY to the net payout.
+   887→  // Ledger-truth statements (reconciled: true) always do; legacy demo snapshots
+   888→  // with decorated numbers fail this check and are flagged honestly.
+   889→  const linesSum = lines.reduce((s, l) => s + l.amountMinor, 0);
+   890→  const reconciles = lines.length > 0 && linesSum === payout.amountMinor;
+   891→  return (
+   892→    <div className="grid grid-cols-1 gap-4 p-3 lg:grid-cols-3">
+   893→      <div className="lg:col-span-2">
+   894→        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+   895→          Settlement statement{st.sellerName ? ` — ${st.sellerName}` : ""}
+   896→        </p>
+   897→        {lines.length === 0 ? (
+   898→          <p className="text-xs text-muted-foreground">No statement lines recorded for this payout.</p>
+   899→        ) : (
+   900→          <div className="overflow-hidden rounded-lg border bg-card">
+   901→            <div className={cn("flex items-center gap-1.5 border-b px-3 py-2 text-[11px] font-semibold", reconciles ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300")}>
+   902→              {reconciles ? (
+   903→                <>
+   904→                  <ShieldCheck className="h-3.5 w-3.5" /> Ledger-reconciled — every figure is aggregated from ledger lines and Σ(lines) = net payout
+   905→                </>
+   906→              ) : (
+   907→                <>
+   908→                  <AlertTriangle className="h-3.5 w-3.5" /> Not reconciled — Σ(lines) {formatMinor(linesSum)} ≠ payout {formatMinor(payout.amountMinor)} (legacy demo snapshot)
+   909→                </>
+   910→              )}
+   911→            </div>
+   912→            <Table>
+   913→              <TableBody>
+   914→                {lines.map((l, i) => (
+   915→                  <TableRow key={i}>
+   916→                    <TableCell className="text-sm">{l.label}</TableCell>
+   917→                    <TableCell className="w-32 text-right"><Money minor={l.amountMinor} /></TableCell>
+   918→                  </TableRow>
+   919→                ))}
+   920→                <TableRow className="border-t-2">
+   921→                  <TableCell className="text-sm font-semibold">Net payout</TableCell>
+   922→                  <TableCell className="w-32 text-right"><Money minor={payout.amountMinor} bold /></TableCell>
+   923→                </TableRow>
+   924→              </TableBody>
+   925→            </Table>
+   926→          </div>
+   927→        )}
+   928→        {st.orderCount != null || st.periodTo ? (
+   929→          <p className="mt-2 text-[11px] text-muted-foreground">
+   930→            {st.orderCount != null ? `${st.orderCount} paid order${st.orderCount === 1 ? "" : "s"}` : ""}
+   931→            {st.periodFrom && st.periodTo ? ` · ${fmtDT(st.periodFrom)} → ${fmtDT(st.periodTo)}` : ""}
+   932→          </p>
+   933→        ) : null}
+   934→      </div>
+   935→
+   936→      <div className="space-y-3">
+   937→        <div>
+   938→          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank</p>
+   939→          {payout.bankAccount ? (
+   940→            <div className="mt-1.5 space-y-1 rounded-lg border bg-card p-3 text-sm">
+   941→              <p className="flex items-center gap-1.5 font-medium">
+   942→                <Landmark className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" /> {payout.bankAccount.bankName}
+   943→              </p>
+   944→              <p className="text-muted-foreground">{payout.bankAccount.holderName}</p>
+   945→              <p className="font-mono text-xs">{payout.bankAccount.accountNumberMasked}</p>
+   946→            </div>
+   947→          ) : (
+   948→            <p className="mt-1.5 text-xs text-muted-foreground">No bank account linked</p>
+   949→          )}
+   950→        </div>
+   951→        {payout.providerRef ? (
+   952→          <div>
+   953→            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank reference</p>
+   954→            <p className="mt-1 font-mono text-xs">{payout.providerRef}</p>
+   955→          </div>
+   956→        ) : null}
+   957→        {payout.status === "processing" ? (
+   958→          <div className="flex flex-col gap-2">
+   959→            <Button size="sm" className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700" onClick={onMarkPaid}>
+   960→              Mark paid…
+   961→            </Button>
+   962→            <Button size="sm" variant="outline" className="min-h-[44px] border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40" onClick={onMarkFailed}>
+   963→              Mark failed…
+   964→            </Button>
+   965→          </div>
+   966→        ) : (
+   967→          <p className={cn("text-xs", payout.status === "paid" ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+   968→            {payout.status === "paid" ? `Paid ${fmtDT(payout.paidAt)}` : "No actions available"}
+   969→          </p>
+   970→        )}
+   971→      </div>
+   972→    </div>
+   973→  );
+   974→}
+   975→
+   976→function MarkPaidDialog({
+   977→  payout,
+   978→  onClose,
+   979→  onDone,
+   980→}: {
+   981→  payout: PayoutRow | null;
+   982→  onClose: () => void;
+   983→  onDone: () => void;
+   984→}) {
+   985→  const [refNo, setRefNo] = useState("");
+   986→  const [saving, setSaving] = useState(false);
+   987→
+   988→  useEffect(() => {
+   989→    if (payout) setRefNo("");
+   990→  }, [payout]);
+   991→
+   992→  const submit = async () => {
+   993→    if (!payout || !refNo.trim()) return;
+   994→    setSaving(true);
+   995→    try {
+   996→      await apiSend(`/api/admin/payouts/${payout.id}/mark-paid`, "POST", { referenceNo: refNo.trim() });
+   997→      toast.success("Payout marked paid", {
+   998→        description: `${payout.referenceNo} · bank ref ${refNo.trim()} — ledger T4 posted.`,
+   999→      });
+  1000→      onDone();
+  1001→    } catch (e) {
+  1002→      toast.error("Mark paid failed", { description: e instanceof Error ? e.message : String(e) });
+  1003→    } finally {
+  1004→      setSaving(false);
+  1005→    }
+  1006→  };
+  1007→
+  1008→  return (
+  1009→    <Dialog open={payout !== null} onOpenChange={(o) => !o && onClose()}>
+  1010→      <DialogContent className="sm:max-w-md">
+  1011→        <DialogHeader>
+  1012→          <DialogTitle>Mark payout as paid</DialogTitle>
+  1013→          <DialogDescription>
+  1014→            {payout ? `${payout.referenceNo} · ${formatMinor(payout.amountMinor)} to ${payout.sellerName ?? "seller"}.` : ""}
+  1015→          </DialogDescription>
+  1016→        </DialogHeader>
+  1017→        <div className="space-y-1.5">
+  1018→          <Label htmlFor="payout-ref">Bank reference number (required)</Label>
+  1019→          <Input
+  1020→            id="payout-ref"
+  1021→            value={refNo}
+  1022→            onChange={(e) => setRefNo(e.target.value)}
+  1023→            placeholder="e.g. BK-20261008-8817"
+  1024→            className="min-h-[44px]"
+  1025→            autoFocus
+  1026→          />
+  1027→          <p className="text-[11px] text-muted-foreground">Recorded on the payout and posted to the ledger as payout_confirmed (T4).</p>
+  1028→        </div>
+  1029→        <DialogFooter>
+  1030→          <Button variant="outline" onClick={onClose} disabled={saving} className="min-h-[44px] sm:min-h-0">Cancel</Button>
+  1031→          <Button onClick={() => void submit()} disabled={saving || !refNo.trim()} className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:min-h-0">
+  1032→            {saving ? "Posting…" : "Confirm paid"}
+  1033→          </Button>
+  1034→        </DialogFooter>
+  1035→      </DialogContent>
+  1036→    </Dialog>
+  1037→  );
+  1038→}
+  1039→

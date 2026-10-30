@@ -20,6 +20,10 @@ export const ACCOUNTS = {
   payoutClearing: () => "PLATFORM:PAYOUT_CLEARING",
   revenueCommission: () => "PLATFORM:REVENUE_COMMISSION",
   revenueAdjust: () => "PLATFORM:REVENUE_ADJUST",
+  // AFFILIATE (Hub): seller-funded affiliate commission liability owed to
+  // affiliates. Credited by the T1 4th line (pool per paid order); debited by
+  // T5 affiliate reversals (refunds) and the affiliate payout recipes.
+  affiliateLiability: () => "PLATFORM:AFFILIATE_LIABILITY",
   gateway: (provider: string) => `GATEWAY:${provider.toUpperCase()}`,
   sellerPayable: (walletId: string) => `SELLER:${walletId}:PAYABLE`,
 };
@@ -29,6 +33,7 @@ export const ACCOUNT_META: Record<string, { name: string; type: "asset" | "liabi
   "PLATFORM:PAYOUT_CLEARING": { name: "Payout Clearing", type: "liability" },
   "PLATFORM:REVENUE_COMMISSION": { name: "Commission Revenue", type: "revenue" },
   "PLATFORM:REVENUE_ADJUST": { name: "Manual Adjustments Revenue", type: "revenue" },
+  "PLATFORM:AFFILIATE_LIABILITY": { name: "Affiliate Commission Liability", type: "liability" },
 };
 
 export async function ensureAccount(code: string, walletId?: string | null) {
@@ -293,9 +298,16 @@ export async function safeRefreshWalletCache(walletId: string) {
 
 /**
  * T1 — order paid: DR GATEWAY:{p} total | CR SELLER:PAYABLE (available_at=paid+hold) | CR COMMISSION
+ * [+ CR AFFILIATE_LIABILITY pool when the order carries affiliate attribution].
  * Dedup: exactly ONE T1 per order (`order_paid:order:{orderId}`) — a group
  * webhook pays each order once; duplicate deliveries replay harmlessly
  * (P2002 → original txn returned with idempotentReplay:true).
+ *
+ * AFFILIATE 4th line: `affiliateMinor` is the seller-funded commission pool
+ * Σ(OrderItem.affiliatePoolMinor) — already subtracted from sellerNetMinor
+ * by computeOrderCommissions, so credits sum to the total exactly:
+ *   sellerNet + commission + affiliate === total  (Option B invariant v2).
+ * Line omitted when affiliateMinor = 0 (legacy rows stay byte-compatible).
  */
 export async function postOrderPaid(input: {
   orderId: string;
@@ -305,6 +317,8 @@ export async function postOrderPaid(input: {
   totalMinor: number;
   sellerNetMinor: number;
   commissionMinor: number;
+  /** Seller-funded affiliate pool for this order (0 ⇒ no affiliate line). */
+  affiliateMinor?: number;
   holdUntil: Date;
   currency?: string;
   occurredAt?: Date;
@@ -314,17 +328,21 @@ export async function postOrderPaid(input: {
    *  contention note). Default true preserves every other caller. */
   refreshCache?: boolean;
 }) {
+  const lines: LedgerLineInput[] = [
+    { accountCode: ACCOUNTS.gateway(input.provider), direction: "debit", amountMinor: input.totalMinor, memo: `Order ${input.orderNumber}` },
+    { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "credit", amountMinor: input.sellerNetMinor, walletId: input.walletId, availableAt: input.holdUntil, memo: `Seller net for ${input.orderNumber}` },
+    { accountCode: ACCOUNTS.revenueCommission(), direction: "credit", amountMinor: input.commissionMinor, walletId: input.walletId, memo: `Commission for ${input.orderNumber}` },
+  ];
+  if (input.affiliateMinor && input.affiliateMinor > 0) {
+    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "credit", amountMinor: input.affiliateMinor, memo: `Affiliate pool for ${input.orderNumber}` });
+  }
   const t = await postTransaction({
     txnType: "order_paid",
     refType: "order",
     refId: input.orderId,
     description: `Order ${input.orderNumber} paid via ${input.provider}`,
     dedupKey: `order_paid:order:${input.orderId}`,
-    lines: [
-      { accountCode: ACCOUNTS.gateway(input.provider), direction: "debit", amountMinor: input.totalMinor, memo: `Order ${input.orderNumber}` },
-      { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "credit", amountMinor: input.sellerNetMinor, walletId: input.walletId, availableAt: input.holdUntil, memo: `Seller net for ${input.orderNumber}` },
-      { accountCode: ACCOUNTS.revenueCommission(), direction: "credit", amountMinor: input.commissionMinor, walletId: input.walletId, memo: `Commission for ${input.orderNumber}` },
-    ],
+    lines,
     occurredAt: input.occurredAt,
     tx: input.tx,
   });
@@ -424,11 +442,74 @@ export async function postPayoutFailed(input: { walletId: string; payoutId: stri
   return t;
 }
 
+// ------------------------------------------------------- AFFILIATE PAYOUTS
+// Manual controlled workflow (mirrors the seller payout recipes, but the
+// liability side is PLATFORM:AFFILIATE_LIABILITY, never a seller wallet):
+//   T-A3 approve  : DR AFFILIATE_LIABILITY | CR PAYOUT_CLEARING
+//   T-A4 mark-paid: DR PAYOUT_CLEARING     | CR BANK_MAIN
+//   T-A4f fail    : DR PAYOUT_CLEARING     | CR AFFILIATE_LIABILITY (release)
+// Idempotency: exactly one posting per payout row per stage (dedupKeys).
+
+/** T-A3 — affiliate payout approved: DR AFFILIATE_LIABILITY | CR PAYOUT_CLEARING */
+export async function postAffiliatePayoutInitiated(input: { payoutId: string; affiliateId: string; amountMinor: number; tx?: Prisma.TransactionClient }) {
+  return postTransaction({
+    txnType: "affiliate_payout_initiated",
+    refType: "affiliate_payout",
+    refId: input.payoutId,
+    description: `Affiliate payout ${input.payoutId} approved`,
+    dedupKey: `affiliate_payout_initiated:affpayout:${input.payoutId}`,
+    lines: [
+      { accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+      { accountCode: ACCOUNTS.payoutClearing(), direction: "credit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+    ],
+    tx: input.tx,
+  });
+}
+
+/** T-A4 — affiliate payout confirmed paid: DR PAYOUT_CLEARING | CR BANK_MAIN */
+export async function postAffiliatePayoutConfirmed(input: { payoutId: string; amountMinor: number; reference: string; tx?: Prisma.TransactionClient }) {
+  return postTransaction({
+    txnType: "affiliate_payout_confirmed",
+    refType: "affiliate_payout",
+    refId: input.payoutId,
+    description: `Affiliate payout ${input.payoutId} paid (${input.reference})`,
+    dedupKey: `affiliate_payout_confirmed:affpayout:${input.payoutId}`,
+    lines: [
+      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: input.reference },
+      { accountCode: ACCOUNTS.BANK_MAIN, direction: "credit", amountMinor: input.amountMinor, memo: input.reference },
+    ],
+    tx: input.tx,
+  });
+}
+
+/** T-A4f — affiliate payout failed: reverse T-A3 → DR PAYOUT_CLEARING | CR AFFILIATE_LIABILITY */
+export async function postAffiliatePayoutFailed(input: { payoutId: string; amountMinor: number; reason: string; tx?: Prisma.TransactionClient }) {
+  return postTransaction({
+    txnType: "affiliate_payout_failed",
+    refType: "affiliate_payout",
+    refId: input.payoutId,
+    description: `Affiliate payout ${input.payoutId} failed: ${input.reason}`,
+    dedupKey: `affiliate_payout_failed:affpayout:${input.payoutId}`,
+    lines: [
+      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+      { accountCode: ACCOUNTS.affiliateLiability(), direction: "credit", amountMinor: input.amountMinor, memo: `Released: ${input.reason}` },
+    ],
+    tx: input.tx,
+  });
+}
+
 /**
- * T5 — refund: DR SELLER:PAYABLE (seller share) + DR COMMISSION (reversal) | CR GATEWAY:{p}
+ * T5 — refund: DR SELLER:PAYABLE (seller share) + DR COMMISSION (reversal)
+ * [+ DR AFFILIATE_LIABILITY (affiliate reversal)] | CR GATEWAY:{p}
  * Dedup: exactly ONE T5 per Refund ROW (`refund:refund:{refundId}`) — an order
  * may legally receive MULTIPLE partial refunds, so the key is per refund row,
  * NOT per order (a (txnType,order) key would false-dedup the 2nd partial).
+ *
+ * AFFILIATE: `affiliateReversalMinor` mirrors commissionReversalMinor —
+ * derived proportionally from the frozen OrderItem.affiliatePoolMinor
+ * snapshots, clamped to the remaining reversible pool. The seller share
+ * shrinks by the same amount (the pool was carved from seller proceeds at
+ * checkout, so a refund restores it symmetrically).
  */
 export async function postRefund(input: {
   orderId: string;
@@ -437,22 +518,29 @@ export async function postRefund(input: {
   provider: string;
   amountMinor: number;
   commissionReversalMinor: number;
+  /** Affiliate pool reversal for this refund (0 ⇒ no affiliate line). */
+  affiliateReversalMinor?: number;
   /** The Refund row driving this posting — required for its dedup key. */
   refundId: string;
   tx?: Prisma.TransactionClient;
 }) {
-  const sellerShare = input.amountMinor - input.commissionReversalMinor;
+  const affiliateReversal = Math.max(0, input.affiliateReversalMinor ?? 0);
+  const sellerShare = input.amountMinor - input.commissionReversalMinor - affiliateReversal;
+  const lines: LedgerLineInput[] = [
+    { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "debit", amountMinor: sellerShare, walletId: input.walletId, memo: `Refund seller share ${input.orderNumber}` },
+    { accountCode: ACCOUNTS.revenueCommission(), direction: "debit", amountMinor: input.commissionReversalMinor, walletId: input.walletId, memo: `Commission reversal ${input.orderNumber}` },
+  ];
+  if (affiliateReversal > 0) {
+    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: affiliateReversal, memo: `Affiliate reversal ${input.orderNumber}` });
+  }
+  lines.push({ accountCode: ACCOUNTS.gateway(input.provider), direction: "credit", amountMinor: input.amountMinor, memo: `Refund ${input.orderNumber}` });
   const t = await postTransaction({
     txnType: "refund",
     refType: "order",
     refId: input.orderId,
     description: `Refund for ${input.orderNumber}`,
     dedupKey: `refund:refund:${input.refundId}`,
-    lines: [
-      { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "debit", amountMinor: sellerShare, walletId: input.walletId, memo: `Refund seller share ${input.orderNumber}` },
-      { accountCode: ACCOUNTS.revenueCommission(), direction: "debit", amountMinor: input.commissionReversalMinor, walletId: input.walletId, memo: `Commission reversal ${input.orderNumber}` },
-      { accountCode: ACCOUNTS.gateway(input.provider), direction: "credit", amountMinor: input.amountMinor, memo: `Refund ${input.orderNumber}` },
-    ],
+    lines,
     tx: input.tx,
   });
   await refreshWalletCache(input.walletId, input.tx);

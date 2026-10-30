@@ -17,6 +17,7 @@
 // ============================================================================
 import { db } from "./db";
 import { commissionOf, allocateProportionally } from "./money";
+import { affiliatePoolMinor } from "./affiliate";
 import { toJson } from "./json";
 
 export type CommissionSettingsDTO = {
@@ -204,6 +205,16 @@ export type CommissionItemInput = {
   unitPriceMinor: number;
   qty: number;
   /** list subtotal = unitPrice * qty (before discount) */
+  // ---- AFFILIATE (Hub) ---------------------------------------------------
+  /** Resolved affiliate attribution for this line (server-side; null ⇒ none).
+   *  When present with rateBps > 0 the seller-funded affiliate pool is carved
+   *  from seller proceeds and reported on the item result for snapshotting. */
+  affiliate?: {
+    affiliateId: string;
+    sponsorId: string | null;
+    linkId: string;
+    rateBps: number;
+  } | null;
 };
 
 export type CommissionItemResult = {
@@ -220,6 +231,10 @@ export type CommissionItemResult = {
   fixedFeeMinor: number;
   commissionMinor: number;
   sellerNetMinor: number;
+  // ---- AFFILIATE (Hub): seller-funded pool carved from seller proceeds.
+  // 0 for unattributed items. Frozen on OrderItem.affiliatePoolMinor by the
+  //  checkout; posted to PLATFORM:AFFILIATE_LIABILITY at payment (T1 4th line). */
+  affiliatePoolMinor: number;
   breakdown: {
     rule_source: string;
     source_id?: string;
@@ -230,6 +245,9 @@ export type CommissionItemResult = {
     fixed_fee_allocated: number;
     discount_allocated: number;
     shipping_allocated: number;
+    affiliate_rate_bps?: number;
+    affiliate_base?: number;
+    affiliate_pool?: number;
     flags: string[];
   };
 };
@@ -238,28 +256,33 @@ export type CommissionOrderResult = {
   items: CommissionItemResult[];
   orderCommissionMinor: number;
   orderSellerNetMinor: number;
+  /** Σ affiliate pools (T1 4th-line input). */
+  orderAffiliatePoolMinor: number;
   holdDays: number;
   holdReleaseRule: string;
 };
 
 /**
- * INVARIANT (Option B mirror requirement — FIN-1):
- *   sum(item.sellerNetMinor) + sum(item.commissionMinor) === order.totalMinor
+ * INVARIANT (Option B mirror requirement — FIN-1, v2 with affiliate):
+ *   sum(item.sellerNetMinor) + sum(item.commissionMinor) + sum(item.affiliatePoolMinor)
+ *     === order.totalMinor
  * for EVERY order, where totalMinor = subtotalMinor − discountMinor +
  * shippingMinor + taxMinor. The ledger T1 (postOrderPaid) debits the PSP
- * gateway totalMinor and credits exactly sellerNet + commission, so any drift
- * here would throw LEDGER_UNBALANCED at payment time. The customer-paid gross
- * per item is (lineSubtotal − discount + shipping + tax allocations); seller
- * net is that gross MINUS commission — never gross-plus-shipping again (the
- * pre-FIN-1 formula double-counted shipping when appliesToShipping=true).
+ * gateway totalMinor and credits exactly sellerNet + commission + affiliate
+ * pool, so any drift here would throw LEDGER_UNBALANCED at payment time. The
+ * customer-paid gross per item is (lineSubtotal − discount + shipping + tax
+ * allocations); seller net is that gross MINUS commission MINUS the
+ * affiliate pool — never gross-plus-shipping again (the pre-FIN-1 formula
+ * double-counted shipping when appliesToShipping=true).
  */
 export function reconcileSplits(
-  items: { sellerNetMinor: number; commissionMinor: number; lineSubtotalMinor: number }[],
+  items: { sellerNetMinor: number; commissionMinor: number; affiliatePoolMinor?: number; lineSubtotalMinor: number }[],
   totalMinor: number
-): { items: { sellerNetMinor: number; commissionMinor: number; lineSubtotalMinor: number }[]; driftMinor: number } {
+): { items: { sellerNetMinor: number; commissionMinor: number; affiliatePoolMinor?: number; lineSubtotalMinor: number }[]; driftMinor: number } {
   const sumNet = items.reduce((s, r) => s + r.sellerNetMinor, 0);
   const sumComm = items.reduce((s, r) => s + r.commissionMinor, 0);
-  const drift = totalMinor - (sumNet + sumComm);
+  const sumAff = items.reduce((s, r) => s + (r.affiliatePoolMinor ?? 0), 0);
+  const drift = totalMinor - (sumNet + sumComm + sumAff);
   if (drift === 0 || items.length === 0) return { items, driftMinor: 0 };
   // Deterministic remainder handling: assign the whole drift to the LARGEST
   // line (same tie-break family as allocateProportionally: value desc, then
@@ -325,12 +348,20 @@ export async function computeOrderCommissions(input: {
     if (settings.appliesToShipping) base += shippingAlloc[i];
     const percentPart = commissionOf(base, rate.percent);
     const commission = percentPart + fixedAlloc[i];
+    // AFFILIATE (Hub): seller-funded pool on the COMMISSIONABLE BASE — eligible
+    // merchandise value after seller-funded discounts, EXCLUDING shipping and
+    // tax (spec §8). Only lines with resolved server-side attribution and a
+    // positive effective rate generate a pool.
+    const aff = it.affiliate && it.affiliate.rateBps > 0 ? it.affiliate : null;
+    const affBase = Math.max(0, lineSubtotal - discounts[i]);
+    const affiliatePool = aff ? affiliatePoolMinor(affBase, aff.rateBps) : 0;
     // Customer-paid gross for this line = subtotal − discount + shipping + tax
     // (allocation parts sum EXACTLY to the order-level inputs). sellerNet is
-    // the residual after commission — NOT base+shipping again, which counted
-    // shipping twice whenever the commission base included it (FIN-1 fix).
+    // the residual after commission AND the affiliate pool — NOT base+shipping
+    // again, which counted shipping twice whenever the commission base
+    // included it (FIN-1 fix).
     const grossMinor = lineSubtotal - discounts[i] + shippingAlloc[i] + taxAlloc[i];
-    const sellerNet = grossMinor - commission;
+    const sellerNet = grossMinor - commission - affiliatePool;
     return {
       title: it.title,
       variantLabel: it.variantLabel ?? null,
@@ -345,6 +376,7 @@ export async function computeOrderCommissions(input: {
       fixedFeeMinor: fixedAlloc[i],
       commissionMinor: commission,
       sellerNetMinor: sellerNet,
+      affiliatePoolMinor: affiliatePool,
       breakdown: {
         rule_source: rate.source,
         source_id: rate.sourceId,
@@ -355,6 +387,9 @@ export async function computeOrderCommissions(input: {
         fixed_fee_allocated: fixedAlloc[i],
         discount_allocated: discounts[i],
         shipping_allocated: shippingAlloc[i],
+        ...(aff
+          ? { affiliate_rate_bps: aff.rateBps, affiliate_base: affBase, affiliate_pool: affiliatePool }
+          : {}),
         flags: [] as string[],
       },
     };
@@ -387,7 +422,7 @@ export async function computeOrderCommissions(input: {
     Math.max(0, input.shippingMinorTotal) +
     Math.max(0, input.orderTaxMinor ?? 0);
   const reconciled = reconcileSplits(
-    results.map((r) => ({ sellerNetMinor: r.sellerNetMinor, commissionMinor: r.commissionMinor, lineSubtotalMinor: r.lineSubtotalMinor })),
+    results.map((r) => ({ sellerNetMinor: r.sellerNetMinor, commissionMinor: r.commissionMinor, affiliatePoolMinor: r.affiliatePoolMinor, lineSubtotalMinor: r.lineSubtotalMinor })),
     expectedTotal
   );
   for (let i = 0; i < results.length; i++) results[i].sellerNetMinor = reconciled.items[i].sellerNetMinor;
@@ -395,8 +430,9 @@ export async function computeOrderCommissions(input: {
   const holdDays = rates[0]?.holdDays ?? settings.payoutHoldDays;
   const orderCommission = results.reduce((s, r) => s + r.commissionMinor, 0);
   const orderSellerNet = results.reduce((s, r) => s + r.sellerNetMinor, 0);
+  const orderAffiliatePool = results.reduce((s, r) => s + r.affiliatePoolMinor, 0);
 
-  return { items: results, orderCommissionMinor: orderCommission, orderSellerNetMinor: orderSellerNet, holdDays, holdReleaseRule: settings.holdReleaseRule };
+  return { items: results, orderCommissionMinor: orderCommission, orderSellerNetMinor: orderSellerNet, orderAffiliatePoolMinor: orderAffiliatePool, holdDays, holdReleaseRule: settings.holdReleaseRule };
 }
 
 /** Admin simulator (FIN-04): pure computation, no persistence. */

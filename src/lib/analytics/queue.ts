@@ -33,6 +33,9 @@ export type AnalyticsEventInput = {
   utmCampaign?: string | null;
   utmTerm?: string | null;
   utmContent?: string | null;
+  // AFFILIATE advisory tag (httpOnly nm_aff_last cookie — see track.ts).
+  affiliateId?: string | null;
+  affiliateLinkId?: string | null;
 };
 
 const QUEUE_CAP = 500;
@@ -75,6 +78,8 @@ function toRow(e: AnalyticsEventInput): Prisma.AnalyticsEventCreateManyInput {
     referrerHost: e.referrerHost ? e.referrerHost.slice(0, 100) : null,
     channel: e.channel ?? null,
     campaignId: e.campaignId ?? null,
+    affiliateId: e.affiliateId ?? null,
+    affiliateLinkId: e.affiliateLinkId ?? null,
     utmSource: e.utmSource ? e.utmSource.slice(0, 100) : null,
     utmMedium: e.utmMedium ? e.utmMedium.slice(0, 50) : null,
     utmCampaign: e.utmCampaign ? e.utmCampaign.slice(0, 100) : null,

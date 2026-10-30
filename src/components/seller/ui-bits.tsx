@@ -85,6 +85,7 @@ export type SellerViewName =
   | "builder"
   | "coupons"
   | "vouchers"
+  | "affiliate"
   | "integrations"
   | "messages"
   | "settings";
@@ -101,6 +102,8 @@ export type WalletTab = "overview" | "pending";
 export type BuilderTab = "pages" | "cards" | "cart";
 /** Store Settings tabs — "domains" = custom domain management (SD-09). */
 export type SettingsTab = "general" | "domains";
+/** Affiliate programme tabs — opt-in/rate, product enrollment, report. */
+export type AffiliateTab = "program" | "products" | "report";
 
 export type SellerNav = {
   view: SellerViewName;
@@ -111,6 +114,7 @@ export type SellerNav = {
   walletTab?: WalletTab;
   builderTab?: BuilderTab;
   settingsTab?: SettingsTab;
+  affiliateTab?: AffiliateTab;
 };
 
 // ---------------------------------------------------------------- platform terms

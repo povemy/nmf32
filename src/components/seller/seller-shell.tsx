@@ -31,6 +31,7 @@ import SellerWallet from "./wallet";
 import PageBuilder from "./builder";
 import SellerCoupons from "./marketing";
 import SellerVouchers from "./vouchers";
+import SellerAffiliate from "./affiliate";
 import SellerIntegrations from "./integrations";
 import SellerSettings from "./settings";
 import SellerImports from "./imports";
@@ -62,6 +63,7 @@ import {
   Package,
   Search,
   Settings,
+  Share2,
   ShieldAlert,
   ShoppingBag,
   ShoppingCart,
@@ -85,6 +87,7 @@ const NAV: { key: SellerNav["view"]; label: string; icon: typeof LayoutDashboard
   { key: "builder", label: "Page Builder", icon: LayoutTemplate },
   { key: "coupons", label: "Coupons", icon: TicketPercent },
   { key: "vouchers", label: "Vouchers", icon: BadgePercent },
+  { key: "affiliate", label: "Affiliate", icon: Share2 },
   { key: "integrations", label: "Integrations", icon: Blocks },
   { key: "settings", label: "Store Settings", icon: Settings },
 ];
@@ -300,6 +303,7 @@ export default function SellerShell() {
             )}
             {nav.view === "coupons" && <SellerCoupons />}
             {nav.view === "vouchers" && <SellerVouchers />}
+            {nav.view === "affiliate" && <SellerAffiliate affiliateTab={nav.affiliateTab} onNavigate={navigate} />}
             {nav.view === "seo" && <SellerSeo onNavigate={navigate} />}
             {nav.view === "integrations" && <SellerIntegrations />}
             {nav.view === "settings" && (
