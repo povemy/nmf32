@@ -14,16 +14,33 @@
 //      attached by a cross-site page without a CORS preflight, and this app
 //      grants no cross-origin CORS — so a Bearer-bearing request is never an
 //      ambient-cookie forgery. (This is the iframe/preview-panel path.)
-//   2. Origin header present → the origin's host must match the request's own
+//   2. App client marker header (X-SM-Client: web) present → ALLOW. Identical
+//      trust class as (1): every fetch() the app's own JS makes attaches this
+//      custom header, and cross-site pages CANNOT set custom headers without a
+//      CORS preflight (which this app never grants — verified: no
+//      Access-Control-Allow-* is emitted anywhere). Critically this covers
+//      PRE-AUTH requests (login/register): the Bearer bridge only exists after
+//      a session exists, but the marker proves "our own JavaScript" even when
+//      the user has no token yet — including inside sandboxed iframes with
+//      opaque (null) origins.
+//   3. Sec-Fetch-Site evidence (Fetch Metadata): same-origin / same-site / none
+//      → ALLOW; cross-site → REJECT. The browser computes this value against
+//      the URL it is actually fetching (the app's real public origin), so it is
+//      IMMUNE to proxy chains that rewrite the Host header between the browser
+//      and this process. This is what fixes preview-panel logins for good:
+//      the browser truthfully says "same-origin" while the Origin↔Host string
+//      comparison fails purely because a gateway rewrote Host.
+//   4. Origin header present → the origin's host must match the request's own
 //      host (Host header, honouring x-forwarded-host behind the gateway).
-//      "null" origin (sandboxed frame / data: URL) → REJECT.
-//   3. No Origin but Sec-Fetch-Site present → REJECT "cross-site".
-//   4. Neither header → ALLOW (non-browser client: curl, scripts, PSP
-//      delivery, scheduler — no ambient cookie authority in practice).
+//      "null" origin (sandboxed frame / data: URL) → REJECT. (Legacy browsers
+//      without Fetch Metadata support.)
 //   5. Content-type gate: requests that declare a body must be JSON (the app
 //      has no form-encoded or multipart endpoints — verified). A classic
 //      cross-site <form> POST (urlencoded/text/plain) is rejected with 415
 //      even on browsers that lack Sec-Fetch-Site.
+//   6. Neither Origin nor Sec-Fetch-Site → ALLOW (non-browser client: curl,
+//      scripts, PSP delivery, scheduler — no ambient cookie authority in
+//      practice).
 //
 // WHAT IT DOES NOT DO — it does not weaken or replace session authentication
 // (lib/auth.ts still validates every request), and it deliberately does NOT
@@ -47,6 +64,20 @@ const SELF_AUTHENTICATED_PREFIXES = [
 ] as const;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Header value that marks a request as made by THIS app's own JavaScript.
+ * Every client fetch helper (lib/session-client.ts authHeaders/deviceHeaders)
+ * attaches it to every request — including GETs (harmless) — so any mutation
+ * made by the app itself carries it. Cross-site pages cannot forge it: custom
+ * headers require a CORS preflight, and this app never grants CORS. */
+const CLIENT_MARKER_HEADER = "x-sm-client";
+const CLIENT_MARKER_VALUE = "web";
+
+/** Fetch-Metadata values the browser computes for requests initiated from
+ * the site being fetched (or with no initiating site at all). "none" covers
+ * address-bar/extension-initiated requests; "cross-site" is the only value
+ * that indicates a foreign page. */
+const SAMESITE_FETCH_VALUES = new Set(["same-origin", "same-site", "none"]);
 
 /** Hostname of an Origin/URL value, lowercased, port-insensitive. */
 function hostnameOf(value: string): string | null {
@@ -95,7 +126,30 @@ export default function proxy(req: NextRequest): NextResponse {
   const auth = req.headers.get("authorization");
   if (auth && auth.toLowerCase().startsWith("bearer ")) return NextResponse.next();
 
-  // (2) Origin evidence (browsers send Origin on every non-GET).
+  // (2) App client marker — same preflight-gated trust class as the Bearer
+  // bridge, but available PRE-AUTHENTICATION (login / register / landing
+  // beacons). Fixes preview-panel logins even inside sandboxed iframes where
+  // the origin is opaque and Fetch Metadata would read "cross-site".
+  const marker = req.headers.get(CLIENT_MARKER_HEADER);
+  if (marker && marker.trim().toLowerCase() === CLIENT_MARKER_VALUE) {
+    return NextResponse.next();
+  }
+
+  // (3) Fetch Metadata — the browser's own site classification of this
+  // request, computed against the URL it fetches (our real public origin).
+  // Proxy chains may rewrite Host, but they cannot rewrite what the browser
+  // asserted about the initiator, so this is the authoritative signal.
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite) {
+    const site = fetchSite.trim().toLowerCase();
+    if (SAMESITE_FETCH_VALUES.has(site)) return NextResponse.next();
+    if (site === "cross-site") {
+      return reject(403, "CSRF_REJECTED", "Cross-site request detected — the API only accepts same-origin mutations.");
+    }
+    // Unknown value → fall through to the Origin evidence below.
+  }
+
+  // (4) Origin evidence (browsers send Origin on every non-GET).
   const origin = req.headers.get("origin");
   if (origin) {
     if (origin.toLowerCase() === "null") {
@@ -109,13 +163,7 @@ export default function proxy(req: NextRequest): NextResponse {
     return NextResponse.next();
   }
 
-  // (3) Sec-Fetch-Site (modern browsers; also covers no-Origin legacy paths).
-  const fetchSite = req.headers.get("sec-fetch-site");
-  if (fetchSite && fetchSite.toLowerCase() === "cross-site") {
-    return reject(403, "CSRF_REJECTED", "Cross-site request detected — the API only accepts same-origin mutations.");
-  }
-
-  // (4) Content-type gate: bodies must be JSON (this app defines no form or
+  // (5) Content-type gate: bodies must be JSON (this app defines no form or
   // multipart endpoints — all clients send application/json, verified).
   // Applies even to non-browser clients: cheap, uniform, and kills the
   // classic HTML-form CSRF vector regardless of header support.
@@ -127,7 +175,7 @@ export default function proxy(req: NextRequest): NextResponse {
     return reject(415, "UNSUPPORTED_MEDIA_TYPE", "This API accepts JSON bodies only (cross-site form posts are not valid requests).");
   }
 
-  // (5) No Origin and no Sec-Fetch-Site → non-browser client (scripts, PSP
+  // (6) No Origin and no Sec-Fetch-Site → non-browser client (scripts, PSP
   // deliveries, monitoring). It carries no ambient cookie authority that a
   // forged page could leverage; route guards still apply.
   return NextResponse.next();

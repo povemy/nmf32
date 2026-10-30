@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { authHeaders } from "@/lib/session-client";
 import { apiGet, apiSend, runMutation, type SellerNav } from "./ui-bits";
 
 type Connection = {
@@ -148,7 +149,10 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
       // parse blockers from the 422 details envelope
       let blockers: string[] | null = null;
       try {
-        const res = await fetch("/api/store/publish", { method: "POST" });
+        const res = await fetch("/api/store/publish", {
+          method: "POST",
+          headers: authHeaders(), // Bearer (when present) + X-SM-Client origin-gate marker
+        });
         const body = (await res.json()) as { error?: { details?: { blockers?: string[] }; message?: string } };
         blockers = body.error?.details?.blockers ?? [body.error?.message ?? "Store cannot be published yet."];
       } catch {

@@ -1,7 +1,7 @@
 "use client";
 // App-wide client state: which surface is active + auth session.
 import { create } from "zustand";
-import { authHeaders, clearSessionToken, getSessionToken } from "./session-client";
+import { authHeaders, clearSessionToken, getSessionToken, webHeaders } from "./session-client";
 import { clearMeHubCache, prefetchMeHub } from "./me-hub-cache";
 import { SHOPPER_VIEW_KEY, signalSignedOut } from "./session-events";
 
@@ -109,7 +109,9 @@ export const useApp = create<AppState>((set, get) => ({
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : authHeaders(),
+        // Bearer (when captured) + the X-SM-Client origin-gate marker, so the
+        // logout POST itself can never be CSRF-rejected behind rewriting proxies.
+        headers: token ? { Authorization: `Bearer ${token}`, ...webHeaders() } : authHeaders(),
       });
     } catch {
       /* network failure — session may survive server-side until expiry, but

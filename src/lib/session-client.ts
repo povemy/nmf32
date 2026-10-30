@@ -16,6 +16,21 @@ export const SHOPPER_TOKEN_KEY = "sm_shopper_token";
 /** Cookie the server sets for the guest cart (must match CART_COOKIE in api/cart/cart.ts). */
 export const CART_COOKIE_NAME = "sm_cart";
 
+/** CSRF origin-gate marker (src/proxy.ts rule 2): a custom header the app's
+ * own JS attaches to EVERY request. Cross-site pages cannot set custom
+ * headers without a CORS preflight — and this app never grants CORS — so its
+ * presence proves "initiated by our own JavaScript" even when a proxy chain
+ * rewrites the Host header (preview panels) or the frame origin is opaque
+ * (sandboxed iframes). This is what keeps LOGIN (pre-Bearer) working in every
+ * embed context. */
+export const CLIENT_MARKER = "X-SM-Client" as const;
+export const CLIENT_MARKER_VALUE = "web";
+
+/** Marker-only headers — for raw fetch() sites that carry no identity tokens. */
+export function webHeaders(): Record<string, string> {
+  return { [CLIENT_MARKER]: CLIENT_MARKER_VALUE };
+}
+
 function randomHex32(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID().replace(/-/g, "");
@@ -73,10 +88,12 @@ export function deviceToken(key: string): string {
   return token;
 }
 
-/** Headers carrying the guest cart + shopper device identity. */
+/** Headers carrying the guest cart + shopper device identity (plus the
+ * CSRF origin-gate marker — see webHeaders above). */
 export function deviceHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
   return {
+    [CLIENT_MARKER]: CLIENT_MARKER_VALUE,
     "X-Cart-Token": deviceToken(CART_TOKEN_KEY),
     "X-Shopper-Token": deviceToken(SHOPPER_TOKEN_KEY),
   };
@@ -109,8 +126,10 @@ export function clearSessionToken(): void {
   }
 }
 
-/** Authorization header for portal APIs when a session token is stored. */
+/** Authorization header for portal APIs when a session token is stored.
+ * ALWAYS carries the CSRF origin-gate marker — including pre-login requests
+ * (login/register), where no Bearer exists yet. */
 export function authHeaders(): Record<string, string> {
   const t = getSessionToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
+  return t ? { Authorization: `Bearer ${t}`, [CLIENT_MARKER]: CLIENT_MARKER_VALUE } : { [CLIENT_MARKER]: CLIENT_MARKER_VALUE };
 }

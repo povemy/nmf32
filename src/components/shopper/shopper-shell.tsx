@@ -57,7 +57,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
-import { setSessionToken } from "@/lib/session-client";
+import { setSessionToken, webHeaders } from "@/lib/session-client";
 import { SIGNED_OUT_EVENT, SHOPPER_VIEW_KEY } from "@/lib/session-events";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -234,7 +234,9 @@ export default function ShopperShell() {
         }
         await fetch("/api/analytics/landing", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          // X-SM-Client marker: proves app-origin to the CSRF gate in contexts
+          // where the proxy chain rewrites Host (preview panels / iframes).
+          headers: { "content-type": "application/json", ...webHeaders() },
           body: JSON.stringify(payload),
           keepalive: true,
         });
