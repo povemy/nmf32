@@ -6,7 +6,7 @@
 // Data comes from /api/me/* (all account-scoped server-side via requireShopper).
 // Money is integer minor units — always format via formatMinor.
 // ============================================================================
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -279,27 +279,21 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
   }, []);
 
   // Task 30 — the Me-page (mobile) header's "Settings" item dispatches
-  // nomofee:open-settings. The Dashboard below listens for it too; if a
-  // sub-view (purchases, wallet, likes…) is currently mounted we return to
-  // the dashboard first, then re-dispatch once the Dashboard is live so the
-  // settings dialog still opens.
-  const settingsReentry = useRef(false);
+  // nomofee:open-settings. The settings dialog lives at THIS level (lifted out
+  // of the Dashboard) so it opens no matter which sub-page is currently
+  // active — no return-to-dashboard detour needed anymore.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [safetyOpen, setSafetyOpen] = useState(false);
   useEffect(() => {
-    const onOpenSettings = () => {
-      if (sub !== null) {
-        settingsReentry.current = true;
-        setSub(null);
-      }
-    };
-    window.addEventListener("nomofee:open-settings", onOpenSettings);
-    return () => window.removeEventListener("nomofee:open-settings", onOpenSettings);
-  }, [sub]);
+    const open = () => setSettingsOpen(true);
+    window.addEventListener("nomofee:open-settings", open);
+    return () => window.removeEventListener("nomofee:open-settings", open);
+  }, []);
+
+  // Swap the right column (or full mobile page) and start at the top — the
+  // sidebar (desktop) stays put while the content below swaps.
   useEffect(() => {
-    if (sub === null && settingsReentry.current) {
-      settingsReentry.current = false;
-      const t = window.setTimeout(() => window.dispatchEvent(new Event("nomofee:open-settings")), 60);
-      return () => window.clearTimeout(t);
-    }
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [sub]);
 
   if (!shopper) {
@@ -330,45 +324,157 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
     );
   }
 
+  // ---- content: the dashboard, or the selected sub-page -----------------------
+  // User request (desktop UX): clicking a menu item must NOT remove the left
+  // dashboard menu — the page renders in the right column while the sidebar
+  // stays put. Mobile keeps the previous full-page behaviour (the sidebar is
+  // lg-only; sub-views carry their own back buttons).
+  let content: React.ReactNode;
   if (sub) {
     const back = () => setSub(null);
     switch (sub) {
       case "purchases":
-        return <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} />;
+        content = <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} />;
+        break;
       case "wallet":
         // DORMANT SCAFFOLD — NOMO FINANCE: WalletView is kept intact for the
         // roadmap; until NOMO_FINANCE_ENABLED flips, this entry renders a
         // coming-soon view instead of any stored-value UI.
-        return NOMO_FINANCE_ENABLED ? (
+        content = NOMO_FINANCE_ENABLED ? (
           <WalletView onBack={back} wallet={data.wallet} onRefresh={data.refresh} />
         ) : (
           <FinanceComingSoonView onBack={back} />
         );
+        break;
       case "vouchers":
-        return <VouchersView onBack={back} onOpenMarket={() => ctx.nav({ name: "market" })} />;
+        content = <VouchersView onBack={back} onOpenMarket={() => ctx.nav({ name: "market" })} />;
+        break;
       case "likes":
-        return <ActivityGridView key="likes" type="LIKE" title="My Likes" onBack={back} ctx={ctx} />;
+        content = <ActivityGridView key="likes" type="LIKE" title="My Likes" onBack={back} ctx={ctx} />;
+        break;
       case "viewed":
-        return <ActivityGridView key="viewed" type="VIEWED" title="Recently Viewed" onBack={back} ctx={ctx} />;
+        content = <ActivityGridView key="viewed" type="VIEWED" title="Recently Viewed" onBack={back} ctx={ctx} />;
+        break;
       case "addresses":
-        return <AddressesView onBack={back} />;
+        content = <AddressesView onBack={back} />;
+        break;
       case "affiliate":
         // Task 2-A — the affiliate hub is a full surface; the Me hub embeds it
         // as a sub-view with its own back affordance.
-        return <AffiliateHubView ctx={ctx} onBack={back} />;
+        content = <AffiliateHubView ctx={ctx} onBack={back} />;
+        break;
+      default:
+        content = null;
     }
+  } else {
+    content = (
+      <Dashboard
+        ctx={ctx}
+        data={data}
+        onSub={(s) => setSub(s)}
+        onPurchaseTab={(tab) => {
+          setPurchaseTab(tab);
+          setSub("purchases");
+        }}
+        onOpenSafety={() => setSafetyOpen(true)}
+      />
+    );
   }
 
+  // ---- persistent shell: sidebar (lg+) + content column ----------------------
+  // Dashboard branch replicates the previous Dashboard layout exactly (outer
+  // padding + the same lg grid). Sub-page branch leaves mobile padding to the
+  // sub-view's own wrapper and only pads at lg — mobile stays pixel-identical
+  // to the old full-page sub-views, desktop gains the persistent menu.
   return (
-    <Dashboard
-      ctx={ctx}
-      data={data}
-      onSub={(s) => setSub(s)}
-      onPurchaseTab={(tab) => {
-        setPurchaseTab(tab);
-        setSub("purchases");
-      }}
-    />
+    <div className="w-full flex-1">
+      <div
+        className={cn(
+          "mx-auto w-full max-w-7xl lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-6",
+          sub ? "lg:px-4 lg:py-6" : "px-3 py-4 sm:px-4 sm:py-6"
+        )}
+      >
+        <DashboardSidebar
+          profile={data.profile}
+          activeSub={sub}
+          onNav={(s) => setSub(s)}
+          onSettings={() => setSettingsOpen(true)}
+          onSafety={() => setSafetyOpen(true)}
+          onHelp={() => ctx.nav({ name: "lookup" })}
+          onMessages={() => ctx.nav({ name: "messages" })}
+        />
+        <div className="min-w-0">{content}</div>
+      </div>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} profile={data.profile} onSaved={data.refresh} />
+      <SafetyDialog open={safetyOpen} onOpenChange={setSafetyOpen} />
+    </div>
+  );
+}
+
+// =============================================================================================
+// DashboardSidebar — persistent left menu (desktop lg+). Rendered by the Me-hub
+// shell for BOTH the dashboard and every sub-page so the menu never disappears
+// while content swaps in the right column (user request). Below lg it is hidden
+// (mobile navigates via the dashboard cards / bottom nav / sub-view back
+// buttons). The active item tracks the current sub-page.
+// =============================================================================================
+
+function DashboardSidebar({
+  profile,
+  activeSub,
+  onNav,
+  onSettings,
+  onSafety,
+  onHelp,
+  onMessages,
+}: {
+  profile: ProfileT | null;
+  /** Currently active sub-page; null = the dashboard itself. */
+  activeSub: MeSub | null;
+  onNav: (s: MeSub | null) => void;
+  onSettings: () => void;
+  onSafety: () => void;
+  onHelp: () => void;
+  onMessages: () => void;
+}) {
+  const meState = useApp((s) => s.me);
+  const shopper = meState.loaded ? meState.shopper : null;
+
+  return (
+    <aside className="hidden lg:block sticky top-20 space-y-3" aria-label="Dashboard menu">
+      <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+        <div className="flex items-center gap-3">
+          <Avatar profile={profile} size="md" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-900">{shopper?.fullName ?? "…"}</p>
+            <p className="truncate text-xs text-slate-400">{profile?.username ? `@${profile.username}` : shopper?.email}</p>
+          </div>
+        </div>
+      </div>
+      <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
+        <SideItem
+          icon={Store}
+          label="Dashboard"
+          active={activeSub === null}
+          onClick={() => (activeSub === null ? window.scrollTo({ top: 0, behavior: "smooth" }) : onNav(null))}
+        />
+        <SideItem icon={Package} label="My Purchases" active={activeSub === "purchases"} onClick={() => onNav("purchases")} />
+        {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" active={activeSub === "wallet"} onClick={() => onNav("wallet")} /> : null}
+        <SideItem icon={Ticket} label="My Vouchers" active={activeSub === "vouchers"} onClick={() => onNav("vouchers")} />
+        <SideItem icon={MapPin} label="Delivery Addresses" active={activeSub === "addresses"} onClick={() => onNav("addresses")} />
+        <SideItem icon={Heart} label="My Likes" active={activeSub === "likes"} onClick={() => onNav("likes")} />
+        <SideItem icon={History} label="Recently Viewed" active={activeSub === "viewed"} onClick={() => onNav("viewed")} />
+        <SideItem icon={HandCoins} label="Affiliate Hub" active={activeSub === "affiliate"} onClick={() => onNav("affiliate")} />
+        <SideItem icon={Settings} label="Settings" onClick={onSettings} />
+      </nav>
+      <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
+        <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Support</p>
+        <SideItem icon={LifeBuoy} label="Help Center" onClick={onHelp} />
+        <SideItem icon={Headset} label="Customer Service" onClick={onMessages} />
+        <SideItem icon={ShieldCheck} label="Jom Beli Selamat!" onClick={onSafety} />
+      </nav>
+    </aside>
   );
 }
 
@@ -381,27 +487,18 @@ function Dashboard({
   data,
   onSub,
   onPurchaseTab,
+  onOpenSafety,
 }: {
   ctx: ShopperCtx;
   data: ReturnType<typeof useMeData>;
   onSub: (s: MeSub) => void;
   onPurchaseTab: (tab: string) => void;
+  /** Opens the shell-level safety dialog (lifted out of the Dashboard). */
+  onOpenSafety: () => void;
 }) {
-  const meState = useApp((s) => s.me);
-  const shopper = meState.loaded ? meState.shopper : null;
   const setSurface = useApp((s) => s.setSurface);
   const [notifOpen, setNotifOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [safetyOpen, setSafetyOpen] = useState(false);
   const [sort, setSort] = useState("popular");
-
-  // Task 30 — "Settings" from the Me-page (mobile) header account menu opens
-  // this dashboard's settings dialog (the header itself has no dialog state).
-  useEffect(() => {
-    const open = () => setSettingsOpen(true);
-    window.addEventListener("nomofee:open-settings", open);
-    return () => window.removeEventListener("nomofee:open-settings", open);
-  }, []);
 
   useEffect(() => {
     try {
@@ -421,41 +518,10 @@ function Dashboard({
     }
   };
 
+  // The sidebar + outer page padding live in the Me-hub shell now — this
+  // component is the right-hand content column only.
   return (
-    <div className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
-      <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-6 lg:items-start">
-        {/* ------------------------------ sidebar (desktop) ------------------------------ */}
-        <aside className="hidden lg:block sticky top-20 space-y-3" aria-label="Dashboard menu">
-          <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
-            <div className="flex items-center gap-3">
-              <Avatar profile={data.profile} size="md" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{shopper?.fullName ?? "…"}</p>
-                <p className="truncate text-xs text-slate-400">{data.profile?.username ? `@${data.profile.username}` : shopper?.email}</p>
-              </div>
-            </div>
-          </div>
-          <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
-            <SideItem icon={Store} label="Dashboard" active onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
-            <SideItem icon={Package} label="My Purchases" onClick={() => onSub("purchases")} />
-            {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" onClick={() => onSub("wallet")} /> : null}
-            <SideItem icon={Ticket} label="My Vouchers" onClick={() => onSub("vouchers")} />
-            <SideItem icon={MapPin} label="Delivery Addresses" onClick={() => onSub("addresses")} />
-            <SideItem icon={Heart} label="My Likes" onClick={() => onSub("likes")} />
-            <SideItem icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
-            <SideItem icon={HandCoins} label="Affiliate Hub" onClick={() => onSub("affiliate")} />
-            <SideItem icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
-          </nav>
-          <nav className="rounded-xl border border-slate-200/80 bg-card p-2 shadow-soft-card">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Support</p>
-            <SideItem icon={LifeBuoy} label="Help Center" onClick={() => onSub("purchases")} />
-            <SideItem icon={Headset} label="Customer Service" onClick={() => ctx.nav({ name: "messages" })} />
-            <SideItem icon={ShieldCheck} label="Jom Beli Selamat!" onClick={() => setSafetyOpen(true)} />
-          </nav>
-        </aside>
-
-        {/* ------------------------------ main column ------------------------------ */}
-        <div className="min-w-0 space-y-4 sm:space-y-5">
+    <div className="min-w-0 space-y-4 sm:space-y-5">
           {/* profile header — Task 30: the Settings / bell / cart / messages
               icon actions were removed from the banner (they live in the top
               header now); the banner is a pure identity card with restructured
@@ -644,7 +710,7 @@ function Dashboard({
               <ul>
                 <SupportRow icon={LifeBuoy} title="Help Center" hint="Shipping, returns & payment FAQs" onClick={() => ctx.nav({ name: "lookup" })} />
                 <SupportRow icon={Headset} title="Customer Service" hint="Chat with a store or our team" onClick={() => ctx.nav({ name: "messages" })} />
-                <SupportRow icon={ShieldCheck} title="Jom Beli Selamat!" hint="Safe-shopping guidelines" onClick={() => setSafetyOpen(true)} />
+                <SupportRow icon={ShieldCheck} title="Jom Beli Selamat!" hint="Safe-shopping guidelines" onClick={onOpenSafety} />
               </ul>
             </div>
           </section>
@@ -670,11 +736,6 @@ function Dashboard({
 
           {/* recommendations */}
           <ProductFeed ctx={ctx} sort={sort} onSort={setSort} />
-        </div>
-      </div>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} profile={data.profile} onSaved={data.refresh} />
-      <SafetyDialog open={safetyOpen} onOpenChange={setSafetyOpen} />
     </div>
   );
 }

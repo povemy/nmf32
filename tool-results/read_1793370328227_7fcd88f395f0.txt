@@ -1,0 +1,1045 @@
+     1→"use client";
+     2→// ============================================================================
+     3→// AffiliateHubView — the shopper-facing AFFILIATE HUB (Task 2-A).
+     4→// Backend is fully implemented (/api/affiliate/**); this file is UI + wiring.
+     5→//
+     6→// State machine:
+     7→//   loading → not signed in (gate) → activation flow → hub tabs
+     8→//   (programme paused / account suspended|terminated render honest notices)
+     9→//
+    10→// Tabs: Overview · Discover · Links · Collections · Showcase · Network ·
+    11→//       Earnings · Payouts  (Links/Collections/Showcase/Network/Earnings/
+    12→//       Payouts live in affiliate-tabs.tsx; public pages in affiliate-public.tsx)
+    13→// ============================================================================
+    14→
+    15→import { useCallback, useEffect, useRef, useState } from "react";
+    16→import { toast } from "sonner";
+    17→import {
+    18→  ArrowLeft,
+    19→  BadgeCheck,
+    20→  Ban,
+    21→  CircleDollarSign,
+    22→  HandCoins,
+    23→  Info,
+    24→  LayoutDashboard,
+    25→  LayoutGrid,
+    26→  Link2,
+    27→  Megaphone,
+    28→  MousePointerClick,
+    29→  Search,
+    30→  ShieldAlert,
+    31→  Store,
+    32→  Users,
+    33→  Wallet,
+    34→} from "lucide-react";
+    35→import { Button } from "@/components/ui/button";
+    36→import { Checkbox } from "@/components/ui/checkbox";
+    37→import { Input } from "@/components/ui/input";
+    38→import { Label } from "@/components/ui/label";
+    39→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    40→import { Textarea } from "@/components/ui/textarea";
+    41→import { Skeleton } from "@/components/ui/skeleton";
+    42→import { toMinor } from "@/lib/money";
+    43→import { useApp } from "@/lib/app-store";
+    44→import { cn } from "@/lib/utils";
+    45→import { EmptyState, type ShopperCtx } from "./ui-bits";
+    46→import {
+    47→  affGet,
+    48→  affPost,
+    49→  AuthoritativeBadge,
+    50→  EstBadge,
+    51→  money,
+    52→  Pager,
+    53→  ratePercent,
+    54→  referralJoinUrl,
+    55→  CopyButton,
+    56→  SectionCard,
+    57→  StatCard,
+    58→  TabError,
+    59→  TabSkeleton,
+    60→  useDebouncedValue,
+    61→  useDiscoverFeed,
+    62→  type AffiliateActivateCtxT,
+    63→  type AffiliateMeT,
+    64→  type AffiliateSettingsT,
+    65→  type DiscoverProductT,
+    66→  type HubOverviewT,
+    67→} from "./affiliate-shared";
+    68→import {
+    69→  CollectionsTab,
+    70→  EarningsTab,
+    71→  LinksTab,
+    72→  LinkCreateDialog,
+    73→  NetworkTab,
+    74→  PayoutsTab,
+    75→  ShowcaseTab,
+    76→} from "./affiliate-tabs";
+    77→
+    78→// ---------------------------------------------------------------------------
+    79→// Tabs
+    80→// ---------------------------------------------------------------------------
+    81→
+    82→export type AffiliateTabKey =
+    83→  | "overview"
+    84→  | "discover"
+    85→  | "links"
+    86→  | "collections"
+    87→  | "showcase"
+    88→  | "network"
+    89→  | "earnings"
+    90→  | "payouts";
+    91→
+    92→const TABS: { key: AffiliateTabKey; label: string; icon: typeof LayoutDashboard }[] = [
+    93→  { key: "overview", label: "Overview", icon: LayoutDashboard },
+    94→  { key: "discover", label: "Discover", icon: Search },
+    95→  { key: "links", label: "Links", icon: Link2 },
+    96→  { key: "collections", label: "Collections", icon: LayoutGrid },
+    97→  { key: "showcase", label: "Showcase", icon: Megaphone },
+    98→  { key: "network", label: "Network", icon: Users },
+    99→  { key: "earnings", label: "Earnings", icon: CircleDollarSign },
+   100→  { key: "payouts", label: "Payouts", icon: Wallet },
+   101→];
+   102→
+   103→function sanitizeTab(t: string | undefined): AffiliateTabKey {
+   104→  return (TABS.find((x) => x.key === t)?.key ?? "overview") as AffiliateTabKey;
+   105→}
+   106→
+   107→// ---------------------------------------------------------------------------
+   108→// Root view
+   109→// ---------------------------------------------------------------------------
+   110→
+   111→export default function AffiliateHubView({
+   112→  ctx,
+   113→  initialTab,
+   114→  onBack,
+   115→  onTabChange,
+   116→}: {
+   117→  ctx: ShopperCtx;
+   118→  initialTab?: string;
+   119→  /** When embedded (e.g. inside the Me hub) a dedicated back handler renders. */
+   120→  onBack?: () => void;
+   121→  /** Persist the active tab (shopper-shell writes the view cache key). */
+   122→  onTabChange?: (tab: string) => void;
+   123→}) {
+   124→  const meState = useApp((s) => s.me);
+   125→  const openShopperAuth = useApp((s) => s.openShopperAuth);
+   126→  const shopper = meState.loaded ? meState.shopper : null;
+   127→
+   128→  const [data, setData] = useState<AffiliateMeT | null>(null);
+   129→  const [loading, setLoading] = useState(true);
+   130→  const [loadErr, setLoadErr] = useState<string | null>(null);
+   131→  // Public activation context for the NOT-signed-in gate (referral banner).
+   132→  const [gateCtx, setGateCtx] = useState<AffiliateActivateCtxT | null>(null);
+   133→  const [tab, setTab] = useState<AffiliateTabKey>(sanitizeTab(initialTab));
+   134→  // Cross-tab "create a link for this product" hand-off from Discover.
+   135→  const [linkDraft, setLinkDraft] = useState<DiscoverProductT | null>(null);
+   136→  const [linkOpen, setLinkOpen] = useState(false);
+   137→
+   138→  const refresh = useCallback(async () => {
+   139→    if (!shopper) {
+   140→      setData(null);
+   141→      setLoading(false);
+   142→      return;
+   143→    }
+   144→    setLoading(true);
+   145→    setLoadErr(null);
+   146→    try {
+   147→      const d = await affGet<AffiliateMeT>("/api/affiliate/me");
+   148→      setData(d);
+   149→    } catch (e) {
+   150→      setData(null);
+   151→      setLoadErr(e instanceof Error ? e.message : "Could not load your affiliate account");
+   152→    } finally {
+   153→      setLoading(false);
+   154→    }
+   155→  }, [shopper]);
+   156→
+   157→  useEffect(() => {
+   158→    void refresh();
+   159→  }, [refresh]);
+   160→
+   161→  // Guest: fetch the public pre-activation context (invited-by banner, pause
+   162→  // state) — this endpoint is public by design for the landing experience.
+   163→  useEffect(() => {
+   164→    if (!meState.loaded || shopper) return;
+   165→    let alive = true;
+   166→    affGet<AffiliateActivateCtxT>("/api/affiliate/activate")
+   167→      .then((d) => {
+   168→        if (alive) setGateCtx(d);
+   169→      })
+   170→      .catch(() => {
+   171→        /* banner is best-effort */
+   172→      });
+   173→    return () => {
+   174→      alive = false;
+   175→    };
+   176→  }, [meState.loaded, shopper]);
+   177→
+   178→  const switchTab = useCallback(
+   179→    (t: AffiliateTabKey) => {
+   180→      setTab(t);
+   181→      onTabChange?.(t);
+   182→    },
+   183→    [onTabChange]
+   184→  );
+   185→
+   186→  const openLinkDialog = useCallback((p: DiscoverProductT | null) => {
+   187→    setLinkDraft(p);
+   188→    setLinkOpen(true);
+   189→  }, []);
+   190→
+   191→  // ---- phases --------------------------------------------------------------
+   192→
+   193→  let body: React.ReactNode;
+   194→  if (!meState.loaded || (loading && !data)) {
+   195→    body = (
+   196→      <div className="space-y-3" aria-busy="true">
+   197→        <Skeleton className="h-24 rounded-2xl" />
+   198→        <Skeleton className="h-10 w-72 rounded-full" />
+   199→        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   200→          {Array.from({ length: 4 }).map((_, i) => (
+   201→            <Skeleton key={i} className="h-20 rounded-xl" />
+   202→          ))}
+   203→        </div>
+   204→      </div>
+   205→    );
+   206→  } else if (!shopper) {
+   207→    body = (
+   208→      <SignInGate
+   209→        invitedBy={gateCtx?.invitedBy ?? null}
+   210→        enabled={gateCtx ? gateCtx.enabled : true}
+   211→        onSignIn={() => openShopperAuth()}
+   212→      />
+   213→    );
+   214→  } else if (loadErr || !data) {
+   215→    body = (
+   216→      <div className="space-y-4">
+   217→        <TabError message={loadErr ?? "Could not load your affiliate account."} onRetry={() => void refresh()} />
+   218→      </div>
+   219→    );
+   220→  } else if (!data.activated) {
+   221→    body = data.settings.enabled ? (
+   222→      <ActivationPanel settings={data.settings} invitedBy={data.invitedBy} onActivated={() => void refresh()} />
+   223→    ) : (
+   224→      <PausedCard />
+   225→    );
+   226→  } else if (data.profile.status !== "active") {
+   227→    body = <AccountStatusCard status={data.profile.status} />;
+   228→  } else {
+   229→    const { profile, settings } = data;
+   230→    body = (
+   231→      <>
+   232→        {/* tab bar */}
+   233→        <div className="sticky top-[57px] z-20 -mx-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:-mx-4 sm:px-4">
+   234→          <div className="flex gap-1 overflow-x-auto py-2" role="tablist" aria-label="Affiliate hub sections">
+   235→            {TABS.map(({ key, label, icon: Icon }) => (
+   236→              <button
+   237→                key={key}
+   238→                type="button"
+   239→                role="tab"
+   240→                aria-selected={tab === key}
+   241→                onClick={() => switchTab(key)}
+   242→                className={cn(
+   243→                  "inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold transition-colors sm:text-[13px]",
+   244→                  tab === key ? "bg-brand-gradient text-white shadow-glow-cyan-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+   245→                )}
+   246→              >
+   247→                <Icon className="h-4 w-4" aria-hidden />
+   248→                {label}
+   249→              </button>
+   250→            ))}
+   251→          </div>
+   252→        </div>
+   253→
+   254→        <div className="pt-4">
+   255→          {tab === "overview" ? (
+   256→            <OverviewTab settings={settings} onNavigate={switchTab} />
+   257→          ) : tab === "discover" ? (
+   258→            <DiscoverTab onCreateLink={(p) => openLinkDialog(p)} />
+   259→          ) : tab === "links" ? (
+   260→            <LinksTab onCreate={() => openLinkDialog(null)} />
+   261→          ) : tab === "collections" ? (
+   262→            <CollectionsTab ctx={ctx} />
+   263→          ) : tab === "showcase" ? (
+   264→            <ShowcaseTab ctx={ctx} profile={profile} />
+   265→          ) : tab === "network" ? (
+   266→            <NetworkTab settings={settings} joinCode={profile.code} />
+   267→          ) : tab === "earnings" ? (
+   268→            <EarningsTab settings={settings} />
+   269→          ) : (
+   270→            <PayoutsTab />
+   271→          )}
+   272→        </div>
+   273→
+   274→        {/* link creation dialog — shared by Links tab + Discover cards */}
+   275→        <LinkCreateDialog
+   276→          open={linkOpen}
+   277→          onOpenChange={setLinkOpen}
+   278→          preset={linkDraft}
+   279→          onCreated={() => {
+   280→            if (tab !== "links") switchTab("links");
+   281→          }}
+   282→        />
+   283→      </>
+   284→    );
+   285→  }
+   286→
+   287→  return (
+   288→    <div className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
+   289→      {/* page header */}
+   290→      <div className="flex items-center gap-3 pb-4">
+   291→        {onBack ? (
+   292→          <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0" onClick={onBack} aria-label="Back to dashboard">
+   293→            <ArrowLeft className="h-5 w-5" />
+   294→          </Button>
+   295→        ) : null}
+   296→        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm" aria-hidden>
+   297→          <HandCoins className="h-5 w-5" />
+   298→        </span>
+   299→        <div className="min-w-0">
+   300→          <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-900 sm:text-xl">Affiliate Hub</h1>
+   301→          <p className="truncate text-xs text-muted-foreground">Earn from products you genuinely recommend</p>
+   302→        </div>
+   303→        {data?.activated && data.profile.status === "active" ? (
+   304→          <div className="ml-auto hidden shrink-0 items-center gap-2 sm:flex">
+   305→            <CopyButton text={referralJoinUrl(data.profile.code)} label="Join link" />
+   306→          </div>
+   307→        ) : null}
+   308→      </div>
+   309→      {body}
+   310→    </div>
+   311→  );
+   312→}
+   313→
+   314→// ---------------------------------------------------------------------------
+   315→// Phase cards
+   316→// ---------------------------------------------------------------------------
+   317→
+   318→function SignInGate({
+   319→  invitedBy,
+   320→  enabled,
+   321→  onSignIn,
+   322→}: {
+   323→  invitedBy: string | null;
+   324→  enabled: boolean;
+   325→  onSignIn: () => void;
+   326→}) {
+   327→  return (
+   328→    <div className="mx-auto w-full max-w-xl py-6">
+   329→      <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-card p-8 text-center shadow-soft-card">
+   330→        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-teal-100/70 blur-2xl pointer-events-none" aria-hidden />
+   331→        <div className="absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-teal-50 blur-2xl pointer-events-none" aria-hidden />
+   332→        <div className="relative flex flex-col items-center gap-4">
+   333→          <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-brand-gradient text-white shadow-glow-cyan-sm" aria-hidden>
+   334→            <HandCoins className="h-7 w-7" />
+   335→          </span>
+   336→          <h2 className="text-xl font-extrabold tracking-tight text-slate-900">Earn with the NOMOFEE Affiliate Programme</h2>
+   337→          <p className="max-w-md text-sm leading-relaxed text-slate-500">
+   338→            Share links to products you love. When someone buys through your link, you earn a commission from the
+   339→            seller-funded pool — no inventory, no fees.
+   340→          </p>
+   341→          {invitedBy ? (
+   342→            <p className="rounded-full border border-teal-200 bg-teal-50 px-4 py-1.5 text-xs font-bold text-teal-800">
+   343→              You were invited by @{invitedBy}
+   344→            </p>
+   345→          ) : null}
+   346→          {!enabled ? (
+   347→            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
+   348→              The affiliate programme is paused right now — you can sign in, but activation is unavailable until it
+   349→              resumes.
+   350→            </p>
+   351→          ) : null}
+   352→          <Button onClick={onSignIn} className="min-h-[44px] bg-brand-gradient px-6 text-white shadow-glow-cyan-sm hover:brightness-110">
+   353→            Sign in / Create account
+   354→          </Button>
+   355→        </div>
+   356→      </div>
+   357→    </div>
+   358→  );
+   359→}
+   360→
+   361→function PausedCard() {
+   362→  return (
+   363→    <div className="mx-auto w-full max-w-xl py-6">
+   364→      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+   365→        <ShieldAlert className="mx-auto h-10 w-10 text-amber-600" aria-hidden />
+   366→        <h2 className="pt-3 text-lg font-extrabold text-amber-900">Programme paused</h2>
+   367→        <p className="pt-1 text-sm text-amber-900/80">
+   368→          The affiliate programme is temporarily paused. Your account is safe — check back later.
+   369→        </p>
+   370→      </div>
+   371→    </div>
+   372→  );
+   373→}
+   374→
+   375→function AccountStatusCard({ status }: { status: string }) {
+   376→  const suspended = status === "suspended";
+   377→  return (
+   378→    <div className="mx-auto w-full max-w-xl py-6">
+   379→      <div className={cn("rounded-2xl border p-6 text-center", suspended ? "border-rose-200 bg-rose-50" : "border-rose-200 bg-rose-50")}>
+   380→        <Ban className="mx-auto h-10 w-10 text-rose-600" aria-hidden />
+   381→        <h2 className="pt-3 text-lg font-extrabold text-rose-900">
+   382→          {status === "suspended" ? "Account suspended" : status === "terminated" ? "Account terminated" : "Account unavailable"}
+   383→        </h2>
+   384→        <p className="pt-1 text-sm text-rose-900/80">
+   385→          {suspended
+   386→            ? "Your affiliate account is suspended — balances are frozen and links stop attributing while reviewed."
+   387→            : "This affiliate account has been terminated. Historical records remain available to our team on request."}
+   388→        </p>
+   389→      </div>
+   390→    </div>
+   391→  );
+   392→}
+   393→
+   394→// ---------------------------------------------------------------------------
+   395→// Activation flow
+   396→// ---------------------------------------------------------------------------
+   397→
+   398→const TERMS_SUMMARY = [
+   399→  "Earn only from eligible, seller-funded sales driven by your links — never from clicks or sign-ups.",
+   400→  "No recruitment bonuses: the programme rewards genuine product recommendations, one level deep.",
+   401→  "The commission pool splits 90% to you and 10% to your sponsor (when you have one).",
+   402→  "Refunds reverse commissions — including amounts already paid out (offset against future earnings).",
+   403→  "Buying through your own links is never eligible for commission.",
+   404→  "Your sponsor relationship is permanent once activated — choose carefully.",
+   405→];
+   406→
+   407→function ActivationPanel({
+   408→  settings,
+   409→  invitedBy,
+   410→  onActivated,
+   411→}: {
+   412→  settings: AffiliateSettingsT;
+   413→  invitedBy: string | null;
+   414→  onActivated: () => void;
+   415→}) {
+   416→  const meState = useApp((s) => s.me);
+   417→  const shopper = meState.loaded ? meState.shopper : null;
+   418→  const [displayName, setDisplayName] = useState("");
+   419→  const [bio, setBio] = useState("");
+   420→  const [slug, setSlug] = useState("");
+   421→  const [sponsorCode, setSponsorCode] = useState("");
+   422→  const [confirmSponsor, setConfirmSponsor] = useState(false);
+   423→  const [terms, setTerms] = useState(false);
+   424→  const [busy, setBusy] = useState(false);
+   425→  const [error, setError] = useState<string | null>(null);
+   426→  const hydrated = useRef(false);
+   427→
+   428→  // Prefill display name from the signed-in shopper (once).
+   429→  useEffect(() => {
+   430→    if (hydrated.current || !shopper) return;
+   431→    hydrated.current = true;
+   432→    setDisplayName(shopper.fullName);
+   433→  }, [shopper]);
+   434→
+   435→  const submit = async () => {
+   436→    setError(null);
+   437→    if (!terms) {
+   438→      setError("Please accept the affiliate programme terms first.");
+   439→      return;
+   440→    }
+   441→    if (invitedBy && !confirmSponsor) {
+   442→      setError("Confirm the sponsor relationship shown above, or continue without it by leaving the confirmation unticked (the invitation cannot be re-applied later).");
+   443→      return;
+   444→    }
+   445→    if (!invitedBy && sponsorCode.trim() && !confirmSponsor) {
+   446→      setError("Tick the confirmation to use this sponsor code — the relationship is permanent.");
+   447→      return;
+   448→    }
+   449→    setBusy(true);
+   450→    try {
+   451→      await affPost("/api/affiliate/activate", {
+   452→        displayName: displayName.trim() || undefined,
+   453→        bio: bio.trim() || undefined,
+   454→        slug: slug.trim() || undefined,
+   455→        sponsorCode: !invitedBy && sponsorCode.trim() ? sponsorCode.trim() : undefined,
+   456→        sponsorConfirmed: confirmSponsor,
+   457→        termsAccepted: true,
+   458→      });
+   459→      toast.success("Welcome to the NOMOFEE Affiliate Programme!");
+   460→      onActivated();
+   461→    } catch (e) {
+   462→      const af = e as { status?: number; code?: string; message?: string };
+   463→      if (af.code === "ALREADY_AFFILIATE") {
+   464→        toast.info("You're already an affiliate");
+   465→        onActivated();
+   466→        return;
+   467→      }
+   468→      if (af.code === "AFFILIATE_DISABLED") {
+   469→        setError(af.message ?? "The affiliate programme is currently paused.");
+   470→      } else {
+   471→        setError(af.message ?? "Activation failed — please try again.");
+   472→      }
+   473→    } finally {
+   474→      setBusy(false);
+   475→    }
+   476→  };
+   477→
+   478→  return (
+   479→    <div className="mx-auto w-full max-w-2xl space-y-4 pb-6">
+   480→      <div className="rounded-2xl border bg-card p-5 shadow-soft-card sm:p-6">
+   481→        <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+   482→          <BadgeCheck className="h-5 w-5 text-teal-700" aria-hidden /> Activate your affiliate account
+   483→        </h2>
+   484→        <p className="pt-1 text-xs text-muted-foreground">
+   485→          Free to join. You can update how your name appears later — but the sponsor decision below is permanent.
+   486→        </p>
+   487→
+   488→        {invitedBy ? (
+   489→          <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/70 p-4" role="note">
+   490→            <p className="text-sm font-bold text-teal-900">You were invited by @{invitedBy}</p>
+   491→            <p className="pt-1 text-xs leading-relaxed text-teal-900/80">
+   492→              Accepting makes this person your permanent sponsor: they earn 10% of the commission pool on your future
+   493→              eligible sales, and you keep 90%. This cannot be changed later.
+   494→            </p>
+   495→            <label className="mt-3 flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg bg-white/70 px-3 text-xs font-semibold text-teal-900">
+   496→              <Checkbox checked={confirmSponsor} onCheckedChange={(v) => setConfirmSponsor(v === true)} aria-label="Confirm permanent sponsor relationship" />
+   497→              Confirm permanent sponsor relationship with @{invitedBy}
+   498→            </label>
+   499→          </div>
+   500→        ) : (
+   501→          <div className="mt-4 space-y-3">
+   502→            <div className="space-y-1.5">
+   503→              <Label htmlFor="aff-sponsor-code" className="text-xs font-bold text-slate-700">
+   504→                Sponsor code (optional)
+   505→              </Label>
+   506→              <Input
+   507→                id="aff-sponsor-code"
+   508→                value={sponsorCode}
+   509→                onChange={(e) => setSponsorCode(e.target.value)}
+   510→                placeholder="e.g. a1b2c3d4e5 — only if a friend shared their code"
+   511→                className="min-h-[44px]"
+   512→                maxLength={32}
+   513→                autoComplete="off"
+   514→              />
+   515→              <p className="text-[11px] text-muted-foreground">Leave empty if nobody invited you.</p>
+   516→            </div>
+   517→            {sponsorCode.trim() ? (
+   518→              <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg border border-teal-200 bg-teal-50/70 px-3 text-xs font-semibold text-teal-900">
+   519→                <Checkbox checked={confirmSponsor} onCheckedChange={(v) => setConfirmSponsor(v === true)} aria-label="Confirm permanent sponsor relationship" />
+   520→                Make this my permanent sponsor (cannot be changed later)
+   521→              </label>
+   522→            ) : null}
+   523→          </div>
+   524→        )}
+   525→
+   526→        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+   527→          <div className="space-y-1.5 sm:col-span-2">
+   528→            <Label htmlFor="aff-display-name" className="text-xs font-bold text-slate-700">
+   529→              Public display name
+   530→            </Label>
+   531→            <Input
+   532→              id="aff-display-name"
+   533→              value={displayName}
+   534→              onChange={(e) => setDisplayName(e.target.value)}
+   535→              placeholder="How you appear on your public page"
+   536→              className="min-h-[44px]"
+   537→              maxLength={60}
+   538→            />
+   539→          </div>
+   540→          <div className="space-y-1.5 sm:col-span-2">
+   541→            <Label htmlFor="aff-bio" className="text-xs font-bold text-slate-700">
+   542→              Short bio (optional)
+   543→            </Label>
+   544→            <Textarea
+   545→              id="aff-bio"
+   546→              value={bio}
+   547→              onChange={(e) => setBio(e.target.value)}
+   548→              placeholder="What do you recommend? e.g. Tech finds under RM100, honest reviews."
+   549→              className="min-h-[80px]"
+   550→              maxLength={500}
+   551→            />
+   552→          </div>
+   553→          <div className="space-y-1.5 sm:col-span-2">
+   554→            <Label htmlFor="aff-slug" className="text-xs font-bold text-slate-700">
+   555→              Custom page address (optional)
+   556→            </Label>
+   557→            <Input
+   558→              id="aff-slug"
+   559→              value={slug}
+   560→              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+   561→              placeholder="your-name"
+   562→              className="min-h-[44px]"
+   563→              maxLength={24}
+   564→              autoComplete="off"
+   565→            />
+   566→            <p className="text-[11px] text-muted-foreground">Letters, numbers and dashes — your page becomes /?aff=your-name</p>
+   567→          </div>
+   568→        </div>
+   569→
+   570→        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+   571→          <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Affiliate terms — the short version</p>
+   572→          <ul className="mt-2 space-y-1.5">
+   573→            {TERMS_SUMMARY.map((t) => (
+   574→              <li key={t} className="flex gap-2 text-[11px] leading-snug text-slate-600">
+   575→                <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-teal-600" aria-hidden />
+   576→                {t}
+   577→              </li>
+   578→            ))}
+   579→          </ul>
+   580→          <label className="mt-3 flex min-h-[44px] cursor-pointer items-center gap-2.5 text-xs font-semibold text-slate-800">
+   581→            <Checkbox checked={terms} onCheckedChange={(v) => setTerms(v === true)} aria-label="Accept affiliate programme terms" />
+   582→            I have read and accept the affiliate programme terms
+   583→          </label>
+   584→        </div>
+   585→
+   586→        {error ? (
+   587→          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800" role="alert">
+   588→            {error}
+   589→          </p>
+   590→        ) : null}
+   591→
+   592→        <Button
+   593→          type="button"
+   594→          disabled={busy || !terms}
+   595→          onClick={() => void submit()}
+   596→          className="mt-4 min-h-[44px] w-full bg-brand-gradient text-white shadow-glow-cyan-sm hover:brightness-110"
+   597→        >
+   598→          {busy ? "Activating…" : "Activate affiliate account"}
+   599→        </Button>
+   600→        <p className="pt-2 text-center text-[11px] text-muted-foreground">
+   601→          Review window: {settings.reviewDays} day{settings.reviewDays === 1 ? "" : "s"} before commissions become
+   602→          payable · Minimum payout {money(settings.minPayoutMinor)}
+   603→        </p>
+   604→      </div>
+   605→    </div>
+   606→  );
+   607→}
+   608→
+   609→// ---------------------------------------------------------------------------
+   610→// Overview tab
+   611→// ---------------------------------------------------------------------------
+   612→
+   613→const DAY_WINDOWS = [30, 60, 90] as const;
+   614→
+   615→function OverviewTab({ settings, onNavigate }: { settings: AffiliateSettingsT; onNavigate: (t: AffiliateTabKey) => void }) {
+   616→  const [days, setDays] = useState<number>(30);
+   617→  const [data, setData] = useState<HubOverviewT | null>(null);
+   618→  const [loading, setLoading] = useState(true);
+   619→  const [err, setErr] = useState<string | null>(null);
+   620→  const [metric, setMetric] = useState<"clicks" | "orders" | "commissionMinor">("clicks");
+   621→
+   622→  const load = useCallback(async (d: number) => {
+   623→    setLoading(true);
+   624→    setErr(null);
+   625→    try {
+   626→      setData(await affGet<HubOverviewT>(`/api/affiliate/overview?days=${d}`));
+   627→    } catch (e) {
+   628→      setErr(e instanceof Error ? e.message : "Could not load your overview");
+   629→    } finally {
+   630→      setLoading(false);
+   631→    }
+   632→  }, []);
+   633→
+   634→  useEffect(() => {
+   635→    void load(days);
+   636→  }, [days, load]);
+   637→
+   638→  if (err) return <TabError message={err} onRetry={() => void load(days)} />;
+   639→
+   640→  if (loading || !data) return <TabSkeleton />;
+   641→
+   642→  const e = data.earnings;
+   643→  const allZero =
+   644→    data.estimated.clicks + data.estimated.productViews + data.estimated.addToCart === 0 &&
+   645→    data.commerce.attributedOrders === 0 &&
+   646→    e.personalDirectMinor === 0 &&
+   647→    e.sponsorMinor === 0;
+   648→
+   649→  if (allZero) {
+   650→    return (
+   651→      <div className="space-y-4">
+   652→        <SectionCard title="Period" action={<DaysToggle days={days} onChange={setDays} />}>
+   653→          <EmptyState
+   654→            icon={MousePointerClick}
+   655→            title="No tracked activity yet"
+   656→            hint="Nothing has been recorded for this window. Share your links — clicks, orders and commissions will show up here as they happen. Nothing is back-filled or estimated in advance."
+   657→            action={
+   658→              <div className="flex flex-wrap justify-center gap-2">
+   659→                <Button type="button" className="min-h-[44px] bg-brand-gradient text-white" onClick={() => onNavigate("links")}>
+   660→                  Create your first link
+   661→                </Button>
+   662→                <Button type="button" variant="outline" className="min-h-[44px]" onClick={() => onNavigate("discover")}>
+   663→                  Browse products
+   664→                </Button>
+   665→              </div>
+   666→            }
+   667→          />
+   668→        </SectionCard>
+   669→      </div>
+   670→    );
+   671→  }
+   672→
+   673→  return (
+   674→    <div className="space-y-4">
+   675→      <SectionCard title="Traffic & engagement" badge={<EstBadge />} action={<DaysToggle days={days} onChange={setDays} />}>
+   676→        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   677→          <StatCard label="Link clicks" value={data.estimated.clicks.toLocaleString()} hint="Promotional link opens" />
+   678→          <StatCard label="Unique visitors" value={data.estimated.uniqueVisitors.toLocaleString()} hint="Distinct people who clicked" />
+   679→          <StatCard label="Product views" value={data.estimated.productViews.toLocaleString()} hint="Via your affiliate links" />
+   680→          <StatCard label="Add-to-cart" value={data.estimated.addToCart.toLocaleString()} hint="Items added after a click" />
+   681→        </div>
+   682→        <p className="pt-2 text-[11px] leading-snug text-muted-foreground">
+   683→          Estimated figures come from attribution touches and tagged analytics events. They are advisory — commissions
+   684→          are always computed from real orders.
+   685→        </p>
+   686→      </SectionCard>
+   687→
+   688→      <SectionCard title="Commerce" badge={<AuthoritativeBadge />}>
+   689→        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   690→          <StatCard label="Attributed orders" value={data.commerce.attributedOrders.toLocaleString()} hint="Orders touched by your links" tone="brand" />
+   691→          <StatCard label="Paid orders" value={data.commerce.paidOrders.toLocaleString()} hint="Payment confirmed" />
+   692→          <StatCard label="Eligible sales" value={money(data.commerce.eligibleSalesMinor)} hint="Commissionable base" />
+   693→          <StatCard label="Reversed" value={money(data.commerce.reversedMinor)} hint="Refunded commissions" tone={data.commerce.reversedMinor > 0 ? "danger" : "default"} />
+   694→        </div>
+   695→      </SectionCard>
+   696→
+   697→      <SectionCard title="Earnings" badge={<AuthoritativeBadge />}>
+   698→        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   699→          <StatCard label="Personal promotion (90%)" value={money(e.personalDirectMinor)} hint="Your share of pools you drove" tone="brand" />
+   700→          <StatCard
+   701→            label="Sponsor earnings (10%)"
+   702→            value={money(e.sponsorMinor)}
+   703→            hint={settings.sponsorEnabled ? "From referrals you sponsored" : "Sponsor override disabled"}
+   704→          />
+   705→          <StatCard label="Requestable now" value={money(e.requestableMinor)} hint="Available for payout" tone="brand" />
+   706→          <StatCard label="Pending" value={money(e.pendingMinor)} hint="Awaiting approval" tone="warn" />
+   707→          <StatCard label="Approved" value={money(e.approvedMinor)} hint="Review window running" />
+   708→          <StatCard label="Available" value={money(e.availableMinor)} hint="Matured, unclaimed" />
+   709→          <StatCard label="Payout in flight" value={money(e.payoutInFlightMinor)} hint="Claimed by a payout request" />
+   710→          <StatCard label="Paid out" value={money(e.paidMinor)} hint="Lifetime settled" />
+   711→          <StatCard label="Held" value={money(e.heldMinor)} hint="Under review" tone={e.heldMinor > 0 ? "warn" : "default"} />
+   712→          <StatCard label="Reversed" value={money(e.reversedMinor)} hint="Refund reversals" tone={e.reversedMinor > 0 ? "danger" : "default"} />
+   713→          <StatCard label="Recovery" value={money(e.recoveryMinor)} hint="Late refunds after payout" tone={e.recoveryMinor > 0 ? "danger" : "default"} />
+   714→        </div>
+   715→        {!settings.sponsorEnabled && e.sponsorMinor === 0 ? (
+   716→          <p className="mt-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-600">
+   717→            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+   718→            Sponsor earnings are switched off platform-wide (sponsor override disabled), so this figure only reflects
+   719→            historical entries recorded while it was enabled — it is not a live earning stream right now.
+   720→          </p>
+   721→        ) : null}
+   722→      </SectionCard>
+   723→
+   724→      <SectionCard title="Your network" badge={<AuthoritativeBadge />}>
+   725→        <div className="grid grid-cols-3 gap-3">
+   726→          <StatCard label="Direct referrals" value={data.network.directReferrals.toLocaleString()} />
+   727→          <StatCard label="Activated" value={data.network.activatedAffiliates.toLocaleString()} />
+   728→          <StatCard label="With sales" value={data.network.affiliatesWithSales.toLocaleString()} />
+   729→        </div>
+   730→        <p className="pt-2 text-[11px] text-muted-foreground">One level only — you see the people you directly invited, never a downline tree.</p>
+   731→      </SectionCard>
+   732→
+   733→      <SectionCard
+   734→        title="Daily activity"
+   735→        badge={<EstBadge />}
+   736→        action={
+   737→          <div className="flex gap-1" role="group" aria-label="Chart metric">
+   738→            {(["clicks", "orders", "commissionMinor"] as const).map((m) => (
+   739→              <button
+   740→                key={m}
+   741→                type="button"
+   742→                onClick={() => setMetric(m)}
+   743→                aria-pressed={metric === m}
+   744→                className={cn(
+   745→                  "min-h-[32px] rounded-full border px-2.5 text-[11px] font-bold transition-colors",
+   746→                  metric === m ? "border-teal-700 bg-teal-700 text-white" : "border-border bg-card text-muted-foreground hover:bg-muted"
+   747→                )}
+   748→              >
+   749→                {m === "clicks" ? "Clicks" : m === "orders" ? "Orders" : "Pool"}
+   750→              </button>
+   751→            ))}
+   752→          </div>
+   753→        }
+   754→      >
+   755→        <MiniSeriesChart series={data.series} metric={metric} />
+   756→      </SectionCard>
+   757→    </div>
+   758→  );
+   759→}
+   760→
+   761→function DaysToggle({ days, onChange }: { days: number; onChange: (d: number) => void }) {
+   762→  return (
+   763→    <div className="flex gap-1" role="group" aria-label="Date range">
+   764→      {DAY_WINDOWS.map((d) => (
+   765→        <button
+   766→          key={d}
+   767→          type="button"
+   768→          onClick={() => onChange(d)}
+   769→          aria-pressed={days === d}
+   770→          className={cn(
+   771→            "min-h-[32px] rounded-full border px-2.5 text-[11px] font-bold transition-colors",
+   772→            days === d ? "border-teal-700 bg-teal-700 text-white" : "border-border bg-card text-muted-foreground hover:bg-muted"
+   773→          )}
+   774→        >
+   775→          {d}d
+   776→        </button>
+   777→      ))}
+   778→    </div>
+   779→  );
+   780→}
+   781→
+   782→/** Lightweight bar chart — plain divs, no chart lib, honest zero rendering. */
+   783→function MiniSeriesChart({
+   784→  series,
+   785→  metric,
+   786→}: {
+   787→  series: { date: string; clicks: number; orders: number; commissionMinor: number }[];
+   788→  metric: "clicks" | "orders" | "commissionMinor";
+   789→}) {
+   790→  const max = Math.max(1, ...series.map((d) => d[metric]));
+   791→  const labelEvery = series.length > 45 ? 15 : series.length > 20 ? 7 : 5;
+   792→  return (
+   793→    <div>
+   794→      <div className="flex h-28 items-end gap-[2px]" role="img" aria-label={`Daily ${metric} over the selected window`}>
+   795→        {series.map((d) => {
+   796→          const v = d[metric];
+   797→          const pct = Math.round((v / max) * 100);
+   798→          return (
+   799→            <div
+   800→              key={d.date}
+   801→              className="group relative flex-1"
+   802→              title={`${d.date}: ${metric === "commissionMinor" ? money(v) : v.toLocaleString()}`}
+   803→            >
+   804→              <div
+   805→                className={cn(
+   806→                  "w-full rounded-t-sm transition-all",
+   807→                  metric === "clicks" ? "bg-teal-600/80 group-hover:bg-teal-700" : metric === "orders" ? "bg-amber-500/80 group-hover:bg-amber-600" : "bg-emerald-600/80 group-hover:bg-emerald-700",
+   808→                  v === 0 && "bg-slate-200 group-hover:bg-slate-300"
+   809→                )}
+   810→                style={{ height: `${v === 0 ? 2 : Math.max(6, pct)}%`, minHeight: 2 }}
+   811→              />
+   812→            </div>
+   813→          );
+   814→        })}
+   815→      </div>
+   816→      <div className="flex justify-between pt-1.5 text-[10px] text-muted-foreground tabular-nums">
+   817→        <span>{series[0]?.date ?? ""}</span>
+   818→        <span>{series[series.length - 1]?.date ?? ""}</span>
+   819→      </div>
+   820→    </div>
+   821→  );
+   822→}
+   823→
+   824→// ---------------------------------------------------------------------------
+   825→// Discover tab
+   826→// ---------------------------------------------------------------------------
+   827→
+   828→const SORT_OPTIONS = [
+   829→  { key: "featured", label: "Featured" },
+   830→  { key: "rate", label: "Highest rate" },
+   831→  { key: "sales", label: "Best selling" },
+   832→  { key: "price_asc", label: "Price: low to high" },
+   833→  { key: "price_desc", label: "Price: high to low" },
+   834→  { key: "newest", label: "Newest" },
+   835→] as const;
+   836→
+   837→const MIN_RATE_OPTIONS = [
+   838→  { value: "any", label: "Any rate", bps: null },
+   839→  { value: "100", label: "1%+", bps: 100 },
+   840→  { value: "300", label: "3%+", bps: 300 },
+   841→  { value: "500", label: "5%+", bps: 500 },
+   842→  { value: "800", label: "8%+", bps: 800 },
+   843→  { value: "1000", label: "10%+", bps: 1000 },
+   844→] as const;
+   845→
+   846→function DiscoverTab({ onCreateLink }: { onCreateLink: (p: DiscoverProductT) => void }) {
+   847→  const [qInput, setQInput] = useState("");
+   848→  const q = useDebouncedValue(qInput, 400);
+   849→  const [store, setStore] = useState("all");
+   850→  const [sort, setSort] = useState<string>("featured");
+   851→  const [minRate, setMinRate] = useState<string>("any");
+   852→  const [maxPrice, setMaxPrice] = useState("");
+   853→  const [page, setPage] = useState(1);
+   854→  const dMaxPrice = useDebouncedValue(maxPrice, 500);
+   855→  const maxPriceMinor = dMaxPrice.trim() && Number(dMaxPrice) > 0 ? toMinor(dMaxPrice) : null;
+   856→
+   857→  const feed = useDiscoverFeed({
+   858→    q,
+   859→    store: store === "all" ? "" : store,
+   860→    sort,
+   861→    minRateBps: MIN_RATE_OPTIONS.find((o) => o.value === minRate)?.bps ?? null,
+   862→    maxPriceMinor,
+   863→    page,
+   864→    enabled: true,
+   865→  });
+   866→
+   867→  // Pagination resets happen inside the filter handlers above (event-driven —
+   868→  // no effect needed).
+   869→
+   870→  const rows = feed.data?.rows ?? [];
+   871→  const total = feed.data?.total ?? 0;
+   872→
+   873→  if (feed.data?.paused) {
+   874→    return (
+   875→      <EmptyState
+   876→        icon={Store}
+   877→        title="Discovery is paused"
+   878→        hint="The affiliate programme is temporarily paused — product discovery will return when it resumes."
+   879→      />
+   880→    );
+   881→  }
+   882→
+   883→  return (
+   884→    <div className="space-y-4">
+   885→      {/* filter bar */}
+   886→      <div className="rounded-xl border bg-card p-3 shadow-soft-card sm:p-4">
+   887→        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+   888→          <div className="relative sm:col-span-2 lg:col-span-1">
+   889→            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+   890→            <Input
+   891→              value={qInput}
+   892→              onChange={(ev) => {
+   893→                setQInput(ev.target.value);
+   894→                setPage(1);
+   895→              }}
+   896→              placeholder="Search products or stores"
+   897→              className="min-h-[44px] pl-9"
+   898→              aria-label="Search participating products"
+   899→            />
+   900→          </div>
+   901→          <Select
+   902→            value={store}
+   903→            onValueChange={(v) => {
+   904→              setStore(v);
+   905→              setPage(1);
+   906→            }}
+   907→          >
+   908→            <SelectTrigger className="min-h-[44px]" aria-label="Filter by store">
+   909→              <SelectValue placeholder="All stores" />
+   910→            </SelectTrigger>
+   911→            <SelectContent>
+   912→              <SelectItem value="all">All stores</SelectItem>
+   913→              {feed.stores.map((s) => (
+   914→                <SelectItem key={s.slug} value={s.slug}>
+   915→                  {s.name}
+   916→                </SelectItem>
+   917→              ))}
+   918→            </SelectContent>
+   919→          </Select>
+   920→          <Select
+   921→            value={sort}
+   922→            onValueChange={(v) => {
+   923→              setSort(v);
+   924→              setPage(1);
+   925→            }}
+   926→          >
+   927→            <SelectTrigger className="min-h-[44px]" aria-label="Sort products">
+   928→              <SelectValue />
+   929→            </SelectTrigger>
+   930→            <SelectContent>
+   931→              {SORT_OPTIONS.map((o) => (
+   932→                <SelectItem key={o.key} value={o.key}>
+   933→                  {o.label}
+   934→                </SelectItem>
+   935→              ))}
+   936→            </SelectContent>
+   937→          </Select>
+   938→          <div className="grid grid-cols-2 gap-2">
+   939→            <Select
+   940→              value={minRate}
+   941→              onValueChange={(v) => {
+   942→                setMinRate(v);
+   943→                setPage(1);
+   944→              }}
+   945→            >
+   946→              <SelectTrigger className="min-h-[44px]" aria-label="Minimum commission rate">
+   947→                <SelectValue />
+   948→              </SelectTrigger>
+   949→              <SelectContent>
+   950→                {MIN_RATE_OPTIONS.map((o) => (
+   951→                  <SelectItem key={o.value} value={o.value}>
+   952→                    {o.label}
+   953→                  </SelectItem>
+   954→                ))}
+   955→              </SelectContent>
+   956→            </Select>
+   957→            <Input
+   958→              value={maxPrice}
+   959→              onChange={(ev) => {
+   960→                setMaxPrice(ev.target.value);
+   961→                setPage(1);
+   962→              }}
+   963→              type="number"
+   964→              inputMode="decimal"
+   965→              min={0}
+   966→              placeholder="Max RM"
+   967→              className="min-h-[44px]"
+   968→              aria-label="Maximum price in RM"
+   969→            />
+   970→          </div>
+   971→        </div>
+   972→      </div>
+   973→
+   974→      {feed.error ? <TabError message={feed.error} onRetry={() => feed.reload()} /> : null}
+   975→
+   976→      {!feed.error && feed.loading && rows.length === 0 ? (
+   977→        <TabSkeleton rows={2} />
+   978→      ) : !feed.error && rows.length === 0 ? (
+   979→        <EmptyState
+   980→          icon={Search}
+   981→          title="No participating products match"
+   982→          hint="Try clearing the filters — only products enrolled in the affiliate programme by opted-in stores appear here."
+   983→        />
+   984→      ) : (
+   985→        <>
+   986→          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5">
+   987→            {rows.map((p) => (
+   988→              <DiscoverCard key={p.productId} p={p} onCreateLink={() => onCreateLink(p)} />
+   989→            ))}
+   990→          </div>
+   991→          <Pager
+   992→            page={page}
+   993→            size={24}
+   994→            total={total}
+   995→            rowCount={rows.length}
+   996→            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+   997→            onNext={() => setPage((p) => p + 1)}
+   998→          />
+   999→        </>
+  1000→      )}
+  1001→    </div>
+  1002→  );
+  1003→}
+  1004→
+  1005→function DiscoverCard({ p, onCreateLink }: { p: DiscoverProductT; onCreateLink: () => void }) {
+  1006→  return (
+  1007→    <div className="flex flex-col overflow-hidden rounded-[10px] border bg-card shadow-soft-card transition-all hover:-translate-y-0.5 hover:border-teal-600/40 hover:shadow-md">
+  1008→      <div className="relative aspect-square overflow-hidden bg-muted">
+  1009→        {/* plain <img> — same convention as the shopper ProductCard */}
+  1010→        {p.image ? (
+  1011→          <img src={p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover" />
+  1012→        ) : (
+  1013→          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+  1014→            <Store className="h-8 w-8" aria-hidden />
+  1015→          </div>
+  1016→        )}
+  1017→        {p.isFeatured ? (
+  1018→          <span className="absolute left-1.5 top-1.5 rounded-full bg-brand-gradient px-2 py-0.5 text-[10px] font-bold text-white">Featured</span>
+  1019→        ) : null}
+  1020→        <span className="absolute right-1.5 top-1.5 rounded-full bg-teal-700 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+  1021→          {ratePercent(p.rateBps)} rate
+  1022→        </span>
+  1023→      </div>
+  1024→      <div className="flex min-h-0 flex-1 flex-col gap-1 p-2.5">
+  1025→        <h3 className="line-clamp-2 min-h-[2rem] text-xs font-medium leading-snug">{p.title}</h3>
+  1026→        <p className="truncate text-[11px] text-muted-foreground">{p.storeName}</p>
+  1027→        <div className="flex items-baseline justify-between gap-1">
+  1028→          <span className="text-sm font-bold text-teal-700">{money(p.priceMinor)}</span>
+  1029→          <span className="text-[10px] text-muted-foreground tabular-nums">{p.salesCount} sold</span>
+  1030→        </div>
+  1031→        <p className="text-[11px] font-semibold text-emerald-700">≈ {money(p.estimatedCommissionMinor)} / sale</p>
+  1032→        <Button
+  1033→          type="button"
+  1034→          size="sm"
+  1035→          className="mt-auto min-h-[44px] w-full gap-1 bg-teal-700 text-xs text-white hover:bg-teal-800"
+  1036→          onClick={onCreateLink}
+  1037→        >
+  1038→          <Link2 className="h-3.5 w-3.5" aria-hidden /> Create link
+  1039→        </Button>
+  1040→      </div>
+  1041→    </div>
+  1042→  );
+  1043→}
+  1044→
+  1045→

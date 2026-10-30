@@ -498,6 +498,10 @@ export default function ShopperShell() {
                 <AffiliateHubView
                   ctx={ctx}
                   initialTab={view.tab}
+                  // User request: a back button on the Affiliate Hub page. The
+                  // shell's history stack pops to the previous view (market
+                  // home is the fallback when landed here directly, e.g. ?ref).
+                  onBack={() => ctx.back()}
                   onTabChange={(t) => {
                     // Persist the tab without touching the in-memory view or the
                     // back-stack — reloads then restore the hub on the same tab.

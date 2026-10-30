@@ -15,9 +15,6 @@ export const GET = handle(async () => {
   const links = await db.affiliateLink.findMany({
     where: { affiliateId: aff.id },
     orderBy: { createdAt: "desc" },
-    include: {
-      _count: { select: { id: true } },
-    },
   });
   // Target titles for display (resolved in one pass, no N+1).
   const productIds = links.filter((l) => l.productId).map((l) => l.productId!) ;
