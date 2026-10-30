@@ -4,7 +4,7 @@
 // /api/store/insights/* contract. Every figure comes from the API — the
 // server's honesty notes are rendered verbatim; nothing is fabricated
 // client-side. Money fields are MYR minor units (formatMinor).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -38,6 +38,7 @@ import {
   Download,
   Eye,
   Globe,
+  GraduationCap,
   Info,
   Lightbulb,
   Link2,
@@ -70,6 +71,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { FunnelCard, FUNNEL_WINDOW_PARAM, type FunnelApi, type FunnelData, type FunnelViewKey } from "./funnel-diagram";
+import { TourGuide, type TourStep } from "./tour-guide";
 import {
   apiGetPaged,
   apiSend,
@@ -391,6 +393,10 @@ const TEAL = "#0d9488";
 const AMBER = "#a16207";
 const ROSE = "#e11d48";
 
+/** localStorage flag — the Campaigns page-guide button keeps its "new" emphasis
+ *  until the seller opens the tour for the first time. */
+const CAMPAIGNS_TOUR_SEEN_KEY = "nomo.insights.campaignsTourSeen";
+
 /** House scrollbar treatment for long in-card lists (matches the bell panel). */
 const SCROLLY =
   "max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent";
@@ -457,11 +463,21 @@ function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-/** Muted "How it's calculated" collapsible — renders server-provided notes verbatim. */
-function NotesCollapsible({ title, notes }: { title: string; notes: string[] | null | undefined }) {
+/** Muted "How it's calculated" collapsible — renders server-provided notes verbatim.
+ *  `defaultOpen` + a `key` remount lets the Campaigns page guide expand it
+ *  mid-tour (the key flip forces the open state; the user can still toggle). */
+function NotesCollapsible({
+  title,
+  notes,
+  defaultOpen = false,
+}: {
+  title: string;
+  notes: string[] | null | undefined;
+  defaultOpen?: boolean;
+}) {
   if (!notes || notes.length === 0) return null;
   return (
-    <Collapsible>
+    <Collapsible defaultOpen={defaultOpen}>
       <CollapsibleTrigger className="group flex min-h-[44px] w-full items-center gap-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-0 sm:py-2">
         <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
         {title}
@@ -1163,6 +1179,56 @@ function OverviewSection({
 
 // ---------------------------------------------------------------- cart activity tab
 
+/** Custom tooltip for the adds/removes stacked bar: date heading, both
+ *  components, the stacked total (cart movement) and the net direction. */
+function CartDayTip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { day: string; addUnits: number; removeUnits: number } }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0]!.payload;
+  const d = new Date(`${p.day}T00:00:00Z`);
+  const heading = Number.isNaN(d.getTime())
+    ? p.day
+    : d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const net = p.addUnits - p.removeUnits;
+  return (
+    <div className="rounded-xl border bg-popover/95 p-3 text-xs shadow-lg backdrop-blur">
+      <p className="mb-1.5 font-semibold">{heading}</p>
+      <ul className="space-y-0.5 tabular-nums">
+        <li className="flex items-center justify-between gap-6">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TEAL }} aria-hidden="true" />
+            Adds (units)
+          </span>
+          <span className="font-medium">{fmtInt(p.addUnits)}</span>
+        </li>
+        <li className="flex items-center justify-between gap-6">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ROSE }} aria-hidden="true" />
+            Removes (units)
+          </span>
+          <span className="font-medium">{fmtInt(p.removeUnits)}</span>
+        </li>
+        <li className="mt-1 flex items-center justify-between gap-6 border-t pt-1">
+          <span className="text-muted-foreground">Total cart movement</span>
+          <span className="font-semibold">{fmtInt(p.addUnits + p.removeUnits)}</span>
+        </li>
+        <li className="flex items-center justify-between gap-6">
+          <span className="text-muted-foreground">Net (adds − removes)</span>
+          <span className={cn("font-semibold", net >= 0 ? "text-emerald-600" : "text-rose-600")}>
+            {net >= 0 ? "+" : "−"}
+            {fmtInt(Math.abs(net))}
+          </span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function CartSection({
   data,
   loading,
@@ -1221,19 +1287,21 @@ function CartSection({
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* adds/removes by day */}
+        {/* adds/removes by day — stacked vertical columns: one bar per day so
+            a single day's cart movement is readable at a glance (hover for the
+            exact add/remove/net numbers) */}
         <Card className="gap-3">
           <CardHeader className="pb-0">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ShoppingCart className="h-4 w-4 text-primary" /> Cart adds &amp; removes by day
             </CardTitle>
-            <CardDescription className="text-xs">Units added vs removed from carts</CardDescription>
+            <CardDescription className="text-xs">Units added vs removed from carts · one column per day</CardDescription>
           </CardHeader>
           <CardContent className="px-2">
             {hasCartActivity ? (
-              <div className="h-[240px] w-full sm:h-[280px]" role="img" aria-label="Daily cart add units and remove units chart">
+              <div className="h-[240px] w-full sm:h-[280px]" role="img" aria-label="Daily cart add units and remove units stacked bar chart">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={period.byDay} margin={CHART_MARGIN} barCategoryGap="28%">
+                  <BarChart data={period.byDay} margin={CHART_MARGIN} barCategoryGap="22%" maxBarSize={42}>
                     <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" vertical={false} />
                     <XAxis
                       dataKey="day"
@@ -1255,15 +1323,10 @@ function CartSection({
                       stroke="currentColor"
                       className="text-muted-foreground"
                     />
-                    <Tooltip
-                      formatter={(v, name) => [fmtInt(Number(v)), String(name)]}
-                      labelFormatter={(l) => `Date: ${l}`}
-                      contentStyle={tooltipStyle}
-                      cursor={{ fill: "rgba(13,148,136,0.08)" }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="addUnits" name="Adds (units)" fill={TEAL} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="removeUnits" name="Removes (units)" fill={ROSE} radius={[4, 4, 0, 0]} />
+                    <Tooltip content={<CartDayTip />} cursor={{ fill: "rgba(13,148,136,0.08)" }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} iconSize={9} />
+                    <Bar dataKey="addUnits" name="Adds (units)" stackId="cart" fill={TEAL} />
+                    <Bar dataKey="removeUnits" name="Removes (units)" stackId="cart" fill={ROSE} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -2097,6 +2160,336 @@ function CampaignsSection({
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // ---- Page guide (in-page documentation tour) --------------------------------
+  // The Campaigns page is feature-dense; the guide overlays the page and walks
+  // through every card, button and column with detailed explanations. Targets
+  // are `data-tour` attributes on the elements below; conditional sections
+  // (zero-attribution callout, UTM table, methodology notes) only join the
+  // tour when they are actually rendered — the TourGuide also auto-skips a
+  // step whose target vanished.
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourSeen, setTourSeen] = useState(true); // stays true (no emphasis) until the mount probe finds no "seen" flag
+  const [notesOpen, setNotesOpen] = useState(false); // remounts the methodology collapsible open (tour step)
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time localStorage probe on mount
+      setTourSeen(window.localStorage.getItem(CAMPAIGNS_TOUR_SEEN_KEY) === "1");
+    } catch {
+      /* private mode — keep the default */
+    }
+  }, []);
+
+  const startTour = () => {
+    setShowCreate(false);
+    setNotesOpen(false);
+    setTourOpen(true);
+    setTourSeen(true); // the seller has now opened it — drop the first-time emphasis
+    try {
+      window.localStorage.setItem(CAMPAIGNS_TOUR_SEEN_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const endTour = (completed: boolean) => {
+    setTourOpen(false);
+    // restore the sections the tour expanded
+    setShowCreate(false);
+    setNotesOpen(false);
+    if (completed) {
+      try {
+        window.localStorage.setItem(CAMPAIGNS_TOUR_SEEN_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  // Tour step list — built BEFORE the loading guard (hooks must run
+  // unconditionally). Conditional sections (zero-attribution callout, UTM
+  // table, methodology notes) join only when they are rendered; the copy is
+  // static (no values embedded), so the memo stays stable across refreshes.
+  const utmCount = data?.utmRows?.length ?? 0;
+  const hasNotes = !!data?.notes?.length;
+  const zeroAttribution = data
+    ? data.totals.attributedVisits === 0 &&
+      data.totals.attributedPaidOrders === 0 &&
+      data.totals.unclaimedPaidOrders === 0 &&
+      utmCount === 0
+    : false;
+  const tourSteps = useMemo<TourStep[]>(
+    () => [
+      {
+        title: "Welcome to Campaigns",
+        body: (
+          <>
+            <p>
+              This page answers two questions: <strong className="text-foreground">where do my buyers come from</strong>, and{" "}
+              <strong className="text-foreground">which of my marketing links actually lead to visits and orders</strong>?
+            </p>
+            <p className="mt-1.5">
+              Everything is measured by your own storefront — the campaign links you create below, UTM-tagged traffic, and the orders
+              those visits are associated with. No ad-platform data is involved.
+            </p>
+            <p className="mt-1.5">Click Next (or press →) to walk through every card, button and column. Esc or ✕ exits at any time.</p>
+          </>
+        ),
+      },
+      ...(zeroAttribution
+        ? [
+            {
+              target: "cmp-zero-note",
+              title: "Attribution starts from zero",
+              body: (
+                <p>
+                  Tracking began when this feature was released — earlier traffic and orders have no attribution and are never
+                  backfilled. Create a campaign link below, share it, and attributed visits accrue from the first tagged visitor onward.
+                </p>
+              ),
+            },
+          ]
+        : []),
+      {
+        target: "cmp-totals",
+        title: "Campaign totals",
+        body: (
+          <p>
+            Four summary cards for the selected date range (Today / 7 days / 30 days / custom — chosen at the top of the page): how
+            many tagged visits arrived, how many paid orders are associated with campaigns, the sales those orders brought in, and
+            UTM-tagged orders no campaign link claims. The next four steps explain each card.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-card-visits",
+        title: "Attributed visits",
+        body: (
+          <p>
+            Store views that arrived through your campaign links or with valid UTM tags — every tagged store view, across all
+            campaigns. One shopper browsing several pages in one visit still counts as one <em>session</em> — see the Sessions column
+            in the performance table.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-card-orders",
+        title: "Attributed paid orders",
+        body: (
+          <p>
+            Orders associated with a campaign at checkout (last-touch): the campaign whose link the shopper used sticks with their
+            session, and when they pay, the order counts against it. It is an association — the system never claims the campaign
+            <em> caused</em> the sale.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-card-sales",
+        title: "Attributed sales",
+        body: (
+          <p>Gross sales (RM) of those attributed paid orders — real order money from checkout records, not estimates or projections.</p>
+        ),
+      },
+      {
+        target: "cmp-card-utm",
+        title: "Other tagged orders (UTM only)",
+        body: (
+          <p>
+            Orders that arrived with UTM parameters but no platform campaign token — e.g. links you built yourself with utm_source.
+            Tagged traffic, but no campaign link below can claim them.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-links-card",
+        title: "Campaign links",
+        body: (
+          <p>
+            Your library of named tracking links. Each one points at your storefront and carries both standard UTM parameters{" "}
+            <strong className="text-foreground">and</strong> a NOMOFEE campaign token (nmcl) — so attribution survives even when a
+            network strips UTM parameters (some in-app browsers do exactly that).
+          </p>
+        ),
+      },
+      {
+        target: "cmp-new-link",
+        title: "New campaign link",
+        body: <p>Opens the creation form — every campaign starts here. The button toggles: click again to collapse it.</p>,
+      },
+      {
+        target: "cmp-create-form",
+        title: "Create a campaign link",
+        onEnter: () => setShowCreate(true),
+        body: (
+          <>
+            <p>
+              <strong className="text-foreground">Campaign name</strong> (required) — a label only you see, e.g. “Raya Mega Sale
+              WhatsApp blast”. <strong className="text-foreground">utm_source</strong> and{" "}
+              <strong className="text-foreground">utm_medium</strong> (optional) pre-fill the link’s UTM tags, e.g. whatsapp / social.
+            </p>
+            <p className="mt-1.5">
+              Create generates the shareable link. The nmcl token inside it resolves only against <em>your</em> storefront — it cannot
+              be replayed on anyone else’s store.
+            </p>
+          </>
+        ),
+      },
+      {
+        target: "cmp-link-col-campaign",
+        title: "Campaign column",
+        body: (
+          <p>
+            The campaign’s name plus the tags its link carries: utm_campaign (auto-derived from the name) and the source/medium you
+            set. This is the signature the storefront recognises on later visits.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-link-col-link",
+        title: "Shareable link column",
+        body: (
+          <p>
+            Your storefront URL with UTM parameters and the nmcl token appended. Use Copy link (right) to grab it, then paste it
+            anywhere — Instagram bio, WhatsApp messages, ads, QR codes.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-link-col-status",
+        title: "Status column",
+        body: (
+          <p>
+            <strong className="text-foreground">Active</strong> — live and tracking. <strong className="text-foreground">Archived</strong>{" "}
+            — retired from the active list, but the link keeps resolving and past attribution keeps reporting. Restore brings it back.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-link-col-actions",
+        title: "Actions column",
+        body: (
+          <p>
+            <strong className="text-foreground">Copy link</strong> puts the full URL on your clipboard.{" "}
+            <strong className="text-foreground">Archive / Restore</strong> toggles the campaign’s status — archiving never deletes data
+            and never breaks a link you already shared.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-perf-card",
+        title: "Campaign performance",
+        body: (
+          <p>
+            The report card: one row per campaign in the window. Traffic columns (visits → cart adds) come from tagged events; orders,
+            sales, AOV and conversion come from authoritative attributed orders. Archived campaigns stay visible, dimmed. The next
+            steps walk through every column.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-perf-col-visits",
+        title: "Visits",
+        body: <p>Tagged store views through this campaign — every attributed store view event in the window.</p>,
+      },
+      {
+        target: "cmp-perf-col-sessions",
+        title: "Sessions",
+        body: (
+          <p>
+            Distinct shopper sessions behind those visits. One shopper can view the store several times in a session (or across
+            midnight), so sessions can be lower than visits — and conversion is computed on sessions.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-perf-col-views",
+        title: "Product views",
+        body: <p>Product pages viewed during attributed visits — how deep this campaign’s traffic got into your catalogue.</p>,
+      },
+      {
+        target: "cmp-perf-col-cartadds",
+        title: "Cart adds",
+        body: <p>Units added to carts during attributed visits — early buying intent from this campaign’s traffic.</p>,
+      },
+      {
+        target: "cmp-perf-col-orders",
+        title: "Orders",
+        body: <p>Orders created by attributed shoppers in the window (checkout started) — includes orders that were never paid.</p>,
+      },
+      {
+        target: "cmp-perf-col-paid",
+        title: "Paid orders",
+        body: (
+          <p>
+            Orders that actually got paid. The ▲/▼ chip compares against the previous equal-length window; “New” appears when there is
+            no prior data to compare.
+          </p>
+        ),
+      },
+      {
+        target: "cmp-perf-col-sales",
+        title: "Gross sales",
+        body: <p>Gross sales (RM) of those paid orders, before refunds and fees — authoritative order money.</p>,
+      },
+      {
+        target: "cmp-perf-col-aov",
+        title: "AOV",
+        body: <p>Average order value: this campaign’s gross sales ÷ its paid orders.</p>,
+      },
+      {
+        target: "cmp-perf-col-conversion",
+        title: "Conversion*",
+        body: (
+          <p>
+            Attributed paid orders ÷ attributed visit sessions — a mixed-basis indication (orders vs sessions), which is why it carries
+            an asterisk. A tagged visit is associated with the campaign; it is never claimed to have caused the sale.
+          </p>
+        ),
+      },
+      ...(utmCount > 0
+        ? [
+            {
+              target: "cmp-utm-card",
+              title: "Tagged traffic without a campaign link",
+              body: (
+                <p>
+                  Visits that arrived with valid UTM parameters but no nmcl token — links you shared manually, or before campaign links
+                  existed. Same metrics as the performance table, grouped by source / medium / campaign, so you can see what your own
+                  UTM tagging brings in.
+                </p>
+              ),
+            },
+          ]
+        : []),
+      ...(hasNotes
+        ? [
+            {
+              target: "cmp-notes",
+              title: "How campaign attribution is measured",
+              onEnter: () => setNotesOpen(true),
+              body: (
+                <p>
+                  The full methodology straight from the measurement layer: how visits and sessions are counted, how orders associate
+                  with campaigns, and what is authoritative versus estimated. The tour opened it for you here — you can expand it any
+                  time from this toggle.
+                </p>
+              ),
+            },
+          ]
+        : []),
+      {
+        title: "You’re all set",
+        body: (
+          <p>
+            The typical loop: <strong className="text-foreground">create a link → share it → watch visits and orders accrue → compare
+            conversion across campaigns → archive what you stop using</strong>. Reopen this guide any time with the “Page guide”
+            button. Happy selling!
+          </p>
+        ),
+      },
+    ],
+    [zeroAttribution, utmCount, hasNotes]
+  );
+
   const copyLink = async (row: CampaignLinkRow) => {
     const url = `${window.location.origin}${row.linkPath}`;
     try {
@@ -2167,13 +2560,30 @@ function CampaignsSection({
 
   const { totals, rows, utmRows, notes } = data;
   const linkRows = links.data ?? [];
-  const hasAnyAttribution = totals.attributedVisits > 0 || totals.attributedPaidOrders > 0 || totals.unclaimedPaidOrders > 0 || utmRows.length > 0;
+  const hasAnyAttribution = !zeroAttribution;
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* in-page documentation tour — see tour-guide.tsx */}
+      <TourGuide steps={tourSteps} open={tourOpen} onClose={endTour} />
+
+      {/* guide launcher — emphasised until the seller opens it once */}
+      <div data-tour="cmp-guide-bar" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/40 px-3.5 py-2.5">
+        <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <GraduationCap className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <span className="min-w-0">
+            New to campaigns? The page guide overlays this page and walks through every card, button and column with detailed
+            explanations.
+          </span>
+        </p>
+        <Button size="sm" variant={tourSeen ? "outline" : "default"} onClick={startTour} className="shrink-0 gap-1.5">
+          <GraduationCap className="h-4 w-4" aria-hidden="true" /> Page guide
+        </Button>
+      </div>
+
       {/* tracking honesty callout */}
       {!hasAnyAttribution ? (
-        <div className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900" role="note">
+        <div data-tour="cmp-zero-note" className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900" role="note">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0 text-sm">
             <p className="font-medium">Campaign attribution starts from zero — it begins accruing with the first tagged visit.</p>
@@ -2186,43 +2596,51 @@ function CampaignsSection({
       ) : null}
 
       {/* totals */}
-      <section aria-label="Campaign totals">
+      <section aria-label="Campaign totals" data-tour="cmp-totals">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Attributed visits"
-            value={fmtInt(totals.attributedVisits)}
-            sub={<span className="text-xs text-muted-foreground">tagged store views, all campaigns</span>}
-            icon={<Megaphone className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Attributed paid orders"
-            value={fmtInt(totals.attributedPaidOrders)}
-            sub={<span className="text-xs text-muted-foreground">last-touch association</span>}
-            icon={<ReceiptText className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Attributed sales"
-            value={formatMinor(totals.attributedGrossSalesMinor)}
-            sub={<span className="text-xs text-muted-foreground">authoritative order money</span>}
-            icon={<BadgeDollarSign className="h-4 w-4" />}
-          />
-          <StatCard
-            label="Other tagged orders (UTM only)"
-            value={fmtInt(totals.unclaimedPaidOrders)}
-            sub={
-              totals.unclaimedGrossSalesMinor > 0 ? (
-                <span className="text-xs text-muted-foreground">{formatMinor(totals.unclaimedGrossSalesMinor)} gross</span>
-              ) : (
-                <span className="text-xs text-muted-foreground">no campaign token</span>
-              )
-            }
-            icon={<Link2 className="h-4 w-4" />}
-          />
+          <div data-tour="cmp-card-visits">
+            <StatCard
+              label="Attributed visits"
+              value={fmtInt(totals.attributedVisits)}
+              sub={<span className="text-xs text-muted-foreground">tagged store views, all campaigns</span>}
+              icon={<Megaphone className="h-4 w-4" />}
+            />
+          </div>
+          <div data-tour="cmp-card-orders">
+            <StatCard
+              label="Attributed paid orders"
+              value={fmtInt(totals.attributedPaidOrders)}
+              sub={<span className="text-xs text-muted-foreground">last-touch association</span>}
+              icon={<ReceiptText className="h-4 w-4" />}
+            />
+          </div>
+          <div data-tour="cmp-card-sales">
+            <StatCard
+              label="Attributed sales"
+              value={formatMinor(totals.attributedGrossSalesMinor)}
+              sub={<span className="text-xs text-muted-foreground">authoritative order money</span>}
+              icon={<BadgeDollarSign className="h-4 w-4" />}
+            />
+          </div>
+          <div data-tour="cmp-card-utm">
+            <StatCard
+              label="Other tagged orders (UTM only)"
+              value={fmtInt(totals.unclaimedPaidOrders)}
+              sub={
+                totals.unclaimedGrossSalesMinor > 0 ? (
+                  <span className="text-xs text-muted-foreground">{formatMinor(totals.unclaimedGrossSalesMinor)} gross</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">no campaign token</span>
+                )
+              }
+              icon={<Link2 className="h-4 w-4" />}
+            />
+          </div>
         </div>
       </section>
 
       {/* campaign links management */}
-      <Card className="gap-3">
+      <Card data-tour="cmp-links-card" className="gap-3">
         <CardHeader className="pb-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -2233,7 +2651,7 @@ function CampaignsSection({
                 Named tracking links for your storefront — share them on social, chat or ads
               </CardDescription>
             </div>
-            <Button size="sm" onClick={() => setShowCreate((s) => !s)} className="gap-1.5">
+            <Button size="sm" data-tour="cmp-new-link" onClick={() => setShowCreate((s) => !s)} className="gap-1.5">
               {showCreate ? <ChevronDown className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {showCreate ? "Close" : "New campaign link"}
             </Button>
@@ -2242,6 +2660,7 @@ function CampaignsSection({
         <CardContent className="space-y-3">
           {showCreate ? (
             <form
+              data-tour="cmp-create-form"
               className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[1fr_150px_150px_auto]"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2315,10 +2734,16 @@ function CampaignsSection({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead scope="col">Campaign</TableHead>
-                    <TableHead scope="col">Shareable link</TableHead>
-                    <TableHead scope="col">Status</TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" data-tour="cmp-link-col-campaign">
+                      Campaign
+                    </TableHead>
+                    <TableHead scope="col" data-tour="cmp-link-col-link">
+                      Shareable link
+                    </TableHead>
+                    <TableHead scope="col" data-tour="cmp-link-col-status">
+                      Status
+                    </TableHead>
+                    <TableHead scope="col" className="text-right" data-tour="cmp-link-col-actions">
                       Actions
                     </TableHead>
                   </TableRow>
@@ -2371,7 +2796,7 @@ function CampaignsSection({
       </Card>
 
       {/* per-campaign performance */}
-      <Card className="gap-3">
+      <Card data-tour="cmp-perf-card" className="gap-3">
         <CardHeader className="pb-0">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Megaphone className="h-4 w-4 text-primary" /> Campaign performance
@@ -2391,31 +2816,31 @@ function CampaignsSection({
                 <TableHeader>
                   <TableRow>
                     <TableHead scope="col">Campaign</TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-visits">
                       Visits
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-sessions">
                       Sessions
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-views">
                       Product views
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-cartadds">
                       Cart adds
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-orders">
                       Orders
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-paid">
                       Paid orders
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-sales">
                       Gross sales
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-aov">
                       AOV
                     </TableHead>
-                    <TableHead scope="col" className="text-right">
+                    <TableHead scope="col" className="text-right" data-tour="cmp-perf-col-conversion">
                       Conversion*
                     </TableHead>
                   </TableRow>
@@ -2463,7 +2888,7 @@ function CampaignsSection({
 
       {/* raw UTM-tagged traffic without a campaign token */}
       {utmRows.length > 0 ? (
-        <Card className="gap-3">
+        <Card data-tour="cmp-utm-card" className="gap-3">
           <CardHeader className="pb-0">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Globe className="h-4 w-4 text-primary" /> Tagged traffic without a campaign link
@@ -2526,7 +2951,14 @@ function CampaignsSection({
         </Card>
       ) : null}
 
-      <NotesCollapsible title="How campaign attribution is measured" notes={notes} />
+      <div data-tour="cmp-notes">
+        <NotesCollapsible
+          key={notesOpen ? "open" : "closed"}
+          defaultOpen={notesOpen}
+          title="How campaign attribution is measured"
+          notes={notes}
+        />
+      </div>
     </div>
   );
 }

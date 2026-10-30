@@ -2,7 +2,7 @@
 
 // ---------------------------------------------------------------------------
 // Conversion Funnel — interactive 3D funnel diagram (HTML5 Canvas) + stage
-// streamgraph (recharts, centered "silhouette" stream) for the Insights page.
+// flow stacked bar chart (recharts, one column per day) for the Insights page.
 //
 // Data: GET /api/store/insights/funnel?window=today|7d|30d|1y[&productId=<id>]
 // (seller-session scoped; stage numbers are server-computed — this component
@@ -11,7 +11,7 @@
 // Scope: store-wide (5 stages) or, via the product selector, ONE product's
 // funnel (4 stages: product view → add to cart → checkout → paid) with sales
 // context (units sold, gross product revenue). The 3D canvas, callout chips,
-// hover tooltip, legend, daily stacked bar and streamgraph are all
+// hover tooltip, legend, daily snapshot bar and stage-flow bars are all
 // scope-generic — stage count and palette follow the active scope.
 //
 // Canvas rendering notes:
@@ -30,10 +30,14 @@
 //     (prefers-reduced-motion snaps instantly).
 //   • The canvas is aria-hidden; a visually-hidden table mirrors the stage data
 //     for screen readers.
+// Stage flow chart: stacked vertical bars — one column per day, hover a day
+// for its per-stage counts. The yearly view buckets to months (12 readable
+// columns instead of 365 slivers); Daily keeps the single "today's stages"
+// snapshot bar since a one-day window has no "over time".
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Info, Package, RefreshCw, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -807,36 +811,71 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-// ---------------------------------------------------------------- streamgraph
+// ---------------------------------------------------------------- stage flow
 
-/** Stream series field per scope: the store funnel carries 5 stages (incl.
+/** Flow series field per scope: the store funnel carries 5 stages (incl.
  *  visits), the product funnel 4 (starts at product views — a store visit is
  *  not product-scoped). Module-level consts → stable useMemo deps. */
 const STORE_STREAM_KEYS = ["visits", "productViews", "cartAdds", "checkouts", "paidOrders"] as const;
 const PRODUCT_STREAM_KEYS = ["productViews", "cartAdds", "checkouts", "paidOrders"] as const;
 
-type StreamPoint = Record<string, number | string>;
+type FlowPoint = Record<string, number | string>;
 
-/** Stage flow over time. Weekly/Monthly/Yearly → centred streamgraph (recharts
- *  stacked areas over an invisible negative-offset base — the "silhouette"
- *  stream). Daily → the window is a single day, so a stacked bar of today's
- *  stages replaces the degenerate one-point stream. Scope-generic: the stage
- *  count follows the active funnel (5 store stages / 4 product stages). */
+/** X tick: day buckets "2026-09-28" → "09-28"; month buckets "2026-09" → "Sep". */
+function flowTick(v: unknown, monthly: boolean): string {
+  const s = String(v);
+  if (!monthly) return s.length > 7 ? s.slice(5) : s;
+  const d = new Date(`${s}-01T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleString("en-MY", { month: "short", timeZone: "UTC" });
+}
+
+/** Tooltip heading: "25 Oct 2026" for days, "Oct 2026" for month buckets. */
+function flowHeading(label: unknown, monthly: boolean): string {
+  const s = String(label);
+  const d = monthly ? new Date(`${s}-01T00:00:00Z`) : new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return s;
+  return monthly
+    ? d.toLocaleString("en-MY", { month: "short", year: "numeric", timeZone: "UTC" })
+    : d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/** Stage flow over time — stacked vertical bars: one column per day so a
+ *  single day's story is readable at a glance (hover any day for its exact
+ *  per-stage counts). The yearly view buckets the same series to months for
+ *  readability. Daily keeps the single "today's stages" snapshot bar since a
+ *  one-day window has no "over time". Scope-generic: the stage count follows
+ *  the active funnel (5 store stages / 4 product stages). */
 function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey }) {
   const meta = stageMetaFor(data.scope);
   const keys = data.scope === "product" ? PRODUCT_STREAM_KEYS : STORE_STREAM_KEYS;
+  const monthly = view === "yearly";
   const series = useMemo(
-    () =>
-      data.byDay.map((d): StreamPoint => {
-        const vals = keys.map((k) => Number(d[k] ?? 0));
-        const total = vals.reduce((a, b) => a + b, 0);
-        const o: StreamPoint = { day: d.day, off: -total / 2, total };
+    () => {
+      const mk = (label: string, vals: number[]): FlowPoint => {
+        const o: FlowPoint = { label, total: vals.reduce((a, b) => a + b, 0) };
         vals.forEach((v, i) => {
           o[`v${i}`] = v;
         });
         return o;
-      }),
-    [data.byDay, keys]
+      };
+      if (!monthly) return data.byDay.map((d) => mk(d.day, keys.map((k) => Number(d[k] ?? 0))));
+      // Yearly: 365 daily points would render as unreadable slivers — bucket
+      // the same daily series to calendar months (straight sums of the daily
+      // values, no re-derivation).
+      const months = new Map<string, number[]>();
+      for (const d of data.byDay) {
+        const m = d.day.slice(0, 7);
+        const slot = months.get(m) ?? keys.map(() => 0);
+        keys.forEach((k, i) => {
+          slot[i]! += Number(d[k] ?? 0);
+        });
+        months.set(m, slot);
+      }
+      return [...months.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([label, vals]) => mk(label, vals));
+    },
+    [data.byDay, keys, monthly]
   );
   const hasFlow = series.some((p) => Number(p.total) > 0);
 
@@ -880,65 +919,65 @@ function FunnelStream({ data, view }: { data: FunnelData; view: FunnelViewKey })
 
   return (
     <div>
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Stage flow over time</p>
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Stage flow over time{monthly ? " · by month" : " · by day"}
+      </p>
       {hasFlow ? (
-        <div className="h-[190px] w-full" role="img" aria-label="Funnel stage flow streamgraph by day">
+        <div className="h-[210px] w-full sm:h-[240px]" role="img" aria-label="Funnel stage flow stacked bar chart by day">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={series} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-              {meta.map((m, i) => (
-                <defs key={m.key}>
-                  <linearGradient id={`fsGrad${i}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={m.color} stopOpacity={0.72} />
-                    <stop offset="100%" stopColor={m.color} stopOpacity={0.28} />
-                  </linearGradient>
-                </defs>
-              ))}
+            <BarChart data={series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }} barCategoryGap={monthly ? "26%" : "14%"} maxBarSize={46}>
+              <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" vertical={false} />
               <XAxis
-                dataKey="day"
-                tickFormatter={(v: string) => String(v).slice(5)}
+                dataKey="label"
+                tickFormatter={(v) => flowTick(v, monthly)}
                 fontSize={10}
                 tickLine={false}
                 axisLine={false}
-                minTickGap={30}
+                minTickGap={18}
                 stroke="currentColor"
                 className="text-muted-foreground"
               />
-              <Tooltip content={<StreamTip meta={meta} />} />
-              {/* invisible negative base centred around zero → silhouette stream */}
-              <Area dataKey="off" stackId="s" type="monotone" stroke="none" fill="transparent" isAnimationActive={false} />
+              <YAxis
+                tickFormatter={(v) => Number(v).toLocaleString("en-MY")}
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+                width={34}
+                allowDecimals={false}
+                stroke="currentColor"
+                className="text-muted-foreground"
+              />
+              <Tooltip content={<FlowTip meta={meta} monthly={monthly} />} cursor={{ fill: "rgba(13,148,136,0.08)" }} />
+              {/* one stacked column per day — segment colours match the 3D diagram */}
               {meta.map((m, i) => (
-                <Area
-                  key={m.key}
-                  dataKey={`v${i}`}
-                  stackId="s"
-                  type="monotone"
-                  stroke={m.color}
-                  strokeWidth={1.4}
-                  fill={`url(#fsGrad${i})`}
-                  isAnimationActive={false}
-                />
+                <Bar key={m.key} dataKey={`v${i}`} name={m.label} stackId="flow" fill={m.color} />
               ))}
-            </AreaChart>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       ) : (
         <p className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground">
           {data.scope === "product"
-            ? "No stage activity for this product in this window yet — the stream appears as tracking and orders accrue."
-            : "No stage activity in this window yet — the stream appears as visitor tracking and orders accrue."}
+            ? "No stage activity for this product in this window yet — the chart appears as tracking and orders accrue."
+            : "No stage activity in this window yet — the chart appears as visitor tracking and orders accrue."}
         </p>
       )}
+      {monthly && hasFlow ? (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Yearly buckets by month for readability — switch to Monthly for per-day columns.
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function StreamTip(props: { active?: boolean; payload?: Array<{ payload: StreamPoint }>; label?: string; meta: StageMeta[] }) {
-  const { active, payload, meta } = props;
+function FlowTip(props: { active?: boolean; payload?: Array<{ payload: FlowPoint }>; label?: string; meta: StageMeta[]; monthly: boolean }) {
+  const { active, payload, meta, monthly } = props;
   if (!active || !payload?.length) return null;
   const p = payload[0]!.payload;
   return (
     <div className="rounded-xl border bg-popover/95 p-3 text-xs shadow-lg backdrop-blur">
-      <p className="mb-1.5 font-semibold">{String(p.day)}</p>
+      <p className="mb-1.5 font-semibold">{flowHeading(p.label, monthly)}</p>
       <ul className="space-y-0.5">
         {meta.map((m, i) => (
           <li key={m.key} className="flex items-center justify-between gap-4 tabular-nums">
@@ -949,6 +988,10 @@ function StreamTip(props: { active?: boolean; payload?: Array<{ payload: StreamP
             <span className="font-medium">{Number(p[`v${i}`] ?? 0).toLocaleString("en-MY")}</span>
           </li>
         ))}
+        <li className="mt-1 flex items-center justify-between gap-4 border-t pt-1 tabular-nums">
+          <span className="text-muted-foreground">Total stage events</span>
+          <span className="font-semibold">{Number(p.total ?? 0).toLocaleString("en-MY")}</span>
+        </li>
       </ul>
     </div>
   );
