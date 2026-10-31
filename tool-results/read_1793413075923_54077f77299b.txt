@@ -1,0 +1,844 @@
+     1→// ============================================================================
+     2→// M10 WALLETS, LEDGER & PAYOUTS — double-entry engine (PART 3 M10)
+     3→// SIGN CONVENTION: seller wallet balance = SUM(credit) - SUM(debit) on
+     4→// SELLER:{walletId}:PAYABLE. Credits with available_at > now = pending.
+     5→// Every transaction MUST balance: sum(debit) == sum(credit).
+     6→//
+     7→// OPTION B NOTE (licensed-PSP split model): the platform does NOT custody
+     8→// buyer funds. SELLER:*:PAYABLE balances MIRROR the PSP's per-seller
+     9→// sub-balances, and the payout pipeline (T2 clear → bank transfer) records
+    10→// the settlement the PSP/finance ops actually executes. Commission lines
+    11→// equal the PSP application fee deducted at payment time (rate model under
+    12→// discussion per user decision — keep the mechanics, numbers are config).
+    13→// ============================================================================
+    14→import { Prisma } from "@prisma/client";
+    15→import { db } from "./db";
+    16→import { parseJson, toJson } from "./json";
+    17→
+    18→export const ACCOUNTS = {
+    19→  BANK_MAIN: "PLATFORM:BANK_MAIN",
+    20→  payoutClearing: () => "PLATFORM:PAYOUT_CLEARING",
+    21→  revenueCommission: () => "PLATFORM:REVENUE_COMMISSION",
+    22→  revenueAdjust: () => "PLATFORM:REVENUE_ADJUST",
+    23→  // AFFILIATE (Hub): seller-funded affiliate commission liability owed to
+    24→  // affiliates. Credited by the T1 4th line (pool per paid order); debited by
+    25→  // T5 affiliate reversals (refunds) and the affiliate payout recipes.
+    26→  affiliateLiability: () => "PLATFORM:AFFILIATE_LIABILITY",
+    27→  gateway: (provider: string) => `GATEWAY:${provider.toUpperCase()}`,
+    28→  sellerPayable: (walletId: string) => `SELLER:${walletId}:PAYABLE`,
+    29→};
+    30→
+    31→export const ACCOUNT_META: Record<string, { name: string; type: "asset" | "liability" | "revenue" | "expense" }> = {
+    32→  "PLATFORM:BANK_MAIN": { name: "Platform Main Bank Account", type: "asset" },
+    33→  "PLATFORM:PAYOUT_CLEARING": { name: "Payout Clearing", type: "liability" },
+    34→  "PLATFORM:REVENUE_COMMISSION": { name: "Commission Revenue", type: "revenue" },
+    35→  "PLATFORM:REVENUE_ADJUST": { name: "Manual Adjustments Revenue", type: "revenue" },
+    36→  "PLATFORM:AFFILIATE_LIABILITY": { name: "Affiliate Commission Liability", type: "liability" },
+    37→};
+    38→
+    39→export async function ensureAccount(code: string, walletId?: string | null) {
+    40→  await ensureAccountTx(code, walletId, db);
+    41→}
+    42→
+    43→// F1 [Measured]: under concurrent same-seller confirmations, the unconditional
+    44→// `ledgerAccount.upsert` on the SHARED SELLER/GATEWAY/COMMISSION account rows
+    45→// was itself a hot-row write inside every Serializable tx (write-write SSI
+    46→// conflicts + extra roundtrips). Accounts are effectively immutable once
+    47→// created, so: read-first + per-process memo. The common case becomes a
+    48→// read (no write, no conflict domain growth) and 1 roundtrip instead of an
+    49→// upsert; first-creation still upserts (P2002-safe).
+    50→const ensuredAccounts = new Set<string>();
+    51→
+    52→/** Same upsert, runnable on an explicit transaction client (FIN-1 atomicity). */
+    53→async function ensureAccountTx(code: string, walletId: string | null | undefined, tx: Prisma.TransactionClient) {
+    54→  if (ensuredAccounts.has(code)) return;
+    55→  const meta = ACCOUNT_META[code] ?? {
+    56→    name: code.startsWith("GATEWAY:") ? `Gateway ${code.slice(8)}` : code.startsWith("SELLER:") ? "Seller Payable" : code,
+    57→    type: code.startsWith("SELLER:") ? "liability" : code.startsWith("GATEWAY:") ? "asset" : "asset",
+    58→  };
+    59→  const existing = await tx.ledgerAccount.findUnique({ where: { code }, select: { code: true } });
+    60→  if (existing) {
+    61→    ensuredAccounts.add(code);
+    62→    return;
+    63→  }
+    64→  try {
+    65→    await tx.ledgerAccount.upsert({
+    66→      where: { code },
+    67→      create: { code, name: meta.name, type: meta.type, walletId: walletId ?? null },
+    68→      update: {},
+    69→    });
+    70→    ensuredAccounts.add(code);
+    71→  } catch (e) {
+    72→    // Raced creation from another tx — the row exists now; treat as ensured.
+    73→    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    74→      ensuredAccounts.add(code);
+    75→      return;
+    76→    }
+    77→    throw e;
+    78→  }
+    79→}
+    80→
+    81→export async function ensureWalletAccounts(walletId: string) {
+    82→  await ensureAccount(ACCOUNTS.sellerPayable(walletId), walletId);
+    83→}
+    84→
+    85→export type LedgerLineInput = {
+    86→  accountCode: string;
+    87→  direction: "debit" | "credit";
+    88→  amountMinor: number;
+    89→  walletId?: string | null;
+    90→  availableAt?: Date | null;
+    91→  memo?: string | null;
+    92→};
+    93→
+    94→// ---------------------------------------------------------------------------
+    95→// FIN-1 POSTING CORE — atomic + idempotent.
+    96→//
+    97→// ATOMICITY: every posting runs inside a single prisma.$transaction (lines,
+    98→// account upserts, wallet-cache refresh all commit or roll back together).
+    99→// Recipes called with an outer transaction client run INSIDE it — never
+   100→// nested — so a webhook/payout flow can group ledger + business writes.
+   101→//
+   102→// IDEMPOTENCY (dedupKey semantics — read before changing):
+   103→//   • dedupKey is an OPTIONAL caller/recipe-supplied unique helper key stored
+   104→//     on LedgerTransaction. When null/undefined the row is written with NULL —
+   105→//     Postgres unique indexes treat NULLs as distinct, so non-deduped postings
+   106→//     keep the legacy always-insert behavior (e.g. repeatable admin
+   107→//     adjustments).
+   108→//   • Recipes pass EXPLICIT keys only where a posting must happen EXACTLY
+   109→//     once per business event (T1 per order, T2 per settlement ref, T3/T4/T4f
+   110→//     per payout, T5 per refund row). Generic auto-keys are deliberately NOT
+   111→//     derived here: a (txnType,refType,refId) default would falsely dedup
+   112→//     legitimately-repeatable postings such as multi partial refunds per
+   113→//     order (refType=order for every refund) — that is why postRefund takes
+   114→//     the per-Refund-row refundId for its key.
+   115→//   • On a P2002 unique violation the EXISTING transaction is fetched and
+   116→//     returned with idempotentReplay:true (see wasReplay) instead of throwing
+   117→//     — duplicate webhook deliveries / double-clicked admins converge on the
+   118→//     original posting and never create a second one.
+   119→// ---------------------------------------------------------------------------
+   120→
+   121→export type PostedTransaction = Prisma.LedgerTransactionGetPayload<{ include: { lines: true } }> & {
+   122→  /** True when the dedupKey already existed and the ORIGINAL posting was returned. */
+   123→  idempotentReplay?: boolean;
+   124→};
+   125→
+   126→/** True when a posted result is actually the original txn replayed (dedup hit). */
+   127→export function wasReplay(t: PostedTransaction): boolean {
+   128→  return t.idempotentReplay === true;
+   129→}
+   130→
+   131→/** Post a balanced double-entry transaction. Throws if unbalanced. */
+   132→export async function postTransaction(input: {
+   133→  txnType: string;
+   134→  refType?: string | null;
+   135→  refId?: string | null;
+   136→  description?: string | null;
+   137→  currency?: string;
+   138→  lines: LedgerLineInput[];
+   139→  occurredAt?: Date;
+   140→  /** Optional unique idempotency key (see block comment above). NULL = no dedup. */
+   141→  dedupKey?: string | null;
+   142→  /** Existing transaction client — when omitted the posting wraps itself in db.$transaction. */
+   143→  tx?: Prisma.TransactionClient;
+   144→}): Promise<PostedTransaction> {
+   145→  const run = async (tx: Prisma.TransactionClient): Promise<PostedTransaction> => {
+   146→    const debit = input.lines.filter((l) => l.direction === "debit").reduce((s, l) => s + l.amountMinor, 0);
+   147→    const credit = input.lines.filter((l) => l.direction === "credit").reduce((s, l) => s + l.amountMinor, 0);
+   148→    if (debit !== credit || debit === 0) {
+   149→      throw new Error(`LEDGER_UNBALANCED debit=${debit} credit=${credit} txn=${input.txnType}`);
+   150→    }
+   151→    for (const l of input.lines) await ensureAccountTx(l.accountCode, l.walletId ?? null, tx);
+   152→    // With a dedupKey we may need to RECOVER from a unique violation inside
+   153→    // this (possibly caller-provided) transaction. Postgres aborts the whole
+   154→    // tx on a failed statement (25P02 — even a SELECT is refused afterwards),
+   155→    // so the create is fenced with a SAVEPOINT: on P2002 we rewind to it and
+   156→    // the original row becomes readable again. Without this, the
+   157→    // replay-instead-of-throw contract below is unreachable inside a real tx.
+   158→    const sp = input.dedupKey
+   159→      ? `fin1_sp_${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`
+   160→      : null;
+   161→    if (sp) await tx.$executeRawUnsafe(`SAVEPOINT ${sp}`);
+   162→    try {
+   163→      const created = await tx.ledgerTransaction.create({
+   164→        data: {
+   165→          txnType: input.txnType,
+   166→          refType: input.refType ?? null,
+   167→          refId: input.refId ?? null,
+   168→          description: input.description ?? null,
+   169→          occurredAt: input.occurredAt ?? new Date(),
+   170→          dedupKey: input.dedupKey ?? null,
+   171→          lines: {
+   172→            create: input.lines.map((l) => ({
+   173→              accountCode: l.accountCode,
+   174→              direction: l.direction,
+   175→              amountMinor: l.amountMinor,
+   176→              walletId: l.walletId ?? null,
+   177→              availableAt: l.availableAt ?? null,
+   178→              memo: l.memo ?? null,
+   179→              // Denormalized ref (FIN-1 helper columns) so ref-scoped line
+   180→              // queries don't need a join; mirrors the parent txn.
+   181→              refType: input.refType ?? null,
+   182→              refId: input.refId ?? null,
+   183→            })),
+   184→          },
+   185→        },
+   186→        include: { lines: true },
+   187→      });
+   188→      if (sp) await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${sp}`);
+   189→      return created;
+   190→    } catch (e) {
+   191→      // Idempotent replay: the dedupKey already exists → return the ORIGINAL
+   192→      // transaction instead of throwing (never double-post, never 500).
+   193→      if (input.dedupKey && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+   194→        if (sp) await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${sp}`);
+   195→        const existing = await tx.ledgerTransaction.findUnique({
+   196→          where: { dedupKey: input.dedupKey },
+   197→          include: { lines: true },
+   198→        });
+   199→        if (existing) return { ...existing, idempotentReplay: true };
+   200→      }
+   201→      throw e;
+   202→    }
+   203→  };
+   204→  return input.tx ? run(input.tx) : db.$transaction(run);
+   205→}
+   206→
+   207→// ------------------------------------------------------------- WALLET TRUTH
+   208→
+   209→export type WalletTruth = {
+   210→  pendingMinor: number;
+   211→  availableMinor: number;
+   212→  lifetimeEarnedMinor: number;
+   213→  lifetimeCommissionMinor: number;
+   214→};
+   215→
+   216→/** Compute wallet balances from ledger lines (the source of truth). */
+   217→export async function walletTruth(walletId: string, tx?: Prisma.TransactionClient): Promise<WalletTruth> {
+   218→  const payable = ACCOUNTS.sellerPayable(walletId);
+   219→  const client = tx ?? db;
+   220→  const lines = await client.ledgerLine.findMany({
+   221→    where: { accountCode: payable },
+   222→    select: { direction: true, amountMinor: true, availableAt: true },
+   223→  });
+   224→  const now = new Date();
+   225→  let totalCredits = 0, maturedCredits = 0, totalDebits = 0, lifetimeCommission = 0;
+   226→  for (const l of lines) {
+   227→    if (l.direction === "credit") {
+   228→      totalCredits += l.amountMinor;
+   229→      if (!l.availableAt || l.availableAt <= now) maturedCredits += l.amountMinor;
+   230→    } else {
+   231→      totalDebits += l.amountMinor;
+   232→    }
+   233→  }
+   234→  // lifetime commission from revenue account lines tagged with this wallet? simpler: from txns T1 memo — use commission revenue lines with walletId
+   235→  const commissionLines = await client.ledgerLine.findMany({
+   236→    where: { accountCode: ACCOUNTS.revenueCommission(), walletId, direction: "credit" },
+   237→    select: { amountMinor: true },
+   238→  });
+   239→  lifetimeCommission = commissionLines.reduce((s, l) => s + l.amountMinor, 0);
+   240→  return {
+   241→    pendingMinor: totalCredits - maturedCredits,
+   242→    availableMinor: maturedCredits - totalDebits,
+   243→    lifetimeEarnedMinor: totalCredits - lifetimeCommission,
+   244→    lifetimeCommissionMinor: lifetimeCommission,
+   245→  };
+   246→}
+   247→
+   248→/**
+   249→ * Refresh cached wallet columns from ledger truth (nightly invariant in prod;
+   250→ * on-write here). Pass the recipe's `tx` so the refresh reads uncommitted
+   251→ * lines and commits atomically with the posting itself.
+   252→ *
+   253→ * CONTENTION NOTE (measured): inside a Serializable tx this UPDATE on the
+   254→ * wallet row is the hot-row epicenter of same-seller payment-confirmation
+   255→ * storms (performance/REPORT.md §5.4 — 0/15 succeeded). Hot paths (webhook
+   256→ * confirmation) now pass no `tx` and run this AFTER the money tx commits —
+   257→ * the cache is a derived display value and payout authorization recomputes
+   258→ * truth independently, so a failed/late post-commit refresh is safe (the
+   259→ * invariant classifier reports time-maturity staleness as benign).
+   260→ */
+   261→export async function refreshWalletCache(walletId: string, tx?: Prisma.TransactionClient) {
+   262→  const truth = await walletTruth(walletId, tx);
+   263→  const client = tx ?? db;
+   264→  await client.wallet.update({
+   265→    where: { id: walletId },
+   266→    data: {
+   267→      pendingMinor: truth.pendingMinor,
+   268→      availableMinor: truth.availableMinor,
+   269→      lifetimeEarnedMinor: truth.lifetimeEarnedMinor,
+   270→      lifetimeCommissionMinor: truth.lifetimeCommissionMinor,
+   271→    },
+   272→  });
+   273→  return truth;
+   274→}
+   275→
+   276→/**
+   277→ * Best-effort cache refresh for display surfaces: never throws — on failure
+   278→ * returns the last-known cache and the error, so a wallet PAGE never 500s
+   279→ * because a concurrent payment tx briefly holds the wallet row. Money
+   280→ * decisions never use this helper (they recompute truth transactionally).
+   281→ */
+   282→export async function safeRefreshWalletCache(walletId: string) {
+   283→  try {
+   284→    const truth = await refreshWalletCache(walletId);
+   285→    return { refreshed: true as const, truth, error: null };
+   286→  } catch (e) {
+   287→    const cached = await db.wallet.findUnique({ where: { id: walletId } });
+   288→    return {
+   289→      refreshed: false as const,
+   290→      truth: null,
+   291→      error: e instanceof Error ? e.message : String(e),
+   292→      cached,
+   293→    };
+   294→  }
+   295→}
+   296→
+   297→// ------------------------------------------------------------- JOURNAL RECIPES
+   298→
+   299→/**
+   300→ * T1 — order paid: DR GATEWAY:{p} total | CR SELLER:PAYABLE (available_at=paid+hold) | CR COMMISSION
+   301→ * [+ CR AFFILIATE_LIABILITY pool when the order carries affiliate attribution].
+   302→ * Dedup: exactly ONE T1 per order (`order_paid:order:{orderId}`) — a group
+   303→ * webhook pays each order once; duplicate deliveries replay harmlessly
+   304→ * (P2002 → original txn returned with idempotentReplay:true).
+   305→ *
+   306→ * AFFILIATE 4th line: `affiliateMinor` is the seller-funded commission pool
+   307→ * Σ(OrderItem.affiliatePoolMinor) — already subtracted from sellerNetMinor
+   308→ * by computeOrderCommissions, so credits sum to the total exactly:
+   309→ *   sellerNet + commission + affiliate === total  (Option B invariant v2).
+   310→ * Line omitted when affiliateMinor = 0 (legacy rows stay byte-compatible).
+   311→ */
+   312→export async function postOrderPaid(input: {
+   313→  orderId: string;
+   314→  orderNumber: string;
+   315→  walletId: string;
+   316→  provider: string;
+   317→  totalMinor: number;
+   318→  sellerNetMinor: number;
+   319→  commissionMinor: number;
+   320→  /** Seller-funded affiliate pool for this order (0 ⇒ no affiliate line). */
+   321→  affiliateMinor?: number;
+   322→  holdUntil: Date;
+   323→  currency?: string;
+   324→  occurredAt?: Date;
+   325→  tx?: Prisma.TransactionClient;
+   326→  /** Set false on hot paths (payment confirmation) that refresh the cache
+   327→   *  AFTER the money tx commits instead of inside it (see refreshWalletCache
+   328→   *  contention note). Default true preserves every other caller. */
+   329→  refreshCache?: boolean;
+   330→}) {
+   331→  const lines: LedgerLineInput[] = [
+   332→    { accountCode: ACCOUNTS.gateway(input.provider), direction: "debit", amountMinor: input.totalMinor, memo: `Order ${input.orderNumber}` },
+   333→    { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "credit", amountMinor: input.sellerNetMinor, walletId: input.walletId, availableAt: input.holdUntil, memo: `Seller net for ${input.orderNumber}` },
+   334→    { accountCode: ACCOUNTS.revenueCommission(), direction: "credit", amountMinor: input.commissionMinor, walletId: input.walletId, memo: `Commission for ${input.orderNumber}` },
+   335→  ];
+   336→  if (input.affiliateMinor && input.affiliateMinor > 0) {
+   337→    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "credit", amountMinor: input.affiliateMinor, memo: `Affiliate pool for ${input.orderNumber}` });
+   338→  }
+   339→  const t = await postTransaction({
+   340→    txnType: "order_paid",
+   341→    refType: "order",
+   342→    refId: input.orderId,
+   343→    description: `Order ${input.orderNumber} paid via ${input.provider}`,
+   344→    dedupKey: `order_paid:order:${input.orderId}`,
+   345→    lines,
+   346→    occurredAt: input.occurredAt,
+   347→    tx: input.tx,
+   348→  });
+   349→  if (input.refreshCache !== false) await refreshWalletCache(input.walletId, input.tx);
+   350→  return t;
+   351→}
+   352→
+   353→/**
+   354→ * Setting key consulted by the webhook flow (FIN-2-b) before auto-invoking T2
+   355→ * after a successful T1. Default (absent/false) keeps T2 dormant — exactly
+   356→ * today's behavior. postOrderPaid deliberately does NOT auto-call T2: recipes
+   357→ * stay single-purpose; the CALLER decides settlement policy.
+   358→ */
+   359→export const AUTO_SETTLE_SETTING_KEY = "psp.split.auto_settle";
+   360→
+   361→/** Dedup key builder for T2 so the FIN-2-b webhook wiring and this recipe can never drift. */
+   362→export function gatewaySettlementDedupKey(ref: string): string {
+   363→  return `gateway_settlement:settlement:${ref}`;
+   364→}
+   365→
+   366→/**
+   367→ * T2 — gateway settlement: DR BANK_MAIN | CR GATEWAY:{p}
+   368→ *
+   369→ * INVOCATION (FIN-2-b, not wired here): the webhook flow calls this after T1
+   370→ * when Setting[AUTO_SETTLE_SETTING_KEY] is true or on an explicit
+   371→ * payment.settled PSP event. Until then this recipe has zero callers by
+   372→ * design (GATEWAY:* balances intentionally carry the unsettled PSP position).
+   373→ * Dedup: exactly ONE T2 per settlement ref via gatewaySettlementDedupKey().
+   374→ */
+   375→export async function postGatewaySettlement(input: { provider: string; amountMinor: number; ref: string; occurredAt?: Date; tx?: Prisma.TransactionClient }) {
+   376→  return postTransaction({
+   377→    txnType: "gateway_settlement",
+   378→    refType: "settlement",
+   379→    refId: input.ref,
+   380→    description: `Settlement ${input.ref} via ${input.provider}`,
+   381→    dedupKey: gatewaySettlementDedupKey(input.ref),
+   382→    lines: [
+   383→      { accountCode: ACCOUNTS.BANK_MAIN, direction: "debit", amountMinor: input.amountMinor, memo: input.ref },
+   384→      { accountCode: ACCOUNTS.gateway(input.provider), direction: "credit", amountMinor: input.amountMinor, memo: input.ref },
+   385→    ],
+   386→    occurredAt: input.occurredAt,
+   387→    tx: input.tx,
+   388→  });
+   389→}
+   390→
+   391→/** T3 — payout initiated: DR SELLER:PAYABLE | CR PAYOUT_CLEARING */
+   392→export async function postPayoutInitiated(input: { walletId: string; payoutId: string; referenceNo: string; amountMinor: number; tx?: Prisma.TransactionClient; refreshCache?: boolean }) {
+   393→  const t = await postTransaction({
+   394→    txnType: "payout_initiated",
+   395→    refType: "payout",
+   396→    refId: input.payoutId,
+   397→    description: `Payout ${input.referenceNo} initiated`,
+   398→    dedupKey: `payout_initiated:payout:${input.payoutId}`,
+   399→    lines: [
+   400→      { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "debit", amountMinor: input.amountMinor, walletId: input.walletId, memo: input.referenceNo },
+   401→      { accountCode: ACCOUNTS.payoutClearing(), direction: "credit", amountMinor: input.amountMinor, memo: input.referenceNo },
+   402→    ],
+   403→    tx: input.tx,
+   404→  });
+   405→  if (input.refreshCache !== false) await refreshWalletCache(input.walletId, input.tx);
+   406→  return t;
+   407→}
+   408→
+   409→/** T4 — payout confirmed: DR PAYOUT_CLEARING | CR BANK_MAIN */
+   410→export async function postPayoutConfirmed(input: { walletId: string; payoutId: string; referenceNo: string; amountMinor: number; tx?: Prisma.TransactionClient }) {
+   411→  const t = await postTransaction({
+   412→    txnType: "payout_confirmed",
+   413→    refType: "payout",
+   414→    refId: input.payoutId,
+   415→    description: `Payout ${input.referenceNo} confirmed paid`,
+   416→    dedupKey: `payout_confirmed:payout:${input.payoutId}`,
+   417→    lines: [
+   418→      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: input.referenceNo },
+   419→      { accountCode: ACCOUNTS.BANK_MAIN, direction: "credit", amountMinor: input.amountMinor, memo: input.referenceNo },
+   420→    ],
+   421→    tx: input.tx,
+   422→  });
+   423→  await refreshWalletCache(input.walletId, input.tx);
+   424→  return t;
+   425→}
+   426→
+   427→/** T4f — payout failed: reverse T3 → DR PAYOUT_CLEARING | CR SELLER:PAYABLE */
+   428→export async function postPayoutFailed(input: { walletId: string; payoutId: string; referenceNo: string; amountMinor: number; reason: string; tx?: Prisma.TransactionClient }) {
+   429→  const t = await postTransaction({
+   430→    txnType: "payout_failed",
+   431→    refType: "payout",
+   432→    refId: input.payoutId,
+   433→    description: `Payout ${input.referenceNo} failed: ${input.reason}`,
+   434→    dedupKey: `payout_failed:payout:${input.payoutId}`,
+   435→    lines: [
+   436→      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: input.referenceNo },
+   437→      { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "credit", amountMinor: input.amountMinor, walletId: input.walletId, availableAt: new Date(), memo: `Reversal: ${input.reason}` },
+   438→    ],
+   439→    tx: input.tx,
+   440→  });
+   441→  await refreshWalletCache(input.walletId, input.tx);
+   442→  return t;
+   443→}
+   444→
+   445→// ------------------------------------------------------- AFFILIATE PAYOUTS
+   446→// Manual controlled workflow (mirrors the seller payout recipes, but the
+   447→// liability side is PLATFORM:AFFILIATE_LIABILITY, never a seller wallet):
+   448→//   T-A3 approve  : DR AFFILIATE_LIABILITY | CR PAYOUT_CLEARING
+   449→//   T-A4 mark-paid: DR PAYOUT_CLEARING     | CR BANK_MAIN
+   450→//   T-A4f fail    : DR PAYOUT_CLEARING     | CR AFFILIATE_LIABILITY (release)
+   451→// Idempotency: exactly one posting per payout row per stage (dedupKeys).
+   452→
+   453→/** T-A3 — affiliate payout approved: DR AFFILIATE_LIABILITY | CR PAYOUT_CLEARING */
+   454→export async function postAffiliatePayoutInitiated(input: { payoutId: string; affiliateId: string; amountMinor: number; tx?: Prisma.TransactionClient }) {
+   455→  return postTransaction({
+   456→    txnType: "affiliate_payout_initiated",
+   457→    refType: "affiliate_payout",
+   458→    refId: input.payoutId,
+   459→    description: `Affiliate payout ${input.payoutId} approved`,
+   460→    dedupKey: `affiliate_payout_initiated:affpayout:${input.payoutId}`,
+   461→    lines: [
+   462→      { accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+   463→      { accountCode: ACCOUNTS.payoutClearing(), direction: "credit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+   464→    ],
+   465→    tx: input.tx,
+   466→  });
+   467→}
+   468→
+   469→/** T-A4 — affiliate payout confirmed paid: DR PAYOUT_CLEARING | CR BANK_MAIN */
+   470→export async function postAffiliatePayoutConfirmed(input: { payoutId: string; amountMinor: number; reference: string; tx?: Prisma.TransactionClient }) {
+   471→  return postTransaction({
+   472→    txnType: "affiliate_payout_confirmed",
+   473→    refType: "affiliate_payout",
+   474→    refId: input.payoutId,
+   475→    description: `Affiliate payout ${input.payoutId} paid (${input.reference})`,
+   476→    dedupKey: `affiliate_payout_confirmed:affpayout:${input.payoutId}`,
+   477→    lines: [
+   478→      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: input.reference },
+   479→      { accountCode: ACCOUNTS.BANK_MAIN, direction: "credit", amountMinor: input.amountMinor, memo: input.reference },
+   480→    ],
+   481→    tx: input.tx,
+   482→  });
+   483→}
+   484→
+   485→/** T-A4f — affiliate payout failed: reverse T-A3 → DR PAYOUT_CLEARING | CR AFFILIATE_LIABILITY */
+   486→export async function postAffiliatePayoutFailed(input: { payoutId: string; amountMinor: number; reason: string; tx?: Prisma.TransactionClient }) {
+   487→  return postTransaction({
+   488→    txnType: "affiliate_payout_failed",
+   489→    refType: "affiliate_payout",
+   490→    refId: input.payoutId,
+   491→    description: `Affiliate payout ${input.payoutId} failed: ${input.reason}`,
+   492→    dedupKey: `affiliate_payout_failed:affpayout:${input.payoutId}`,
+   493→    lines: [
+   494→      { accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: input.amountMinor, memo: `Affiliate payout ${input.payoutId}` },
+   495→      { accountCode: ACCOUNTS.affiliateLiability(), direction: "credit", amountMinor: input.amountMinor, memo: `Released: ${input.reason}` },
+   496→    ],
+   497→    tx: input.tx,
+   498→  });
+   499→}
+   500→
+   501→/**
+   502→ * T5 — refund: DR SELLER:PAYABLE (seller share) + DR COMMISSION (reversal)
+   503→ * [+ DR AFFILIATE_LIABILITY (affiliate reversal)] | CR GATEWAY:{p}
+   504→ * Dedup: exactly ONE T5 per Refund ROW (`refund:refund:{refundId}`) — an order
+   505→ * may legally receive MULTIPLE partial refunds, so the key is per refund row,
+   506→ * NOT per order (a (txnType,order) key would false-dedup the 2nd partial).
+   507→ *
+   508→ * AFFILIATE: `affiliateReversalMinor` mirrors commissionReversalMinor —
+   509→ * derived proportionally from the frozen OrderItem.affiliatePoolMinor
+   510→ * snapshots, clamped to the remaining reversible pool. The seller share
+   511→ * shrinks by the same amount (the pool was carved from seller proceeds at
+   512→ * checkout, so a refund restores it symmetrically).
+   513→ */
+   514→export async function postRefund(input: {
+   515→  orderId: string;
+   516→  orderNumber: string;
+   517→  walletId: string;
+   518→  provider: string;
+   519→  amountMinor: number;
+   520→  commissionReversalMinor: number;
+   521→  /** Affiliate pool reversal for this refund (0 ⇒ no affiliate line). */
+   522→  affiliateReversalMinor?: number;
+   523→  /** The Refund row driving this posting — required for its dedup key. */
+   524→  refundId: string;
+   525→  tx?: Prisma.TransactionClient;
+   526→}) {
+   527→  const affiliateReversal = Math.max(0, input.affiliateReversalMinor ?? 0);
+   528→  const sellerShare = input.amountMinor - input.commissionReversalMinor - affiliateReversal;
+   529→  const lines: LedgerLineInput[] = [
+   530→    { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "debit", amountMinor: sellerShare, walletId: input.walletId, memo: `Refund seller share ${input.orderNumber}` },
+   531→    { accountCode: ACCOUNTS.revenueCommission(), direction: "debit", amountMinor: input.commissionReversalMinor, walletId: input.walletId, memo: `Commission reversal ${input.orderNumber}` },
+   532→  ];
+   533→  if (affiliateReversal > 0) {
+   534→    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: affiliateReversal, memo: `Affiliate reversal ${input.orderNumber}` });
+   535→  }
+   536→  lines.push({ accountCode: ACCOUNTS.gateway(input.provider), direction: "credit", amountMinor: input.amountMinor, memo: `Refund ${input.orderNumber}` });
+   537→  const t = await postTransaction({
+   538→    txnType: "refund",
+   539→    refType: "order",
+   540→    refId: input.orderId,
+   541→    description: `Refund for ${input.orderNumber}`,
+   542→    dedupKey: `refund:refund:${input.refundId}`,
+   543→    lines,
+   544→    tx: input.tx,
+   545→  });
+   546→  await refreshWalletCache(input.walletId, input.tx);
+   547→  return t;
+   548→}
+   549→
+   550→/** T6 — admin adjustment: DR/CR SELLER:PAYABLE vs PLATFORM:REVENUE_ADJUST.
+   551→ *  Deliberately NO dedupKey: corrections are legitimately repeatable (each
+   552→ *  is a distinct business event). */
+   553→export async function postAdminAdjustment(input: {
+   554→  walletId: string;
+   555→  direction: "credit" | "debit"; // credit = add to seller balance
+   556→  amountMinor: number;
+   557→  reason: string;
+   558→  adminEmail: string;
+   559→  tx?: Prisma.TransactionClient;
+   560→}) {
+   561→  const payable = ACCOUNTS.sellerPayable(input.walletId);
+   562→  const lines: LedgerLineInput[] =
+   563→    input.direction === "credit"
+   564→      ? [
+   565→          { accountCode: ACCOUNTS.revenueAdjust(), direction: "debit", amountMinor: input.amountMinor, memo: input.reason },
+   566→          { accountCode: payable, direction: "credit", amountMinor: input.amountMinor, walletId: input.walletId, availableAt: new Date(), memo: input.reason },
+   567→        ]
+   568→      : [
+   569→          { accountCode: payable, direction: "debit", amountMinor: input.amountMinor, walletId: input.walletId, memo: input.reason },
+   570→          { accountCode: ACCOUNTS.revenueAdjust(), direction: "credit", amountMinor: input.amountMinor, memo: input.reason },
+   571→        ];
+   572→  const t = await postTransaction({
+   573→    txnType: "admin_adjustment",
+   574→    refType: "wallet",
+   575→    refId: input.walletId,
+   576→    description: `Manual adjustment by ${input.adminEmail}: ${input.reason}`,
+   577→    lines,
+   578→    tx: input.tx,
+   579→  });
+   580→  await refreshWalletCache(input.walletId, input.tx);
+   581→  return t;
+   582→}
+   583→
+   584→// ------------------------------------------------------------- INVARIANTS
+   585→
+   586→export type WalletCacheDrift = {
+   587→  walletId: string;
+   588→  cachedAvailable: number;
+   589→  cachedPending: number;
+   590→  truthAvailable: number;
+   591→  truthPending: number;
+   592→  /** available cache − truth, pending cache − truth (signed). */
+   593→  availableDelta: number;
+   594→  pendingDelta: number;
+   595→  /** Sum of holds whose availableAt matured after the cache's last write —
+   596→   *  the full explanation when classification is TIME_MATURITY. */
+   597→  maturedSinceLastWrite: number;
+   598→  lastCacheWriteAt: Date;
+   599→};
+   600→
+   601→export type LedgerInvariantResult = {
+   602→  ok: boolean;
+   603→  /** HARD problems only: unbalanced transactions + hard cache drift. */
+   604→  problems: string[];
+   605→  /** CACHE_VALUE_DRIFT / unexplained staleness — totals differ or the
+   606→   *  staleness is NOT explained by holds maturing after the last write.
+   607→   *  Always investigated; never auto-dismissed. */
+   608→  hardDrift: WalletCacheDrift[];
+   609→  /** Benign, self-healing staleness: totals equal AND the cache equals
+   610→   *  ledger truth recomputed as-of its own last write — holds matured by
+   611→   *  clock afterwards. Money correctness is NOT affected (payout
+   612→   *  authorization recomputes truth transactionally). */
+   613→  timeMaturityStale: WalletCacheDrift[];
+   614→  txnCount: number;
+   615→  walletCount: number;
+   616→};
+   617→
+   618→/**
+   619→ * Ledger invariants, classification-aware (mission: wallet-ledger drift).
+   620→ *
+   621→ * Wallet caches are event-driven derived values; hold credits mature by the
+   622→ * CLOCK (availableAt <= now) with no triggering write, so a cache frozen
+   623→ * since before a maturity is EXPECTED to disagree with truth-now while its
+   624→ * TOTAL stays correct. The invariant therefore separates:
+   625→ *   • unbalanced transactions            → hard, money correctness
+   626→ *   • totals-differ / unexplained drift  → hard (CACHE_VALUE_DRIFT)
+   627→ *   • explained time-maturity staleness  → benign, reported for visibility
+   628→ * (Health checks must distinguish these — a stale display cache is not a
+   629→ * lost-money event, and a nightly full-ledger scan on every poll is itself a
+   630→ * hazard; see /api/health for the TTL-wrapped consumption.)
+   631→ */
+   632→export async function runLedgerInvariants(): Promise<LedgerInvariantResult> {
+   633→  const problems: string[] = [];
+   634→  const txns = await db.ledgerTransaction.findMany({ include: { lines: true } });
+   635→  for (const t of txns) {
+   636→    const debit = t.lines.filter((l) => l.direction === "debit").reduce((s, l) => s + l.amountMinor, 0);
+   637→    const credit = t.lines.filter((l) => l.direction === "credit").reduce((s, l) => s + l.amountMinor, 0);
+   638→    if (debit !== credit) problems.push(`txn ${t.id} (${t.txnType}) unbalanced: D${debit} C${credit}`);
+   639→  }
+   640→
+   641→  const wallets = await db.wallet.findMany();
+   642→  const payableCodes = wallets.map((w) => ACCOUNTS.sellerPayable(w.id));
+   643→  const lines = payableCodes.length
+   644→    ? await db.ledgerLine.findMany({
+   645→        where: { accountCode: { in: payableCodes } },
+   646→        select: { accountCode: true, direction: true, amountMinor: true, availableAt: true },
+   647→      })
+   648→    : [];
+   649→  const byWallet = new Map<string, { direction: string; amountMinor: number; availableAt: Date | null }[]>();
+   650→  for (const l of lines) {
+   651→    // accountCode embeds the walletId: SELLER:{walletId}:PAYABLE
+   652→    const wid = l.accountCode.slice("SELLER:".length, -":PAYABLE".length);
+   653→    const arr = byWallet.get(wid) ?? [];
+   654→    arr.push({ direction: l.direction, amountMinor: l.amountMinor, availableAt: l.availableAt });
+   655→    byWallet.set(wid, arr);
+   656→  }
+   657→
+   658→  const hardDrift: WalletCacheDrift[] = [];
+   659→  const timeMaturityStale: WalletCacheDrift[] = [];
+   660→  const now = new Date();
+   661→  for (const w of wallets) {
+   662→    const wLines = byWallet.get(w.id) ?? [];
+   663→    let totalCredits = 0,
+   664→      maturedNow = 0,
+   665→      totalDebits = 0,
+   666→      maturedAtWrite = 0,
+   667→      maturedSinceWrite = 0;
+   668→    const writeAt = w.updatedAt;
+   669→    for (const l of wLines) {
+   670→      if (l.direction === "credit") {
+   671→        totalCredits += l.amountMinor;
+   672→        const matured = !l.availableAt || l.availableAt <= now;
+   673→        if (matured) maturedNow += l.amountMinor;
+   674→        if (!l.availableAt || l.availableAt <= writeAt) maturedAtWrite += l.amountMinor;
+   675→        else if (l.availableAt <= now) maturedSinceWrite += l.amountMinor;
+   676→      } else {
+   677→        totalDebits += l.amountMinor;
+   678→      }
+   679→    }
+   680→    // Truth as-of NOW and as-of the cache's last write. Debits apply in both
+   681→    // views (they are event-driven, not clock-driven).
+   682→    const truthNowAvail = maturedNow - totalDebits;
+   683→    const truthNowPend = totalCredits - maturedNow;
+   684→    const truthAtWriteAvail = maturedAtWrite - totalDebits;
+   685→    const truthAtWritePend = totalCredits - maturedAtWrite;
+   686→
+   687→    if (truthNowAvail === w.availableMinor && truthNowPend === w.pendingMinor) continue; // MATCH
+   688→
+   689→    const base: WalletCacheDrift = {
+   690→      walletId: w.id,
+   691→      cachedAvailable: w.availableMinor,
+   692→      cachedPending: w.pendingMinor,
+   693→      truthAvailable: truthNowAvail,
+   694→      truthPending: truthNowPend,
+   695→      availableDelta: w.availableMinor - truthNowAvail,
+   696→      pendingDelta: w.pendingMinor - truthNowPend,
+   697→      maturedSinceLastWrite: maturedSinceWrite,
+   698→      lastCacheWriteAt: writeAt,
+   699→    };
+   700→    const totalsEqual = w.availableMinor + w.pendingMinor === truthNowAvail + truthNowPend;
+   701→    if (totalsEqual && truthAtWriteAvail === w.availableMinor && truthAtWritePend === w.pendingMinor) {
+   702→      timeMaturityStale.push(base); // benign, clock-driven, self-heals on next event/read
+   703→    } else {
+   704→      hardDrift.push(base);
+   705→      problems.push(
+   706→        `wallet ${w.id} cache drift (${totalsEqual ? "UNEXPLAINED staleness" : "CACHE_VALUE_DRIFT — totals differ"}): available cache=${w.availableMinor} truth=${truthNowAvail}, pending cache=${w.pendingMinor} truth=${truthNowPend}`
+   707→      );
+   708→    }
+   709→  }
+   710→  return { ok: problems.length === 0, problems, hardDrift, timeMaturityStale, txnCount: txns.length, walletCount: wallets.length };
+   711→}
+   712→
+   713→/** Payout statement snapshot builder (sales, commission, refunds, adjustments since last payout). */
+   714→export function buildPayoutStatement(params: {
+   715→  sellerName: string;
+   716→  periodFrom: Date;
+   717→  periodTo: Date;
+   718→  salesMinor: number;
+   719→  commissionMinor: number;
+   720→  refundsMinor: number;
+   721→  adjustmentsMinor: number;
+   722→  negativeCarryMinor: number;
+   723→  orderCount: number;
+   724→}) {
+   725→  return toJson({
+   726→    ...params,
+   727→    generatedAt: new Date().toISOString(),
+   728→    lines: [
+   729→      { label: "Sales (settled to available)", amountMinor: params.salesMinor },
+   730→      { label: "Platform commission", amountMinor: -params.commissionMinor },
+   731→      { label: "Refunds", amountMinor: -params.refundsMinor },
+   732→      { label: "Adjustments", amountMinor: params.adjustmentsMinor },
+   733→      { label: "Negative carry-forward", amountMinor: params.negativeCarryMinor },
+   734→    ],
+   735→  });
+   736→}
+   737→
+   738→export function parseStatement(json: string) {
+   739→  return parseJson(json, { sellerName: "", periodFrom: "", periodTo: "", lines: [] as { label: string; amountMinor: number }[] });
+   740→}
+   741→
+   742→// ------------------------------------------------------------- LEDGER-TRUTH STATEMENTS
+   743→// INTEGRITY RULE (user directive): every number printed on a payout statement
+   744→// must be DERIVED from ledger lines for the payout period — never decorated.
+   745→// The lines always reconcile to the payout amount via an explicit
+   746→// "Retained in wallet" balancing line, so Σ(lines) ≡ net payout.
+   747→
+   748→export type LedgerStatement = {
+   749→  /** Parsed shape of the JSON string returned by buildLedgerStatementFromLedger
+   750→   *  (Payout.statementJson column stores the serialized form). */
+   751→  sellerName: string;
+   752→  periodFrom: string;
+   753→  periodTo: string;
+   754→  orderCount: number;
+   755→  reconciled: true;
+   756→  generatedAt: string;
+   757→  lines: { label: string; amountMinor: number }[];
+   758→};
+   759→
+   760→/** Aggregate a wallet's ledger activity for [periodFrom, periodTo] and build a
+   761→ *  payout statement whose lines sum EXACTLY to `payoutAmountMinor`.
+   762→ *  Components (all from ledger truth):
+   763→ *    • sales        — payable credits from order_paid (seller net) + matching
+   764→ *                     commission-revenue credits (gross sales)
+   765→ *    • commission   — commission-revenue credits from order_paid in the period
+   766→ *    • refunds      — payable debits from refund txns + commission reversals
+   767→ *    • adjustments  — net admin_adjustment movement on the payable account
+   768→ *    • retained     — residual balancing line so Σ(lines) ≡ payout (holds, caps,
+   769→ *                     prior-balance carry)                                   */
+   770→export async function buildLedgerStatementFromLedger(params: {
+   771→  walletId: string;
+   772→  sellerName: string;
+   773→  payoutAmountMinor: number;
+   774→  orderCount: number;
+   775→  periodFrom: Date;
+   776→  periodTo: Date;
+   777→}): Promise<string> {
+   778→  const { walletId, sellerName, payoutAmountMinor, orderCount, periodFrom, periodTo } = params;
+   779→  const payable = ACCOUNTS.sellerPayable(walletId);
+   780→  const commissionAccount = ACCOUNTS.revenueCommission();
+   781→
+   782→  // Wallet-scope lines in the period, joined to their txn type. Period is
+   783→  // evaluated on txn.occurredAt (business time) — rows are often backdated
+   784→  // (seed) or posted later (payout T3 lands after the statement snapshot).
+   785→  const lines = await db.ledgerLine.findMany({
+   786→    where: {
+   787→      OR: [{ accountCode: payable }, { accountCode: commissionAccount, walletId }],
+   788→      txn: { occurredAt: { gte: periodFrom, lte: periodTo } },
+   789→    },
+   790→    select: { accountCode: true, direction: true, amountMinor: true, txn: { select: { txnType: true } } },
+   791→  });
+   792→
+   793→  let salesNet = 0; // payable credits from order_paid
+   794→  let commission = 0; // commission-revenue credits from order_paid
+   795→  let refundSellerShare = 0; // payable debits from refund txns
+   796→  let refundCommissionReversal = 0; // commission debits from refund txns
+   797→  let adjustments = 0; // admin_adjustment net (credits − debits on payable)
+   798→
+   799→  for (const l of lines) {
+   800→    const type = l.txn.txnType;
+   801→    if (l.accountCode === payable) {
+   802→      if (l.direction === "credit") {
+   803→        if (type === "order_paid") salesNet += l.amountMinor;
+   804→        else if (type === "admin_adjustment") adjustments += l.amountMinor;
+   805→      } else {
+   806→        if (type === "refund") refundSellerShare += l.amountMinor;
+   807→        else if (type === "admin_adjustment") adjustments -= l.amountMinor;
+   808→      }
+   809→    } else if (l.accountCode === commissionAccount) {
+   810→      if (l.direction === "credit") {
+   811→        if (type === "order_paid") commission += l.amountMinor;
+   812→      } else if (type === "refund") {
+   813→        refundCommissionReversal += l.amountMinor;
+   814→      }
+   815→    }
+   816→  }
+   817→
+   818→  const sales = salesNet + commission; // gross sales for the period
+   819→  const refunds = refundSellerShare + refundCommissionReversal;
+   820→  const netMovement = sales - commission - refunds + adjustments;
+   821→  // Balancing line so Σ(statement lines) ≡ net payout: when the period's net
+   822→  // movement exceeds the payout (pending holds, min-payout cap, prior carry),
+   823→  // the difference is "retained"; when a payout draws on prior balance, it's
+   824→  // a positive carry line. Either way the statement always reconciles.
+   825→  const retained = payoutAmountMinor - netMovement;
+   826→
+   827→  const linesOut: { label: string; amountMinor: number }[] = [];
+   828→  if (sales !== 0) linesOut.push({ label: "Sales (settled to available)", amountMinor: sales });
+   829→  if (commission !== 0) linesOut.push({ label: "Platform commission", amountMinor: -commission });
+   830→  if (refunds !== 0) linesOut.push({ label: "Refunds", amountMinor: -refunds });
+   831→  if (adjustments !== 0) linesOut.push({ label: "Adjustments", amountMinor: adjustments });
+   832→  if (retained !== 0) linesOut.push({ label: "Retained in wallet (hold/cap — not paid out)", amountMinor: retained });
+   833→
+   834→  return toJson({
+   835→    sellerName,
+   836→    periodFrom: periodFrom.toISOString(),
+   837→    periodTo: periodTo.toISOString(),
+   838→    orderCount,
+   839→    reconciled: true,
+   840→    generatedAt: new Date().toISOString(),
+   841→    lines: linesOut,
+   842→  });
+   843→}
+   844→
