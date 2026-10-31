@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,15 @@ export const dynamic = "force-dynamic";
 // published collections with their products. NO email, phone, payout data,
 // network members or earnings. Rendered as an affiliate recommendation page,
 // clearly not a seller store.
+// POST-IMPLEMENTATION AUDIT (P2): showcases are deferred for the initial
+// release — while affiliate.showcase_enabled is off this route fails CLOSED
+// (identical response to a missing page: no private data leaks, existing
+// deep links degrade gracefully).
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
+  const settings = await getAffiliateSettings();
+  if (!settings.showcaseEnabled) {
+    return ok({ found: false });
+  }
   const { slug } = await ctx.params;
   const profile = await db.affiliateProfile.findUnique({
     where: { slug: slug.toLowerCase() },

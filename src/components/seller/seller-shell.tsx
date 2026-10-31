@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
 import { useChatUserRoom } from "@/lib/chat-presence";
 import { setSessionToken } from "@/lib/session-client";
+import { UnifiedAuthPanel, type UnifiedUserType } from "@/components/auth/unified-auth-panel";
 import { cn } from "@/lib/utils";
 import {
   apiGet,
@@ -67,7 +68,6 @@ import {
   ShieldAlert,
   ShoppingBag,
   ShoppingCart,
-  Sparkles,
   TicketPercent,
   Wallet,
 } from "lucide-react";
@@ -641,8 +641,6 @@ function PendingReview({ onLogout }: { onLogout: () => void }) {
 
 function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
   const setSurface = useApp((s) => s.setSurface);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [reg, setReg] = useState({ fullName: "", displayName: "", email: "", password: "", phone: "", storeName: "" });
 
@@ -667,22 +665,23 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
 
   const goMarket = () => setSurface("shopper");
 
-  const login = async () => {
-    if (!loginEmail || !loginPassword) {
-      toast.error("Enter your email and password");
+  // Unified login (P11): the server resolves the account type. Sellers keep
+  // the existing post-login flow (refreshMe re-checks identity so the shell's
+  // status gates route onboarding/pending_review/active correctly); buyer and
+  // admin accounts belong on their own surfaces and are routed there.
+  const handleAuthed = async (userType: UnifiedUserType) => {
+    if (userType === "seller") {
+      toast.success("Welcome back!");
+      await onAuthed();
       return;
     }
-    setBusy(true);
-    const ok = await runMutation(async () => {
-      const body = await apiSend<{ token?: string }>("POST", "/api/auth/login", {
-        email: loginEmail,
-        password: loginPassword,
-        portal: "seller",
-      });
-      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
-    }, "Welcome back!");
-    setBusy(false);
-    if (ok) await onAuthed();
+    if (userType === "shopper") {
+      toast.success("Signed in as a buyer — opening the marketplace");
+    } else {
+      toast.success("Signed in as an administrator — opening the Admin Console");
+    }
+    await useApp.getState().refreshMe();
+    setSurface(userType);
   };
 
   const register = async () => {
@@ -779,46 +778,8 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
               <TabsTrigger value="register">Create free store</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="login" className="mt-4 space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-login-email">Email</Label>
-                <Input
-                  id="seller-login-email"
-                  type="email"
-                  className="min-h-[44px]"
-                  placeholder="you@store.com"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && login()}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="seller-login-password">Password</Label>
-                <Input
-                  id="seller-login-password"
-                  type="password"
-                  className="min-h-[44px]"
-                  placeholder="••••••••"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && login()}
-                />
-              </div>
-              <Button className="w-full min-h-[44px] bg-brand-gradient-deep text-white shadow-glow-cyan-sm hover:brightness-105" onClick={login} disabled={busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log in to seller portal"}
-              </Button>
-              <div className="space-y-1.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-xs">
-                <p className="flex items-center gap-1.5 font-medium">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Sandbox demo accounts
-                </p>
-                <p className="text-muted-foreground">lumina@nomofee.io — active store, full dashboard</p>
-                <p className="text-muted-foreground">trail@nomofee.io — onboarding wizard demo</p>
-                <p className="text-muted-foreground">warung@nomofee.io — pending review screen</p>
-                {/* F-19/F-12 remediation: the shared demo password and one-click
-                    credential fill were removed from the client bundle. Seeded
-                    credentials are documented SERVER-side only (prisma/seed.ts
-                    + .env.example overrides). */}
-              </div>
+            <TabsContent value="login" className="mt-4">
+              <UnifiedAuthPanel onAuthed={handleAuthed} />
             </TabsContent>
 
             <TabsContent value="register" className="mt-4 space-y-3.5">

@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import { getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,14 @@ export const dynamic = "force-dynamic";
 // Published collections only; products filtered to active/live. Attribution
 // for products clicked from here records PRODUCT-scope touches via the
 // tracking endpoint (the showcase scope rule, spec §6).
+// POST-IMPLEMENTATION AUDIT (P2): collections are deferred for the initial
+// release — while affiliate.collections_enabled is off this route fails
+// CLOSED (identical response to a missing page).
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
+  const settings = await getAffiliateSettings();
+  if (!settings.collectionsEnabled) {
+    return ok({ found: false });
+  }
   const { slug } = await ctx.params;
   const collection = await db.affiliateCollection.findUnique({
     where: { slug: slug.toLowerCase() },

@@ -26,7 +26,6 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api";
 import { randomToken } from "@/lib/password";
-import { divHalfUp } from "@/lib/money";
 import { getSession } from "@/lib/auth";
 import { parseJson, toJson } from "@/lib/json";
 import type { Prisma } from "@prisma/client";
@@ -45,6 +44,12 @@ export const AFFILIATE_SETTING_KEYS = {
   sponsorWindowDays: "affiliate.sponsor_window_days",
   reviewDays: "affiliate.review_days",
   minPayoutMinor: "affiliate.min_payout_minor",
+  // POST-IMPLEMENTATION AUDIT (P2): separate, default-OFF gates for the
+  // deferred on-platform promotional surfaces. Non-destructive: schema,
+  // historical rows and relationships are preserved; creation/publishing
+  // and public routes fail closed while off. Enable deliberately later.
+  collectionsEnabled: "affiliate.collections_enabled",
+  showcaseEnabled: "affiliate.showcase_enabled",
 } as const;
 
 export type AffiliateSettings = {
@@ -55,6 +60,8 @@ export type AffiliateSettings = {
   sponsorWindowDays: number;
   reviewDays: number;
   minPayoutMinor: number;
+  collectionsEnabled: boolean;
+  showcaseEnabled: boolean;
 };
 
 const DEFAULTS: AffiliateSettings = {
@@ -68,6 +75,11 @@ const DEFAULTS: AffiliateSettings = {
   sponsorWindowDays: 30,
   reviewDays: 14,
   minPayoutMinor: 1000, // RM 10.00
+  // Deferred by design for the initial release (user direction, 2026-10-30):
+  // collections/showcase stay OFF until deliberately enabled in a future
+  // upgrade. Product and store affiliate links are unaffected by these gates.
+  collectionsEnabled: false,
+  showcaseEnabled: false,
 };
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
@@ -91,6 +103,8 @@ export async function getAffiliateSettings(): Promise<AffiliateSettings> {
     sponsorWindowDays: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.sponsorWindowDays) ?? null, DEFAULTS.sponsorWindowDays), 1, 365, DEFAULTS.sponsorWindowDays),
     reviewDays: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.reviewDays) ?? null, DEFAULTS.reviewDays), 0, 365, DEFAULTS.reviewDays),
     minPayoutMinor: clampInt(parseJson<unknown>(map.get(AFFILIATE_SETTING_KEYS.minPayoutMinor) ?? null, DEFAULTS.minPayoutMinor), 0, 10_000_000, DEFAULTS.minPayoutMinor),
+    collectionsEnabled: bool(AFFILIATE_SETTING_KEYS.collectionsEnabled, DEFAULTS.collectionsEnabled),
+    showcaseEnabled: bool(AFFILIATE_SETTING_KEYS.showcaseEnabled, DEFAULTS.showcaseEnabled),
   };
 }
 
@@ -110,10 +124,18 @@ export function effectiveAffiliateRateBps(
 // ---------------------------------------------------------------------------
 // Commission math — the spec's exact formulas (§8).
 // ---------------------------------------------------------------------------
-/** Pool P = B × R in integer sen, half-up rounding (platform convention). */
+/** Pool P = floor(B × R / 10^4) in integer sen.
+ *  POST-IMPLEMENTATION AUDIT (P4): the ONE canonical rounding policy for the
+ *  entire affiliate money path is FLOOR (commission-definitions.md §9 is
+ *  normative: "Where this document conflicts with prose elsewhere, this
+ *  document governs"). Previously half-up (platform percent convention) —
+ *  a one-sen drift vs the normative doc. Same floor policy is used at the
+ *  checkout snapshot, payment posting, refund reversal, reconciliation and
+ *  every report. The platform commission's own percent part keeps its
+ *  historical half-up convention (separate ledger line, unchanged). */
 export function affiliatePoolMinor(baseMinor: number, rateBps: number): number {
   if (baseMinor <= 0 || rateBps <= 0) return 0;
-  return divHalfUp(baseMinor * rateBps, 10000);
+  return Math.floor((baseMinor * rateBps) / 10000);
 }
 
 /** 90/10 split of the POOL: S = floor(P × 10 / 100); D = P − S (D + S = P). */
@@ -363,11 +385,12 @@ export async function correctSponsor(input: {
 type Tx = Prisma.TransactionClient;
 
 /** Post AffiliateCommission rows for one paid order. Idempotent: unique
- *  orderItemId + find-first guard. Split computed HERE (posting time) from
- *  the then-current sponsor flag + sponsor eligibility. */
+ *  orderItemId + find-first guard. The 90/10 DECISION comes from the
+ *  checkout-time policy snapshot (OrderItem.affiliateSponsorEnabled); the
+ *  sponsor's status at posting decides pending vs held only. */
 export async function postAffiliateCommissionsForOrder(
   tx: Tx,
-  order: { id: string; orderNumber: string; storeId: string; items: { id: string; productId?: string | null; affiliateDirectId: string | null; affiliateSponsorId: string | null; affiliateLinkId: string | null; affiliateRateBps: number | null; affiliatePoolMinor: number; breakdownJson: string }[] },
+  order: { id: string; orderNumber: string; storeId: string; items: { id: string; productId?: string | null; affiliateDirectId: string | null; affiliateSponsorId: string | null; affiliateLinkId: string | null; affiliateRateBps: number | null; affiliatePoolMinor: number; affiliateSponsorEnabled?: boolean | null; breakdownJson: string }[] },
   paidAt: Date
 ): Promise<number> {
   const attributed = order.items.filter((i) => i.affiliateDirectId && i.affiliatePoolMinor > 0);
@@ -396,7 +419,22 @@ export async function postAffiliateCommissionsForOrder(
     const pool = item.affiliatePoolMinor;
     let sponsorMinor = 0;
     let sponsorHeld = false;
-    if (item.affiliateSponsorId && settings.sponsorEnabled) {
+    // POST-IMPLEMENTATION AUDIT (P3 — deterministic policy freeze): the
+    // sponsor-override decision comes from the CHECKOUT-TIME snapshot
+    // (OrderItem.affiliateSponsorEnabled), never from the live setting. A
+    // settings change between checkout and payment confirmation must not
+    // retroactively alter an existing order's compensation arrangement:
+    //   • override ON at checkout → this order keeps the 90/10 split even if
+    //     an admin later disables sponsor compensation for NEW orders;
+    //   • override OFF at checkout → the direct promoter receives 100% (D = P)
+    //     for this order, even if the override is later enabled.
+    // NULL (legacy rows created before the snapshot column existed) falls
+    // back to the current setting — the historical behaviour those orders
+    // were created under. The sponsor's CURRENT status still decides only
+    // whether the 10% share posts as pending or held (never who the
+    // beneficiary is), matching commission-definitions.md §4.
+    const sponsorOverrideOn = item.affiliateSponsorEnabled ?? settings.sponsorEnabled;
+    if (item.affiliateSponsorId && sponsorOverrideOn) {
       const status = sponsors.get(item.affiliateSponsorId) ?? "missing";
       if (status === "active") {
         sponsorMinor = Math.floor((pool * 10) / 100);
@@ -643,7 +681,7 @@ export async function reverseAffiliateForRefund(
       perItem.push({ item: attributed[i], reversal: 0 });
       continue;
     }
-    const r = Math.min(divHalfUp(allocs[i] * attributed[i].affiliatePoolMinor, grossArr[i]), attributed[i].affiliatePoolMinor);
+    const r = Math.min(Math.floor((allocs[i] * attributed[i].affiliatePoolMinor) / grossArr[i]), attributed[i].affiliatePoolMinor);
     perItem.push({ item: attributed[i], reversal: r });
     total += r;
   }
@@ -656,15 +694,20 @@ export async function reverseAffiliateForRefund(
     const scale = rawTotal > 0 ? total / rawTotal : 0;
     let applied = 0;
     for (const p of perItem) {
-      const itemReversal = p.reversal === 0 ? 0 : Math.min(p.reversal, Math.round(p.reversal * scale));
+      const itemReversal = p.reversal === 0 ? 0 : Math.min(p.reversal, Math.floor(p.reversal * scale));
       if (itemReversal <= 0) continue;
       const commission = await tx.affiliateCommission.findUnique({ where: { orderItemId: p.item.id }, include: { entries: true } });
       if (!commission) continue; // pre-affiliate legacy rows: nothing to reverse
       const direct = commission.entries.find((e) => e.role === "direct");
       const sponsor = commission.entries.find((e) => e.role === "sponsor");
-      // Split proportionally to the frozen allocation shares.
-      const directShare = direct ? Math.min(direct.amountMinor - direct.reversedMinor, divHalfUp(itemReversal * direct.amountMinor, commission.poolMinor)) : 0;
-      const sponsorShare = sponsor ? Math.min(sponsor.amountMinor - sponsor.reversedMinor, itemReversal - directShare) : 0;
+      // Split proportionally to the frozen allocation shares (P4: floor policy
+      // — same rounding as the pool computation). The SPONSOR share is the
+      // floor-proportional part and the DIRECT share takes the residual
+      // (commission-definitions.md §7 step 3: "direct absorbs the rounding
+      // residual"), mirroring the forward split where D = P − S. Invariant:
+      // Σ(dRev+sRev) === itemReversal whenever caps allow, and never more.
+      const sponsorShare = sponsor ? Math.min(sponsor.amountMinor - sponsor.reversedMinor, Math.floor((itemReversal * sponsor.amountMinor) / commission.poolMinor)) : 0;
+      const directShare = direct ? Math.min(direct.amountMinor - direct.reversedMinor, itemReversal - sponsorShare) : 0;
       for (const [entry, share] of [[direct, directShare], [sponsor, sponsorShare]] as const) {
         if (!entry || share <= 0) continue;
         const newReversed = Math.min(entry.amountMinor, entry.reversedMinor + share);

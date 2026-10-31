@@ -65,6 +65,11 @@ export type AffiliateSettingsT = {
   sponsorWindowDays: number;
   reviewDays: number;
   minPayoutMinor: number;
+  // P2 deferral flags: Collections & Showcase are gated features — when false
+  // the hub hides those tabs and the link-creation dialog stops offering the
+  // corresponding link types (the API 403s anyway; the UI simply fails closed).
+  collectionsEnabled: boolean;
+  showcaseEnabled: boolean;
 };
 
 export type AffiliateBalancesT = {

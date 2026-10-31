@@ -233,12 +233,18 @@ export function LinkCreateDialog({
   open,
   onOpenChange,
   preset,
+  collectionsEnabled = false,
+  showcaseEnabled = false,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   /** Product preset coming from a Discover card. */
   preset: DiscoverProductT | null;
+  /** P2 feature gates — collection/showcase link types are not offered while
+   *  the platform flags are off (the API 403s anyway; fail closed by default). */
+  collectionsEnabled?: boolean;
+  showcaseEnabled?: boolean;
   onCreated?: () => void;
 }) {
   const [type, setType] = useState<"product" | "store" | "collection" | "showcase">("product");
@@ -326,6 +332,12 @@ export function LinkCreateDialog({
     }
   };
 
+  // Product and store links always remain available; the gated types are
+  // simply not offered (product stays the default, per the API contract).
+  const typeOptions = (["product", "store", "collection", "showcase"] as const).filter(
+    (t) => (t !== "collection" || collectionsEnabled) && (t !== "showcase" || showcaseEnabled)
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
@@ -338,8 +350,12 @@ export function LinkCreateDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Link type">
-            {(["product", "store", "collection", "showcase"] as const).map((t) => (
+          <div
+            className={cn("grid gap-1.5", typeOptions.length >= 4 ? "grid-cols-4" : typeOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}
+            role="group"
+            aria-label="Link type"
+          >
+            {typeOptions.map((t) => (
               <button
                 key={t}
                 type="button"

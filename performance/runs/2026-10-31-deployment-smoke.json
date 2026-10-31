@@ -1,0 +1,34 @@
+{
+  "suite": "deployment-smoke",
+  "runId": "mvvpu90x",
+  "base": "http://127.0.0.1:3000",
+  "startedAt": "2026-10-31T01:21:55.761Z",
+  "sections": {
+    "A": {
+      "rootStatus": 200,
+      "nodeEnv": "development",
+      "dbFingerprint": "aa338c2b6272e14c",
+      "ledgerTxns": 431
+    },
+    "B": {
+      "ok": true
+    },
+    "C": {
+      "checkoutStatus": 201,
+      "checkoutMs": 2566,
+      "ref": "ref_071dc78f1c9c8b5a",
+      "orderNumber": "NM-103674",
+      "t1Txns": 1,
+      "dupStatus": 200
+    },
+    "D": {
+      "cronAuthMode": "dev-open"
+    },
+    "E": {
+      "nodeEnv": "development",
+      "dbFingerprint": "aa338c2b6272e14c",
+      "mockGate": "dev-open"
+    }
+  },
+  "finishedAt": "2026-10-31T01:22:08.980Z"
+}

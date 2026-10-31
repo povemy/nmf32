@@ -51,13 +51,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { setSessionToken } from "@/lib/session-client";
+import { UnifiedAuthPanel, type UnifiedUserType } from "@/components/auth/unified-auth-panel";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-store";
-import { apiSend } from "./use-api";
 import type { AdminNav, AdminParams } from "./nav";
 import { EmptyState } from "./ui-bits";
 import { roleHasAnyCap, type AdminCap } from "@/lib/admin-caps";
@@ -483,40 +480,28 @@ function AdminMenu({ admin }: { admin: { id: string; email: string; name: string
 
 /* --------------------------------------------------------------- login */
 
-// F-19/F-12 remediation: the demo quick-fill panel (hardcoded superadmin/ops/
-// finance/moderator emails + PASSWORDS) was removed from the client bundle —
-// shipping credentials to every browser handed attackers half of every
-// seeded admin account. Credentials are documented SERVER-side only
-// (prisma/seed.ts + .env.example overrides) and are never sent to the client.
+// Unified login entry point (P11). F-19/F-12 still hold: no credentials live
+// in the client bundle — the sandbox-only dev-accounts reference served by
+// GET /api/auth/dev-accounts is dual-gated SERVER-side (development env +
+// explicit opt-in flag) and 404s in production, and the panel below renders
+// nothing unless that endpoint answers with live, re-verified accounts.
 
 function LoginCard({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const body = await apiSend<{ userType?: string; token?: string; admin?: { name?: string } | null }>("/api/auth/login", "POST", {
-        email: email.trim(),
-        password,
-        portal: "admin",
-      });
-      setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
-      if (body?.userType !== "admin") {
-        setError("This account cannot access the admin command centre.");
-        setBusy(false);
-        return;
-      }
-      toast.success(`Welcome back, ${body.admin?.name ?? "admin"}`);
-      onLogin();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed — check your credentials.");
-      setBusy(false);
+  // Non-admin sign-ins are no longer rejected here: this is only the ENTRY
+  // point. The console itself remains fully protected server-side
+  // (requireAdmin on every admin API) — a buyer/seller session is simply
+  // routed to its own portal instead of ever reaching admin data.
+  const handleAuthed = async (userType: UnifiedUserType, res: { admin?: { name?: string } | null }) => {
+    if (userType === "admin") {
+      toast.success(`Welcome back, ${res.admin?.name ?? "admin"}`);
+      onLogin(); // refreshMe — the shell gate renders the console
+      return;
     }
+    toast.info("This account is not an administrator", {
+      description: `You are signed in — opening the ${userType === "seller" ? "Seller Centre" : "marketplace"} instead.`,
+    });
+    await useApp.getState().refreshMe();
+    useApp.getState().setSurface(userType);
   };
 
   return (
@@ -534,42 +519,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
 
         <Card className="rounded-3xl py-0 shadow-soft-card">
           <CardContent className="p-6">
-            <form onSubmit={submit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="admin-email">Email</Label>
-                <Input
-                  id="admin-email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@nomofee.io"
-                  className="min-h-[44px]"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="admin-password">Password</Label>
-                <Input
-                  id="admin-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="min-h-[44px]"
-                  required
-                />
-              </div>
-              {error ? (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" role="alert">
-                  {error}
-                </p>
-              ) : null}
-              <Button type="submit" className="min-h-[44px] w-full" disabled={busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in to command centre"}
-              </Button>
-            </form>
+            <UnifiedAuthPanel onAuthed={handleAuthed} submitLabel="Sign in to command centre" />
           </CardContent>
         </Card>
 

@@ -93,6 +93,11 @@ export async function resolveAffiliateLink(code: string): Promise<ResolvedAffili
     if (!store || store.status !== "live") throw new ApiError(404, "LINK_NOT_FOUND", "The store in this link is no longer available");
     target = { kind: "store", storeSlug: store.slug };
   } else if (link.type === "collection" && link.collectionId) {
+    // POST-IMPLEMENTATION AUDIT (P2): collections are deferred — while the
+    // gate is off, legacy collection links fail closed (same as unpublished).
+    if (!settings.collectionsEnabled) {
+      throw new ApiError(404, "LINK_NOT_FOUND", "This collection is no longer available");
+    }
     const collection = await db.affiliateCollection.findUnique({
       where: { id: link.collectionId },
       select: { slug: true, status: true },
@@ -102,6 +107,11 @@ export async function resolveAffiliateLink(code: string): Promise<ResolvedAffili
     }
     target = { kind: "collection", collectionSlug: collection.slug };
   } else if (link.type === "showcase") {
+    // POST-IMPLEMENTATION AUDIT (P2): showcases are deferred — while the gate
+    // is off, legacy showcase links fail closed (public page also 404s).
+    if (!settings.showcaseEnabled) {
+      throw new ApiError(404, "LINK_NOT_FOUND", "This showcase is no longer available");
+    }
     target = { kind: "showcase", affiliateSlug: affiliate.slug };
   } else {
     throw new ApiError(404, "LINK_NOT_FOUND", "This link is not valid");
@@ -191,12 +201,19 @@ export async function trackReferralVisit(code: string, channel?: string): Promis
     const identity = await resolveInsightsIdentity();
 
     // FIRST-touch: only record + set the cookie when no valid touch exists.
+    // POST-IMPLEMENTATION AUDIT (defect fix): a prior touch only "wins" while
+    // it is still CONSUMABLE (unconsumed). Once consumed by an activation it
+    // no longer represents a pending attribution for this browser — a second
+    // person sharing the device must be able to earn their own sponsor by
+    // clicking a (different) referral link, instead of being silently
+    // blocked by the stale cookie. Already-activated users keep their locked
+    // sponsor either way (activation is once-only).
     const existingRaw = store.get("nm_aff_ref")?.value;
     if (existingRaw) {
       const parsed = parseJson<{ code?: string }>(existingRaw, {});
       if (parsed?.code) {
         const prior = await db.affiliateReferralTouch.findFirst({
-          where: { code: parsed.code, expiresAt: { gt: new Date() } },
+          where: { code: parsed.code, consumedAt: null, expiresAt: { gt: new Date() } },
           select: { code: true },
         });
         if (prior) return { displayName: affiliate.displayName }; // prior touch wins

@@ -1,6 +1,6 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
-import { requireAffiliate } from "@/lib/affiliate";
+import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,21 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const collection = await db.affiliateCollection.findFirst({ where: { id, affiliateId: aff.id } });
   if (!collection) throw new ApiError(404, "NOT_FOUND", "Collection not found");
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // POST-IMPLEMENTATION AUDIT (P2): collections are deferred for the initial
+  // release. While the gate is off, only WIND-DOWN operations are accepted:
+  // unpublish (status→draft), archive, remove products and metadata edits.
+  // Publishing, adding products and reordering (surfaces that only serve the
+  // public promotional feature) fail closed. Data is never destroyed.
+  const collectionsGate = await getAffiliateSettings();
+  if (!collectionsGate.collectionsEnabled) {
+    const wantsPublish = body.status != null && String(body.status) === "published";
+    const wantsAdd = Array.isArray(body.addProductIds) && body.addProductIds.length > 0;
+    const wantsReorder = Array.isArray(body.order);
+    if (wantsPublish || wantsAdd || wantsReorder) {
+      throw new ApiError(403, "COLLECTIONS_DISABLED", "Collections are currently disabled — publishing and edits that expand them are unavailable");
+    }
+  }
 
   const data: Record<string, unknown> = {};
   if (body.title != null) {

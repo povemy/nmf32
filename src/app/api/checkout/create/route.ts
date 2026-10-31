@@ -11,6 +11,7 @@ import { withCheckoutAdmission } from "@/lib/checkout-gate";
 import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
 import { resolveAttribution } from "@/lib/analytics/attribution";
 import { resolveAffiliateAttributionForCart } from "@/lib/affiliate-attribution";
+import { getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -174,6 +175,13 @@ export const POST = handle(async (req: Request) => {
     shopperId: me.id,
     lines: pricing.groups.flatMap((g) => g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, storeId: g.storeId }))),
   }).catch(() => new Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>());
+
+  // POST-IMPLEMENTATION AUDIT (P3): freeze the sponsor-override policy TOGETHER
+  // with the attribution snapshot so the compensation arrangement of THIS order
+  // is fully determined at checkout. Later affiliate.sponsor_enabled changes
+  // affect new orders only — the payment webhook posts from this frozen value
+  // (OrderItem.affiliateSponsorEnabled), never from the live setting.
+  const affiliateSettings = await getAffiliateSettings();
 
   const groupCommissions = await Promise.all(
     adjustedGroups.map((g) =>
@@ -346,12 +354,14 @@ export const POST = handle(async (req: Request) => {
             breakdownJson: toJson(c.breakdown),
             // AFFILIATE snapshot — frozen here, never recomputed (identical
             // contract to the commission columns above). Zero/nullable when
-            // the line has no valid affiliate attribution.
+            // the line has no valid affiliate attribution. Includes the
+            // sponsor-override POLICY freeze (P3) so posting is deterministic.
             affiliateDirectId: aff?.affiliateId ?? null,
             affiliateSponsorId: aff?.sponsorId ?? null,
             affiliateLinkId: aff?.linkId ?? null,
             affiliateRateBps: aff?.rateBps ?? null,
             affiliatePoolMinor: c.affiliatePoolMinor,
+            affiliateSponsorEnabled: aff ? affiliateSettings.sponsorEnabled : null,
           };
         }),
       });

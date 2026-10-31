@@ -339,11 +339,31 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
     group: "affiliate",
     label: "One-level sponsor override enabled (90/10 split)",
     description:
-      "When on, the direct affiliate receives 90% of the commission pool and their one direct sponsor receives 10%. When off, the direct affiliate receives 100%. Existing commission records keep their original split — disabling never rewrites history. PRODUCTION LAUNCH GATE: legal clearance required before enabling (see docs/affiliate/rollout-checklist.md).",
+      "When on, the direct affiliate receives 90% of the commission pool and their one direct sponsor receives 10%. When off, the direct affiliate receives 100%. The decision is FROZEN PER ORDER at checkout (OrderItem.affiliateSponsorEnabled) — changing this never rewrites in-flight or historical orders. PRODUCTION LAUNCH GATE: legal clearance required before enabling (see docs/affiliate/rollout-checklist.md).",
     field: { kind: "boolean", default: false },
     wired: true,
-    wiredNote: "Read at commission POSTING time (webhook payment confirmation) — the split is computed once, then frozen.",
+    wiredNote: "Frozen onto each OrderItem at checkout; applied at commission POSTING time (webhook payment confirmation) from the frozen snapshot — the split is computed once, then immutable.",
     danger: true,
+  },
+  {
+    key: "affiliate.collections_enabled",
+    group: "affiliate",
+    label: "Affiliate collections enabled (deferred feature)",
+    description:
+      "Curated affiliate collections are DEFERRED for the initial release. While off: collection creation, publishing and new collection promotional links fail closed, and public collection pages return not-found. Historical collections and their data are preserved (readable by their owner) — flipping this on deliberately re-enables the full feature.",
+    field: { kind: "boolean", default: false },
+    wired: true,
+    wiredNote: "Read by /api/affiliate/collections*, /api/affiliate/links*, /api/affiliate/pub/collection/* and link tracking (lib/affiliate-attribution.ts).",
+  },
+  {
+    key: "affiliate.showcase_enabled",
+    group: "affiliate",
+    label: "Affiliate public showcases enabled (deferred feature)",
+    description:
+      "Public affiliate showcase pages are DEFERRED for the initial release. While off: new showcase promotional links fail closed and public showcase pages return not-found. Product and store affiliate links are NOT affected by this switch. Historical data is preserved — flip on deliberately to re-enable.",
+    field: { kind: "boolean", default: false },
+    wired: true,
+    wiredNote: "Read by /api/affiliate/links*, /api/affiliate/pub/showcase/* and link tracking (lib/affiliate-attribution.ts).",
   },
   {
     key: "affiliate.max_rate_bps",

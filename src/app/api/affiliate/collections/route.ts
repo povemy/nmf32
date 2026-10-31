@@ -1,7 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
-import { requireAffiliate } from "@/lib/affiliate";
+import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -53,9 +53,17 @@ export const GET = handle(async () => {
 });
 
 // POST /api/affiliate/collections — create a draft collection (spec §3.D).
+// POST-IMPLEMENTATION AUDIT (P2): collections are DEFERRED for the initial
+// release. While affiliate.collections_enabled is off, creation fails closed.
+// Historical collections remain readable (GET above) and archivable — the
+// schema and data are preserved untouched for a future deliberate re-enable.
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-collection-create", 10);
   const aff = await requireAffiliate();
+  const settings = await getAffiliateSettings();
+  if (!settings.collectionsEnabled) {
+    throw new ApiError(403, "COLLECTIONS_DISABLED", "Collections are currently disabled");
+  }
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const title = String(body.title ?? "").trim();
   if (title.length < 3 || title.length > 80) throw new ApiError(400, "VALIDATION", "Title must be 3-80 characters");

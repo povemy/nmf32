@@ -10,6 +10,8 @@
 // Tabs: Overview · Discover · Links · Collections · Showcase · Network ·
 //       Earnings · Payouts  (Links/Collections/Showcase/Network/Earnings/
 //       Payouts live in affiliate-tabs.tsx; public pages in affiliate-public.tsx)
+//       Collections & Showcase are feature-gated (settings.collectionsEnabled /
+//       showcaseEnabled) — hidden entirely while the flags are off (P2).
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -227,21 +229,32 @@ export default function AffiliateHubView({
     body = <AccountStatusCard status={data.profile.status} />;
   } else {
     const { profile, settings } = data;
+    // P2 gating: Collections & Showcase are deferred features. Both default to
+    // HIDDEN while the flags are unknown (fail closed) — only an explicit
+    // `true` from /api/affiliate/me surfaces the tabs. A stale persisted tab
+    // (e.g. a cached “collections” deep link) falls back to Overview below.
+    const collectionsEnabled = settings.collectionsEnabled === true;
+    const showcaseEnabled = settings.showcaseEnabled === true;
+    const visibleTabs = TABS.filter(
+      (t) => (t.key !== "collections" || collectionsEnabled) && (t.key !== "showcase" || showcaseEnabled)
+    );
+    const activeTab: AffiliateTabKey =
+      (tab === "collections" && !collectionsEnabled) || (tab === "showcase" && !showcaseEnabled) ? "overview" : tab;
     body = (
       <>
         {/* tab bar */}
         <div className="sticky top-[57px] z-20 -mx-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:-mx-4 sm:px-4">
           <div className="flex gap-1 overflow-x-auto py-2" role="tablist" aria-label="Affiliate hub sections">
-            {TABS.map(({ key, label, icon: Icon }) => (
+            {visibleTabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 type="button"
                 role="tab"
-                aria-selected={tab === key}
+                aria-selected={activeTab === key}
                 onClick={() => switchTab(key)}
                 className={cn(
                   "inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold transition-colors sm:text-[13px]",
-                  tab === key ? "bg-brand-gradient text-white shadow-glow-cyan-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  activeTab === key ? "bg-brand-gradient text-white shadow-glow-cyan-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden />
@@ -252,19 +265,19 @@ export default function AffiliateHubView({
         </div>
 
         <div className="pt-4">
-          {tab === "overview" ? (
+          {activeTab === "overview" ? (
             <OverviewTab settings={settings} onNavigate={switchTab} />
-          ) : tab === "discover" ? (
+          ) : activeTab === "discover" ? (
             <DiscoverTab onCreateLink={(p) => openLinkDialog(p)} />
-          ) : tab === "links" ? (
+          ) : activeTab === "links" ? (
             <LinksTab onCreate={() => openLinkDialog(null)} />
-          ) : tab === "collections" ? (
+          ) : activeTab === "collections" ? (
             <CollectionsTab ctx={ctx} />
-          ) : tab === "showcase" ? (
+          ) : activeTab === "showcase" ? (
             <ShowcaseTab ctx={ctx} profile={profile} />
-          ) : tab === "network" ? (
+          ) : activeTab === "network" ? (
             <NetworkTab settings={settings} joinCode={profile.code} />
-          ) : tab === "earnings" ? (
+          ) : activeTab === "earnings" ? (
             <EarningsTab settings={settings} />
           ) : (
             <PayoutsTab />
@@ -276,8 +289,10 @@ export default function AffiliateHubView({
           open={linkOpen}
           onOpenChange={setLinkOpen}
           preset={linkDraft}
+          collectionsEnabled={collectionsEnabled}
+          showcaseEnabled={showcaseEnabled}
           onCreated={() => {
-            if (tab !== "links") switchTab("links");
+            if (activeTab !== "links") switchTab("links");
           }}
         />
       </>

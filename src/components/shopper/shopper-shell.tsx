@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
 import { setSessionToken, webHeaders } from "@/lib/session-client";
+import { UnifiedAuthPanel, type UnifiedUserType } from "@/components/auth/unified-auth-panel";
 import { SIGNED_OUT_EVENT, SHOPPER_VIEW_KEY } from "@/lib/session-events";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -1036,21 +1037,21 @@ function ShopperAuthDialog() {
     after?.();
   };
 
-  const submitLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (busy) return;
-    const f = new FormData(e.currentTarget);
-    setBusy(true);
-    try {
-      const res = await postJson<{ token?: string }>("/api/auth/shopper/login", { email: f.get("email"), password: f.get("password") });
-      setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
-      toast.success("Welcome back!");
-      await finish();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
-      setBusy(false);
+  // Unified login (P11): the server resolves the account type. Buyers keep the
+  // shopper flow (refresh + intent resume via finish()); seller/admin accounts
+  // belong on their own portals, so they are routed there instead. The intent
+  // callback (afterShopperAuth) is a shopper-surface concern and is dropped
+  // when leaving the surface — close() still clears it from the store.
+  const handleAuthed = async (userType: UnifiedUserType) => {
+    if (userType === "seller" || userType === "admin") {
+      toast.success(`Signed in — opening the ${userType === "seller" ? "Seller Centre" : "Admin Console"}`);
+      await refreshMe();
+      close();
+      useApp.getState().setSurface(userType);
+      return;
     }
+    toast.success("Welcome back!");
+    await finish();
   };
 
   const submitRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1076,7 +1077,7 @@ function ShopperAuthDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? close() : null)}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-h-[88vh] overflow-y-auto max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5 text-teal-700" /> NOMOFEE shopper account
@@ -1089,13 +1090,9 @@ function ShopperAuthDialog() {
             <TabsTrigger value="register">Create account</TabsTrigger>
           </TabsList>
           <TabsContent value="login">
-            <form onSubmit={submitLogin} className="space-y-3 pt-2">
-              <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" className="min-h-[44px]" aria-label="Email" />
-              <Input name="password" type="password" required placeholder="Password" autoComplete="current-password" className="min-h-[44px]" aria-label="Password" />
-              <Button type="submit" disabled={busy} className="w-full min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Sign in
-              </Button>
-            </form>
+            <div className="pt-2">
+              <UnifiedAuthPanel onAuthed={handleAuthed} />
+            </div>
           </TabsContent>
           <TabsContent value="register">
             <form onSubmit={submitRegister} className="space-y-3 pt-2">

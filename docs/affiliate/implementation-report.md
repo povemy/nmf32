@@ -122,3 +122,36 @@ Agent-browser across all surfaces (mobile 390px + desktop): Affiliate Hub render
 8. `discoverProducts` ignored `maxPriceMinor` — applied.
 9. Settings defaults were demo-unsafe (`sponsor_enabled=true`, 30% cap, 7-day review) → fail-closed launch posture (false / 1000 bps / 14 d).
 10. Four admin affiliate routes imported `auditAdmin` from a module that doesn't export it → corrected to `@/lib/api`.
+
+---
+
+# ADDENDUM — Post-Implementation Audit Pass (2026-10-31)
+
+**Companions (authoritative for this pass):** `post-implementation-audit.md` (findings) · `post-implementation-verification.md` (test evidence) · `docs/auth/unified-login-implementation-report.md` (Phase 11/12). This addendum supersedes conflicting statements below where noted.
+
+## A. Corrections applied to this report's prior claims
+
+| Prior claim | Correction |
+|---|---|
+| §7 "`P = floor(B × R / 10⁴)` (integer sen; half-up)" | Internally contradictory and the CODE was half-up. **Fixed to floor everywhere** (audit defect D2); the platform percent commission keeps its own historical half-up (separate line, unchanged). |
+| §7 "split computed at POSTING time from then-current sponsor flag" | **Replaced by the checkout-frozen policy snapshot** (`OrderItem.affiliateSponsorEnabled`, migration 20261031000000): posting applies the FROZEN decision; the live setting affects new orders only. Runtime-proven 16/16 by the P3-freeze E2E. |
+| §3/§16.5 "migrations folder not regenerated" | **Resolved:** forward-only chain regenerated (`20261030000000` baseline captured via shadow-DB diff, `20261031000000`, `20261031000001`), clean-room proven 3× (empty parity diff each time), deployed additively to the live dev DB with zero data loss. |
+| §10 reversal split expectations | Now 896(direct)+99(sponsor) for the RM199 @10% 50%-refund case — direct absorbs the rounding residual per commission-definitions §7.3 (audit defect D3). |
+| §16.3 "order-number search client-side current page only, no store filter" | **Fixed (P9):** full server-side filters (orderNumber/storeId/status/from/to/affiliateId) + SQL-aggregated scope totals on the commissions inspector; browser-verified. |
+| §12 kill-switch wording | Harmonised: hub/settings/payout APIs refuse while `affiliate.enabled=false`; shared links still NAVIGATE but record no attribution (fail-closed liability, links never break). |
+| §16.6 carrier timestamps | Unchanged (correct as documented). |
+
+## B. New work completed in the audit pass
+
+1. **P2 scope deferral (user direction):** collections & public showcases disabled non-destructively — new default-OFF settings `affiliate.collections_enabled` / `affiliate.showcase_enabled` (registry-rendered); creation/publish/expansion fail closed (403); new collection/showcase links rejected; archived links cannot be reactivated while gated; public pages and legacy link tracking fail closed (`found:false` / LINK_NOT_FOUND) with zero private-data exposure; schema/data/history fully preserved; Affiliate Hub shows 6 tabs (Collections/Showcase removed, browser-verified); link-create offers Product/Store only. Channel remains optional metadata, never commission-relevant.
+2. **Latent defects fixed:** phantom `AffiliateCollection.affiliate` relation (schema + FK via migration 20261031000001), `cron/affiliate-tick` auth payload field, links-route GET typing. `tsc` src/** now 0 errors.
+3. **Referral edge case fixed (D5):** a consumed referral touch no longer blocks a different visitor on the same browser from earning their sponsor.
+4. **P7:** `docs/affiliate/payout-operations-runbook.md` written (verification, review, transfer, authorisation/SoD, failure, reconciliation, recovery, fraud holds).
+5. **P11/12 unified login + dev-credential panel** (separate report) with `scripts/ensure-demo-accounts.ts` idempotent demo-account hygiene.
+6. **Test assets added:** `scripts/test-affiliate-rounding.ts` (edge suite), `tool-results/e2e-p3-policy-freeze.sh` (policy-freeze E2E, 16/16), `scripts/perftest-affiliate-scale.ts` + `scripts/perftest-measure.ts` (disposable-DB scale probe).
+
+## C. Updated known limitations
+
+- Legacy `scripts/fin-tests.ts` remains unrunnable (pre-existing import drift, unchanged); its invariants are re-proven by `readiness/finance-regression.ts`, `verify-ledger.ts` and the affiliate E2E chain.
+- Adjustment recipe (defs §8.5) remains finance tooling TODO (audited manual reconciliation in the interim).
+- Launch blockers (§19) unchanged: legal opinion on the sponsor override, terms text, runbook rehearsal, staging sign-off, production migration execution, monitoring cadence. Sandbox settings note: `affiliate.sponsor_enabled=true` rows exist in the DEV database for verification; production must stay `false` until Gate 1 closes.

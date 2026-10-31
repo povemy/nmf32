@@ -10,6 +10,9 @@ export type AffiliateSettings = {
   sponsorWindowDays: number;
   reviewDays: number;
   minPayoutMinor: number;
+  // P2 deferral flags — mirrored from getAffiliateSettings() (lib/affiliate.ts).
+  collectionsEnabled: boolean;
+  showcaseEnabled: boolean;
 };
 
 export type ReconPoints = {
@@ -120,7 +123,9 @@ export type AccountDetail = {
 
 /** GET /api/admin/affiliate/commissions — entry rows. NOTE: the list route
  *  currently omits `availableAt`; typed optional so the UI renders it the
- *  moment the route starts returning it (never fabricates a date). */
+ *  moment the route starts returning it (never fabricates a date).
+ *  P9: all filters run server-side and the body carries `size`, full-scope
+ *  `totals` and the server-echoed `filters` applied for THIS response. */
 export type CommissionEntryRow = {
   role: string;
   status: string;
@@ -143,7 +148,23 @@ export type CommissionRow = {
   entries: CommissionEntryRow[];
 };
 
-export type CommissionsBody = { total: number; page: number; rows: CommissionRow[] };
+export type CommissionsBody = {
+  total: number;
+  page: number;
+  size: number;
+  /** Aggregated over the FULL filtered scope (not just the page). */
+  totals: { poolMinor: number; baseMinor: number };
+  /** Server echo of the filters actually applied to this response. */
+  filters: {
+    status: string | null;
+    affiliateId: string | null;
+    storeId: string | null;
+    orderNumber: string | null;
+    from: string | null;
+    to: string | null;
+  };
+  rows: CommissionRow[];
+};
 
 /** GET /api/admin/affiliate/payouts — NOTE: the list route does not return
  *  `statementJson`; typed optional and rendered when present (see detail). */

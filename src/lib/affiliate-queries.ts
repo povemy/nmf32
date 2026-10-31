@@ -11,7 +11,7 @@
 //   • Buyer PII is never exposed in affiliate-facing payloads.
 // ============================================================================
 import { db } from "@/lib/db";
-import { affiliateBalances } from "./affiliate";
+import { affiliateBalances, affiliatePoolMinor, getAffiliateSettings } from "./affiliate";
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 86400000);
@@ -189,6 +189,7 @@ export async function discoverProducts(opts: {
 }): Promise<{ rows: DiscoverProduct[]; total: number }> {
   const size = Math.min(48, Math.max(6, opts.size ?? 24));
   const page = Math.max(1, opts.page ?? 1);
+  const discoverSettings = await getAffiliateSettings();
 
   const where = {
     status: "active",
@@ -221,7 +222,11 @@ export async function discoverProducts(opts: {
   });
 
   const mapped: DiscoverProduct[] = rows.map((p) => {
-    const rateBps = Math.max(0, p.affiliateRateBps ?? p.store.affiliateDefaultRateBps);
+    // POST-IMPLEMENTATION AUDIT (P4): display math mirrors the authoritative
+    // checkout math — clamped to the platform max rate and FLOOR-rounded via
+    // the same affiliatePoolMinor() used at checkout, so the estimated number
+    // a buyer/affiliate sees can never exceed what posting would compute.
+    const rateBps = Math.max(0, Math.min(p.affiliateRateBps ?? p.store.affiliateDefaultRateBps, discoverSettings.maxRateBps));
     return {
       productId: p.id,
       title: p.title,
@@ -231,7 +236,7 @@ export async function discoverProducts(opts: {
       image: p.images[0]?.url ?? null,
       priceMinor: p.priceMinor,
       rateBps,
-      estimatedCommissionMinor: Math.round((p.priceMinor * rateBps) / 10000),
+      estimatedCommissionMinor: affiliatePoolMinor(p.priceMinor, rateBps),
       salesCount: p.salesCount,
       ratingAvg: p.ratingAvg,
       isFeatured: p.isFeatured,

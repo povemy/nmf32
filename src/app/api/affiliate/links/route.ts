@@ -1,7 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
-import { requireAffiliate } from "@/lib/affiliate";
+import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
 import { newAffiliateLinkCode } from "@/lib/affiliate-attribution";
 
 export const dynamic = "force-dynamic";
@@ -16,14 +16,18 @@ export const GET = handle(async () => {
     where: { affiliateId: aff.id },
     orderBy: { createdAt: "desc" },
   });
-  // Target titles for display (resolved in one pass, no N+1).
-  const productIds = links.filter((l) => l.productId).map((l) => l.productId!) ;
+  // Target titles for display (resolved in one pass, no N+1). The empty-list
+  // branches carry explicit row types so the maps below stay correctly typed.
+  const productIds = links.filter((l) => l.productId).map((l) => l.productId!);
   const storeIds = links.filter((l) => l.storeId).map((l) => l.storeId!);
   const collectionIds = links.filter((l) => l.collectionId).map((l) => l.collectionId!);
-  const [products, stores, collections] = await Promise.all([
-    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true, slug: true, store: { select: { slug: true } } } }) : [],
-    storeIds.length ? db.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, slug: true } }) : [],
-    collectionIds.length ? db.affiliateCollection.findMany({ where: { id: { in: collectionIds } }, select: { id: true, title: true, slug: true, status: true } }) : [],
+  type ProductRow = { id: string; title: string; slug: string; store: { slug: string } };
+  type StoreRow = { id: string; name: string; slug: string };
+  type CollectionRow = { id: string; title: string; slug: string; status: string };
+  const [products, stores, collections]: [ProductRow[], StoreRow[], CollectionRow[]] = await Promise.all([
+    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true, slug: true, store: { select: { slug: true } } } }) : ([] as ProductRow[]),
+    storeIds.length ? db.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, slug: true } }) : ([] as StoreRow[]),
+    collectionIds.length ? db.affiliateCollection.findMany({ where: { id: { in: collectionIds } }, select: { id: true, title: true, slug: true, status: true } }) : ([] as CollectionRow[]),
   ]);
   const productMap = new Map(products.map((p) => [p.id, p]));
   const storeMap = new Map(stores.map((s) => [s.id, s]));
@@ -54,6 +58,17 @@ export const POST = handle(async (req: Request) => {
   const aff = await requireAffiliate();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const type = String(body.type ?? "");
+  // POST-IMPLEMENTATION AUDIT (P2): collections & showcase are deferred for
+  // the initial release. While their feature gates are off, creating NEW
+  // collection/showcase promotional links fails closed (403). Existing links
+  // keep resolving their historical state — never destructively removed.
+  const settings = await getAffiliateSettings();
+  if (type === "collection" && !settings.collectionsEnabled) {
+    throw new ApiError(403, "COLLECTIONS_DISABLED", "Collections are currently disabled");
+  }
+  if (type === "showcase" && !settings.showcaseEnabled) {
+    throw new ApiError(403, "SHOWCASE_DISABLED", "Showcases are currently disabled");
+  }
   const channel = CHANNELS.includes(String(body.channel ?? "other") as (typeof CHANNELS)[number])
     ? String(body.channel) : "other";
   const label = body.label != null ? String(body.label).slice(0, 80) : null;

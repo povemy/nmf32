@@ -1,6 +1,6 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
-import { requireAffiliate } from "@/lib/affiliate";
+import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +18,15 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (body.status != null) {
     const status = String(body.status);
     if (!["active", "archived"].includes(status)) throw new ApiError(400, "VALIDATION", "status must be active | archived");
+    // POST-IMPLEMENTATION AUDIT (P2): while the deferred-feature gates are
+    // off, an archived collection/showcase link cannot be REACTIVATED (that
+    // would create a new live promotional surface). Archiving stays allowed.
+    if (status === "active" && link.status === "archived" && (link.type === "collection" || link.type === "showcase")) {
+      const settings = await getAffiliateSettings();
+      if ((link.type === "collection" && !settings.collectionsEnabled) || (link.type === "showcase" && !settings.showcaseEnabled)) {
+        throw new ApiError(403, link.type === "collection" ? "COLLECTIONS_DISABLED" : "SHOWCASE_DISABLED", `${link.type === "collection" ? "Collections" : "Showcases"} are currently disabled`);
+      }
+    }
     data.status = status;
     data.archivedAt = status === "archived" ? new Date() : null;
   }

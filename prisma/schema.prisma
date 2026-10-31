@@ -662,6 +662,12 @@ model OrderItem {
   affiliateLinkId     String? // promotional link that earned the attribution
   affiliateRateBps    Int?    // snapshotted seller affiliate rate (basis points)
   affiliatePoolMinor  Int     @default(0) // seller-funded pool carved from sellerNet
+  // POST-IMPLEMENTATION AUDIT (P3): freeze the sponsor-override policy AT
+  // CHECKOUT so later settings changes never retroactively alter an in-flight
+  // order's compensation arrangement. NULL only on legacy rows created before
+  // this column existed (posting then falls back to the then-current setting,
+  // preserving the historical behaviour those orders were created under).
+  affiliateSponsorEnabled Boolean?
   variant           ProductVariant? @relation(fields: [variantId], references: [id])
   product           Product?        @relation(fields: [productId], references: [id])
   order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1561,6 +1567,7 @@ model AffiliateProfile {
   // Read-model relations for admin/public queries (scalar FKs above).
   commissionsDirect AffiliateCommission[] @relation("AffiliateCommissionDirect")
   payouts           AffiliatePayout[]
+  collections       AffiliateCollection[]
 
   @@index([sponsorId])
   @@index([status])
@@ -1644,6 +1651,12 @@ model AffiliateCollection {
   updatedAt     DateTime  @updatedAt
   publishedAt   DateTime?
   archivedAt    DateTime?
+  // POST-IMPLEMENTATION AUDIT (defect fix): the public collection route
+  // (api/affiliate/pub/collection/[slug]) includes this relation but it was
+  // missing from the schema — a phantom relation that would throw at runtime
+  // the moment the deferred collections gate is re-enabled. Declared properly
+  // here (+ its FK in migration 20261031000001).
+  affiliate     AffiliateProfile @relation(fields: [affiliateId], references: [id])
   items         AffiliateCollectionItem[]
 
   @@index([affiliateId, status])

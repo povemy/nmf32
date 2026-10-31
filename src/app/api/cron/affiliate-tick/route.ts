@@ -42,7 +42,7 @@ export const POST = handle(async (req: Request) => {
     remainingPending,
     durationMs,
     at: new Date().toISOString(),
-    by: auth.by,
+    authMode: auth.mode,
   };
   await db.setting.upsert({
     where: { key: LAST_RUN_KEY },

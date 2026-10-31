@@ -3,9 +3,9 @@
 // per-row entry breakdown (role/amount/status/hold) and the audited manual
 // hold/release controls. Data: GET /api/admin/affiliate/commissions
 // (cap: affiliate.manage OR affiliate.finance; hold/release: affiliate.manage).
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Lock, LockOpen, Search, ScrollText, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, LockOpen, RotateCcw, ScrollText, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,11 +16,12 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { AdminNav } from "../nav";
 import { useAdminCaps } from "../use-admin-caps";
-import { apiSend, useApi } from "../use-api";
+import { apiSend, useApi, useDebounced } from "../use-api";
 import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  fmtDate,
   Money,
   PageHeader,
   Pager,
@@ -33,31 +34,93 @@ import { bpsLabel, type CommissionsBody, type CommissionRow } from "./types";
 
 const COMMISSION_STATUSES = ["pending", "approved", "available", "paid", "reversed", "held"];
 
+/** Local-day start → UTC ISO instant for the server's `from` param. */
+function dayStartIso(date: string): string | null {
+  if (!date) return null;
+  const d = new Date(`${date}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Local-day end (inclusive) → UTC ISO instant for the server's `to` param. */
+function dayEndIso(date: string): string | null {
+  if (!date) return null;
+  const d = new Date(`${date}T23:59:59.999`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
   const { can } = useAdminCaps();
   // Deep-link support: accounts detail navigates here with { affiliateId }.
   const [affiliateFilter, setAffiliateFilter] = useState<string | null>(nav.params.affiliateId ?? null);
   const [status, setStatus] = useState("all");
+  const [storeFilter, setStoreFilter] = useState<string | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
-  // Server search is not offered by the commissions route — an order-number
-  // filter narrows the CURRENT PAGE client-side (labelled as such below).
-  const [orderFilter, setOrderFilter] = useState("");
+  // P9: order-number search is fully SERVER-SIDE — the input is debounced
+  // (~300ms) into the query string, so it narrows the whole history, not the
+  // current page. Every filter change resets the page to 1.
+  const [orderInput, setOrderInput] = useState("");
+  const orderQuery = useDebounced(orderInput, 300);
+
+  // Store directory for the store filter — fetched once on mount. Load-test
+  // fixtures can repeat a store name, so duplicates are disambiguated by slug.
+  const { data: stores } = useApi<{ id: string; name: string; slug: string }[]>("/api/admin/stores");
+  const storeOptions = useMemo(() => {
+    const list = (stores ?? []).map((s) => ({ id: s.id, name: s.name, slug: s.slug }));
+    const counts = new Map<string, number>();
+    for (const s of list) counts.set(s.name, (counts.get(s.name) ?? 0) + 1);
+    return list
+      .map((s) => ({ id: s.id, label: (counts.get(s.name) ?? 0) > 1 ? `${s.name} · /${s.slug}` : s.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [stores]);
+  const storeName = useCallback(
+    (id: string) => storeOptions.find((s) => s.id === id)?.label ?? `${id.slice(0, 8)}…`,
+    [storeOptions]
+  );
+
+  const fromIso = useMemo(() => dayStartIso(from), [from]);
+  const toIso = useMemo(() => dayEndIso(to), [to]);
 
   const url = useMemo(() => {
     const sp = new URLSearchParams({ page: String(page), size: "20" });
     if (status !== "all") sp.set("status", status);
     if (affiliateFilter) sp.set("affiliateId", affiliateFilter);
+    if (storeFilter) sp.set("storeId", storeFilter);
+    const q = orderQuery.trim();
+    if (q) sp.set("orderNumber", q);
+    if (fromIso) sp.set("from", fromIso);
+    if (toIso) sp.set("to", toIso);
     return `/api/admin/affiliate/commissions?${sp.toString()}`;
-  }, [status, affiliateFilter, page]);
+  }, [status, affiliateFilter, storeFilter, orderQuery, fromIso, toIso, page]);
 
   const { data, error, loading, refetch } = useApi<CommissionsBody>(url);
-  const rows = useMemo(() => {
-    const base = data?.rows ?? [];
-    const q = orderFilter.trim().toLowerCase();
-    return q ? base.filter((r) => r.orderNumber.toLowerCase().includes(q)) : base;
-  }, [data, orderFilter]);
+  const rows = useMemo(() => data?.rows ?? [], [data]);
   const total = data?.total ?? 0;
   const serverPage = data?.page ?? page;
+
+  // Server-echoed filters for THIS response — the honest description of what
+  // the scope totals below actually cover.
+  const echo = data?.filters;
+  const echoParts: string[] = [];
+  if (echo?.status) echoParts.push(`status “${echo.status}”`);
+  if (echo?.affiliateId) echoParts.push(`affiliate ${echo.affiliateId.slice(0, 8)}…`);
+  if (echo?.storeId) echoParts.push(`store “${storeName(echo.storeId)}”`);
+  if (echo?.orderNumber) echoParts.push(`order “${echo.orderNumber}”`);
+  if (echo?.from) echoParts.push(`from ${fmtDate(echo.from)}`);
+  if (echo?.to) echoParts.push(`to ${fmtDate(echo.to)}`);
+
+  const filtersActive =
+    status !== "all" || affiliateFilter != null || storeFilter != null || orderInput.trim() !== "" || from !== "" || to !== "";
+  const resetFilters = () => {
+    setStatus("all");
+    setAffiliateFilter(null);
+    setStoreFilter(null);
+    setOrderInput("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  };
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [holdTarget, setHoldTarget] = useState<CommissionRow | null>(null);
@@ -104,14 +167,20 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
 
       <Card className="py-0">
         <CardContent className="p-4">
-          {/* filters */}
+          {/* filters — ALL server-side (P9): status, affiliate (deep-link),
+              store, order number (debounced) and the created-at date range */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <Input
-              value={orderFilter}
-              onChange={(e) => setOrderFilter(e.target.value)}
-              placeholder="Filter current page by order №…"
+              value={orderInput}
+              onChange={(e) => {
+                setOrderInput(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search order number…"
               className="min-h-[44px] flex-1"
-              aria-label="Filter by order number (current page)"
+              aria-label="Search by order number"
+              autoComplete="off"
+              inputMode="search"
             />
             <div className="flex flex-wrap items-center gap-2">
               {affiliateFilter ? (
@@ -131,6 +200,25 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
                 </Badge>
               ) : null}
               <Select
+                value={storeFilter ?? "all"}
+                onValueChange={(v) => {
+                  setStoreFilter(v === "all" ? null : v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="min-h-[44px] w-full lg:w-44" aria-label="Filter by store">
+                  <SelectValue placeholder="All stores" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All stores</SelectItem>
+                  {storeOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
                 value={status}
                 onValueChange={(v) => {
                   setStatus(v);
@@ -149,8 +237,48 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
                   ))}
                 </SelectContent>
               </Select>
+              <Input
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setPage(1);
+                }}
+                aria-label="Created from date"
+                className="min-h-[44px] w-full lg:w-40"
+              />
+              <Input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setPage(1);
+                }}
+                aria-label="Created to date"
+                className="min-h-[44px] w-full lg:w-40"
+              />
+              {filtersActive ? (
+                <Button variant="ghost" size="sm" className="min-h-[44px] gap-1.5" onClick={resetFilters}>
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Reset
+                </Button>
+              ) : null}
             </div>
           </div>
+
+          {/* scope totals — server-aggregated over the ACTIVE filters (not the
+              page), with the server-echoed filter description underneath */}
+          {data ? (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">Scope:</span> {data.total.toLocaleString()} commission
+                {data.total === 1 ? "" : "s"} · Pool <Money minor={data.totals?.poolMinor ?? 0} /> · Base{" "}
+                <Money minor={data.totals?.baseMinor ?? 0} muted />
+              </p>
+              {echoParts.length > 0 ? (
+                <p className="text-[11px] leading-snug text-muted-foreground">Filters applied — {echoParts.join(" · ")}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* table */}
           <div className="mt-4 overflow-x-auto">
@@ -266,10 +394,6 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
               </>
             )}
           </div>
-          <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Search className="h-3 w-3" aria-hidden /> The order filter narrows the current page only — the commissions
-            API filters server-side by status and affiliate.
-          </p>
         </CardContent>
       </Card>
 
