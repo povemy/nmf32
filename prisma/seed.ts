@@ -416,17 +416,19 @@ async function main() {
   }
 
   // ------------------------------------------------ admin users
-  // F-12 remediation: production deployments MUST override the seeded admin
-  // passwords via env (SEED_ADMIN_PASSWORD etc. — documented in .env.example);
-  // the hardcoded values remain as documented DEV/sandbox-only fallbacks so
-  // the preview environment keeps its known logins. A loud warning fires when
-  // the fallbacks are used outside development.
+  // F-12 remediation + Phase 1 (C5): production deployments MUST override the
+  // seeded admin passwords via env (SEED_ADMIN_PASSWORD etc. — documented in
+  // .env.example). The hardcoded values remain as documented DEV/sandbox-only
+  // fallbacks so the preview environment keeps its known logins. In PRODUCTION
+  // the fallback now FAILS CLOSED — a deployment that forgets the env override
+  // aborts seeding instead of silently creating superadmin accounts with the
+  // publicly documented demo password (previously: warn-and-continue).
   const devFallback = (envKey: string, fallback: string): string => {
     const fromEnv = process.env[envKey];
     if (fromEnv && fromEnv.length >= 8) return fromEnv;
     if (process.env.NODE_ENV === "production") {
-      console.warn(
-        `[seed] SECURITY: ${envKey} not set — seeding the documented DEV password for ${fallback.length ? "an admin account" : ""}. Change it immediately or re-seed with the env override.`
+      throw new Error(
+        `[seed] SECURITY: ${envKey} not set in production — refusing to seed an account with the documented DEV password. Set the env override (see .env.example) and re-run the seed.`
       );
     }
     return fallback;

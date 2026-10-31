@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
 import { useApp } from "@/lib/app-store";
+import { isSafeExternalUrl } from "@/lib/url-guard";
 import {
   fetchJson,
   fetchEnvelope,
@@ -1026,7 +1027,9 @@ function SfFooter({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
             <div className="flex gap-2">
               {Object.entries(social).map(([k, url]) => {
                 const Icon = SOCIAL_ICONS[k.toLowerCase()] ?? null;
-                if (!Icon || !url) return null;
+                // D2 — defensive render guard: the API already sanitizes
+                // (parseSocial), but never put a non-http(s) value in an href.
+                if (!Icon || !url || !isSafeExternalUrl(url)) return null;
                 return (
                   <a
                     key={k}

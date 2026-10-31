@@ -5,6 +5,13 @@ import { parseJson, toJson } from "@/lib/json";
 
 export const dynamic = "force-dynamic";
 
+/** D1 — same masking rule as the webhooks collection route: responses to the
+ *  seller UI never carry the plaintext secret (create/rotate reveal once). */
+function maskSecret(secret: string): string {
+  if (secret.length > 14) return `${secret.slice(0, 6)}…${secret.slice(-4)}`;
+  return "•••••";
+}
+
 async function ownEndpoint(storeId: string, id: string) {
   const endpoint = await db.webhookEndpoint.findFirst({ where: { id, storeId } });
   if (!endpoint) throw new ApiError(404, "NOT_FOUND", "Webhook endpoint not found");
@@ -35,7 +42,9 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   return ok({
     id: updated.id,
     url: updated.url,
-    secret: updated.secret,
+    // D1: masked — the UI re-fetches the list anyway; the plaintext secret is
+    // only revealed by POST (create) / POST [id]/rotate, exactly once each.
+    secretMasked: maskSecret(updated.secret),
     events: parseJson<string[]>(updated.eventsJson, []),
     isActive: updated.isActive,
   });

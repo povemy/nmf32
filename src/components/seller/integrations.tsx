@@ -1,6 +1,8 @@
 "use client";
-// Task 2-d — SD-10 Integrations: pixel providers, webhooks (endpoints, secret
-// reveal, events, send-test), API keys (lite, client-side demo in sandbox).
+// Task 2-d — SD-10 Integrations: pixel providers, webhooks (endpoints, masked
+// secret + rotate, events, send-test), API keys (lite, client-side demo in
+// sandbox). D1: the signing secret is shown exactly once (create/rotate) — the
+// endpoint list only ever renders the masked form.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -19,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Eye, EyeOff, KeyRound, Loader2, Plug, Plus, Send, Trash2, Webhook } from "lucide-react";
+import { KeyRound, Loader2, Plug, Plus, RefreshCw, Send, Trash2, Webhook } from "lucide-react";
 
 // ---------------------------------------------------------------- pixels
 
@@ -104,7 +106,9 @@ function PixelCards() {
 type Endpoint = {
   id: string;
   url: string;
-  secret: string;
+  // D1: masked form only (e.g. "whsec_…a1b2") — the plaintext secret is
+  // revealed exactly once by create/rotate and never listed again.
+  secretMasked: string;
   events: string[];
   isActive: boolean;
   createdAt: string;
@@ -122,11 +126,43 @@ const EVENT_CATALOG = [
   "payout.paid",
 ];
 
+/** D1 — one-time secret reveal (create + rotate share it): copyable callout,
+ *  same shape as the API-key show-once dialog below. */
+function SecretOnceDialog({ secret, onClose }: { secret: string | null; onClose: () => void }) {
+  return (
+    <Dialog open={!!secret} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Copy your signing secret now</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">Store it now — you won&apos;t see it again. Verify payloads with the <code>X-SM-Signature</code> header (HMAC of the raw body using this secret).</p>
+          <code className="block break-all rounded-lg bg-muted p-3 font-mono text-xs">{secret}</code>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={async () => {
+              if (!secret) return;
+              try {
+                await navigator.clipboard.writeText(secret);
+                toast.success("Secret copied");
+              } catch {
+                toast.error("Could not copy");
+              }
+            }}
+          >
+            Copy secret
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function WebhooksSection() {
   const { data, loading, refetch } = useApi<Endpoint[]>("/api/store/webhooks");
   const [createOpen, setCreateOpen] = useState(false);
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [confirmDelete, setConfirmDelete] = useState<Endpoint | null>(null);
+  const [rotatingId, setRotatingId] = useState<string | null>(null);
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
 
   const sendTest = async (ep: Endpoint) => {
     const ok = await runMutation(() => apiSend("POST", `/api/store/webhooks/${ep.id}/test`), "Test delivery sent (simulated, logged)");
@@ -136,6 +172,23 @@ function WebhooksSection() {
   const toggleActive = async (ep: Endpoint, next: boolean) => {
     const ok = await runMutation(() => apiSend("PATCH", `/api/store/webhooks/${ep.id}`, { isActive: next }), `Endpoint ${next ? "enabled" : "paused"}`);
     if (ok) refetch();
+  };
+
+  // D1 — rotate: the response carries the new plaintext secret exactly once;
+  // surface it in the one-time callout and refresh the (masked) list.
+  const rotate = async (ep: Endpoint) => {
+    if (rotatingId) return;
+    setRotatingId(ep.id);
+    try {
+      const res = await apiSend<{ id: string; secret: string }>("POST", `/api/store/webhooks/${ep.id}/rotate`);
+      toast.success("Signing secret rotated");
+      setRotatedSecret(res.secret);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not rotate secret");
+    } finally {
+      setRotatingId(null);
+    }
   };
 
   return (
@@ -168,6 +221,16 @@ function WebhooksSection() {
                     <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => sendTest(ep)}>
                       <Send className="h-3 w-3" /> Send test
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1"
+                      onClick={() => rotate(ep)}
+                      disabled={rotatingId === ep.id}
+                      aria-label={`Rotate signing secret for ${ep.url}`}
+                    >
+                      {rotatingId === ep.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Rotate
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" aria-label="Delete endpoint" onClick={() => setConfirmDelete(ep)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -182,12 +245,7 @@ function WebhooksSection() {
                 </div>
                 <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Secret</span>
-                  <code className="flex-1 truncate font-mono text-xs">
-                    {revealed[ep.id] ? ep.secret : `${ep.secret.slice(0, 8)}${"•".repeat(12)}`}
-                  </code>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={revealed[ep.id] ? "Hide secret" : "Reveal secret"} onClick={() => setRevealed((prev) => ({ ...prev, [ep.id]: !prev[ep.id] }))}>
-                    {revealed[ep.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </Button>
+                  <code className="flex-1 truncate font-mono text-xs" title="Masked — rotate to get a new secret">{ep.secretMasked}</code>
                 </div>
                 {ep.deliveries.length > 0 ? (
                   <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border p-2">
@@ -210,6 +268,8 @@ function WebhooksSection() {
       )}
 
       <CreateWebhookDialog open={createOpen} onOpenChange={setCreateOpen} onDone={refetch} />
+
+      <SecretOnceDialog secret={rotatedSecret} onClose={() => setRotatedSecret(null)} />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
@@ -241,6 +301,8 @@ function CreateWebhookDialog({ open, onOpenChange, onDone }: { open: boolean; on
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>(["order.paid", "order.shipped"]);
   const [busy, setBusy] = useState(false);
+  // D1 — the create response reveals the signing secret exactly once.
+  const [newSecret, setNewSecret] = useState<string | null>(null);
 
   const submit = async () => {
     if (!/^https?:\/\/.+/.test(url.trim())) {
@@ -252,48 +314,57 @@ function CreateWebhookDialog({ open, onOpenChange, onDone }: { open: boolean; on
       return;
     }
     setBusy(true);
-    const ok = await runMutation(() => apiSend("POST", "/api/store/webhooks", { url: url.trim(), events }), "Endpoint created — signing secret generated");
-    setBusy(false);
-    if (ok) {
+    try {
+      const created = await apiSend<{ secret: string }>("POST", "/api/store/webhooks", { url: url.trim(), events });
+      toast.success("Endpoint created — signing secret generated");
       setUrl("");
       onOpenChange(false);
       onDone();
+      if (created?.secret) setNewSecret(created.secret);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add webhook endpoint</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3.5">
-          <div className="space-y-1.5">
-            <Label htmlFor="wh-url">Payload URL *</Label>
-            <Input id="wh-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.yourapp.com/nomofee" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Events ({events.length} selected)</Label>
-            <div className="grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-xl border p-2.5 sm:grid-cols-2">
-              {EVENT_CATALOG.map((e) => (
-                <label key={e} className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={events.includes(e)}
-                    onCheckedChange={(v) => setEvents((prev) => (v ? [...prev, e] : prev.filter((x) => x !== e)))}
-                    aria-label={e}
-                  />
-                  <span className="font-mono">{e}</span>
-                </label>
-              ))}
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add webhook endpoint</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3.5">
+            <div className="space-y-1.5">
+              <Label htmlFor="wh-url">Payload URL *</Label>
+              <Input id="wh-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.yourapp.com/nomofee" />
             </div>
+            <div className="space-y-1.5">
+              <Label>Events ({events.length} selected)</Label>
+              <div className="grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-xl border p-2.5 sm:grid-cols-2">
+                {EVENT_CATALOG.map((e) => (
+                  <label key={e} className="flex cursor-pointer items-center gap-2 text-xs">
+                    <Checkbox
+                      checked={events.includes(e)}
+                      onCheckedChange={(v) => setEvents((prev) => (v ? [...prev, e] : prev.filter((x) => x !== e)))}
+                      aria-label={e}
+                    />
+                    <span className="font-mono">{e}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">The signing secret is shown once after creation — verify payloads with the <code>X-SM-Signature</code> header (HMAC of the raw body using your secret).</p>
+            <Button onClick={submit} disabled={busy} className="w-full min-h-[44px] gap-2">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create endpoint
+            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">Verify payloads with the <code>X-SM-Signature</code> header (HMAC of the raw body using your secret).</p>
-          <Button onClick={submit} disabled={busy} className="w-full min-h-[44px] gap-2">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create endpoint
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <SecretOnceDialog secret={newSecret} onClose={() => setNewSecret(null)} />
+    </>
   );
 }
 

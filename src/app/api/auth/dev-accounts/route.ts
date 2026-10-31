@@ -1,6 +1,6 @@
 import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -53,21 +53,23 @@ export const GET = handle(async () => {
 
   // Re-verify every account against its documented dev password before
   // listing it (drifted/env-overridden accounts are omitted, never guessed).
+  // Phase 1 (SEC-04): asynchronous scrypt — the 12 verifications run off the
+  // event loop (previously ~360 ms of synchronous blocking per panel hit).
   const verified: (DevAccount & { role?: string; status?: string })[] = [];
   for (const acc of DEV_ACCOUNTS) {
     if (acc.type === "admin") {
       const row = await db.adminUser.findUnique({ where: { email: acc.email } });
-      if (row && row.isActive && verifyPassword(acc.password, row.passwordHash)) {
+      if (row && row.isActive && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
         verified.push({ ...acc, role: row.role });
       }
     } else if (acc.type === "seller") {
       const row = await db.seller.findUnique({ where: { email: acc.email } });
-      if (row && verifyPassword(acc.password, row.passwordHash)) {
+      if (row && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
         verified.push({ ...acc, status: row.status });
       }
     } else {
       const row = await db.shopperUser.findUnique({ where: { email: acc.email } });
-      if (row && row.status === "active" && verifyPassword(acc.password, row.passwordHash)) {
+      if (row && row.status === "active" && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
         const affiliate = acc.type === "affiliate"
           ? await db.affiliateProfile.findUnique({ where: { userId: row.id }, select: { status: true } })
           : null;

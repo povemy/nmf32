@@ -3,7 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
-import { matchFlags, ownProduct, recomputePrice, uniqueSlug, validateVariants } from "../helpers";
+import { matchFlags, ownProduct, recomputePrice, sanitizeProductImages, uniqueSlug, validateVariants } from "../helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     data.categoryId = categoryId;
   }
   if (Array.isArray(body.images)) {
-    const images = body.images.map((u) => String(u)).filter(Boolean);
+    // D2 — every persisted image passes the URL guard (http(s) or site-relative).
+    const images = sanitizeProductImages(body.images);
     data.images = { deleteMany: {}, create: images.map((url, i) => ({ url, sortOrder: i })) };
   }
   if (Array.isArray(body.variants)) {

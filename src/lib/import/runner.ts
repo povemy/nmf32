@@ -11,6 +11,7 @@ import { transitionStore } from "@/lib/store-lifecycle";
 import { defaultHomeSections } from "@/lib/sections";
 import { parseJson } from "@/lib/json";
 import { assertPublicHost, platformLabel } from "@/lib/marketplaces/resolver";
+import { safeFetchExternalImage } from "@/lib/safe-fetch";
 import { getConnector, resolveForConnector } from "@/lib/marketplaces";
 import type { NormalizedProduct, NormalizedShop, Platform } from "@/lib/marketplaces/types";
 import { deriveProductSeo, htmlToText, mapCategory, sanitiseDescriptionHtml, slugifyProductTitle, slugifyStoreName } from "./normalise";
@@ -49,21 +50,22 @@ async function bumpProgress(jobId: string, patch: Progress) {
 
 const IMG_EXT: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" };
 
-/** SSRF-guarded, size-limited copy of an external product image into public/uploads. */
+/** SSRF-guarded, size-limited copy of an external product image into public/uploads.
+ * B5/F-06: the raw `fetch(parsed, { redirect: "follow" })` is replaced by
+ * safeFetchExternalImage — manual redirects (max 3 hops) with FULL re-validation
+ * per hop, DNS pinning via a guarded undici Agent dispatcher, content-type
+ * whitelist + magic-byte sniffing, and the 5MB cap enforced before the body is
+ * read. assertPublicHost stays as a cheap legacy pre-check; safeFetch is the
+ * authoritative guard. */
 export async function copyExternalImage(storeId: string, url: string): Promise<string | null> {
   try {
     const parsed = new URL(url);
     await assertPublicHost(parsed);
-    const res = await fetch(parsed, {
-      headers: { "User-Agent": "SHOPMESH-Importer/1.0 (+https://shopmesh.local)" },
-      signal: AbortSignal.timeout(10000),
-      redirect: "follow",
-    });
+    const res = await safeFetchExternalImage(url);
     if (!res.ok) return null;
-    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-    const ext = IMG_EXT[type];
+    const ext = IMG_EXT[res.contentType];
     if (!ext) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = res.buffer;
     if (buf.length === 0 || buf.length > 5 * 1024 * 1024) return null;
     const hash = sha256Hex(url).slice(0, 16);
     const dir = path.join(process.cwd(), "public", "uploads", storeId);

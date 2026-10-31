@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, fail } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
+import { createHash } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,9 @@ export const POST = handle(async (req: Request) => {
   if (!TOKEN_RE.test(token)) return fail(401, "UNAUTHORIZED", "A valid session token is required");
 
   // Session validation WITHOUT the request's own cookie/Bearer context — the
-  // hub presents the socket's token explicitly.
-  const session = await db.session.findUnique({ where: { token } });
+  // hub presents the socket's token explicitly. Phase 1 (C2): the token is
+  // hashed before lookup — Session.token stores sha256(raw), never the raw.
+  const session = await db.session.findUnique({ where: { token: createHash("sha256").update(token).digest("hex") } });
   if (!session || session.expiresAt < new Date()) {
     return fail(401, "UNAUTHORIZED", "Session not found or expired");
   }

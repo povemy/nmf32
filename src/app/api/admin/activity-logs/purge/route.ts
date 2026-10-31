@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync } from "@/lib/password";
 import { db } from "@/lib/db";
 import { readBody } from "@/app/api/admin/_helpers";
 
@@ -51,7 +51,8 @@ export const POST = handle(async (req: NextRequest) => {
   if (!password) throw new ApiError(400, "VALIDATION", "Admin password is required");
 
   const full = await db.adminUser.findUnique({ where: { id: admin.id } });
-  const passwordOk = !!full && full.isActive && verifyPassword(password, full.passwordHash);
+  // Phase 1 (SEC-04): async scrypt — no event-loop block on this rare admin op.
+  const passwordOk = !!full && full.isActive && (await verifyPasswordAsync(password, full.passwordHash));
   if (!passwordOk) {
     await sleep(400);
     await auditAdmin({

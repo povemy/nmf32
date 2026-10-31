@@ -34,6 +34,11 @@ export const ADMIN_CAPS: Record<string, string[]> = {
   /** Affiliate financial operations — payouts (approve/mark-paid/fail),
    *  reconciliation, financial exports. Same tier as payouts.manage. */
   "affiliate.finance": ["superadmin", "finance"],
+  /** Review moderation queue (Task B1) — list + approve/reject verified-purchase
+   *  product reviews. Same tier as products.moderate: this is content
+   *  moderation, so the moderator role is included (no money/PII beyond the
+   *  review author's own submission). */
+  "reviews.moderate": ["superadmin", "ops", "moderator"],
 };
 
 export type AdminCap = keyof typeof ADMIN_CAPS;

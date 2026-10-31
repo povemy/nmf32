@@ -43,7 +43,7 @@ const ALERT_RING = 50;
 const STATE_FILE = `${import.meta.dir}/state.json`;
 const PROJECT_ENV = "/home/z/my-project/.env";
 
-type Kind = "expiry" | "refund" | "analytics" | "affiliate";
+type Kind = "expiry" | "refund" | "analytics" | "affiliate" | "sessions";
 type EndpointState = {
   lastTickAt: string | null;
   lastSuccessAt: string | null;
@@ -91,7 +91,7 @@ function freshState(): State {
     service: "expiry-scheduler",
     startedAt: new Date().toISOString(),
     intervalMs: INTERVAL_MS,
-    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint() },
+    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint(), sessions: freshEndpoint() },
     alerts: [],
   };
 }
@@ -108,7 +108,7 @@ try {
       startedAt: new Date().toISOString(),
       intervalMs: INTERVAL_MS,
       alerts: raw.alerts ?? [],
-      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint() },
+      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint(), sessions: raw.endpoints.sessions ?? freshEndpoint() },
     };
   }
 } catch {
@@ -138,6 +138,9 @@ const ROUTES: Record<Kind, string> = {
   refund: `${APP_BASE}/api/cron/refund-reconcile`,
   analytics: `${APP_BASE}/api/cron/analytics-tick`,
   affiliate: `${APP_BASE}/api/cron/affiliate-tick`,
+  // Phase 1 (C3): expired-session purge — the route self-throttles to one
+  // real purge per 10 minutes; every tick here just keeps it durable.
+  sessions: `${APP_BASE}/api/cron/session-purge`,
 };
 
 async function tick(kind: Kind) {
@@ -186,7 +189,7 @@ async function tick(kind: Kind) {
 
 function monitor() {
   const now = Date.now();
-  for (const kind of ["expiry", "refund", "analytics", "affiliate"] as Kind[]) {
+  for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions"] as Kind[]) {
     const st = state.endpoints[kind];
     if (st.lastSuccessAt) {
       const age = now - Date.parse(st.lastSuccessAt);
@@ -210,17 +213,20 @@ function monitor() {
       await tick("expiry");
       await tick("refund");
       await tick("analytics");
+      await tick("sessions");
     }
   } else {
     // First boot ever — establish the recurring invocation immediately.
     await tick("expiry");
     await tick("refund");
     await tick("analytics");
+    await tick("sessions");
   }
   setInterval(() => {
     tick("expiry");
     tick("refund");
     tick("analytics");
+    tick("sessions");
     monitor();
     saveState();
   }, INTERVAL_MS);

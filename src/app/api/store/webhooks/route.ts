@@ -8,7 +8,17 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_EVENTS = ["order.paid", "order.shipped", "order.refunded"];
 
+/** D1 — mask a signing secret for list/display responses. Never returns the
+ *  full value: long secrets keep first 6 + last 4 chars, short ones collapse
+ *  to bullets. The plaintext secret is revealed exactly once (create/rotate). */
+function maskSecret(secret: string): string {
+  if (secret.length > 14) return `${secret.slice(0, 6)}…${secret.slice(-4)}`;
+  return "•••••";
+}
+
 // GET /api/store/webhooks — endpoints with their last 10 deliveries.
+// D1: secrets are masked; the plaintext is only ever returned by POST
+// (create) and POST [id]/rotate — each exactly once, at generation time.
 export const GET = handle(async () => {
   const { store } = await requireActiveSellerStore();
   const endpoints = await db.webhookEndpoint.findMany({
@@ -20,7 +30,7 @@ export const GET = handle(async () => {
     endpoints.map((ep) => ({
       id: ep.id,
       url: ep.url,
-      secret: ep.secret,
+      secretMasked: maskSecret(ep.secret),
       events: parseJson<string[]>(ep.eventsJson, []),
       isActive: ep.isActive,
       createdAt: ep.createdAt,

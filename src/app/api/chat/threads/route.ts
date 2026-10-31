@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
+import { rateLimit } from "@/lib/rate-limit";
 import type { ChatMessage } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,9 @@ export const GET = handle(async (req: Request) => {
 // (order vs product — drives the context bubble in the chat UI) and
 // optionally seed the first message.
 export const POST = handle(async (req: Request) => {
+  // Phase 1 (B4): thread creation throttle (get-or-create upsert + possible
+  // seed message + seller notification — keep automated abuse bounded).
+  rateLimit(req, "chat-threads", 20);
   const me = await requireShopper();
   const body = (await req.json().catch(() => ({}))) as {
     storeId?: string; storeSlug?: string; orderNumber?: string; productId?: string; message?: string; subject?: string;
@@ -105,20 +109,27 @@ export const POST = handle(async (req: Request) => {
   }
 
   // Order entry point (order success / order status "Contact seller"):
-  // quote that order. Orders are guest-based (no account link), so scope the
-  // lookup to the thread's store — same privacy level as /api/orders/lookup
-  // (email + orderNumber).
+  // quote that order — Phase 1 (B3 / F-1) with REAL ownership enforcement:
+  // the signed-in shopper must either OWN the order (Order.shopperId, the
+  // modern account-scoped checkout) or match its customerEmail exactly (the
+  // legacy guest-order rule, identical to /api/orders/lookup). The previous
+  // implementation scoped only by {orderNumber, storeId} — an IDOR that let
+  // any signed-in shopper enumerate other customers' order context. Uniform
+  // 404 for missing AND non-owned orders (no existence oracle).
   let orderId: string | null = null;
   let orderNumber: string | null = null;
   if (body.orderNumber) {
     const order = await db.order.findFirst({
       where: { orderNumber: body.orderNumber, storeId: store.id },
-      select: { id: true, orderNumber: true },
+      select: { id: true, orderNumber: true, shopperId: true, customerEmail: true },
     });
-    if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found");
+    const owns =
+      !!order &&
+      (order.shopperId === me.id || order.customerEmail.toLowerCase() === me.email.toLowerCase());
+    if (!owns) throw new ApiError(404, "NOT_FOUND", "Order not found");
     contextType = "order";
-    orderId = order.id;
-    orderNumber = order.orderNumber;
+    orderId = order!.id;
+    orderNumber = order!.orderNumber;
   }
 
   // Default seed message reflects the entry point ("cute bubble" copy).

@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync, DUMMY_PASSWORD_HASH } from "@/lib/password";
 import { createSession } from "@/lib/auth";
+import { getMfaEnrollment, createMfaChallenge } from "@/lib/mfa";
 import { handle, ok, fail, logActivity } from "@/lib/api";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 // POST /api/auth/login { email, password, portal: "admin" | "seller" }
 export const POST = handle(async (req: NextRequest) => {
@@ -16,11 +17,26 @@ export const POST = handle(async (req: NextRequest) => {
   const password = body.password ?? "";
   const portal = body.portal === "admin" ? "admin" : "seller";
   if (!email || !password) return fail(400, "VALIDATION", "Email and password are required");
+  // Phase 1 (SEC-01): identity-keyed throttle — 20 attempts/hour per EMAIL on
+  // top of the per-IP bucket, so distributed brute-force spread across IPs
+  // still exhausts against the account, while a shared-NAT office is unaffected.
+  rateLimitKey(email, "auth-login-email", 20, 3_600_000);
 
   if (portal === "admin") {
     const admin = await db.adminUser.findUnique({ where: { email } });
-    if (!admin || !admin.isActive || !verifyPassword(password, admin.passwordHash)) {
+    // Phase 1 (SEC-01/SEC-04): asynchronous scrypt + DUMMY verification — the
+    // not-found and inactive branches burn the same ~30 ms of hashing work as
+    // the found branch, off the event loop. Identical 401 for every failure.
+    const pwOk = await verifyPasswordAsync(password, admin?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    if (!admin || !admin.isActive || !pwOk) {
       return fail(401, "INVALID_CREDENTIALS", "Invalid admin credentials");
+    }
+    // Phase 1 (C4): confirmed MFA enrollment gates session minting on EVERY
+    // admin login path (legacy + unified) — no bypass via the alternate route.
+    const mfa = await getMfaEnrollment(admin.id);
+    if (mfa && mfa.confirmedAt) {
+      const challenge = await createMfaChallenge(admin.id);
+      return ok({ mfaRequired: true, challenge: challenge.challenge, email: admin.email });
     }
     await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
     const token = await createSession("admin", admin.id);
@@ -31,7 +47,8 @@ export const POST = handle(async (req: NextRequest) => {
   }
 
   const seller = await db.seller.findUnique({ where: { email } });
-  if (!seller || !verifyPassword(password, seller.passwordHash)) {
+  const sellerPwOk = await verifyPasswordAsync(password, seller?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!seller || !sellerPwOk) {
     return fail(401, "INVALID_CREDENTIALS", "Invalid seller credentials");
   }
   // F-02/F-24 remediation: ineligible statuses are blocked at the login gate

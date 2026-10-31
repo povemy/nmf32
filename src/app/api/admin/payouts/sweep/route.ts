@@ -70,8 +70,15 @@ export const POST = handle(async (req: NextRequest) => {
   // ---------------------------------------------------------------- (b) unprocessed webhooks
   // Older than 1h, still processed=false, cap 25. signatureValid=false rows are
   // skipped (counted) — replaying an unverified payload is exactly what we must
-  // never do. Valid ones go through the shared processor, which re-verifies the
-  // signature and owns every state transition + ledger posting (idempotent).
+  // never do. Valid ones go through the shared processor with recovery:true
+  // (Phase 1 / E3): the ORIGINAL delivery was signature-verified and persisted —
+  // the processor still fully re-verifies the HMAC against the stored payload
+  // (a stored event with a tampered/absent sig fails BAD_SIGNATURE), but the
+  // ±10-minute freshness window is waived because the event's age is exactly
+  // why it needs recovery. Previously this branch re-fed the ORIGINAL ts which
+  // always failed STALE_EVENT — the recovery path existed on paper only. The
+  // processor owns every state transition + ledger posting (idempotent via
+  // claims + dedupKeys): a retry can never create a second financial effect.
   const webhookCutoff = new Date(Date.now() - 3600000);
   const unprocessed = await db.paymentWebhookLog.findMany({
     where: { processed: false, createdAt: { lt: webhookCutoff } },
@@ -88,7 +95,7 @@ export const POST = handle(async (req: NextRequest) => {
     }
     try {
       const body = JSON.parse(log.payloadJson) as { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string };
-      await processPaymentWebhook({ provider: log.provider, body, rawBody: log.payloadJson });
+      await processPaymentWebhook({ provider: log.provider, body, rawBody: log.payloadJson, opts: { recovery: true } });
       reprocessed++;
     } catch {
       // BAD_SIGNATURE / UNKNOWN_EVENT / AMOUNT_MISMATCH / unknown ref … — the

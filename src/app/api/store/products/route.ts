@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, okPaged, ApiError, getPagination, logActivity } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
-import { matchFlags, moderationStatus, uniqueSlug, validateVariants } from "./helpers";
+import { matchFlags, moderationStatus, sanitizeProductImages, uniqueSlug, validateVariants } from "./helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,8 @@ export const POST = handle(async (req: Request) => {
   if (!title) throw new ApiError(400, "VALIDATION", "title is required");
   const description = body.description != null ? String(body.description) : null;
   const variants = validateVariants(body.variants);
-  const images = Array.isArray(body.images) ? body.images.map((u) => String(u)).filter(Boolean) : [];
+  // D2 — every persisted image passes the URL guard (http(s) or site-relative).
+  const images = Array.isArray(body.images) ? sanitizeProductImages(body.images) : [];
 
   // Moderation: first N products need review; banned keywords force review.
   let status = await moderationStatus(store.id);

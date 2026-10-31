@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { verifyPassword } from "@/lib/password";
+import { verifyPasswordAsync, DUMMY_PASSWORD_HASH } from "@/lib/password";
 import { createSession } from "@/lib/auth";
+import { getMfaEnrollment, createMfaChallenge } from "@/lib/mfa";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper } from "@/lib/shopper-merge";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 // POST /api/auth/unified-login { email, password, portal? }
 // ---------------------------------------------------------------------------
@@ -47,6 +48,9 @@ export const POST = handle(async (req: NextRequest) => {
   const password = body.password ?? "";
   const portal = body.portal === "admin" || body.portal === "seller" || body.portal === "shopper" ? body.portal : null;
   if (!email || !password) return fail(400, "VALIDATION", "Email and password are required");
+  // Phase 1 (SEC-01): identity-keyed throttle — 20/hour per EMAIL on top of
+  // the shared per-IP bucket (distributed brute-force still exhausts).
+  rateLimitKey(email, "auth-login-email", 20, 3_600_000);
 
   // Probe all three account tables in parallel (server-side identity
   // establishment — never a client-supplied role).
@@ -56,12 +60,19 @@ export const POST = handle(async (req: NextRequest) => {
     db.shopperUser.findUnique({ where: { email } }),
   ]);
 
-  // Password verification per candidate. Inactive/invalid accounts fail
-  // exactly like a wrong password (uniform 401, no existence leak).
+  // Phase 1 (SEC-01/SEC-04): password verification per candidate — ALWAYS
+  // exactly three asynchronous scrypt verifications (DUMMY hash when the
+  // table has no row), run sequentially to keep the libuv thread pool
+  // unsaturated. Inactive/invalid accounts fail exactly like a wrong
+  // password (uniform 401, no existence or timing leak).
+  const adminPwOk = await verifyPasswordAsync(password, admin?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  const sellerPwOk = await verifyPasswordAsync(password, seller?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  const shopperPwOk = await verifyPasswordAsync(password, shopper?.passwordHash ?? DUMMY_PASSWORD_HASH);
+
   const candidates: { type: "admin" | "seller" | "shopper" }[] = [];
-  if (admin && admin.isActive && verifyPassword(password, admin.passwordHash)) candidates.push({ type: "admin" });
-  if (seller && verifyPassword(password, seller.passwordHash)) candidates.push({ type: "seller" });
-  if (shopper && verifyPassword(password, shopper.passwordHash)) candidates.push({ type: "shopper" });
+  if (admin && admin.isActive && adminPwOk) candidates.push({ type: "admin" });
+  if (seller && sellerPwOk) candidates.push({ type: "seller" });
+  if (shopper && shopperPwOk) candidates.push({ type: "shopper" });
 
   if (candidates.length === 0) {
     return fail(401, "INVALID_CREDENTIALS", "Invalid email or password");
@@ -84,6 +95,14 @@ export const POST = handle(async (req: NextRequest) => {
   }
 
   if (resolved === "admin" && admin) {
+    // Phase 1 (C4): confirmed MFA enrollment gates session minting — the
+    // response carries the challenge instead of a token; the client completes
+    // via /api/auth/mfa/verify. Enforced identically on the legacy route.
+    const mfa = await getMfaEnrollment(admin.id);
+    if (mfa && mfa.confirmedAt) {
+      const challenge = await createMfaChallenge(admin.id);
+      return ok({ mfaRequired: true, challenge: challenge.challenge, email: admin.email });
+    }
     await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
     const token = await createSession("admin", admin.id);
     await logActivity({ actorType: "admin", actorId: admin.id, actorLabel: admin.email, action: "admin.login", meta: { via: "unified" } });

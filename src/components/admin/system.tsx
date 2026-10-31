@@ -52,6 +52,7 @@ import {
 } from "@/lib/settings-registry";
 import { apiSend, apiGet, useApi } from "./use-api";
 import { qs } from "./nav";
+import { MfaCard } from "./mfa-card";
 import {
   CardsSkeleton,
   DiffViewer,
@@ -482,6 +483,11 @@ export function SettingsView() {
         title="Settings"
         description="Platform configuration — payouts, moderation, payments and storefront chrome. Changes are audited."
       />
+
+      {/* C4: per-administrator TOTP MFA management — the signed-in admin's OWN
+          account security (current-password reauth on every change), independent
+          of the settings.manage capability that gates the platform config below. */}
+      <MfaCard />
 
       {!canEdit ? (
         <Card className="py-0 border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30">

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { productCardInclude, toProductCard, minVariant, cardStyleFor, type ProductWithRelations } from "../../../../_shared/product-card";
 import { trackProductView } from "@/lib/analytics/track";
+import { reviewsSchemaReady } from "@/lib/reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,31 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
   const store = await db.store.findUnique({ where: { slug } });
   if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
+  // Phase 1 (B1): EXPLICIT review projection — the previous bare include
+  // selected every Review scalar, which after the schema change includes the
+  // new shopperId/orderId columns → P2022 on every PDP fetch until the
+  // migration lands. With an explicit select we control the column set:
+  // post-migration the projection carries orderId (Verified-purchase badge);
+  // pre-migration (probe cached per process) it falls back to the legacy
+  // column set with orderId: null — identical response shape either way, so
+  // public browsing NEVER breaks during the deploy window.
+  const schemaReady = await reviewsSchemaReady();
+  const reviewSelect = {
+    id: true,
+    ...(schemaReady ? { orderId: true } : {}),
+    customerName: true,
+    rating: true,
+    title: true,
+    body: true,
+    reply: true,
+    createdAt: true,
+  } as const;
+
   const product = await db.product.findFirst({
     where: { slug: pSlug, storeId: store.id },
     include: {
       ...productCardInclude,
-      reviews: { where: { status: "published" }, orderBy: { createdAt: "desc" }, take: 20 },
+      reviews: { where: { status: "published" }, orderBy: { createdAt: "desc" }, take: 20, select: reviewSelect },
     },
   });
   if (!product || product.status !== "active") throw new ApiError(404, "PRODUCT_NOT_FOUND", "Product not found");
@@ -65,6 +86,12 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
     },
     reviews: product.reviews.map((r) => ({
       id: r.id,
+      // orderId != null ⇒ verified purchase (B1) — drives the shopper-facing
+      // "Verified purchase" badge. Public list stays published-only (filter
+      // above) and never exposes shopperId/email (moderator-only context).
+      // Pre-migration the legacy projection omits the column — null keeps the
+      // response shape identical.
+      orderId: (r as { orderId?: string | null }).orderId ?? null,
       customerName: r.customerName,
       rating: r.rating,
       title: r.title,

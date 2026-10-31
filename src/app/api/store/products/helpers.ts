@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { ApiError, slugify } from "@/lib/api";
 import { parseJson } from "@/lib/json";
+import { sanitizeExternalUrl } from "@/lib/url-guard";
 
 export const BANNED_KEYWORDS = ["replica", "fake", "gun", "drug"];
 
@@ -29,6 +30,27 @@ export async function uniqueSlug(storeId: string, title: string): Promise<string
   let n = 2;
   while (taken.has(`${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+/** D2 — sanitize the product images array at save time. Product images are
+ *  seller-controlled URLs rendered to every shopper, so each entry must be an
+ *  http(s) URL or a site-relative path ("/api/img/…", "/uploads/…"), never
+ *  javascript:/data:/protocol-relative. Invalid entries are REJECTED (400
+ *  VALIDATION naming the input index) — the seller curates this list actively
+ *  in the product form, and a silent drop would look like a save bug. Blank
+ *  entries keep the legacy filter(Boolean) semantics and drop out. */
+export function sanitizeProductImages(raw: unknown[]): string[] {
+  const out: string[] = [];
+  raw.forEach((entry, i) => {
+    const url = String(entry).trim();
+    if (!url) return;
+    const safe = sanitizeExternalUrl(url, { allowRelative: true });
+    if (!safe) {
+      throw new ApiError(400, "VALIDATION", `images[${i}] must be a valid http(s) or site-relative URL`);
+    }
+    out.push(safe);
+  });
+  return out;
 }
 
 export type VariantInput = {

@@ -1,0 +1,12 @@
+-- Phase 1 (C2 / F-4): stop storing raw session bearer tokens at rest.
+--
+-- The Session.token column keeps its name and shape (String @id) but now
+-- holds sha256(token) hex digests instead of the raw token. This migration is
+-- DATA-ONLY: it one-way hashes every existing token in place, so cookies that
+-- already exist remain valid (raw cookie -> sha256 -> matches the transformed
+-- row). New sessions written by the updated code already store the digest.
+--
+-- MUST RUN EXACTLY ONCE (standard Prisma migration semantics): re-running the
+-- UPDATE would double-hash and invalidate all live sessions (users re-login).
+-- Operational impact: none at runtime; rows are 64-hex chars before and after.
+UPDATE "Session" SET "token" = encode(sha256("token"::bytea), 'hex');

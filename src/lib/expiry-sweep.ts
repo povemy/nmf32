@@ -22,10 +22,26 @@ export type SweepResult = {
 
 /** Run one bounded sweep of eligible expired unpaid reservations. */
 export async function runExpirySweep(): Promise<SweepResult> {
+  // Phase 1 (E1): TWO candidate classes.
+  //  (a) Modern checkout: order's PaymentGroup past expiry in
+  //      requires_payment OR failed (failed = PSP declined + buyer abandoned
+  //      the retry — previously leaked reserved stock forever).
+  //  (b) LEGACY single-PaymentIntent orders (paymentGroupId null): intent in
+  //      requires_payment OR failed past its own expiresAt. Previously these
+  //      orders matched NO sweep (the query required a paymentGroup relation).
+  // releaseOrderReservation is the SAME CAS primitive for both: it claims the
+  // ORDER row (payment_pending → cancelled) and only the winner restocks —
+  // exactly-once release regardless of candidate class.
   const eligible = await db.order.findMany({
     where: {
       status: "payment_pending",
-      paymentGroup: { status: "requires_payment", expiresAt: { lt: new Date() } },
+      OR: [
+        { paymentGroup: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } } },
+        {
+          paymentGroupId: null,
+          paymentIntents: { some: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } } },
+        },
+      ],
     },
     select: { id: true },
     orderBy: { createdAt: "asc" },

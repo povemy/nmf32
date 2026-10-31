@@ -1,17 +1,27 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handle, ApiError } from "@/lib/api";
+import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/orders/receipt?email=&orderNumber= — structured PDF payment receipt.
 // Authorised the same way as guest order tracking: the email + orderNumber pair.
+// Phase 1 (SEC-05 / B2 / B4): same three-axis throttle as the lookup route
+// (10/min/IP, 10/hour/email, 30/hour/order) — the PII-rich PDF is the more
+// sensitive of the two surfaces. The PSP providerRef is deliberately NOT
+// rendered (B2: minimize exposed information — the payment method NAME is
+// kept for buyer recognition, the internal reference is not the buyer's).
 export const GET = handle(async (req: Request) => {
+  rateLimit(req, "orders-receipt", 10);
   const url = new URL(req.url);
   const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
   const orderNumber = (url.searchParams.get("orderNumber") ?? "").trim();
   if (!email || !orderNumber) throw new ApiError(400, "VALIDATION", "email and orderNumber are required");
+  if (email.length > 254 || orderNumber.length > 32) throw new ApiError(400, "VALIDATION", "email and orderNumber are required");
+  rateLimitKey(email, "orders-receipt-email", 10, 3_600_000);
+  rateLimitKey(orderNumber, "orders-receipt-order", 30, 3_600_000);
 
   const order = await db.order.findUnique({
     where: { orderNumber },
@@ -168,15 +178,12 @@ async function buildReceiptPdf(order: OrderLike) {
   text(rm(order.totalMinor), 480, y, 12, bold, BRAND);
   y -= 34;
 
-  // payment method
+  // payment method (B2: provider NAME only — never the internal providerRef)
   const pi = order.paymentIntents[0];
   page.drawLine({ start: { x: M, y }, end: { x: 595.28 - M, y }, thickness: 1, color: LINE }); y -= 20;
   text("PAYMENT METHOD", M, y, 8, bold, MUTED);
   y -= 14;
   text(`${order.paymentProvider ?? pi?.provider ?? "sandbox gateway"}`, M, y, 10, bold);
-  if (pi?.providerRef) {
-    text(`Reference: ${pi.providerRef}`, 320, y, 9, font, MUTED);
-  }
   y -= 14;
   text(`Paid at: ${order.paidAt ? fmtDate(order.paidAt) : fmtDate(order.createdAt)}`, M, y, 9, font, MUTED);
   y -= 24;

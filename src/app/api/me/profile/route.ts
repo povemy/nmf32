@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import { sanitizeExternalUrl } from "@/lib/url-guard";
 import { PAID_ORDER_STATUSES, tierForSpend, nextTier, TIER_THRESHOLDS_MINOR, MEMBERSHIP_TIERS, type MembershipTier } from "@/lib/membership";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,21 @@ const patchSchema = z.object({
   avatarUrl: z.string().trim().max(500).nullish(),
 });
 
+/** D2 — avatar value space is {null, "", "grad:<key>", http(s) URL, site-relative
+ *  path}. "grad:" values are platform gradient-avatar enums (rendered as fixed
+ *  CSS classes, never as URLs) and must keep passing. Everything else goes
+ *  through the URL guard with allowRelative ("/uploads/…" avatars are legal).
+ *  A non-empty value that fails the guard is REJECTED (400 VALIDATION) — the
+ *  shopper is actively editing the field, so a silent null would look like a
+ *  save bug (same error style as the zod failures above). */
+function sanitizeAvatarUrl(raw: string | null | undefined): string | null {
+  if (!raw) return raw ?? null;
+  if (/^grad:[a-z0-9-]{1,24}$/.test(raw)) return raw;
+  const safe = sanitizeExternalUrl(raw, { allowRelative: true });
+  if (!safe) throw new ApiError(400, "VALIDATION", "avatarUrl must be a valid http(s) or site-relative URL");
+  return safe;
+}
+
 // PATCH /api/me/profile — edit profile settings (name, phone, handle, avatar).
 export const PATCH = handle(async (req: Request) => {
   const me = await requireShopper();
@@ -89,6 +105,7 @@ export const PATCH = handle(async (req: Request) => {
   }
 
   const { fullName, phone, username, avatarUrl } = parsed.data;
+  const avatarSafe = avatarUrl === undefined ? undefined : sanitizeAvatarUrl(avatarUrl);
   if (username) {
     const clash = await db.shopperUser.findFirst({ where: { username, id: { not: me.id } } });
     if (clash) throw new ApiError(409, "USERNAME_TAKEN", "That username is already taken");
@@ -100,7 +117,7 @@ export const PATCH = handle(async (req: Request) => {
       ...(fullName != null ? { fullName } : {}),
       ...(phone !== undefined ? { phone: phone || null } : {}),
       ...(username !== undefined ? { username: username || null } : {}),
-      ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
+      ...(avatarSafe !== undefined ? { avatarUrl: avatarSafe || null } : {}),
     },
     select: { id: true, fullName: true, username: true, avatarUrl: true, phone: true },
   });

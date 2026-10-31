@@ -3,12 +3,33 @@
 // path keeps seller/admin portals working in cross-site iframes (preview panel)
 // where SameSite cookies are dropped by the browser.
 import { cookies, headers } from "next/headers";
+import { createHash } from "crypto";
 import { db } from "./db";
 import { randomToken } from "./password";
 import { ApiError } from "./api";
 
 export const SESSION_COOKIE = "sm_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// ============================================================================
+// Phase 1 (C2 / F-4) — session tokens are stored HASHED at rest.
+// ---------------------------------------------------------------------------
+// The bearer/cookie value handed to the client is 64-hex random (256-bit);
+// the Session.token column stores sha256(token) instead of the raw token, so
+// a database/backup read can no longer replay live sessions. Lookup hashes
+// the presented token first — same PK-indexed findUnique, same revocation and
+// expiry semantics, same cookie flags.
+//
+// MIGRATION (20261101000000_phase1_session_token_hashing): one-time UPDATE
+// that hashes existing rows in place. DEPLOY ORDER: run `prisma migrate
+// deploy` BEFORE starting the new code. If the order is flipped, rows written
+// by the new code would be double-hashed by the later migration — the outcome
+// in EITHER wrong-order case is the same benign effect: every live session
+// invalidates once and users simply sign in again. There is NO plaintext
+// fallback lookup — that would defeat the objective.
+// ============================================================================
+const sha256Hex = (t: string) => createHash("sha256").update(t).digest("hex");
+const hashSessionToken = sha256Hex;
 
 export type AdminUserDTO = {
   id: string; email: string; name: string; role: string;
@@ -28,7 +49,9 @@ export type SessionContext = { userType: "admin" | "seller" | "shopper"; userId:
 export async function createSession(userType: "admin" | "seller" | "shopper", userId: string): Promise<string> {
   const token = randomToken(32);
   await db.session.create({
-    data: { token, userType, userId, expiresAt: new Date(Date.now() + SESSION_TTL_MS) },
+    // C2: store sha256(token) — the raw value exists ONLY in the cookie/
+    // Bearer response, never at rest.
+    data: { token: hashSessionToken(token), userType, userId, expiresAt: new Date(Date.now() + SESSION_TTL_MS) },
   });
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
@@ -63,7 +86,7 @@ export async function destroySession(): Promise<void> {
   const cookieToken = store.get(SESSION_COOKIE)?.value;
   if (cookieToken) tokens.push(cookieToken);
   for (const t of new Set(tokens)) {
-    await db.session.deleteMany({ where: { token: t } });
+    await db.session.deleteMany({ where: { token: hashSessionToken(t) } });
   }
   store.delete(SESSION_COOKIE);
 }
@@ -104,17 +127,17 @@ export async function rotateSession(): Promise<string | null> {
   }
   if (!presented) return null;
 
-  const existing = await db.session.findUnique({ where: { token: presented } });
+  const existing = await db.session.findUnique({ where: { token: hashSessionToken(presented) } });
   // Delete-first: even when the row is missing/expired the presented token is
   // treated as retired (idempotent), and no fresh session is minted for a
   // session that no longer exists.
-  await db.session.deleteMany({ where: { token: presented } });
+  await db.session.deleteMany({ where: { token: hashSessionToken(presented) } });
   if (!existing || existing.expiresAt < new Date()) return null;
 
   const fresh = randomToken(32);
   await db.session.create({
     data: {
-      token: fresh,
+      token: hashSessionToken(fresh),
       userType: existing.userType,
       userId: existing.userId,
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
@@ -150,7 +173,8 @@ export async function getSession(): Promise<SessionContext | null> {
     token = store.get(SESSION_COOKIE)?.value ?? null;
   }
   if (!token) return null;
-  const s = await db.session.findUnique({ where: { token } });
+  // C2: hash before lookup — the stored value is sha256(raw).
+  const s = await db.session.findUnique({ where: { token: hashSessionToken(token) } });
   if (!s || s.expiresAt < new Date()) return null;
   const userType = s.userType as "admin" | "seller" | "shopper";
   return { userType, userId: s.userId };

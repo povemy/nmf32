@@ -3,6 +3,7 @@
 //                storeName, storeSlug, ratingAvg, ratingCount, salesCount, categoryName}
 import { parseJson } from "@/lib/json";
 import { db } from "@/lib/db";
+import { sanitizeExternalUrl } from "@/lib/url-guard";
 
 export const FALLBACK_IMG = "/api/img/fallback?w=600&h=600";
 
@@ -59,8 +60,20 @@ export function toProductCard(p: ProductWithRelations) {
   };
 }
 
+/** Store social links → render-side map. D2: every value is run through the
+ *  URL guard and entries that fail (legacy `javascript:` rows, malformed
+ *  junk) are dropped — only http(s) links ever reach an href. Belt and
+ *  braces with the save-side guard in /api/store/settings. */
 export function parseSocial(json: string | null | undefined): Record<string, string> {
-  return parseJson<Record<string, string>>(json, {});
+  const raw: unknown = parseJson<unknown>(json, {});
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [network, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value == null || value === "") continue;
+    const safe = sanitizeExternalUrl(String(value), { maxLength: 500 });
+    if (safe && network) out[network] = safe;
+  }
+  return out;
 }
 
 /** The store's product-card typography (Feature: seller card customization).

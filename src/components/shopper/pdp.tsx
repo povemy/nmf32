@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  BadgeCheck,
   ChevronRight,
   Heart,
   MessageCircle,
@@ -72,7 +73,9 @@ type PdpPayload = {
     images: string[];
     variants: VariantT[];
   };
-  reviews: { id: string; customerName: string; rating: number; title: string | null; body: string | null; reply: string | null; createdAt: string }[];
+  // orderId != null ⇒ written against a confirmed purchase of this product
+  // (verified-purchase reviews, Task B1) — rendered as a subtle badge below.
+  reviews: { id: string; orderId: string | null; customerName: string; rating: number; title: string | null; body: string | null; reply: string | null; createdAt: string }[];
   related: ProductCardT[];
   store: { id: string; name: string; slug: string; tagline: string | null; logoUrl: string | null; whatsapp: string | null; cardStyle?: CardStyleTokens | null };
 };
@@ -492,11 +495,20 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
               {data.reviews.map((r) => (
                 <li key={r.id} className="rounded-xl border bg-card p-4 space-y-1.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-50 text-teal-800 text-xs font-bold">
                         {r.customerName.slice(0, 1).toUpperCase()}
                       </span>
                       <span className="text-sm font-semibold">{r.customerName}</span>
+                      {r.orderId ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"
+                          title="Review written after a confirmed purchase of this product"
+                        >
+                          <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                          Verified purchase
+                        </span>
+                      ) : null}
                     </div>
                     <span className="text-xs text-muted-foreground">{dateShort(r.createdAt)}</span>
                   </div>

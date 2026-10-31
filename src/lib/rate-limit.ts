@@ -205,3 +205,21 @@ export function rateLimit(req: Request, bucket: string, limit: number, windowMs 
     });
   }
 }
+
+/** Identity-keyed limit (Phase 1 / B4): same store and semantics as
+ *  rateLimit(), but the bucket key is an explicit identity string (normalized
+ *  email, order number, account id, product id) rather than the client IP —
+ *  so brute-force spread across many IPs still hits the per-identity window,
+ *  and shared-NAT shoppers are not throttled by each other. Combine with the
+ *  IP-based rateLimit() at call sites for defense in depth. */
+export function rateLimitKey(identity: string, bucket: string, limit: number, windowMs = 60_000): void {
+  const now = Date.now();
+  const key = `${bucket}:${identity.toLowerCase()}`;
+  const { count, resetAt } = getStore().hit(key, windowMs);
+  if (count > limit) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - now) / 1000));
+    throw new ApiError(429, "RATE_LIMITED", `Too many requests — retry in ${retryAfterSeconds}s`, {
+      retryAfterSeconds,
+    });
+  }
+}

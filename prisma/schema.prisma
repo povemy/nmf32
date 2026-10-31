@@ -92,6 +92,24 @@ model AdminUser {
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  mfa          AdminMfaEnrollment?
+}
+
+/// Phase 1 (C4): TOTP MFA enrollment for administrators.
+/// `secretEnc` = AES-256-GCM (iv:tag:ciphertext, base64 segments) encrypted
+/// with MFA_ENCRYPTION_KEY. `recoveryHashes` = JSON array of sha256(code)
+/// hex digests - one-time-use recovery codes, never stored in plaintext.
+/// `confirmedAt` null = enrollment started but not yet verified by a valid
+/// TOTP code; login enforcement only applies once confirmed.
+model AdminMfaEnrollment {
+  id             String    @id @default(cuid())
+  adminId        String    @unique
+  secretEnc      String
+  recoveryHashes String
+  confirmedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  admin          AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
 }
 
 model Seller {
@@ -177,6 +195,7 @@ model ShopperUser {
   follows         StoreFollow[]
   notifications   Notification[]
   affiliateProfile AffiliateProfile?
+  reviews      Review[]
 }
 
 model ChatThread {
@@ -411,18 +430,27 @@ model InventoryLog {
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 }
 
+/// Phase 1 (SEC-03 / B1): verified-purchase reviews.
+/// shopperId = verified buyer (null = legacy rows); orderId = eligible
+/// completed/delivered order backing the review; status pending until an
+/// admin publishes; @@unique enforces one review per buyer per product.
 model Review {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   productId    String
   orderId      String?
+  shopperId    String?
   customerName String
   rating       Int
   title        String?
   body         String?
   reply        String?
-  status       String   @default("published")
-  createdAt    DateTime @default(now())
-  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  status       String       @default("pending")
+  createdAt    DateTime     @default(now())
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order        Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  shopper      ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, shopperId])
 }
 
 model Collection {
@@ -550,6 +578,7 @@ model Order {
   @@index([paidAt])
   // Marketing Intelligence: campaign report filters orders by attributed campaign.
   @@index([storeId, attrCampaignId])
+  reviews      Review[]
 }
 
 model Shipment {

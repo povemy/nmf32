@@ -63,8 +63,16 @@ export const POST = handle(async (req: Request) => {
   const stats = { examined: 0, expired: 0, ordersExpired: 0, itemsRestocked: 0, skippedConcurrent: 0, anomalies: 0, failures: 0 };
 
   const nowDate = new Date();
+  // Phase 1 (E1): candidates now include FAILED groups past their expiry —
+  // before this, a `payment.failed` webhook flipped the group to "failed"
+  // and the buyer's abandoned retry left the reserved stock held FOREVER
+  // (both sweeps filtered status: "requires_payment" only). The retry window
+  // is untouched: /api/checkout/payments/[ref]/retry re-opens failed sessions
+  // until expiresAt — release only happens AFTER that window closes. A late
+  // payment.succeeded arriving after release is refused by the webhook's
+  // existing expired-guard (409 GROUP_EXPIRED + durable refund obligation).
   const candidates = await db.paymentGroup.findMany({
-    where: { status: "requires_payment", expiresAt: { lt: nowDate } },
+    where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: nowDate } },
     include: { orders: { include: { items: { select: { variantId: true, productId: true, qty: true } } } } },
     orderBy: { expiresAt: "asc" },
     take: BATCH,
@@ -75,11 +83,14 @@ export const POST = handle(async (req: Request) => {
     try {
       // ONE transaction per group: claim + order transitions + restock are
       // atomic. Default isolation (READ COMMITTED) + conditional claims: the
-      // group claim is the first write and the only gate — concurrent sweeps
-      // and payment confirmations can never both win it.
+      // group claim is the first write and the only gate — concurrent sweeps,
+      // payment confirmations and post-failure retries can never both win it.
+      // Phase 1 (E1): the claim accepts requires_payment OR failed — a
+      // concurrent buyer retry (failed → requires_payment) simply loses/wins
+      // the row race; count 0 ⇒ someone else owns the transition.
       const result = await db.$transaction(async (tx) => {
         const claim = await tx.paymentGroup.updateMany({
-          where: { id: group.id, status: "requires_payment" },
+          where: { id: group.id, status: { in: ["requires_payment", "failed"] } },
           data: { status: "expired" },
         });
         if (claim.count === 0) return { claimed: false as const };
@@ -139,7 +150,9 @@ export const POST = handle(async (req: Request) => {
     }
   }
 
-  const remaining = await db.paymentGroup.count({ where: { status: "requires_payment", expiresAt: { lt: new Date() } } });
+  const remaining = await db.paymentGroup.count({
+    where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
+  });
   const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), batchLimit: BATCH, auth: auth.mode };
 
   // Durable observability — survives restarts, queryable by ops/admin.
@@ -158,9 +171,9 @@ export const POST = handle(async (req: Request) => {
 export const GET = handle(async (req: Request) => {
   const auth = assertCronAuth(req);
   const [backlog, oldest, lastSetting] = await Promise.all([
-    db.paymentGroup.count({ where: { status: "requires_payment", expiresAt: { lt: new Date() } } }),
+    db.paymentGroup.count({ where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } } }),
     db.paymentGroup.findFirst({
-      where: { status: "requires_payment", expiresAt: { lt: new Date() } },
+      where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
       orderBy: { expiresAt: "asc" },
       select: { expiresAt: true },
     }),

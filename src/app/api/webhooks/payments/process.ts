@@ -38,6 +38,7 @@ import { getCommissionSettings } from "@/lib/commission";
 import { postOrderPaid, postGatewaySettlement, postPayoutConfirmed, postPayoutFailed, refreshWalletCache, AUTO_SETTLE_SETTING_KEY } from "@/lib/ledger";
 import { postAffiliateCommissionsForOrder } from "@/lib/affiliate";
 import { assertTransition } from "@/lib/payout-state";
+import { withSerializableTxRetry } from "@/lib/tx-retry";
 import { resolvePspProvider } from "@/lib/psp";
 import { recordLatePaymentObligation } from "@/lib/psp-refund";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
@@ -128,6 +129,15 @@ export async function processPaymentWebhook(input: {
   body: { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string; reason?: string; paymentId?: string };
   rawBody: string;
   headerSignature?: string | null;
+  /** Phase 1 (E3): INTERNAL-ONLY recovery mode. Set exclusively by the
+   *  authorized admin payout-ops sweep when re-feeding an event whose
+   *  ORIGINAL delivery was signature-verified and persisted
+   *  (PaymentWebhookLog.signatureValid = true). The HMAC is STILL fully
+   *  verified against the stored payload — recovery NEVER forges or skips
+   *  signature verification — only the ±10-minute freshness window is
+   *  waived, because the event's age is precisely WHY it needs recovery.
+   *  External webhook routes never set this flag. */
+  opts?: { recovery?: boolean };
 }): Promise<ProcessResult> {
   // (2b.2) Provider sandbox enforcement FIRST — fail closed. resolvePspProvider
   // falls back to the mock provider for unknown ids, so in production an
@@ -150,11 +160,14 @@ export async function processPaymentWebhook(input: {
   // a stale-but-correctly-signed delivery is recorded as signatureValid=false
   // (replay protection is part of webhook authentication semantics) and
   // rejected with STALE_EVENT below, AFTER the row is logged.
+  // Phase 1 (E3): in recovery mode the row records the HMAC result; the
+  // freshness of the ORIGINAL receipt is what authorizes reprocessing.
   const providedSig = input.headerSignature ?? (input.body.sig ? String(input.body.sig) : null);
   const expected = expectedSignature(providerRef, eventType, amountMinor, ts);
   const sigMatches = !!providedSig && safeEqual(providedSig, expected);
   const fresh = Math.abs(Date.now() - ts) <= WEBHOOK_TS_WINDOW_MS;
-  const signatureValid = sigMatches && fresh;
+  const recovery = input.opts?.recovery === true;
+  const signatureValid = sigMatches && (fresh || recovery);
 
   // OPTION A first: the ref may be a multi-seller payment group.
   const group = await db.paymentGroup.findUnique({
@@ -186,7 +199,7 @@ export async function processPaymentWebhook(input: {
   if (!sigMatches) {
     throw new ApiError(400, "BAD_SIGNATURE", "Webhook signature verification failed");
   }
-  if (!fresh) {
+  if (!fresh && !recovery) {
     throw new ApiError(400, "STALE_EVENT", `Webhook timestamp is outside the ±${WEBHOOK_TS_WINDOW_MS / 60_000}-minute acceptance window (replay protection)`);
   }
 
@@ -382,6 +395,12 @@ export async function processPaymentWebhook(input: {
           await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
           continue;
         }
+        // Phase 1 (E3): P2034 exhaustion → explicit 503 PAYMENT_TX_RETRY_EXHAUSTED
+        // (the provider retries later; the row stays processed=false for the
+        // ops sweep) instead of a raw 500 with no recovery contract.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+          throw new ApiError(503, "PAYMENT_TX_RETRY_EXHAUSTED", "The payment could not be confirmed due to sustained concurrent activity — the provider should retry this delivery", { attempts: attempt });
+        }
         throw e;
       }
     }
@@ -514,6 +533,31 @@ export async function processPaymentWebhook(input: {
 
   if (amountMinor !== intent.amountMinor) {
     throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${amountMinor} does not match intent ${intent.amountMinor}`);
+  }
+
+  // Phase 1 (E1) — late-payment guard for LEGACY single-intent orders, mirroring
+  // the group path's GROUP_EXPIRED policy: if the order already left
+  // payment_pending because the expiry sweep released its stock (cancelled /
+  // payment_expired — the sweep now covers legacy intents), the payment can no
+  // longer be fulfilled. Refuse, record the durable refund obligation, and let
+  // the PSP refund per its own cadence. transitionOrder is unconditional, so
+  // WITHOUT this guard a late webhook would resurrect a released order
+  // (double-sell). Money never moves on refusal.
+  const guardOrder = await db.order.findUnique({
+    where: { id: intent.orderId },
+    select: { id: true, status: true, currency: true },
+  });
+  if (guardOrder && (guardOrder.status === "payment_expired" || guardOrder.status === "cancelled")) {
+    await recordLatePaymentObligation({
+      provider: input.provider,
+      providerRef,
+      providerPaymentId: input.body.paymentId ?? null,
+      amountMinor,
+      groupTotalMinor: intent.amountMinor,
+      currency: guardOrder.currency,
+    });
+    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+    throw new ApiError(409, "ORDER_EXPIRED", `Order for payment ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
   }
 
   const settings = await getCommissionSettings();
@@ -741,43 +785,62 @@ async function processPayoutEvent(args: {
   const reason = args.reason ?? "provider reported failure";
   const subject = toStatus === "paid" ? `Payout ${payout.referenceNo} on the way` : `Payout ${payout.referenceNo} failed`;
 
-  const outcome = await db.$transaction(
-    async (tx) => {
-      // Conditional claim — expectedFrom is "processing" per the state machine
-      // (only processing payouts are awaiting provider confirmation). count 0
-      // ⇒ lost race / concurrent admin action ⇒ empty-tx-return (rollback-by-
-      // return: the claim was the only intended write and it wrote nothing).
-      const claim = await tx.payout.updateMany({
-        where: { id: payout.id, status: "processing" },
-        data: { status: toStatus },
+  // Phase 1 (E2): the SAME hardening the payment paths already carry —
+  //   • withSerializableTxRetry: bounded P2034 retry of the WHOLE tx with
+  //     jittered exponential backoff, and 503 PAYMENT_TX_RETRY_EXHAUSTED on
+  //     exhaustion (the PSP retries later; the delivery stays
+  //     processed=false for this sweep) instead of a raw 500.
+  //   • SET LOCAL statement_timeout = 10 s bounds lock waits.
+  //   • notification/audit fan-out moved POST-COMMIT (the F1 anti-pattern:
+  //     extra round-trips on the global client INSIDE the Serializable tx
+  //     multiply pool pressure and hot-row contention).
+  //   • timeout/maxWait (10 s/10 s, env-tunable) replace Prisma's 5 s defaults.
+  // Retry-safety: the claim is the first write and the only gate; a retried tx
+  // whose claim matches 0 rows is a no-op. Ledger dedupKeys backstop T4/T4f.
+  const outcome = await withSerializableTxRetry(async (tx) => {
+    await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '10s'");
+    // Conditional claim — expectedFrom is "processing" per the state machine
+    // (only processing payouts are awaiting provider confirmation). count 0
+    // ⇒ lost race / concurrent admin action ⇒ empty-tx-return (rollback-by-
+    // return: the claim was the only intended write and it wrote nothing).
+    const claim = await tx.payout.updateMany({
+      where: { id: payout.id, status: "processing" },
+      data: { status: toStatus },
+    });
+    if (claim.count === 0) return { claimed: false as const };
+
+    if (toStatus === "paid") {
+      await tx.payout.update({ where: { id: payout.id }, data: { paidAt: at } });
+      // T4 — clearing → bank; refreshWalletCache runs inside the recipe (tx).
+      await postPayoutConfirmed({
+        walletId: payout.walletId,
+        payoutId: payout.id,
+        referenceNo: payout.referenceNo,
+        amountMinor: payout.amountMinor,
+        tx,
       });
-      if (claim.count === 0) return { claimed: false as const };
+    } else {
+      await tx.payout.update({ where: { id: payout.id }, data: { failReason: reason } });
+      // T4f — reversal of T3 (clearing → back to seller payable).
+      await postPayoutFailed({
+        walletId: payout.walletId,
+        payoutId: payout.id,
+        referenceNo: payout.referenceNo,
+        amountMinor: payout.amountMinor,
+        reason,
+        tx,
+      });
+    }
 
-      if (toStatus === "paid") {
-        await tx.payout.update({ where: { id: payout.id }, data: { paidAt: at } });
-        // T4 — clearing → bank; refreshWalletCache runs inside the recipe (tx).
-        await postPayoutConfirmed({
-          walletId: payout.walletId,
-          payoutId: payout.id,
-          referenceNo: payout.referenceNo,
-          amountMinor: payout.amountMinor,
-          tx,
-        });
-      } else {
-        await tx.payout.update({ where: { id: payout.id }, data: { failReason: reason } });
-        // T4f — reversal of T3 (clearing → back to seller payable).
-        await postPayoutFailed({
-          walletId: payout.walletId,
-          payoutId: payout.id,
-          referenceNo: payout.referenceNo,
-          amountMinor: payout.amountMinor,
-          reason,
-          tx,
-        });
-      }
+    return { claimed: true as const };
+  });
 
-      // Seller notifications (email + inapp) with stable per-event dedupKeys;
-      // subjects mirror the admin mark-paid / fail routes.
+  if (outcome.claimed) {
+    // Phase 1 (E2): post-commit fan-out — seller notifications + audit live
+    // OUTSIDE the Serializable tx. Stable per-event dedupKeys make a redelivery
+    // converge; a failure here is logged and non-financial (never rolls back
+    // committed ledger work).
+    try {
       await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "email", recipient: seller.email, subject, dedupKey });
       await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "inapp", recipient: seller.email, subject, dedupKey });
       await logActivity({
@@ -787,11 +850,10 @@ async function processPayoutEvent(args: {
         entityId: payout.id,
         meta: { providerRef: args.providerRef, referenceNo: payout.referenceNo, amountMinor: payout.amountMinor },
       });
-
-      return { claimed: true as const };
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-  );
+    } catch (e) {
+      console.error(`[post-commit] payout ${payout.referenceNo} fan-out failed (non-financial, dedupKey-guarded):`, e instanceof Error ? e.message : e);
+    }
+  }
 
   const freshPayout = await db.payout.findUnique({ where: { id: payout.id } });
   const payoutStatus = freshPayout?.status ?? payout.status;

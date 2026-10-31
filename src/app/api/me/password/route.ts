@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { getSession, rotateSession } from "@/lib/auth";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { rateLimit } from "@/lib/rate-limit";
 
 // POST /api/me/password { currentPassword, newPassword } — Task 22-b (R2).
@@ -32,12 +32,14 @@ export const POST = handle(async (req: Request) => {
     return fail(400, "VALIDATION", "Password must be at least 8 characters");
   }
 
-  const passwordHash = hashPassword(newPassword);
+  // Phase 1 (SEC-04): async scrypt — hashing/verification never blocks the
+  // event loop on this credential endpoint.
+  const passwordHash = await hashPasswordAsync(newPassword);
 
   if (sess.userType === "admin") {
     const admin = await db.adminUser.findUnique({ where: { id: sess.userId } });
     if (!admin || !admin.isActive) return fail(401, "UNAUTHORIZED", "Admin not found");
-    if (!verifyPassword(currentPassword, admin.passwordHash)) {
+    if (!await verifyPasswordAsync(currentPassword, admin.passwordHash)) {
       return fail(400, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
     }
     await db.adminUser.update({ where: { id: admin.id }, data: { passwordHash } });
@@ -51,7 +53,7 @@ export const POST = handle(async (req: Request) => {
     const seller = await db.seller.findUnique({ where: { id: sess.userId } });
     if (!seller) return fail(401, "UNAUTHORIZED", "Seller not found");
     if (seller.status === "terminated") return fail(403, "ACCOUNT_TERMINATED", "This account has been terminated");
-    if (!verifyPassword(currentPassword, seller.passwordHash)) {
+    if (!await verifyPasswordAsync(currentPassword, seller.passwordHash)) {
       return fail(400, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
     }
     await db.seller.update({ where: { id: seller.id }, data: { passwordHash } });
@@ -70,7 +72,7 @@ export const POST = handle(async (req: Request) => {
 
   const shopper = await db.shopperUser.findUnique({ where: { id: sess.userId } });
   if (!shopper || shopper.status !== "active") return fail(401, "UNAUTHORIZED", "Shopper account unavailable");
-  if (!verifyPassword(currentPassword, shopper.passwordHash)) {
+  if (!await verifyPasswordAsync(currentPassword, shopper.passwordHash)) {
     return fail(400, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
   }
   await db.shopperUser.update({ where: { id: shopper.id }, data: { passwordHash } });
