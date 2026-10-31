@@ -365,12 +365,20 @@ async function sectionC(adminToken: string): Promise<void> {
     // ---- Insufficient wallet: zero-available seller (byte@nomofee.io) — fresh
     // order (no reusable residue exists for this seller) → full refund request →
     // approve → process must 409 INSUFFICIENT_WALLET with NO T5 and no status flip.
+    //
+    // PHASE 2 / F2: the zero-balance precondition is now made DETERMINISTIC.
+    // Previous runs minted paid bytebazaar orders whose seller credits
+    // accumulated in the wallet, so the hardcoded "seed leaves it at 0"
+    // assumption drifted (observed: available=92802 → C10/C11/C12 failed on
+    // precondition, not on guards). Now: after the fresh order is paid, ANY
+    // residual available balance is reserved via an audited payout
+    // (request + admin approve moves available → reserved), leaving available=0
+    // for the probe; afterwards the payout is FAILED (T4f) to release the
+    // reservation back — the wallet ends where it started, every movement
+    // balanced and audited.
     const byteSeller = await db.seller.findUnique({ where: { email: "byte@nomofee.io" }, select: { id: true } });
-    const byteWallet = byteSeller ? await db.wallet.findUnique({ where: { sellerId: byteSeller.id } }) : null;
-    if (!byteSeller || !byteWallet) throw new Error("byte seller/wallet not found");
-    if (byteWallet.availableMinor !== 0) {
-      console.log(`  note: byte wallet available=${byteWallet.availableMinor} (expected 0 — probe assumes the zero-balance precondition from seed/probe residue)`);
-    }
+    const byteWallet0 = byteSeller ? await db.wallet.findUnique({ where: { sellerId: byteSeller.id } }) : null;
+    if (!byteSeller || !byteWallet0) throw new Error("byte seller/wallet not found");
     const variant = await db.productVariant.findFirst({
       where: { product: { store: { slug: "bytebazaar" }, status: "active" }, stock: { gt: 0 } },
       select: { id: true },
@@ -384,6 +392,29 @@ async function sectionC(adminToken: string): Promise<void> {
     const o2 = g2!.orders[0];
 
     const byteToken = await login("seller", "byte@nomofee.io", "Seller123!");
+
+    // Deterministic drain: reserve the ENTIRE post-payment available balance.
+    const payoutMinRow = await db.setting.findUnique({ where: { key: "payout.min_minor" } });
+    const payoutMin = Number((payoutMinRow ? JSON.parse(payoutMinRow.valueJson) : 0) ?? 0) || 0;
+    const byteWalletNow = (await db.wallet.findUnique({ where: { sellerId: byteSeller.id } }))!;
+    let drainPayoutId: string | null = null;
+    if (byteWalletNow.availableMinor > 0 && byteWalletNow.availableMinor >= payoutMin) {
+      const drainReq = await api("POST", "/api/store/payouts", {
+        token: byteToken,
+        body: { amountMinor: byteWalletNow.availableMinor, note: "FIN-4 gate: deterministic wallet drain for the insufficient-wallet probe (reserved in full; released via T4f after the probe)" },
+      });
+      const drainPayout = (drainReq.json.data as { payout?: { id: string; referenceNo: string } } | undefined)?.payout;
+      const drainApprove = drainPayout ? await api("POST", `/api/admin/payouts/${drainPayout.id}/approve`, { token: adminToken }) : null;
+      if (drainPayout && drainApprove?.status === 200) {
+        drainPayoutId = drainPayout.id;
+        console.log(`  drain: reserved ${byteWalletNow.availableMinor} minor via payout ${drainPayout.referenceNo} (approve 200) — available is now 0`);
+      } else {
+        console.log(`  note: wallet drain skipped (request=${drainReq.status} approve=${drainApprove?.status ?? "-"}) — relying on available < refund debit`);
+      }
+    } else if (byteWalletNow.availableMinor > 0) {
+      console.log(`  note: byte wallet available=${byteWalletNow.availableMinor} < payout minimum ${payoutMin} — no drain possible; probe relies on available < refund debit`);
+    }
+
     const rr4 = await api("POST", `/api/store/orders/${o2.orderNumber}/refund-request`, {
       token: byteToken,
       body: { amountMinor: o2.totalMinor, reason: "FIN-4 gate: insufficient-wallet path" },
@@ -416,6 +447,15 @@ async function sectionC(adminToken: string): Promise<void> {
       rr5.status === 409 && errCode(rr5.json) === "INVALID_AMOUNT" && afterRows2 === beforeRows2,
       `status=${rr5.status} code=${errCode(rr5.json)} rows ${beforeRows2}→${afterRows2}`
     );
+
+    // PHASE 2 / F2 cleanup: release the deterministic drain's reservation back
+    // to available via the audited T4f path (admin mark-failed) so the wallet
+    // ends where it started and the NEXT run's precondition is reproducible.
+    if (drainPayoutId) {
+      const fail = await api("POST", `/api/admin/payouts/${drainPayoutId}/fail`, { token: adminToken, body: { reason: "FIN-4 gate: release deterministic drain reservation (T4f) — probe complete" } });
+      const released = (await db.wallet.findUnique({ where: { sellerId: byteSeller.id } }))?.availableMinor;
+      console.log(`  drain release: fail=${fail.status} → available=${released} (T4f audited)`);
+    }
   } catch (e) {
     check("C section completed", false, String(e));
   }

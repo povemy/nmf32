@@ -3,6 +3,7 @@ import { requireCap } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { db } from "@/lib/db";
 import { recomputeProductRating, reviewsSchemaReady } from "@/lib/reviews";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -60,5 +61,6 @@ export const POST = handle(async (req: Request, ctx: Ctx) => {
     meta: { reviewId: id, action, productId: review.productId, status: toStatus, ratingAvg, ratingCount },
   });
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.reviews);
   return ok({ id, status: toStatus, ratingAvg, ratingCount });
 });

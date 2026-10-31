@@ -3,6 +3,7 @@ import { handle, ok, okPaged, ApiError, getPagination, logActivity } from "@/lib
 import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { matchFlags, moderationStatus, sanitizeProductImages, uniqueSlug, validateVariants } from "./helpers";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -93,5 +94,6 @@ export const POST = handle(async (req: Request) => {
     meta: { title, status, flags },
   });
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
   return ok(product, { status: 201 });
 });

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (body.description !== undefined) data.description = body.description == null ? null : String(body.description);
 
   const updated = await db.collection.update({ where: { id: collection.id }, data });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
   return ok(updated);
 });
 
@@ -35,5 +37,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const { id } = await ctx.params;
   const collection = await ownCollection(store.id, id);
   await db.collection.delete({ where: { id: collection.id } });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
   return ok({ id: collection.id, deleted: true });
 });

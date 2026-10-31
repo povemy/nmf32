@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CARD_ALIGNMENTS, CARD_FONT_SIZES, FONT_OPTIONS, fontLabel } from "@/lib/fonts";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export const PUT = handle(async (req: Request) => {
     update: data,
   });
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
   return ok({
     style: {
       nameFont: saved.nameFont,

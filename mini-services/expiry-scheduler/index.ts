@@ -43,7 +43,7 @@ const ALERT_RING = 50;
 const STATE_FILE = `${import.meta.dir}/state.json`;
 const PROJECT_ENV = "/home/z/my-project/.env";
 
-type Kind = "expiry" | "refund" | "analytics" | "affiliate" | "sessions";
+type Kind = "expiry" | "refund" | "analytics" | "affiliate" | "sessions" | "orders";
 type EndpointState = {
   lastTickAt: string | null;
   lastSuccessAt: string | null;
@@ -91,7 +91,7 @@ function freshState(): State {
     service: "expiry-scheduler",
     startedAt: new Date().toISOString(),
     intervalMs: INTERVAL_MS,
-    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint(), sessions: freshEndpoint() },
+    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint(), sessions: freshEndpoint(), orders: freshEndpoint() },
     alerts: [],
   };
 }
@@ -108,7 +108,7 @@ try {
       startedAt: new Date().toISOString(),
       intervalMs: INTERVAL_MS,
       alerts: raw.alerts ?? [],
-      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint(), sessions: raw.endpoints.sessions ?? freshEndpoint() },
+      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint(), sessions: raw.endpoints.sessions ?? freshEndpoint(), orders: raw.endpoints.orders ?? freshEndpoint() },
     };
   }
 } catch {
@@ -141,6 +141,9 @@ const ROUTES: Record<Kind, string> = {
   // Phase 1 (C3): expired-session purge — the route self-throttles to one
   // real purge per 10 minutes; every tick here just keeps it durable.
   sessions: `${APP_BASE}/api/cron/session-purge`,
+  // Phase 2 (A5): order maintenance (auto-complete sweep + mock tracking
+  // tick) — moved OFF the shopper request path (/api/me/orders) onto this rail.
+  orders: `${APP_BASE}/api/cron/order-maintenance`,
 };
 
 async function tick(kind: Kind) {
@@ -189,7 +192,7 @@ async function tick(kind: Kind) {
 
 function monitor() {
   const now = Date.now();
-  for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions"] as Kind[]) {
+  for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions", "orders"] as Kind[]) {
     const st = state.endpoints[kind];
     if (st.lastSuccessAt) {
       const age = now - Date.parse(st.lastSuccessAt);
@@ -214,6 +217,8 @@ function monitor() {
       await tick("refund");
       await tick("analytics");
       await tick("sessions");
+      await tick("affiliate");
+      await tick("orders");
     }
   } else {
     // First boot ever — establish the recurring invocation immediately.
@@ -221,12 +226,16 @@ function monitor() {
     await tick("refund");
     await tick("analytics");
     await tick("sessions");
+    await tick("affiliate");
+    await tick("orders");
   }
   setInterval(() => {
     tick("expiry");
     tick("refund");
     tick("analytics");
+    tick("affiliate");
     tick("sessions");
+    tick("orders");
     monitor();
     saveState();
   }, INTERVAL_MS);
@@ -244,7 +253,7 @@ Bun.serve({
           // persisted state copies (TS2783: duplicate-key overwrite warning)
           ...state,
           service: "expiry-scheduler",
-          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile + /api/cron/analytics-tick",
+          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile + /api/cron/analytics-tick + /api/cron/affiliate-tick + /api/cron/order-maintenance",
           appBase: APP_BASE,
           intervalMs: INTERVAL_MS,
           secretConfigured: Boolean(CRON_SECRET), // the secret itself is never exposed

@@ -4,6 +4,7 @@ import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
 import { matchFlags, ownProduct, recomputePrice, sanitizeProductImages, uniqueSlug, validateVariants } from "../helpers";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
       category: { select: { id: true, name: true, slug: true } },
     },
   });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
   return ok(fresh);
 });
 
@@ -127,5 +129,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
     entityId: product.id,
     meta: { title: product.title },
   });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
   return ok({ id: updated.id, status: updated.status });
 });

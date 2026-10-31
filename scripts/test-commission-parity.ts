@@ -1,21 +1,29 @@
 // ============================================================================
-// test-commission-parity.ts — F2-C1 correctness gate (performance/f2-checkout-audit.md)
+// test-commission-parity.ts — F2-C1 correctness gate (performance/f2-checkout-audit.md),
+// refreshed for PHASE 2 / A2 (re-land of the batched resolver on top of the
+// F-08 scoped-override semantics).
 //
 // Proves the batched commission resolver produces EXACTLY the same per-item
 // results as the original per-line sequential resolver (copied here verbatim
-// as the reference implementation), across:
+// as the reference implementation, INCLUDING the F-08 CommissionOverride
+// chain), across:
 //   1. Real catalog cases (DB-backed): global default, category ancestors,
-//      product overrides, seller overrides — whatever exists today, plus a
-//      temporarily-toggled override on an [LT] product (restored after).
+//      product overrides, seller overrides, scoped override rows — whatever
+//      exists today, plus a temporarily-toggled override on an [LT] product
+//      (restored after).
 //   2. Synthetic-context cases (NO DB writes): every fee-holiday branch
 //      (all / sellers / categories), precedence order, seller holdDaysOverride,
 //      missing seller rows (simulate path), cycle-safe ancestor chains.
 //   3. Full computeOrderCommissions parity on a multi-line cart: per-item
 //      percent/source/holdDays/fixedFee + order totals + invariant
-//      sum(sellerNet)+sum(commission) === total.
+//      sum(sellerNet)+sum(commission)+sum(affiliatePool) === total.
 // Also asserts the N+1 is actually gone: wall-clock for a 5-line resolution
 // must drop far below the Measured 1,535 ms baseline (generous 700 ms bound —
-// ~5 queries × 40 ms RTT + jitter; a regression back to ~40 queries cannot fit).
+// ~6 queries × 40 ms RTT + jitter; a regression back to ~40 queries cannot fit).
+//
+// NOTE (Phase 2): the DB-backed sections hit the sandbox Supabase database
+// READ-ONLY except for the [LT] product override toggle (load-test fixture,
+// restored in a finally block). Run: bun scripts/test-commission-parity.ts
 // ============================================================================
 
 import { db } from "../src/lib/db";
@@ -25,8 +33,9 @@ import { commissionOf, allocateProportionally } from "../src/lib/money";
 type Res = { percent: number; source: string; sourceId?: string; holidayId?: string; holdDays: number; fixedFeeMinor: number };
 
 // ---------------------------------------------------------------------------
-// REFERENCE: the original sequential resolver (pre-F2-C1), verbatim semantics.
-// Used as the parity oracle; never called by production code.
+// REFERENCE: the original per-line sequential resolver (pre-batch, INCLUDING
+// the F-08 scoped CommissionOverride rows) — verbatim semantics. Used as the
+// parity oracle; never called by production code.
 // ---------------------------------------------------------------------------
 async function refResolveRate(ctx: {
   sellerId: string;
@@ -38,7 +47,35 @@ async function refResolveRate(ctx: {
   const now = ctx.now ?? new Date();
   let fallback: Res = { percent: settings.defaultPercent, source: "global", holdDays: settings.payoutHoldDays, fixedFeeMinor: settings.fixedFeeMinor };
   const seller = await db.seller.findUnique({ where: { id: ctx.sellerId }, select: { commissionOverridePercent: true, holdDaysOverride: true } });
-  if (seller?.holdDaysOverride != null) fallback = { ...fallback, holdDays: seller.holdDaysOverride };
+  const overrides = await db.commissionOverride.findMany({
+    where: {
+      isActive: true,
+      AND: [
+        { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
+        { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+        {
+          OR: [
+            { scope: "product", productId: ctx.productId ?? "__no_target__" },
+            { scope: "category", categoryId: { in: await refChain(ctx.categoryId) } },
+            { scope: "seller", sellerId: ctx.sellerId },
+          ],
+        },
+      ],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const chain = await refChain(ctx.categoryId);
+  const productRows = overrides.filter((r) => r.scope === "product");
+  const categoryRows = chain.flatMap((catId) => overrides.filter((r) => r.scope === "category" && r.categoryId === catId));
+  const sellerRows = overrides.filter((r) => r.scope === "seller");
+  const rows = [...productRows, ...categoryRows, ...sellerRows];
+  const holdRow = rows.find((r) => r.holdDays != null);
+  const fixedRow = rows.find((r) => r.fixedFeeMinor != null);
+  fallback = {
+    ...fallback,
+    holdDays: holdRow?.holdDays ?? seller?.holdDaysOverride ?? settings.payoutHoldDays,
+    fixedFeeMinor: fixedRow?.fixedFeeMinor ?? settings.fixedFeeMinor,
+  };
   const holidays = await db.feeHoliday.findMany({ where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } }, orderBy: { startsAt: "asc" } });
   for (const h of holidays) {
     if (h.scope === "all") return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
@@ -46,12 +83,28 @@ async function refResolveRate(ctx: {
     if (h.scope === "sellers" && ids.includes(ctx.sellerId)) return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
     if (h.scope === "categories" && ctx.categoryId && ids.includes(ctx.categoryId)) return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
   }
+  const pRow = rows.find((r) => r.scope === "product" && r.percent != null);
+  if (pRow) return { ...fallback, percent: pRow.percent!, source: "override", sourceId: pRow.id };
   if (ctx.productId) {
     const p = await db.product.findUnique({ where: { id: ctx.productId }, select: { commissionPercentOverride: true } });
     if (p?.commissionPercentOverride != null) return { ...fallback, percent: p.commissionPercentOverride, source: "product", sourceId: ctx.productId };
   }
+  const cRow = rows.find((r) => r.scope === "category" && r.percent != null);
+  if (cRow) return { ...fallback, percent: cRow.percent!, source: "override", sourceId: cRow.id };
+  for (const catId of chain) {
+    const cat = await db.category.findUnique({ where: { id: catId }, select: { commissionPercent: true } });
+    if (cat?.commissionPercent != null) return { ...fallback, percent: cat.commissionPercent, source: "category", sourceId: catId };
+  }
+  const sRow = rows.find((r) => r.scope === "seller" && r.percent != null);
+  if (sRow) return { ...fallback, percent: sRow.percent!, source: "override", sourceId: sRow.id };
+  if (seller?.commissionOverridePercent != null) return { ...fallback, percent: seller.commissionOverridePercent, source: "seller", sourceId: ctx.sellerId };
+  return fallback;
+}
+
+/** Reference ancestor-chain walk (the pre-batch implementation's helper). */
+async function refChain(categoryId: string | null | undefined): Promise<string[]> {
   const chain: string[] = [];
-  let cur = ctx.categoryId ?? null;
+  let cur = categoryId ?? null;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
@@ -59,12 +112,7 @@ async function refResolveRate(ctx: {
     const cat = await db.category.findUnique({ where: { id: cur }, select: { parentId: true } });
     cur = cat?.parentId ?? null;
   }
-  for (const catId of chain) {
-    const cat = await db.category.findUnique({ where: { id: catId }, select: { commissionPercent: true } });
-    if (cat?.commissionPercent != null) return { ...fallback, percent: cat.commissionPercent, source: "category", sourceId: catId };
-  }
-  if (seller?.commissionOverridePercent != null) return { ...fallback, percent: seller.commissionOverridePercent, source: "seller", sourceId: ctx.sellerId };
-  return fallback;
+  return chain;
 }
 
 const refCompute = async (input: Parameters<typeof computeOrderCommissions>[0]): Promise<CommissionOrderResult> => {
@@ -88,10 +136,21 @@ const refCompute = async (input: Parameters<typeof computeOrderCommissions>[0]):
     const percentPart = commissionOf(base, rate.percent);
     const commission = percentPart + fixedAlloc[i];
     const grossMinor = lineSubtotal - discounts[i] + shippingAlloc[i] + taxAlloc[i];
-    return { sellerNetMinor: grossMinor - commission, commissionMinor: commission, lineSubtotalMinor: lineSubtotal, percent: rate.percent, source: rate.source, holidayId: rate.holidayId, holdDays: rate.holdDays };
+    return { sellerNetMinor: grossMinor - commission, commissionMinor: commission, percentPartMinor: percentPart, lineSubtotalMinor: lineSubtotal, percent: rate.percent, source: rate.source, holidayId: rate.holidayId, holdDays: rate.holdDays };
   });
+  // min commission floor — per ORDER, skipped when any item ran on a fee
+  // holiday (mirrors production computeOrderCommissions exactly).
   const onHoliday = rates.some((r) => r.source === "fee_holiday");
-  void onHoliday; // floor parity is covered by the DB-backed full-path compare below
+  const totalPercentPart = results.reduce((s, r) => s + r.percentPartMinor, 0);
+  if (!onHoliday && settings.minCommissionMinor > 0 && totalPercentPart < settings.minCommissionMinor && input.items.length > 0) {
+    const bump = settings.minCommissionMinor - totalPercentPart;
+    let maxIdx = 0;
+    for (let i = 1; i < results.length; i++) {
+      if (results[i].lineSubtotalMinor > results[maxIdx].lineSubtotalMinor) maxIdx = i;
+    }
+    results[maxIdx].commissionMinor += bump;
+    results[maxIdx].sellerNetMinor -= bump;
+  }
   const expectedTotal = subtotals.reduce((s, v) => s + v, 0) - Math.max(0, input.orderDiscountMinor) + Math.max(0, input.shippingMinorTotal) + Math.max(0, input.orderTaxMinor ?? 0);
   const reconciled = reconcileSplits(results.map((r) => ({ sellerNetMinor: r.sellerNetMinor, commissionMinor: r.commissionMinor, lineSubtotalMinor: r.lineSubtotalMinor })), expectedTotal);
   for (let i = 0; i < results.length; i++) results[i].sellerNetMinor = reconciled.items[i].sellerNetMinor;
@@ -112,7 +171,7 @@ function check(name: string, cond: boolean, detail?: string) {
   else { fail++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-async function synthCtx(over: Partial<RateContext> & { settings?: Partial<RateContext["settings"]> }): Promise<RateContext> {
+function synthCtx(over: Partial<RateContext> & { settings?: Partial<RateContext["settings"]> }): RateContext {
   const settings = {
     defaultPercent: 6, appliesToShipping: false, basePriceRule: "paid_price" as const,
     fixedFeeMinor: 100, minCommissionMinor: 0, payoutHoldDays: 7,
@@ -125,12 +184,13 @@ async function synthCtx(over: Partial<RateContext> & { settings?: Partial<RateCo
     holidays: over.holidays ?? [],
     products: over.products ?? new Map(),
     categories: over.categories ?? new Map(),
+    overrides: over.overrides ?? [],
   };
 }
 
 async function main() {
   const now = new Date();
-  console.log("=== F2-C1 commission parity ===");
+  console.log("=== Phase 2 / A2 commission parity (batched vs sequential reference) ===");
 
   // --- 1. Synthetic-context cases (no DB writes) ----------------------------
   console.log("\n[1] synthetic resolution branches");
@@ -143,7 +203,7 @@ async function main() {
   ]);
   const mk = (o: Partial<Parameters<typeof resolveRateFromContext>[1]>) => o;
 
-  const base = await synthCtx({ categories: cats });
+  const base = synthCtx({ categories: cats });
   let r = resolveRateFromContext(base, mk({ sellerId: "s1", categoryId: "leaf" }));
   check("category ancestor: nearest wins (mid=8, not root=3)", r.percent === 8 && r.source === "category" && r.sourceId === "mid", JSON.stringify(r));
   r = resolveRateFromContext(base, mk({ sellerId: "s1", categoryId: "cyc-a" }));
@@ -151,32 +211,66 @@ async function main() {
   r = resolveRateFromContext(base, mk({ sellerId: "s1", categoryId: null }));
   check("no category → global default", r.percent === 6 && r.source === "global", JSON.stringify(r));
 
-  const withSellerHold = await synthCtx({ categories: cats, sellers: new Map([["s1", { commissionOverridePercent: 4, holdDaysOverride: 21 }]]) });
+  const withSellerHold = synthCtx({ categories: cats, sellers: new Map([["s1", { commissionOverridePercent: 4, holdDaysOverride: 21 }]]) });
   r = resolveRateFromContext(withSellerHold, mk({ sellerId: "s1", categoryId: null }));
   check("seller override + holdDaysOverride", r.percent === 4 && r.source === "seller" && r.holdDays === 21, JSON.stringify(r));
   r = resolveRateFromContext(withSellerHold, mk({ sellerId: "s2", categoryId: null }));
   check("missing seller row → global + default hold (simulate path)", r.percent === 6 && r.source === "global" && r.holdDays === 7, JSON.stringify(r));
 
-  const withProduct = await synthCtx({ categories: cats, products: new Map([["p1", 2]]) });
+  const withProduct = synthCtx({ categories: cats, products: new Map([["p1", 2]]) });
   r = resolveRateFromContext(withProduct, mk({ sellerId: "s1", categoryId: "leaf", productId: "p1" }));
   check("product override beats category", r.percent === 2 && r.source === "product", JSON.stringify(r));
 
   const hol = (scope: string, ids: string[], id: string) => ({ id, scope, scopeIds: JSON.stringify(ids) });
-  const holCtx = await synthCtx({ categories: cats, holidays: [hol("categories", ["leaf"], "h1")] });
+  const holCtx = synthCtx({ categories: cats, holidays: [hol("categories", ["leaf"], "h1")] });
   r = resolveRateFromContext(holCtx, mk({ sellerId: "s1", categoryId: "leaf" }));
   check("holiday scope=categories (direct match only) → 0%", r.percent === 0 && r.source === "fee_holiday" && r.holidayId === "h1", JSON.stringify(r));
   r = resolveRateFromContext(holCtx, mk({ sellerId: "s1", categoryId: "mid" }));
   check("holiday scope=categories (non-matching ancestor) → category rate", r.percent === 8 && r.source === "category", JSON.stringify(r));
-  const holSeller = await synthCtx({ categories: cats, holidays: [hol("sellers", ["s1"], "h2")], sellers: new Map([["s1", { commissionOverridePercent: 4, holdDaysOverride: 21 }]]) });
+  const holSeller = synthCtx({ categories: cats, holidays: [hol("sellers", ["s1"], "h2")], sellers: new Map([["s1", { commissionOverridePercent: 4, holdDaysOverride: 21 }]]) });
   r = resolveRateFromContext(holSeller, mk({ sellerId: "s1", categoryId: "leaf" }));
   check("holiday scope=sellers beats seller override, keeps holdDays", r.percent === 0 && r.holdDays === 21 && r.holidayId === "h2", JSON.stringify(r));
-  const holAll = await synthCtx({ categories: cats, holidays: [hol("all", [], "h3"), hol("sellers", ["s1"], "h4")] });
+  const holAll = synthCtx({ categories: cats, holidays: [hol("all", [], "h3"), hol("sellers", ["s1"], "h4")] });
   r = resolveRateFromContext(holAll, mk({ sellerId: "s1", categoryId: "leaf" }));
   check("holiday scope=all wins, startsAt-asc order respected (h3 before h4)", r.holidayId === "h3", JSON.stringify(r));
 
+  // F-08 scoped overrides — precedence vs direct fields, per scope class.
+  const ov = (o: Partial<{ id: string; scope: string; productId: string | null; categoryId: string | null; sellerId: string | null; percent: number | null; fixedFeeMinor: number | null; holdDays: number | null }>) => ({
+    id: o.id ?? "ov", scope: o.scope ?? "seller", productId: o.productId ?? null, categoryId: o.categoryId ?? null,
+    sellerId: o.sellerId ?? null, percent: o.percent ?? null, fixedFeeMinor: o.fixedFeeMinor ?? null, holdDays: o.holdDays ?? null,
+  });
+  const withOverrides = synthCtx({
+    categories: cats,
+    sellers: new Map([["s1", { commissionOverridePercent: 5, holdDaysOverride: null }]]),
+    products: new Map([["p1", 2]]),
+    overrides: [
+      ov({ id: "ovp", scope: "product", productId: "p1", percent: 1.5 }),      // product-scope row beats product direct (2)
+      ov({ id: "ovc", scope: "category", categoryId: "mid", percent: 7 }),      // category-scope row beats category direct (8)
+      ov({ id: "ovs", scope: "seller", sellerId: "s1", percent: 4 }),           // seller-scope row beats seller direct (5)
+      ov({ id: "ovh", scope: "seller", sellerId: "s1", holdDays: 30 }),         // holdDays-only row contributes holdDays only
+      ov({ id: "ovf", scope: "seller", sellerId: "s1", fixedFeeMinor: 250 }),   // fixedFee-only row contributes fixedFee only
+    ],
+  });
+  r = resolveRateFromContext(withOverrides, mk({ sellerId: "s1", categoryId: "leaf", productId: "p1" }));
+  check("product-scope override row beats product direct field", r.percent === 1.5 && r.source === "override" && r.sourceId === "ovp", JSON.stringify(r));
+  check("holdDays-only row contributes holdDays (30), fixedFee-only contributes 250", r.holdDays === 30 && r.fixedFeeMinor === 250, JSON.stringify(r));
+  r = resolveRateFromContext(withOverrides, mk({ sellerId: "s1", categoryId: "leaf", productId: null }));
+  check("category-scope override row beats category direct ancestor", r.percent === 7 && r.source === "override" && r.sourceId === "ovc", JSON.stringify(r));
+  r = resolveRateFromContext(withOverrides, mk({ sellerId: "s1", categoryId: null, productId: "nope" }));
+  check("seller-scope override row beats seller direct field", r.percent === 4 && r.source === "override" && r.sourceId === "ovs", JSON.stringify(r));
+  const noProductScope = synthCtx({
+    categories: cats,
+    products: new Map([["p1", 2]]),
+    overrides: [ov({ id: "ovc2", scope: "category", categoryId: "root", percent: 9 })],
+  });
+  r = resolveRateFromContext(noProductScope, mk({ sellerId: "s1", categoryId: "leaf", productId: "p1" }));
+  check("product direct field beats category-scope override row", r.percent === 2 && r.source === "product", JSON.stringify(r));
+
   // --- 2. DB-backed parity on the real catalog ------------------------------
-  console.log("\n[2] DB-backed parity (real settings/sellers/products/categories)");
+  console.log("\n[2] DB-backed parity (real settings/sellers/products/categories/overrides)");
   const settings = await getCommissionSettings();
+  const activeOverrideCount = await db.commissionOverride.count({ where: { isActive: true } });
+  console.log(`  active CommissionOverride rows in catalog: ${activeOverrideCount} (F-08 branch exercised when > 0)`);
   const stores = await db.store.findMany({ where: { status: "live", sellerId: { not: null } }, select: { sellerId: true } });
   const sellers = stores.map((s) => s.sellerId!).filter(Boolean);
   const prods = await db.product.findMany({ where: { status: "active" }, select: { id: true, categoryId: true, commissionPercentOverride: true } });
@@ -186,82 +280,98 @@ async function main() {
   // override temporarily (restored at the end) — [LT] data is load-test-only.
   const ltProd = await db.product.findFirst({ where: { store: { slug: "lt-main-store" }, status: "active" }, select: { id: true, categoryId: true, commissionPercentOverride: true } });
   let ltOrig: number | null | undefined;
-  if (ltProd) {
-    ltOrig = ltProd.commissionPercentOverride;
-    await db.product.update({ where: { id: ltProd.id }, data: { commissionPercentOverride: 11 } });
-    if (!prods.find((p) => p.id === ltProd.id)) prods.push({ id: ltProd.id, categoryId: ltProd.categoryId, commissionPercentOverride: 11 });
-  }
-  const ltSeller = ltProd ? (await db.store.findFirst({ where: { slug: "lt-main-store" }, select: { sellerId: true } }))?.sellerId : null;
-  if (ltSeller && !sellers.includes(ltSeller)) sellers.push(ltSeller);
-
-  const cases: { sellerId: string; categoryId: string | null; productId: string | null }[] = [];
-  for (const sid of sellers.slice(0, 6)) {
-    for (const p of prods.slice(0, 12)) {
-      cases.push({ sellerId: sid, categoryId: p.categoryId, productId: p.id });
+  try {
+    if (ltProd) {
+      ltOrig = ltProd.commissionPercentOverride;
+      await db.product.update({ where: { id: ltProd.id }, data: { commissionPercentOverride: 11 } });
+      if (!prods.find((p) => p.id === ltProd.id)) prods.push({ id: ltProd.id, categoryId: ltProd.categoryId, commissionPercentOverride: 11 });
     }
-  }
-  cases.push({ sellerId: "no-such-seller", categoryId: null, productId: null });
-  cases.push({ sellerId: sellers[0] ?? "x", categoryId: "no-such-cat", productId: "no-such-product" });
+    const ltSeller = ltProd ? (await db.store.findFirst({ where: { slug: "lt-main-store" }, select: { sellerId: true } }))?.sellerId : null;
+    if (ltSeller && !sellers.includes(ltSeller)) sellers.push(ltSeller);
 
-  let mismatches = 0;
-  for (const c of cases) {
-    const ref = await refResolveRate({ ...c, now });
-    const ctx = await loadRateContext({ sellerIds: [c.sellerId], productIds: c.productId ? [c.productId] : [], now });
-    const got = resolveRateFromContext(ctx, { sellerId: c.sellerId, categoryId: c.categoryId, productId: c.productId });
-    const same = JSON.stringify(ref) === JSON.stringify(got);
-    if (!same) {
-      mismatches++;
-      console.log(`  MISMATCH ${JSON.stringify(c)} ref=${JSON.stringify(ref)} got=${JSON.stringify(got)}`);
+    const cases: { sellerId: string; categoryId: string | null; productId: string | null }[] = [];
+    for (const sid of sellers.slice(0, 6)) {
+      for (const p of prods.slice(0, 12)) {
+        cases.push({ sellerId: sid, categoryId: p.categoryId, productId: p.id });
+      }
     }
-  }
-  check(`${cases.length} resolver cases byte-identical to reference`, mismatches === 0, `${mismatches} mismatches`);
+    cases.push({ sellerId: "no-such-seller", categoryId: null, productId: null });
+    cases.push({ sellerId: sellers[0] ?? "x", categoryId: "no-such-cat", productId: "no-such-product" });
 
-  // --- 3. Full multi-line computeOrderCommissions parity --------------------
-  console.log("\n[3] full-path parity: 5-line cart, seller+product+category mix");
-  const sid = sellers[0];
-  if (sid) {
-    const items = prods.slice(0, 5).map((p, i) => ({ title: `L${i}`, productId: p.id, categoryId: p.categoryId, variantLabel: null, unitPriceMinor: 1000 + i * 500, qty: 1 }));
-    const input = { sellerId: sid, items, orderDiscountMinor: 300, shippingMinorTotal: 800 };
-    const ref = await refCompute(input);
-    const got = await computeOrderCommissions(input);
-    const strip = (res: CommissionOrderResult) => ({
-      items: (res.items as { percent: number; sellerNetMinor: number; commissionMinor: number; breakdown?: { rule_source: string; holiday_id?: string }; source?: string; holidayId?: string }[]).map((it) => ({
-        percent: it.percent,
-        source: it.breakdown?.rule_source ?? it.source,
-        holidayId: it.breakdown?.holiday_id ?? it.holidayId,
-        sellerNetMinor: it.sellerNetMinor,
-        commissionMinor: it.commissionMinor,
-      })),
-      orderCommissionMinor: res.orderCommissionMinor,
-      orderSellerNetMinor: res.orderSellerNetMinor,
-      holdDays: res.holdDays,
-    });
-    const a = JSON.stringify(strip(ref));
-    const b = JSON.stringify(strip(got));
-    check("5-line full-path parity (percent/source/net/commission/holdDays)", a === b, a !== b ? `ref=${a} got=${b}` : undefined);
-    const inv = got.items.reduce((s, it) => s + it.sellerNetMinor + it.commissionMinor, 0);
-    const expected = 1000 * 5 + 500 * 10 - 300 + 800;
-    check("Option B invariant holds on new path", inv === expected, `${inv} vs ${expected}`);
-  } else {
-    check("skipped (no live seller found)", true);
-  }
+    let mismatches = 0;
+    for (const c of cases) {
+      const ref = await refResolveRate({ ...c, now });
+      const ctx = await loadRateContext({ sellerIds: [c.sellerId], productIds: c.productId ? [c.productId] : [], categoryIds: c.categoryId ? [c.categoryId] : [], now });
+      const got = resolveRateFromContext(ctx, { sellerId: c.sellerId, categoryId: c.categoryId, productId: c.productId });
+      const same = JSON.stringify(ref) === JSON.stringify(got);
+      if (!same) {
+        mismatches++;
+        console.log(`  MISMATCH ${JSON.stringify(c)} ref=${JSON.stringify(ref)} got=${JSON.stringify(got)}`);
+      }
+    }
+    check(`${cases.length} resolver cases byte-identical to sequential reference`, mismatches === 0, `${mismatches} mismatches`);
 
-  // --- 4. N+1 actually gone: wall-clock bound --------------------------------
-  console.log("\n[4] performance bound");
-  if (sid) {
-    const items = prods.slice(0, 5).map((p, i) => ({ title: `L${i}`, productId: p.id, categoryId: p.categoryId, unitPriceMinor: 1000 + i * 500, qty: 1 }));
-    await computeOrderCommissions({ sellerId: sid, items, orderDiscountMinor: 0, shippingMinorTotal: 0 }); // warm
-    const t0 = performance.now();
-    await computeOrderCommissions({ sellerId: sid, items, orderDiscountMinor: 0, shippingMinorTotal: 800 });
-    const ms = performance.now() - t0;
-    console.log(`  5-line resolution: ${ms.toFixed(0)} ms (baseline before F2-C1: 1535 ms Measured)`);
-    check("5-line resolution < 700 ms (was 1535 ms; ~5 batched queries × 40 ms RTT)", ms < 700);
-  }
+    // Robustness check: the SAME resolution when only productIds are passed
+    // (categoryIds derived from the product rows inside loadRateContext).
+    let derivedMismatches = 0;
+    for (const c of cases.slice(0, 20)) {
+      const ref = await refResolveRate({ ...c, now });
+      const ctx = await loadRateContext({ sellerIds: [c.sellerId], productIds: c.productId ? [c.productId] : [], now });
+      const got = resolveRateFromContext(ctx, { sellerId: c.sellerId, categoryId: c.categoryId, productId: c.productId });
+      if (JSON.stringify(ref) !== JSON.stringify(got)) {
+        derivedMismatches++;
+        console.log(`  DERIVED-SEED MISMATCH ${JSON.stringify(c)} ref=${JSON.stringify(ref)} got=${JSON.stringify(got)}`);
+      }
+    }
+    check("product-derived category seeds produce identical results (20 cases)", derivedMismatches === 0, `${derivedMismatches} mismatches`);
 
-  // restore [LT] product override
-  if (ltProd && ltOrig !== undefined) {
-    await db.product.update({ where: { id: ltProd.id }, data: { commissionPercentOverride: ltOrig } });
-    console.log(`\n[restore] [LT] product override restored to ${ltOrig}`);
+    // --- 3. Full multi-line computeOrderCommissions parity --------------------
+    console.log("\n[3] full-path parity: 5-line cart, seller+product+category mix");
+    const sid = sellers[0];
+    if (sid) {
+      const items = prods.slice(0, 5).map((p, i) => ({ title: `L${i}`, productId: p.id, categoryId: p.categoryId, variantLabel: null, unitPriceMinor: 1000 + i * 500, qty: 1 }));
+      const input = { sellerId: sid, items, orderDiscountMinor: 300, shippingMinorTotal: 800 };
+      const ref = await refCompute(input);
+      const got = await computeOrderCommissions(input);
+      const strip = (res: CommissionOrderResult) => ({
+        items: (res.items as { percent: number; sellerNetMinor: number; commissionMinor: number; breakdown?: { rule_source: string; holiday_id?: string }; source?: string; holidayId?: string }[]).map((it) => ({
+          percent: it.percent,
+          source: it.breakdown?.rule_source ?? it.source,
+          holidayId: it.breakdown?.holiday_id ?? it.holidayId,
+          sellerNetMinor: it.sellerNetMinor,
+          commissionMinor: it.commissionMinor,
+        })),
+        orderCommissionMinor: res.orderCommissionMinor,
+        orderSellerNetMinor: res.orderSellerNetMinor,
+        holdDays: res.holdDays,
+      });
+      const a = JSON.stringify(strip(ref));
+      const b = JSON.stringify(strip(got));
+      check("5-line full-path parity (percent/source/net/commission/holdDays)", a === b, a !== b ? `ref=${a} got=${b}` : undefined);
+      const inv = got.items.reduce((s, it) => s + it.sellerNetMinor + it.commissionMinor, 0);
+      const expected = 1000 * 5 + 500 * 10 - 300 + 800;
+      check("Option B invariant holds on new path", inv === expected, `${inv} vs ${expected}`);
+    } else {
+      check("skipped (no live seller found)", true);
+    }
+
+    // --- 4. N+1 actually gone: wall-clock bound --------------------------------
+    console.log("\n[4] performance bound");
+    if (sid) {
+      const items = prods.slice(0, 5).map((p, i) => ({ title: `L${i}`, productId: p.id, categoryId: p.categoryId, unitPriceMinor: 1000 + i * 500, qty: 1 }));
+      await computeOrderCommissions({ sellerId: sid, items, orderDiscountMinor: 0, shippingMinorTotal: 0 }); // warm
+      const t0 = performance.now();
+      await computeOrderCommissions({ sellerId: sid, items, orderDiscountMinor: 0, shippingMinorTotal: 800 });
+      const ms = performance.now() - t0;
+      console.log(`  5-line resolution: ${ms.toFixed(0)} ms (baseline before batching: 1535 ms Measured)`);
+      check("5-line resolution < 700 ms (was 1535 ms; ~6 batched queries × 40 ms RTT)", ms < 700);
+    }
+  } finally {
+    // restore [LT] product override
+    if (ltProd && ltOrig !== undefined) {
+      await db.product.update({ where: { id: ltProd.id }, data: { commissionPercentOverride: ltOrig } });
+      console.log(`\n[restore] [LT] product override restored to ${ltOrig}`);
+    }
   }
 
   console.log(`\n=== ${pass} passed, ${fail} failed ===`);

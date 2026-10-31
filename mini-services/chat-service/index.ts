@@ -42,6 +42,8 @@ const APP_BASE = process.env.CHAT_APP_BASE_URL ?? "http://127.0.0.1:3000";
 const TOKEN_RE = /^[a-f0-9]{16,128}$/i;
 /** Per-socket join-event throttle: burst of 30, then 1 per 500 ms sustained. */
 const JOIN_BURST = 30;
+/** Refill cadence for the lazy join token bucket (D2) — 1 join per 500 ms. */
+const JOIN_REFILL_MS = 500;
 
 /** F-06 fail-closed relay secret (see header). */
 function relaySecret(): string | null {
@@ -123,11 +125,23 @@ io.on("connection", (socket) => {
 
   // Per-socket join throttle (abuse guard so one socket cannot hammer the
   // authorization endpoint through the hub).
+  // PHASE 2 / D2: timestamp-based token bucket — replaces the previous
+  // per-socket 500 ms setInterval refiller with the EXACT same limiting
+  // behaviour (burst 30, then 1 per 500 ms sustained, capped at 30) computed
+  // lazily from elapsed time on each attempt. Observable behaviour is
+  // identical: the cap is what matters externally, and idle sockets now cost
+  // ZERO timers/wake-ups instead of one interval handle + 2 wake-ups/s each —
+  // meaningful at influencer-campaign concurrency (1000 sockets = 2000 timer
+  // events/s eliminated).
   let joinBudget = JOIN_BURST;
-  const refill = setInterval(() => {
-    if (joinBudget < JOIN_BURST) joinBudget += 1;
-  }, 500);
+  let lastRefillAt = Date.now();
   socket.data.joinBudget = () => {
+    const now = Date.now();
+    const refills = Math.floor((now - lastRefillAt) / JOIN_REFILL_MS);
+    if (refills > 0) {
+      joinBudget = Math.min(JOIN_BURST, joinBudget + refills);
+      lastRefillAt += refills * JOIN_REFILL_MS;
+    }
     if (joinBudget <= 0) return false;
     joinBudget -= 1;
     return true;
@@ -161,7 +175,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    clearInterval(refill);
+    // PHASE 2 / D2: nothing to clean up — the lazy token bucket owns no timer.
   });
 });
 

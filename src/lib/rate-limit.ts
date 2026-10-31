@@ -35,10 +35,23 @@ export interface RateLimitStore {
   hit(key: string, windowMs: number): RateLimitHit;
 }
 
-/** Default store: the original single-instance fixed-window Map (+ sweep). */
+/** Default store: the original single-instance fixed-window Map (+ sweep).
+ *  PHASE 2 / D1: hard capacity bound added. The lazy sweep (≤1/min) already
+ *  removed expired buckets, but between sweeps a randomized-identity attack
+ *  (rateLimitKey keys on user-supplied emails / order numbers) could grow the
+ *  Map without limit. MAX_BUCKETS is the backstop: when the map is full, the
+ *  soonest-to-expire bucket is evicted first (expired-then-earliest resetAt) —
+ *  an evicted attacker bucket simply re-counts from 1 on its next hit, which
+ *  can only make limiting MORE permissive for that key, never less; the
+ *  memory ceiling is the guarantee that matters. */
 export class InMemoryRateLimitStore implements RateLimitStore {
+  /** ~1 KB per bucket worst case — 150k buckets ≈ tens of MB ceiling. */
+  private static readonly MAX_BUCKETS = 150_000;
+  /** Eviction headroom — one eviction pass frees this many slots. */
+  private static readonly EVICT_BATCH = 15_000;
   private buckets = new Map<string, RateLimitHit>();
   private lastSweepAt = Date.now();
+  private lastEvictAt = 0;
 
   /** Drop expired buckets so the map cannot grow unbounded. */
   private sweep(now: number) {
@@ -47,9 +60,32 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     for (const [key, b] of this.buckets) if (b.resetAt <= now) this.buckets.delete(key);
   }
 
+  /** Capacity backstop — AMORTIZED O(1): the O(n) scan runs at most once per
+   *  second and only once the cap is reached, and frees a 10% batch (all
+   *  expired buckets + the earliest-resetAt survivors). An evicted attacker
+   *  bucket re-counts from 1 on its next hit — eviction can only make
+   *  limiting more permissive for that key, never less; the memory ceiling is
+   *  the guarantee that matters. */
+  private evictIfFull(now: number) {
+    if (this.buckets.size < InMemoryRateLimitStore.MAX_BUCKETS) return;
+    if (now - this.lastEvictAt < 1_000) return; // at most one scan per second under attack
+    this.lastEvictAt = now;
+    // Pass 1: drop every expired bucket (free wins).
+    for (const [key, b] of this.buckets) {
+      if (b.resetAt <= now) this.buckets.delete(key);
+      if (this.buckets.size < InMemoryRateLimitStore.MAX_BUCKETS - InMemoryRateLimitStore.EVICT_BATCH) return;
+    }
+    // Pass 2: still over cap — evict the soonest-to-expire batch.
+    const targets = [...this.buckets.entries()]
+      .sort((a, b) => a[1].resetAt - b[1].resetAt)
+      .slice(0, InMemoryRateLimitStore.EVICT_BATCH);
+    for (const [key] of targets) this.buckets.delete(key);
+  }
+
   hit(key: string, windowMs: number): RateLimitHit {
     const now = Date.now();
     this.sweep(now);
+    this.evictIfFull(now);
     const b = this.buckets.get(key);
     if (!b || b.resetAt <= now) {
       const fresh = { count: 1, resetAt: now + windowMs };

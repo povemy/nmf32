@@ -85,6 +85,13 @@ export const integrityFailures = new Rate("integrity_failures");
 export const authFailures = new Counter("auth_failures");
 export const cartAddFailures = new Counter("cart_add_failures");
 export const purchaseSkipped = new Counter("purchase_skipped");
+// PHASE 2 / G: post-purchase buyer legs — order history (authed) + guest
+// order lookup (knowledge pair). Trends + mismatch counters so capacity runs
+// capture BOTH the latency and the correctness of the two order-access paths.
+export const orderHistoryMs = new Trend("order_history_ms", true);
+export const orderLookupMs = new Trend("order_lookup_ms", true);
+export const orderHistoryFailures = new Counter("order_history_failures");
+export const orderLookupFailures = new Counter("order_lookup_failures");
 
 /* ── think time ──────────────────────────────────────────────────────────── */
 export function thinkTime() {
@@ -203,6 +210,30 @@ export function paymentSimulate(ref, opts) {
 }
 export function paymentStatus(ref, opts) {
   return apiGet(`/api/checkout/payments/${encodeURIComponent(ref)}`, Object.assign({ leg: "payment-status" }, opts));
+}
+
+/* ── PHASE 2 / G: order-access legs (post-purchase buyer behaviour) ───────── */
+/** Authed purchase history — the /api/me/orders path (bucket counts + paged
+ *  listing). The Phase 2 / A5 work moved its lazy maintenance OFF this route;
+ *  this trend is the capacity evidence for that improvement. */
+export function getMyOrders(token, opts) {
+  const t0 = Date.now();
+  const res = apiGet("/api/me/orders?size=10", Object.assign({ leg: "my-orders", token }, opts));
+  orderHistoryMs.add(Date.now() - t0);
+  if (res.status >= 400) orderHistoryFailures.add(1, { status: String(res.status) });
+  return res;
+}
+
+/** Guest order lookup — the email+orderNumber knowledge pair (3-axis
+ *  rate-limited, uniform 404). Used post-purchase to verify the pair resolves
+ *  the order this VU just created. */
+export function orderLookup(orderNumber, email, opts) {
+  const t0 = Date.now();
+  const q = `?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`;
+  const res = apiGet(`/api/orders/lookup${q}`, Object.assign({ leg: "order-lookup" }, opts));
+  orderLookupMs.add(Date.now() - t0);
+  if (res.status !== 200) orderLookupFailures.add(1, { status: String(res.status) });
+  return res;
 }
 
 /* ── storefront resolution (setup-time; resilient) ───────────────────────── */
@@ -411,6 +442,31 @@ export function checkoutJourney(vu, iter, sess, variant) {
     orderE2eMs.add(Date.now() - t0);
     const okVerify = Boolean(lastBody && Array.isArray(lastBody.orderNumbers) && lastBody.orderNumbers.length >= 1);
     integrityFailures.add(okVerify ? 0 : 1);
+
+    // PHASE 2 / G: post-purchase buyer legs — check the purchase history and
+    // (when the order number is known) the guest lookup pair. Models real
+    // mixed behaviour (buyers track right after paying) and completes the G1
+    // endpoint coverage: order lookup under load, with correctness counters.
+    const history = getMyOrders(sess.token, { xff });
+    let historyShowsOrder = false;
+    try {
+      const rows = (history.json().data && history.json().data.orders) || [];
+      historyShowsOrder = orderNumber != null && rows.some((o) => o.orderNumber === orderNumber);
+    } catch (_e) { /* counted as failure below */ }
+    if (history.status === 200 && !historyShowsOrder && orderNumber != null) {
+      orderHistoryFailures.add(1, { status: "order-missing-from-history" });
+    }
+    if (orderNumber != null && (vu + iter) % 4 === 0) {
+      // Sampled 1-in-4: /api/orders/lookup is 3-axis rate-limited (10/h per
+      // email) — running it on every purchase would trip the limiter at
+      // purchase cadence and pollute the failure counters with expected 429s.
+      // 25% sampling keeps the leg representative within the limiter's budget.
+      const lookup = orderLookup(orderNumber, sess.email, { xff });
+      if (lookup.status !== 200) {
+        orderLookupFailures.add(1, { status: `lookup-status-${lookup.status}` });
+      }
+    }
+
     return { created: true, paid: true, status: finalStatus, paymentRef, orderNumber };
   }
   if (finalStatus === "failed" || finalStatus === "expired") {

@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
-import { handle, okPaged, ApiError, getPagination, transitionOrder } from "@/lib/api";
+import { handle, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
-import { maybeSyncTracking } from "@/lib/shipping";
 import { placeholderUrl } from "@/lib/placeholder";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +22,15 @@ const ALL_STATUSES = Object.values(BUCKETS).flat();
 //   ?bucket=to_ship&page=2&size=10 → one bucket, paginated
 // Ownership: rows are scoped to shopperId ONLY (claimed at login/checkout) —
 // no id/URL tweaking can reach another buyer's orders.
-// Side duties (lazy, throttled, never fatal):
-//   • auto-complete sweep — "delivered" orders older than 14 days → completed
-//   • tracking tick — advance this shopper's in-flight mock shipments
+//
+// PHASE 2 / A5: the two lazy maintenance duties that used to run on this
+// request (global auto-complete sweep + shopper tracking tick — up to ~250
+// sequential queries on the buyer's latency budget when the 60s throttle
+// expired) moved to the scheduler rail: POST /api/cron/order-maintenance,
+// ticked by mini-services/expiry-scheduler every 30s (Setting
+// `cron.orders.last` carries the last outcome). Displayed order information
+// stays eventually-consistent with the SAME cadence the lazy sweeps had —
+// the buyer's request simply no longer performs the upkeep.
 export const GET = handle(async (req: Request) => {
   const me = await requireShopper();
   const url = new URL(req.url);
@@ -37,9 +42,6 @@ export const GET = handle(async (req: Request) => {
   }
   const statuses = bucketParam ? BUCKETS[bucketParam] : ALL_STATUSES;
   const scope = { shopperId: me.id, status: { in: statuses } };
-
-  await lazyAutoCompleteSweep();
-  await lazyTrackingTick(me.id);
 
   const [counts, rows, total] = await Promise.all([
     db.order.groupBy({ by: ["status"], where: { shopperId: me.id }, _count: { _all: true } }),
@@ -96,56 +98,3 @@ export const GET = handle(async (req: Request) => {
     { page, size, total }
   );
 });
-
-/**
- * Auto-complete sweep: any "delivered" order whose deliveredAt is older than
- * 14 days becomes "completed" with an OrderStatusHistory row
- * {actorType:"system", note:"Auto-confirmed 14 days after delivery"}.
- * Guarded by a 60s in-memory throttle (globalThis — Turbopack duplicates
- * module instances per route, so module scope is not reliable).
- */
-async function lazyAutoCompleteSweep(): Promise<void> {
-  try {
-    const g = globalThis as Record<string, unknown>;
-    const last = typeof g.__ordersAutoCompleteAt === "number" ? g.__ordersAutoCompleteAt : 0;
-    const now = Date.now();
-    if (now - last < 60_000) return;
-    g.__ordersAutoCompleteAt = now;
-
-    const cutoff = new Date(now - 14 * 24 * 3600 * 1000);
-    const stale = await db.order.findMany({
-      where: { status: "delivered", deliveredAt: { lt: cutoff } },
-      select: { id: true },
-      take: 50,
-      orderBy: { deliveredAt: "asc" },
-    });
-    for (const o of stale) {
-      await transitionOrder({
-        orderId: o.id,
-        toStatus: "completed",
-        actor: "system",
-        note: "Auto-confirmed 14 days after delivery",
-        timestamps: { completedAt: new Date() },
-      });
-    }
-  } catch (e) {
-    console.error("[me/orders] auto-complete sweep failed", e);
-  }
-}
-
-/** Advance the shopper's in-flight mock shipments when they are stale (45s). */
-async function lazyTrackingTick(shopperId: string): Promise<void> {
-  try {
-    const inflight = await db.shipment.findMany({
-      where: { providerId: "mock", status: { in: ["BOOKED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"] }, order: { shopperId } },
-      select: { id: true },
-      take: 25,
-      orderBy: { updatedAt: "asc" },
-    });
-    for (const s of inflight) {
-      await maybeSyncTracking(s.id);
-    }
-  } catch (e) {
-    console.error("[me/orders] tracking tick failed", e);
-  }
-}

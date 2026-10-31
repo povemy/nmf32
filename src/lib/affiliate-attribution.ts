@@ -267,14 +267,18 @@ type TouchRow = {
 /** Resolve per-item affiliate attribution for a checkout. For every cart line,
  *  find the LATEST unexpired touch whose scope covers the line's product.
  *  Excludes: programme disabled, affiliate not active, product not enrolled,
- *  store not opted in, and SELF-PURCHASES (the buyer is the affiliate). */
+ *  store not opted in, and SELF-PURCHASES (the buyer is the affiliate).
+ *  PHASE 2 / A2: `preloadedSettings` lets the checkout route fetch the affiliate
+ *  settings ONCE per request (it needs them anyway for the sponsor-policy
+ *  freeze) instead of this helper re-reading them internally. */
 export async function resolveAffiliateAttributionForCart(input: {
   /** Shopper placing the order (self-purchase exclusion). */
   shopperId: string;
   lines: { variantId: string; productId: string | null; storeId: string }[];
+  preloadedSettings?: Awaited<ReturnType<typeof getAffiliateSettings>>;
 }): Promise<Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>> {
   const result = new Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>();
-  const settings = await getAffiliateSettings();
+  const settings = input.preloadedSettings ?? await getAffiliateSettings();
   if (!settings.enabled || input.lines.length === 0) return result;
 
   // Visitor identity (httpOnly cookie, server-side read).

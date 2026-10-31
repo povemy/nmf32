@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseTheme } from "@/lib/sections";
 import { toJson } from "@/lib/json";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -33,5 +34,6 @@ export const PUT = handle(async (req: Request) => {
     entityType: "store",
     entityId: store.id,
   });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
   return ok({ theme: parseTheme(updated.themeJson) });
 });

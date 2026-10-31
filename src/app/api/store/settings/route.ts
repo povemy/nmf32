@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { toJson, parseJson } from "@/lib/json";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export const PATCH = handle(async (req: Request) => {
     meta: { fields: [...Object.keys(data), ...Object.keys(sellerData)] },
   });
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market);
   return ok({
     id: updated.id,
     name: updated.name,

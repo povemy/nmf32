@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { recomputePrice } from "../../products/helpers";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     await db.product.update({ where: { id: variant.productId }, data: { priceMinor: price } });
   }
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
   return ok(updated);
 });
 
@@ -60,5 +62,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const { id } = await ctx.params;
   const variant = await ownVariant(store.id, id);
   const updated = await db.productVariant.update({ where: { id: variant.id }, data: { isActive: false } });
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
   return ok({ id: updated.id, isActive: updated.isActive });
 });

@@ -3,31 +3,47 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { parsePageDoc, parseTheme } from "@/lib/sections";
 import { parseSocial, cardStyleFor } from "../../_shared/product-card";
 import { trackStoreView } from "@/lib/analytics/track";
+import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
+
+// PHASE 2 / C: storefront home payload — cached 45 s per slug; stores tag
+// busted on store/theme/page mutations. CRITICAL PURITY BOUNDARY: the store
+// view TRACKER (trackStoreView) reads+writes cookies on the LIVE response and
+// therefore stays OUTSIDE the cached loader — only the pure data load below
+// is cacheable.
+const loadStorefront = publicCache(
+  async (slug: string) => {
+    const store = await db.store.findUnique({ where: { slug } });
+    if (!store || store.status !== "live") return { notFound: "store" as const };
+
+    let home = await db.cmsPage.findFirst({ where: { storeId: store.id, slug: "home" } });
+    if (!home) home = await db.cmsPage.findFirst({ where: { storeId: store.id, pageType: "home" } });
+    if (!home || !home.publishedJson) return { notFound: "published" as const };
+
+    const followers = await db.storeFollow.count({ where: { storeId: store.id } }); // Task 10-d
+    const cardStyle = await cardStyleFor(store.id);
+    return { notFound: null, store, home, followers, cardStyle };
+  },
+  ["sf-home"],
+  { ttl: 45, tags: [PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market] }
+);
 
 // GET /api/sf/[slug] — public storefront home (published page + theme + store info).
 export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const { slug } = await ctx.params;
-  const store = await db.store.findUnique({ where: { slug } });
-  if (!store || store.status !== "live") {
-    throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
-  }
-
-  let home = await db.cmsPage.findFirst({ where: { storeId: store.id, slug: "home" } });
-  if (!home) home = await db.cmsPage.findFirst({ where: { storeId: store.id, pageType: "home" } });
-  if (!home || !home.publishedJson) {
-    throw new ApiError(404, "STORE_NOT_PUBLISHED", "Storefront has no published home page");
-  }
+  const result = await loadStorefront(slug);
+  if (result.notFound === "store") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+  if (result.notFound === "published") throw new ApiError(404, "STORE_NOT_PUBLISHED", "Storefront has no published home page");
+  const { store, home, followers, cardStyle } = result;
 
   // Seller Insights — store_view (once per session per store per hour; awaited so
   // the pseudonymous identity cookie lands on THIS response; enqueue itself is
   // synchronous — the DB write happens in a background batch flush).
+  // Deliberately OUTSIDE the cached loader (cookie write on this response).
   await trackStoreView(req, store.id);
 
   const doc = parsePageDoc(home.publishedJson);
-  const followers = await db.storeFollow.count({ where: { storeId: store.id } }); // Task 10-d
-  const cardStyle = await cardStyleFor(store.id);
 
   return ok({
     store: {

@@ -20,6 +20,17 @@
 import { db } from "./db";
 import { ApiError } from "./api";
 
+// PHASE 2 / A2: precise row type for the batched wallet read in
+// buildVoucherOutcomes (userVoucher + voucher + store.fsPriceAdjustMinor —
+// the same include shape the per-entry resolver used).
+type UserVoucherWithVoucher = Awaited<
+  ReturnType<
+    typeof db.userVoucher.findMany<{
+      include: { voucher: { include: { store: { select: { fsPriceAdjustMinor: true } } } } };
+    }>
+  >
+>[number];
+
 export type VoucherKind = "discount" | "freeshipping";
 
 export const SUPPORTED_VOUCHER_KINDS: readonly string[] = ["discount", "freeshipping"];
@@ -355,7 +366,12 @@ export function applyVoucherOutcomesToGroups<G extends { storeId: string; subtot
 
 /** Build outcomes for a checkout (quote or create) from voucher entries.
  *  `hard` (create): unknown/owned/unusable entries throw 409-style ApiErrors —
- *  the buyer must re-quote instead of silently losing their voucher. */
+ *  the buyer must re-quote instead of silently losing their voucher.
+ *
+ *  PHASE 2 / A2: the per-entry wallet lookups (previously one sequential
+ *  `userVoucher.findFirst` per entry) are batched into ONE `findMany` for the
+ *  whole entry list — same rows (ids are unique; the userId filter is
+ *  identical), same per-entry verdict math, same error order. */
 export async function buildVoucherOutcomes(input: {
   entries: VoucherEntryInput[] | undefined | null;
   shopperId: string | null;
@@ -365,6 +381,22 @@ export async function buildVoucherOutcomes(input: {
 }): Promise<GroupVoucherOutcome[]> {
   const entries = Array.isArray(input.entries) ? input.entries : [];
   const outcomes: GroupVoucherOutcome[] = [];
+
+  // Batched wallet read: one round-trip for every entry's userVoucher row.
+  // Semantics identical to the previous per-entry findFirst({ id, userId }):
+  // rows not owned by this shopper simply don't come back ("not in your wallet").
+  const wantedIds = entries
+    .map((e) => String(e?.userVoucherId ?? ""))
+    .filter((id) => id.length > 0);
+  const uvById = new Map<string, UserVoucherWithVoucher>();
+  if (wantedIds.length > 0 && input.shopperId) {
+    const rows = await db.userVoucher.findMany({
+      where: { id: { in: [...new Set(wantedIds)] }, userId: input.shopperId },
+      include: { voucher: { include: { store: { select: { fsPriceAdjustMinor: true } } } } },
+    });
+    for (const r of rows) uvById.set(r.id, r);
+  }
+
   for (const entry of entries) {
     const storeId = String(entry.storeId ?? "");
     const userVoucherId = String(entry.userVoucherId ?? "");
@@ -383,21 +415,36 @@ export async function buildVoucherOutcomes(input: {
       outcomes.push(failOutcome({ storeId, userVoucherId }, "Sign in to use your vouchers"));
       continue;
     }
-    const res = await resolveUserVoucherForGroup({
-      userVoucherId,
-      shopperId: input.shopperId,
-      storeId,
-      groupSubtotalMinor: group.subtotalMinor,
-      addressState: input.addressState,
-    });
-    if ("error" in res) {
-      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", res.error);
-      outcomes.push(failOutcome({ storeId, userVoucherId }, res.error));
+    // In-memory equivalent of resolveUserVoucherForGroup's lookup + status gates.
+    const uv = uvById.get(userVoucherId);
+    if (!uv) {
+      const err = "That voucher is not in your wallet";
+      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", err);
+      outcomes.push(failOutcome({ storeId, userVoucherId }, err));
       continue;
     }
-    if (!res.verdict.valid) {
-      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", res.verdict.reason ?? "This voucher cannot be used");
-      outcomes.push(failOutcome({ storeId, userVoucherId }, res.verdict.reason ?? "This voucher cannot be used"));
+    if (uv.status === "USED") {
+      const err = "That voucher has already been used";
+      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", err);
+      outcomes.push(failOutcome({ storeId, userVoucherId }, err));
+      continue;
+    }
+    if (uv.status === "EXPIRED") {
+      const err = "That voucher has expired";
+      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", err);
+      outcomes.push(failOutcome({ storeId, userVoucherId }, err));
+      continue;
+    }
+    if (uv.status !== "AVAILABLE") {
+      const err = "That voucher is not available for use";
+      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", err);
+      outcomes.push(failOutcome({ storeId, userVoucherId }, err));
+      continue;
+    }
+    const verdict = validateVoucher(uv.voucher, group.subtotalMinor, input.addressState, storeId);
+    if (!verdict.valid) {
+      if (input.hard) throw new ApiError(409, "VOUCHER_INVALID", verdict.reason ?? "This voucher cannot be used");
+      outcomes.push(failOutcome({ storeId, userVoucherId }, verdict.reason ?? "This voucher cannot be used"));
       continue;
     }
     outcomes.push({
@@ -405,12 +452,12 @@ export async function buildVoucherOutcomes(input: {
       userVoucherId,
       valid: true,
       reason: null,
-      code: res.voucher.code,
-      title: res.voucher.title,
-      kind: res.voucher.kind,
-      discountMinor: res.verdict.discountMinor,
-      freeShipping: res.verdict.freeShipping,
-      fsPriceAdjustMinor: res.verdict.fsPriceAdjustMinor,
+      code: uv.voucher.code,
+      title: uv.voucher.title,
+      kind: uv.voucher.kind,
+      discountMinor: verdict.discountMinor,
+      freeShipping: verdict.freeShipping,
+      fsPriceAdjustMinor: verdict.fsPriceAdjustMinor,
     });
   }
   return outcomes;

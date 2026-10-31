@@ -4,6 +4,7 @@
 // ============================================================================
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api";
+import type { Coupon } from "@prisma/client";
 
 export const FREE_SHIP_THRESHOLD_MINOR = 10000; // RM 100
 
@@ -123,21 +124,37 @@ export type CouponVerdict = {
   couponId: string | null;
 };
 
-/** Validate a coupon for a store + subtotal. Store coupons only valid for their store. */
+/** Validate a coupon for a store + subtotal. Store coupons only valid for their store.
+ *  PHASE 2 / A2: `preloaded` lets multi-group callers fetch the coupon row ONCE
+ *  and reuse it across per-group verdict evaluations (the verdict math itself
+ *  is pure — see couponVerdict below). */
 export async function evaluateCoupon(
   storeId: string,
   rawCode: string | null | undefined,
   subtotalMinor: number,
-  shippingMinor: number
+  shippingMinor: number,
+  preloaded?: { code: string | null; coupon: Coupon | null }
 ): Promise<CouponVerdict> {
   const code = (rawCode ?? "").trim().toUpperCase();
   if (!code) return { code: "", valid: false, reason: "No coupon provided", discountMinor: 0, freeShip: false, couponId: null };
-  const coupon = await db.coupon.findUnique({ where: { code } });
+  const coupon = preloaded && preloaded.code === code ? preloaded.coupon : await db.coupon.findUnique({ where: { code } });
+  return couponVerdict(coupon, storeId, code, subtotalMinor, shippingMinor);
+}
+
+/** Pure coupon verdict — the evaluation half of evaluateCoupon. `now` is
+ *  injected so one request evaluates every group against ONE clock. */
+export function couponVerdict(
+  coupon: Coupon | null,
+  storeId: string,
+  code: string,
+  subtotalMinor: number,
+  shippingMinor: number,
+  now: Date = new Date()
+): CouponVerdict {
   if (!coupon || !coupon.isActive) return { code, valid: false, reason: "Coupon not found or inactive", discountMinor: 0, freeShip: false, couponId: null };
   if (coupon.scope === "store" && coupon.storeId !== storeId) {
     return { code, valid: false, reason: "Coupon not valid for this store", discountMinor: 0, freeShip: false, couponId: null };
   }
-  const now = new Date();
   if (coupon.startsAt && coupon.startsAt > now) return { code, valid: false, reason: "Coupon not started yet", discountMinor: 0, freeShip: false, couponId: null };
   if (coupon.endsAt && coupon.endsAt < now) return { code, valid: false, reason: "Coupon expired", discountMinor: 0, freeShip: false, couponId: null };
   if (coupon.minSpendMinor > subtotalMinor) {
@@ -237,17 +254,24 @@ export async function computeGroupPricing(input: {
     throw new ApiError(400, "EMPTY_CART", "At least one item is required");
   }
   const variantIds = input.items.map((i) => String(i.variantId));
-  const variants = await db.productVariant.findMany({
-    where: { id: { in: variantIds } },
-    include: {
-      product: {
-        select: {
-          id: true, title: true, status: true, storeId: true, categoryId: true,
-          store: { select: { id: true, slug: true, name: true, status: true } },
+  const couponCode = (input.couponCode ?? "").trim().toUpperCase();
+  // PHASE 2 / A2: the variant read and the coupon row read are independent —
+  // fetch them in ONE parallel batch (the coupon row is reused across every
+  // per-group evaluation instead of being re-fetched per group).
+  const [variants, couponRow] = await Promise.all([
+    db.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      include: {
+        product: {
+          select: {
+            id: true, title: true, status: true, storeId: true, categoryId: true,
+            store: { select: { id: true, slug: true, name: true, status: true, sellerId: true, currency: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    couponCode ? db.coupon.findUnique({ where: { code: couponCode } }) : null,
+  ]);
   const byId = new Map(variants.map((v) => [v.id, v]));
 
   const items: (PricedLine & { storeId: string; storeSlug: string; storeName: string })[] = [];
@@ -282,23 +306,28 @@ export async function computeGroupPricing(input: {
     });
   }
 
-  // Group lines per store.
+  // Group lines per store. PHASE 2 / A2: the store rows (slug/name/sellerId/
+  // currency/status) are ALREADY on the variant→product→store include above —
+  // the previous separate db.store.findMany round-trip was fully redundant.
+  // Every line of a group references the SAME store row from the same variant
+  // snapshot, so the first variant's include is authoritative for the group.
   const byStore = new Map<string, PricedLine[]>();
+  const storeMetaById = new Map<string, { slug: string; name: string; sellerId: string | null; currency: string; status: string }>();
   for (const l of items) {
     const { storeId: _s, storeSlug: _sl, storeName: _sn, ...line } = l;
     const arr = byStore.get(l.storeId);
     if (arr) arr.push(line);
     else byStore.set(l.storeId, [line]);
   }
-
-  const storeRows = await db.store.findMany({
-    where: { id: { in: [...byStore.keys()] } },
-    select: { id: true, slug: true, name: true, sellerId: true, currency: true, status: true },
-  });
-  const storeMeta = new Map(storeRows.map((s) => [s.id, s]));
+  for (const v of variants) {
+    const s = v.product.store;
+    if (!storeMetaById.has(s.id)) {
+      storeMetaById.set(s.id, { slug: s.slug, name: s.name, sellerId: s.sellerId, currency: s.currency, status: s.status });
+    }
+  }
 
   const rawGroups = [...byStore.entries()].map(([storeId, lines]) => {
-    const meta = storeMeta.get(storeId);
+    const meta = storeMetaById.get(storeId);
     if (!meta || meta.status !== "live") {
       throw new ApiError(400, "STORE_UNAVAILABLE", `One of the sellers in your cart is currently unavailable — please remove those items to continue`);
     }
@@ -318,14 +347,19 @@ export async function computeGroupPricing(input: {
 
   // A coupon applies to exactly ONE seller group (highest subtotal among the
   // eligible ones) so a platform-wide code can never be multiplied per seller.
+  // PHASE 2 / A2: the coupon ROW was fetched once alongside the variants — the
+  // per-group loop is now a pure in-memory evaluation (one clock: the `now`
+  // captured at verdict time is shared by every group, making the outcome
+  // deterministic instead of ms-drifting between groups).
   let winning: CouponVerdict | null = null;
   let uiVerdict: CouponVerdict | null = null;
   let couponTarget: string | null = null;
-  if ((input.couponCode ?? "").trim()) {
+  if (couponCode) {
+    const verdictNow = new Date();
     const sorted = [...rawGroups].sort((a, b) => b.subtotalMinor - a.subtotalMinor);
     for (const g of sorted) {
       const ship = SHIPPING_RATES[rateId].freeOverSubtotal && g.subtotalMinor >= FREE_SHIP_THRESHOLD_MINOR ? 0 : SHIPPING_RATES[rateId].amountMinor;
-      const verdict = await evaluateCoupon(g.storeId, input.couponCode, g.subtotalMinor, ship);
+      const verdict = couponVerdict(couponRow, g.storeId, couponCode, g.subtotalMinor, ship, verdictNow);
       uiVerdict = uiVerdict ?? verdict;
       if (verdict.valid) {
         winning = verdict;

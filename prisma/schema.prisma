@@ -428,6 +428,10 @@ model InventoryLog {
   refId     String?
   createdAt DateTime       @default(now())
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  // PHASE 2 / B: FK index — every cascade variant deletion otherwise scans
+  // this append-heavy table; consistent with the CartItem/OrderItem FK pattern.
+  @@index([variantId])
 }
 
 /// Phase 1 (SEC-03 / B1): verified-purchase reviews.
@@ -578,6 +582,13 @@ model Order {
   @@index([paidAt])
   // Marketing Intelligence: campaign report filters orders by attributed campaign.
   @@index([storeId, attrCampaignId])
+  // PHASE 2 / B: seller order-listing views filter by store + status group
+  // (unpaid / to_fulfill / shipped / done / refunds) — the primary seller
+  // workflow query (store/orders route: WHERE storeId = ? AND status IN (...)).
+  @@index([storeId, status])
+  // PHASE 2 / B: order-maintenance auto-complete sweep (cron, 30 s cadence):
+  // WHERE status = 'delivered' AND deliveredAt < cutoff ORDER BY deliveredAt ASC.
+  @@index([status, deliveredAt])
   reviews      Review[]
 }
 
@@ -753,6 +764,10 @@ model PaymentGroup {
   shopper       ShopperUser @relation(fields: [shopperId], references: [id], onDelete: Cascade)
 
   @@index([shopperId])
+  // PHASE 2 / B: expiry-sweep candidate scan (cron, 30 s cadence) joins
+  // orders → paymentGroup with WHERE status IN ('requires_payment','failed')
+  // AND expiresAt < now — previously a full-table scan every sweep.
+  @@index([status, expiresAt])
 }
 
 model PaymentWebhookLog {
@@ -768,7 +783,11 @@ model PaymentWebhookLog {
 
   // FIN-1: providerRef lookups (replay/sweep) + unprocessed-queue scans.
   @@index([providerRef])
-  @@index([processed])
+  // PHASE 2 / B: replaced the single-column [processed] index with the
+  // composite the ops recovery sweep actually uses — WHERE processed = false
+  // AND createdAt < cutoff ORDER BY createdAt ASC (leading column keeps full
+  // compatibility with every processed-only lookup).
+  @@index([processed, createdAt])
 }
 
 model Refund {
@@ -1154,6 +1173,12 @@ model WebhookDelivery {
   lastAttemptAt DateTime?
   createdAt     DateTime        @default(now())
   endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  // PHASE 2 / B: admin deliveries listing filters by status + orders by
+  // createdAt; endpointId FK index prevents cascade-delete scans on this
+  // append-heavy table.
+  @@index([status, createdAt])
+  @@index([endpointId])
 }
 
 model ApiKey {

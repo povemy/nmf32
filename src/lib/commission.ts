@@ -14,7 +14,20 @@
 // holdDays contributes its holdDays while the rate keeps falling through.
 // Multiple rows matching the same scope resolve deterministically:
 // earliest createdAt wins (id as final tie-break).
-// ============================================================================
+//
+// ----------------------------------------------------------------------------
+// PHASE 2 / A2 — BATCHED rate resolution (re-land of F2-C1, adapted to the
+// F-08 override semantics). The original per-item `resolveRate` issued
+// ≈5 + 2·D sequential queries PER LINE (settings + seller + overrides +
+// holidays + product + one query per ancestor level, twice). `loadRateContext`
+// loads EVERYTHING a whole cart (all seller groups) needs in a FIXED handful
+// of round-trips (~6, independent of item count), and `resolveRateFromContext`
+// resolves each line purely in memory with byte-identical semantics. The
+// sequential resolver below remains available as `resolveRate` (single-item
+// convenience, now itself built on the batched loader); correctness parity is
+// proven by scripts/test-commission-parity.ts against a verbatim copy of the
+// pre-batch sequential resolver.
+// ----------------------------------------------------------------------------
 import { db } from "./db";
 import { commissionOf, allocateProportionally } from "./money";
 import { affiliatePoolMinor } from "./affiliate";
@@ -50,22 +63,145 @@ type RateResolution = {
   fixedFeeMinor: number;
 };
 
-/** CommissionOverride rows matching (scope, target, validity, now), ordered
- *  most→least specific: product rows first, then category rows in ancestor
- *  chain order (nearest first), then seller rows. Within one class,
- *  earliest createdAt wins. */
-async function scopedOverrideRows(
-  ctx: { sellerId: string; categoryId?: string | null; productId?: string | null; now?: Date },
-  chain: string[]
-) {
-  const now = ctx.now ?? new Date();
-  // Sentinel ids that can never match a real row (ids are cuids — "cm…") keep
-  // the Prisma OR exact when ctx.productId / the category chain is absent —
-  // `undefined` inside an OR would instead IGNORE the condition and match
-  // every row. NOTE: the sentinel must be plain ASCII (a \u0000 byte would be
-  // rejected by Postgres as an invalid UTF-8 sequence).
-  const NONE = "__no_target__";
-  const rows = await db.commissionOverride.findMany({
+// ============================================================================
+// BATCHED RATE CONTEXT (Phase 2 / A2)
+// ============================================================================
+
+/** Minimal seller fields the resolution chain needs (undefined = row absent). */
+export type RateContextSeller = { commissionOverridePercent: number | null; holdDaysOverride: number | null };
+/** Minimal category fields (parentId walks the ancestor chain; commissionPercent
+ *  is the direct-field rate). undefined = id not loaded / row absent. */
+export type RateContextCategory = { parentId: string | null; commissionPercent: number | null };
+/** Active CommissionOverride rows in their validity window, createdAt-asc ordered
+ *  (the fetch order IS the within-class precedence — in-memory filters below
+ *  preserve it). Scope targets are already narrowed to this checkout's
+ *  products / category closure / sellers. */
+export type RateContextOverride = {
+  id: string;
+  scope: string;
+  productId: string | null;
+  categoryId: string | null;
+  sellerId: string | null;
+  percent: number | null;
+  fixedFeeMinor: number | null;
+  holdDays: number | null;
+};
+
+/** Everything rate resolution needs for a whole cart — one fixed query budget. */
+export type RateContext = {
+  settings: CommissionSettingsDTO;
+  sellers: Map<string, RateContextSeller | undefined>;
+  /** Active holidays covering `now` (startsAt asc — precedence order). */
+  holidays: { id: string; scope: string; scopeIds: string }[];
+  /** productId → commissionPercentOverride (null = loaded, no override). */
+  products: Map<string, number | null | undefined>;
+  /** categoryId → {parentId, commissionPercent} — the FULL ancestor closure. */
+  categories: Map<string, RateContextCategory | undefined>;
+  overrides: RateContextOverride[];
+};
+
+const NONE = "__no_target__"; // sentinel that can never match a real cuid — see scopedOverrideRows note
+
+/**
+ * Load the FULL rate-resolution context for a set of lines in a FIXED number of
+ * round-trips: settings + sellers + products + holidays + seed categories in
+ * one parallel batch, then (rare) extra category rounds chasing parents to
+ * closure, then the scoped override rows for the exact closure. Item-count
+ * independent: a 1-line and a 50-line cart cost the same ~6 queries.
+ *
+ * `now` is shared by every consumer of the returned context — one checkout,
+ * one clock (the pre-batch code could drift a few ms across groups; the math
+ * is date-window sensitive only at exact holiday/override boundaries, where a
+ * single snapshot is strictly MORE deterministic).
+ */
+export async function loadRateContext(input: {
+  sellerIds: string[];
+  productIds?: string[];
+  categoryIds?: string[];
+  now?: Date;
+}): Promise<RateContext> {
+  const now = input.now ?? new Date();
+  const sellerIds = [...new Set(input.sellerIds.filter((s): s is string => typeof s === "string" && s.length > 0))];
+  const productIds = [...new Set((input.productIds ?? []).filter((p): p is string => typeof p === "string" && p.length > 0))];
+  const seedCategoryIds = [...new Set((input.categoryIds ?? []).filter((c): c is string => typeof c === "string" && c.length > 0))];
+
+  // Round 1 — five independent reads in ONE parallel batch. NOTE: the product
+  // read also returns `categoryId`, which is merged into the category seeds
+  // below — a caller that passes productIds but forgets categoryIds still gets
+  // a correct closure (defense against the silent-wrong-results footgun).
+  const [settings, sellerRows, productRows, holidays, seedCategories] = await Promise.all([
+    getCommissionSettings(),
+    sellerIds.length
+      ? db.seller.findMany({
+          where: { id: { in: sellerIds } },
+          select: { id: true, commissionOverridePercent: true, holdDaysOverride: true },
+        })
+      : [],
+    productIds.length
+      ? db.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, commissionPercentOverride: true, categoryId: true },
+        })
+      : [],
+    db.feeHoliday.findMany({
+      where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, scope: true, scopeIds: true },
+    }),
+    seedCategoryIds.length
+      ? db.category.findMany({
+          where: { id: { in: seedCategoryIds } },
+          select: { id: true, parentId: true, commissionPercent: true },
+        })
+      : [],
+  ]);
+
+  const categories = new Map<string, RateContextCategory | undefined>();
+  for (const c of seedCategories) categories.set(c.id, { parentId: c.parentId, commissionPercent: c.commissionPercent });
+  // Merge the products' own categoryIds into the seeds (see note above) and
+  // queue the closure chase round for the combined set.
+  const products = new Map<string, number | null | undefined>(
+    productRows.map((p) => [p.id, p.commissionPercentOverride] as const)
+  );
+  const productDerivedCategoryIds = productRows.map((p) => p.categoryId).filter((c): c is string => typeof c === "string" && c.length > 0);
+  if (productDerivedCategoryIds.length > 0) {
+    const notYetLoaded = productDerivedCategoryIds.filter((c) => !categories.has(c));
+    if (notYetLoaded.length > 0) {
+      const rows = await db.category.findMany({
+        where: { id: { in: [...new Set(notYetLoaded)] } },
+        select: { id: true, parentId: true, commissionPercent: true },
+      });
+      for (const r of rows) categories.set(r.id, { parentId: r.parentId, commissionPercent: r.commissionPercent });
+      for (const c of new Set(notYetLoaded)) if (!categories.has(c)) categories.set(c, undefined);
+    }
+  }
+
+  // Rounds 2..k — chase parents to closure. Each round loads only ids not yet
+  // in the Map; bounded by tree depth (typically 1 extra round, often 0).
+  for (;;) {
+    const missing = new Set<string>();
+    for (const c of categories.values()) {
+      if (c?.parentId && !categories.has(c.parentId)) missing.add(c.parentId);
+    }
+    if (missing.size === 0) break;
+    const rows = await db.category.findMany({
+      where: { id: { in: [...missing] } },
+      select: { id: true, parentId: true, commissionPercent: true },
+    });
+    for (const r of rows) categories.set(r.id, { parentId: r.parentId, commissionPercent: r.commissionPercent });
+    if (rows.length < missing.size) {
+      // A parent id references a deleted category — mark it explicitly so the
+      // loop terminates (chain walk treats absent as "no parent", matching
+      // the sequential resolver's findUnique→null behavior).
+      for (const m of missing) if (!categories.has(m)) categories.set(m, undefined);
+    }
+  }
+
+  // Round 3 — scoped override rows for the EXACT closure (no over-fetch:
+  // category-scope rows limited to reachable ancestors, product/seller rows
+  // limited to this cart). Same shape/order as the original per-item query.
+  const closureCategoryIds = [...categories.keys()];
+  const overrides = await db.commissionOverride.findMany({
     where: {
       isActive: true,
       AND: [
@@ -73,59 +209,85 @@ async function scopedOverrideRows(
         { OR: [{ validTo: null }, { validTo: { gte: now } }] },
         {
           OR: [
-            { scope: "product", productId: ctx.productId ?? NONE },
-            { scope: "category", categoryId: { in: chain.length > 0 ? chain : [NONE] } },
-            { scope: "seller", sellerId: ctx.sellerId },
+            { scope: "product", productId: { in: productIds.length > 0 ? productIds : [NONE] } },
+            { scope: "category", categoryId: { in: closureCategoryIds.length > 0 ? closureCategoryIds : [NONE] } },
+            { scope: "seller", sellerId: { in: sellerIds.length > 0 ? sellerIds : [NONE] } },
           ],
         },
       ],
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true, scope: true, productId: true, categoryId: true, sellerId: true,
+      percent: true, fixedFeeMinor: true, holdDays: true,
+    },
   });
-  const productRows = rows.filter((r) => r.scope === "product");
-  // chain is [category, parent, ...] — nearest ancestor first, so flatMap
-  // preserves specificity order.
-  const categoryRows = chain.flatMap((catId) => rows.filter((r) => r.scope === "category" && r.categoryId === catId));
-  const sellerRows = rows.filter((r) => r.scope === "seller");
+
+  return {
+    settings,
+    sellers: new Map<string, RateContextSeller | undefined>(
+      sellerRows.map((s) => [s.id, { commissionOverridePercent: s.commissionOverridePercent, holdDaysOverride: s.holdDaysOverride }] as const)
+    ),
+    holidays: holidays.map((h) => ({ id: h.id, scope: h.scope, scopeIds: h.scopeIds ?? "[]" })),
+    products,
+    categories,
+    overrides,
+  };
+}
+
+/** In-memory scoped-override selection — EXACT mirror of the original
+ *  per-item `scopedOverrideRows` filter: product rows for THIS product, then
+ *  category rows in ancestor-chain order (nearest first), then seller rows —
+ *  all from the pre-fetched createdAt-asc list, so within-class precedence
+ *  (earliest createdAt, id tie-break) is preserved by the filters themselves. */
+function scopedOverrideRowsFromContext(
+  ctx: RateContext,
+  item: { sellerId: string; productId?: string | null },
+  chain: string[]
+): RateContextOverride[] {
+  const productRows = ctx.overrides.filter((r) => r.scope === "product" && r.productId != null && r.productId === item.productId);
+  const categoryRows = chain.flatMap((catId) => ctx.overrides.filter((r) => r.scope === "category" && r.categoryId === catId));
+  const sellerRows = ctx.overrides.filter((r) => r.scope === "seller" && r.sellerId === item.sellerId);
   return [...productRows, ...categoryRows, ...sellerRows];
 }
 
-async function categoryAncestorChain(categoryId: string | null | undefined): Promise<string[]> {
-  // returns [category, parent, grandparent, ...]
+/** Ancestor chain from the preloaded closure — cycle-safe, identical walk to
+ *  the original `categoryAncestorChain` (absent row ⇒ chain stops). */
+function chainFromContext(ctx: RateContext, categoryId: string | null | undefined): string[] {
   const chain: string[] = [];
   let cur = categoryId ?? null;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     chain.push(cur);
-    const cat = await db.category.findUnique({ where: { id: cur }, select: { parentId: true } });
-    cur = cat?.parentId ?? null;
+    cur = ctx.categories.get(cur)?.parentId ?? null;
   }
   return chain;
 }
 
-/** Resolve the effective commission rate for an item in context (M09 resolution). */
-export async function resolveRate(ctx: {
-  sellerId: string;
-  categoryId?: string | null;
-  productId?: string | null;
-  now?: Date;
-}): Promise<RateResolution> {
-  const settings = await getCommissionSettings();
-  const now = ctx.now ?? new Date();
-  const chain = await categoryAncestorChain(ctx.categoryId);
+/**
+ * Resolve the effective commission rate for an item FROM A PRELOADED CONTEXT —
+ * pure, synchronous, zero queries. Byte-identical semantics to the original
+ * sequential resolver (parity-gated by scripts/test-commission-parity.ts):
+ *   0. fee holiday (all / sellers / categories-direct) …
+ *   … through scoped override rows and direct field overrides interleaved by
+ *   scope: product > category ancestor > seller … global default.
+ */
+export function resolveRateFromContext(
+  ctx: RateContext,
+  item: {
+    sellerId: string;
+    categoryId?: string | null;
+    productId?: string | null;
+  }
+): RateResolution {
+  const settings = ctx.settings;
+  const chain = chainFromContext(ctx, item.categoryId);
 
-  // 0. seller-level direct overrides + F-08 scoped override rows (ordered
-  //    most→least specific). Field-wise first-match wins for holdDays and
-  //    fixedFeeMinor — a windowed row beats the static seller field, and a
-  //    product/category-scoped row beats a seller-scoped one.
-  const seller = await db.seller.findUnique({
-    where: { id: ctx.sellerId },
-    select: { commissionOverridePercent: true, holdDaysOverride: true },
-  });
-  const overrides = await scopedOverrideRows(ctx, chain);
-  const holdRow = overrides.find((r) => r.holdDays != null);
-  const fixedRow = overrides.find((r) => r.fixedFeeMinor != null);
+  const rows = scopedOverrideRowsFromContext(ctx, item, chain);
+  const holdRow = rows.find((r) => r.holdDays != null);
+  const fixedRow = rows.find((r) => r.fixedFeeMinor != null);
+  const seller = ctx.sellers.get(item.sellerId);
   const fallback: RateResolution = {
     percent: settings.defaultPercent,
     source: "global",
@@ -134,63 +296,56 @@ export async function resolveRate(ctx: {
   };
 
   // 1. active fee holiday covering (seller, category, now)
-  const holidays = await db.feeHoliday.findMany({
-    where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
-    orderBy: { startsAt: "asc" },
-  });
-  for (const h of holidays) {
+  for (const h of ctx.holidays) {
     if (h.scope === "all") {
       return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
     }
     const ids = JSON.parse(h.scopeIds || "[]") as string[];
-    if (h.scope === "sellers" && ids.includes(ctx.sellerId)) {
+    if (h.scope === "sellers" && ids.includes(item.sellerId)) {
       return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
     }
-    if (h.scope === "categories" && ctx.categoryId && ids.includes(ctx.categoryId)) {
+    if (h.scope === "categories" && item.categoryId && ids.includes(item.categoryId)) {
       return { ...fallback, percent: 0, source: "fee_holiday", holidayId: h.id };
     }
   }
 
   // 2. product-scope override row (F-08) — windowed, beats the direct field
-  const pRow = overrides.find((r) => r.scope === "product" && r.percent != null);
+  const pRow = rows.find((r) => r.scope === "product" && r.percent != null);
   if (pRow) {
     return { ...fallback, percent: pRow.percent!, source: "override", sourceId: pRow.id };
   }
 
   // 3. product direct override
-  if (ctx.productId) {
-    const p = await db.product.findUnique({
-      where: { id: ctx.productId },
-      select: { commissionPercentOverride: true },
-    });
-    if (p?.commissionPercentOverride != null) {
-      return { ...fallback, percent: p.commissionPercentOverride, source: "product", sourceId: ctx.productId };
+  if (item.productId) {
+    const p = ctx.products.get(item.productId);
+    if (p != null) {
+      return { ...fallback, percent: p, source: "product", sourceId: item.productId };
     }
   }
 
   // 4. category-scope override rows (F-08) — nearest ancestor first
-  const cRow = overrides.find((r) => r.scope === "category" && r.percent != null);
+  const cRow = rows.find((r) => r.scope === "category" && r.percent != null);
   if (cRow) {
     return { ...fallback, percent: cRow.percent!, source: "override", sourceId: cRow.id };
   }
 
   // 5. nearest category ancestor with commission_percent (direct field)
   for (const catId of chain) {
-    const cat = await db.category.findUnique({ where: { id: catId }, select: { commissionPercent: true } });
+    const cat = ctx.categories.get(catId);
     if (cat?.commissionPercent != null) {
       return { ...fallback, percent: cat.commissionPercent, source: "category", sourceId: catId };
     }
   }
 
   // 6. seller-scope override row (F-08)
-  const sRow = overrides.find((r) => r.scope === "seller" && r.percent != null);
+  const sRow = rows.find((r) => r.scope === "seller" && r.percent != null);
   if (sRow) {
     return { ...fallback, percent: sRow.percent!, source: "override", sourceId: sRow.id };
   }
 
   // 7. seller direct override
   if (seller?.commissionOverridePercent != null) {
-    return { ...fallback, percent: seller.commissionOverridePercent, source: "seller", sourceId: ctx.sellerId };
+    return { ...fallback, percent: seller.commissionOverridePercent, source: "seller", sourceId: item.sellerId };
   }
 
   // 8. global default
@@ -304,38 +459,52 @@ export function reconcileSplits(
  *   the Option B invariant sum(sellerNet)+sum(commission)===order total holds
  *   in ALL paths, including appliesToShipping=true (see reconcileSplits doc).
  * - min_commission_minor floored per ORDER (skipped on fee holidays, flagged)
+ *
+ * PHASE 2 / A2: `preloaded` lets a multi-group checkout load ONE RateContext
+ * for every seller group and share it across the per-group calls (the context
+ * loader is item-count independent — see loadRateContext). Without it, the
+ * context is loaded from this order's own items: same semantics, ~6 queries
+ * either way (versus (5+2·D) sequential queries PER LINE pre-batching).
  */
-export async function computeOrderCommissions(input: {
-  sellerId: string;
-  items: CommissionItemInput[];
-  orderDiscountMinor: number;
-  shippingMinorTotal: number;
-  /** Order-level tax (currently always 0 in checkout pricing) — included in
-   *  the sellerNet reconciliation so the invariant survives tax going live. */
-  orderTaxMinor?: number;
-  appliesShippingToItem?: boolean; // whether shipping counts toward commission base
-  currency?: string;
-  now?: Date;
-}): Promise<CommissionOrderResult> {
-  const settings = await getCommissionSettings();
+export async function computeOrderCommissions(
+  input: {
+    sellerId: string;
+    items: CommissionItemInput[];
+    orderDiscountMinor: number;
+    shippingMinorTotal: number;
+    /** Order-level tax (currently always 0 in checkout pricing) — included in
+     *  the sellerNet reconciliation so the invariant survives tax going live. */
+    orderTaxMinor?: number;
+    appliesShippingToItem?: boolean; // whether shipping counts toward commission base
+    currency?: string;
+    now?: Date;
+  },
+  preloaded?: RateContext
+): Promise<CommissionOrderResult> {
   const now = input.now ?? new Date();
+  const ctx =
+    preloaded ??
+    (await loadRateContext({
+      sellerIds: [input.sellerId],
+      productIds: input.items.map((it) => it.productId ?? "").filter(Boolean),
+      categoryIds: input.items.map((it) => it.categoryId ?? "").filter(Boolean),
+      now,
+    }));
+  const settings = ctx.settings;
 
   const subtotals = input.items.map((it) => it.unitPriceMinor * it.qty);
   const discounts = allocateProportionally(Math.max(0, input.orderDiscountMinor), subtotals);
   const shippingAlloc = allocateProportionally(Math.max(0, input.shippingMinorTotal), subtotals);
   const taxAlloc = allocateProportionally(Math.max(0, input.orderTaxMinor ?? 0), subtotals);
 
-  // resolve rate per item (cache by productId/categoryId pair)
-  const rates: RateResolution[] = [];
-  for (const it of input.items) {
-    const r = await resolveRate({
+  // resolve rate per item — pure in-memory resolution over the shared context
+  const rates: RateResolution[] = input.items.map((it) =>
+    resolveRateFromContext(ctx, {
       sellerId: input.sellerId,
       categoryId: it.categoryId ?? null,
       productId: it.productId ?? null,
-      now,
-    });
-    rates.push(r);
-  }
+    })
+  );
 
   const perOrderFixed = settings.fixedFeeMinor;
   const fixedAlloc = allocateProportionally(perOrderFixed, subtotals);
@@ -465,6 +634,25 @@ export async function simulateCommission(input: {
     holdDays: result.holdDays,
     trace: result.items[0].breakdown,
   };
+}
+
+/** Single-item convenience wrapper over the batched resolver (kept for API
+ *  compatibility; batch callers should prefer loadRateContext +
+ *  resolveRateFromContext). Same semantics as the pre-batch sequential
+ *  resolver — proven byte-identical by scripts/test-commission-parity.ts. */
+export async function resolveRate(ctx: {
+  sellerId: string;
+  categoryId?: string | null;
+  productId?: string | null;
+  now?: Date;
+}): Promise<RateResolution> {
+  const context = await loadRateContext({
+    sellerIds: [ctx.sellerId],
+    productIds: ctx.productId ? [ctx.productId] : [],
+    categoryIds: ctx.categoryId ? [ctx.categoryId] : [],
+    now: ctx.now,
+  });
+  return resolveRateFromContext(context, ctx);
 }
 
 /** Persist snapshots onto order items (called by checkout, never recomputed). */

@@ -26,6 +26,33 @@ const buckets = new Map<string, Bucket>();
 let lastSweepAt = 0;
 const SWEEP_INTERVAL_MS = 30_000;
 
+// PHASE 2 / D1: hard capacity backstop, same rationale as rate-limit.ts —
+// the financial limiter keys on client IP + route path, and the gateway XFF is
+// authoritative (Caddy overwrites it), so key cardinality tracks real client
+// IPs — bounded in practice, but a hard ceiling removes the residual risk
+// (spoofed hop lists reaching the app behind a misconfigured gateway, or a
+// future deployment change). AMORTIZED O(1): the scan runs at most once per
+// second and only once the cap is reached.
+const MAX_BUCKETS = 50_000;
+const EVICT_BATCH = 5_000;
+let lastEvictAt = 0;
+
+function evictIfFull(now: number) {
+  if (buckets.size < MAX_BUCKETS) return;
+  if (now - lastEvictAt < 1_000) return; // at most one scan per second under attack
+  lastEvictAt = now;
+  // Pass 1: drop dead buckets (older than 1 h — same rule as sweepExpired).
+  for (const [key, bucket] of buckets) {
+    if (now - bucket.windowStart > 3_600_000) buckets.delete(key);
+    if (buckets.size < MAX_BUCKETS - EVICT_BATCH) return;
+  }
+  // Pass 2: still over cap — evict the oldest-window batch.
+  const targets = [...buckets.entries()]
+    .sort((a, b) => a[1].windowStart - b[1].windowStart)
+    .slice(0, EVICT_BATCH);
+  for (const [key] of targets) buckets.delete(key);
+}
+
 function sweepExpired(now: number) {
   if (now - lastSweepAt < SWEEP_INTERVAL_MS) return;
   lastSweepAt = now;
@@ -55,6 +82,7 @@ export function rateLimit(
 ): { ok: boolean; retryAfterSec: number } {
   const now = Date.now();
   sweepExpired(now);
+  evictIfFull(now);
 
   const path = new URL(req.url).pathname;
   const key = `${clientIp(req)}:${path}`;

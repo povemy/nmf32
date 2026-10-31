@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, slugify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +50,6 @@ export const POST = handle(async (req: Request) => {
     },
   });
 
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
   return ok({ ...collection, productCount: 0, products: [] }, { status: 201 });
 });
