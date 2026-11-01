@@ -48,6 +48,7 @@ type LTState = {
   slowRing?: Array<{ model: string; op: string; ms: number; route: string | null; ts: string }>;
   lagRing?: number[];
   memRing?: Array<{ ts: string; rssMb: number; heapUsedMb: number; heapTotalMb: number; fd: number }>;
+  events?: Map<string, { count: number; lastAt: string }>;
   fdLimit?: number;
   timers?: NodeJS.Timeout[];
 };
@@ -55,6 +56,14 @@ type LTState = {
 const S: LTState = ((process as unknown as { __ltMetrics?: LTState }).__ltMetrics ??= {});
 
 export const als: AsyncLocalStorage<ReqScope> = (S.als ??= new AsyncLocalStorage<ReqScope>());
+
+// P2.3-7 (monitoring honesty): samplers now start at MODULE LOAD (not lazily
+// inside snapshot()). Previously eventLoopLag on /api/metrics and lagP95() on
+// /api/health/live reported 0 forever unless someone had already hit
+// /api/metrics with a valid token — a "looks healthy" zero that actually
+// meant "not sampling". startSamplers() is idempotent (S.timers singleton),
+// cross-realm safe (state hangs off process), and both timers are unref'd.
+startSamplers();
 
 /**
  * Registry hook: db.ts (which is reachable from the browser bundle through
@@ -154,6 +163,37 @@ type RouteStats = {
   dbCountTotal: number;
 };
 
+// P2.3-7 (monitoring honesty): bounded BUSINESS-EVENT counters. Until this
+// phase, recordRequest/enterRequest/exitRequest/commitScopeToRoute and the
+// Prisma hook had ZERO callers — /api/metrics returned real process data but
+// permanently-empty routes/totals/db sections (the audit's "dead metrics
+// code"). They are now wired from lib/api.ts handle() (every /api/* route)
+// and lib/db.ts (Prisma-observed op durations); recordEvent adds cheap named
+// outcome counters for the few entry points that are safe to instrument this
+// phase (payment webhook outcomes, expiry sweep outcomes). Bounded: a fixed
+// cap on distinct (event, outcome) pairs with an OTHER overflow bucket.
+const MAX_EVENTS = 100;
+type EventAgg = { count: number; lastAt: string };
+const events: Map<string, EventAgg> = (S.events ??= new Map());
+
+/** Record one business-event outcome (e.g. recordEvent("webhook.payments", "duplicate")).
+ *  Never throws — a metrics failure must never fail the business path. */
+export function recordEvent(name: string, outcome: string): void {
+  try {
+    const key = `${name}:${outcome}`;
+    let a = events.get(key);
+    if (!a) {
+      if (events.size >= MAX_EVENTS) return; // bounded — drop overflow
+      a = { count: 0, lastAt: "" };
+      events.set(key, a);
+    }
+    a.count++;
+    a.lastAt = new Date().toISOString();
+  } catch {
+    /* never break the caller */
+  }
+}
+
 const routes: Map<string, RouteStats> = (S.routes ??= new Map());
 
 const globalTotals = (S.totals ??= { requests: 0, errors: 0, startedAt: new Date().toISOString() });
@@ -179,7 +219,10 @@ export function recordRequest(label: string | null, status: number, ms: number) 
   if (!s) return; // excluded (e.g. metrics self-observation)
   histAdd(s.hist, ms);
   s.byStatus.set(status, (s.byStatus.get(status) ?? 0) + 1);
-  if (status >= 500) s.errors++;
+  if (status >= 500) {
+    s.errors++;
+    s.lastErrorAt = new Date().toISOString(); // was never set before (dead field)
+  }
 }
 
 export function enterRequest(label: string | null): boolean {
@@ -309,6 +352,7 @@ export function lagP95(): number { return lagStats().p95Ms; }
 export type PrismaMetricsResult = { available: true; pool: Record<string, number>; waitP95Ms: number | null; waitMaxMs: number | null } | { available: false; reason: string };
 
 export async function snapshot(prismaMetrics?: () => Promise<unknown>): Promise<Record<string, unknown>> {
+  // P2.3-7: samplers are ALSO started at module load (see top of file).
   startSamplers();
   const mem = memRing.length ? memRing[memRing.length - 1] : null;
   const first = memRing.length ? memRing[0] : null;
@@ -377,6 +421,7 @@ export async function snapshot(prismaMetrics?: () => Promise<unknown>): Promise<
     memoryTrend: first && mem ? { rssDeltaMb60s: Math.round((mem.rssMb - first.rssMb) * 10) / 10, samples: memRing.length } : null,
     inFlight: { now: inFlightGlobal.now, max: inFlightGlobal.max },
     totals: { requests: globalTotals.requests, errors: globalTotals.errors, errorRate: globalTotals.requests ? Math.round((globalTotals.errors / globalTotals.requests) * 10000) / 100 : 0, startedAt: globalTotals.startedAt },
+    events: [...events.entries()].map(([key, a]) => ({ key, count: a.count, lastAt: a.lastAt })).sort((x, y) => y.count - x.count),
     routes: routeOut,
     db: {
       note: "prisma-observed op durations (client side, includes network + pool wait); PG server exec time comes from pg_stat_statements probes",
@@ -395,14 +440,12 @@ export function commitScopeToRoute(label: string | null) {
   if (!s) return;
   s.dbMsTotal += scope.dbMs;
   s.dbCountTotal += scope.dbCount;
-  if (scope.dbSlowestModel && scope.dbSlowestMs >= 100) {
-    s.lastErrorAt = s.lastErrorAt; // no-op; kept intentionally minimal
-  }
 }
 
 export function resetStats() {
   routes.clear();
   dbAgg.clear();
+  events.clear();
   slowRing.length = 0;
   globalTotals.requests = 0;
   globalTotals.errors = 0;

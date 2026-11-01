@@ -73,6 +73,14 @@ export function webhookSecret(): string {
  *  Date.now() so sandbox flows always fall inside the window. */
 export const WEBHOOK_TS_WINDOW_MS = 10 * 60_000;
 
+/** C1.1 (Phase 2.2): internal abort signal — a member order of a PaymentGroup
+ *  left `payment_pending` before the group claim could be fulfilled (expiry
+ *  sweep released its stock). Thrown INSIDE the Serializable success tx so the
+ *  group claim ROLLS BACK; caught by the retry loop (never retried — the
+ *  condition is deterministic) and converted into the durable late-payment
+ *  refund obligation + 409 ORDER_EXPIRED. Never escapes this module. */
+class OrderStateAbort extends Error {}
+
 export function expectedSignature(providerRef: string, eventType: string, amountMinor: number, ts: number): string {
   return hmacSha256Hex(webhookSecret(), `${providerRef}.${eventType}.${amountMinor}.${ts}`);
 }
@@ -311,6 +319,10 @@ export async function processPaymentWebhook(input: {
     // never financial state — the correct trade for a bounded money tx.
     const postedOrders: { order: (typeof group.orders)[number]; sellerEmail: string | null }[] = [];
     let outcome: { claimed: boolean } | undefined;
+    // C1.1 (Phase 2.2): set when the Serializable tx ABORTED because a member
+    // order had already left `payment_pending` (expiry sweep released it) — the
+    // group claim rolled back, the late-payment obligation path takes over.
+    let ordersChanged = false;
     for (let attempt = 1; ; attempt++) {
       try {
         outcome = await db.$transaction(
@@ -326,6 +338,23 @@ export async function processPaymentWebhook(input: {
           data: { status: "succeeded", paidAt },
         });
         if (claim.count === 0) return { claimed: false as const };
+
+        // C1.1 (Phase 2.2) — per-order state verification INSIDE the claim tx:
+        // re-read every member order and require `payment_pending`. A late
+        // webhook must NEVER resurrect an order the expiry sweep already
+        // cancelled/restocked (double-sell). Mismatch ⇒ THROW so the group
+        // claim ROLLS BACK (a released order must not sit in a "succeeded"
+        // group) and the caller records the durable refund obligation.
+        // (Mirrors the legacy single-intent guard below; the group path
+        // previously lacked it.)
+        for (const order of group.orders) {
+          const fresh = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } });
+          if (!fresh || fresh.status !== "payment_pending") {
+            throw new OrderStateAbort(
+              `Order ${order.orderNumber} is "${fresh?.status ?? "missing"}" — released before payment confirmed`
+            );
+          }
+        }
 
         for (const order of group.orders) {
           await transitionOrder({
@@ -373,14 +402,27 @@ export async function processPaymentWebhook(input: {
         // Server-side cart clearing — only the PURCHASED variants leave the cart,
         // and only on verified payment success (never on failure/pending). Lines
         // the buyer unchecked (kept for later) survive: selection-aware carts.
-        // PaymentGroups are account-scoped (shopperId always set). Inside the tx:
-        // a rollback never strands paid items out of the cart inconsistently.
+        // Guest checkouts (Phase 2.2): PaymentGroup.shopperId is nullable —
+        // clear by the orders' cartToken instead (the legacy single-intent
+        // path's precedent). Inside the tx: a rollback never strands paid
+        // items out of the cart inconsistently.
         const purchasedVariantIds = [
           ...new Set(group.orders.flatMap((o) => o.items.map((it) => it.variantId)).filter((v): v is string => Boolean(v))),
         ];
-        await tx.cartItem.deleteMany({
-          where: { cart: { shopperId: group.shopperId }, variantId: { in: purchasedVariantIds } },
-        });
+        if (group.shopperId) {
+          await tx.cartItem.deleteMany({
+            where: { cart: { shopperId: group.shopperId }, variantId: { in: purchasedVariantIds } },
+          });
+        } else {
+          const guestCartTokens = [
+            ...new Set(group.orders.map((o) => o.cartToken).filter((t): t is string => Boolean(t))),
+          ];
+          if (guestCartTokens.length > 0) {
+            await tx.cartItem.deleteMany({
+              where: { cart: { token: { in: guestCartTokens } }, variantId: { in: purchasedVariantIds } },
+            });
+          }
+        }
 
         return { claimed: true as const };
       },
@@ -391,6 +433,9 @@ export async function processPaymentWebhook(input: {
         );
         break;
       } catch (e) {
+        // C1.1: order-state abort is deterministic (not transient) — never
+        // retried; the group claim has already rolled back.
+        if (e instanceof OrderStateAbort) { ordersChanged = true; break; }
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" && attempt < 3) {
           await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
           continue;
@@ -403,6 +448,24 @@ export async function processPaymentWebhook(input: {
         }
         throw e;
       }
+    }
+
+    // C1.1 — a member order was already released by the expiry sweep: the
+    // payment is late for goods whose stock was returned. Same policy as
+    // GROUP_EXPIRED: record the durable refund obligation (the PSP has the
+    // buyer's funds — they must be returned), mark the delivery processed,
+    // and refuse. Never resurrect, never fulfill.
+    if (ordersChanged) {
+      await recordLatePaymentObligation({
+        provider: input.provider,
+        providerRef,
+        providerPaymentId: input.body.paymentId ?? null,
+        amountMinor,
+        groupTotalMinor: group.totalMinor,
+        currency: group.currency,
+      });
+      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+      throw new ApiError(409, "ORDER_EXPIRED", `Order(s) for payment ${providerRef} were already expired or cancelled before payment completed — no money was moved; the buyer will be refunded via reconciliation`);
     }
 
     if (!outcome?.claimed) {

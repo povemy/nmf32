@@ -1,0 +1,402 @@
+/home/z/my-project/src/app/api/checkout/quote/route.ts:58:      ? await db.seller.findUnique({ where: { id: store.sellerId }, select: { id: true } })
+/home/z/my-project/src/app/api/checkout/quote/route.ts-59-      : null;
+/home/z/my-project/src/app/api/checkout/quote/route.ts-60-    let commissionPreviewMinor = 0;
+/home/z/my-project/src/app/api/checkout/quote/route.ts-61-    if (seller) {
+/home/z/my-project/src/app/api/checkout/quote/route.ts-62-      const comm = await computeOrderCommissions({
+/home/z/my-project/src/app/api/checkout/quote/route.ts-63-        sellerId: seller.id,
+/home/z/my-project/src/app/api/checkout/quote/route.ts-64-        items: pricing.lines.map((l) => ({
+/home/z/my-project/src/app/api/checkout/quote/route.ts-65-          productId: l.productId,
+/home/z/my-project/src/app/api/checkout/quote/route.ts-66-          categoryId: l.categoryId,
+/home/z/my-project/src/app/api/checkout/quote/route.ts-67-          title: l.title,
+/home/z/my-project/src/app/api/checkout/quote/route.ts-68-          variantLabel: l.variantLabel,
+--
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts:44:  const sellerClash = await db.seller.findUnique({ where: { email } });
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-45-  const adminClash = sellerClash ? null : await db.adminUser.findUnique({ where: { email } });
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-46-  if (sellerClash || adminClash) return fail(409, "EMAIL_TAKEN", "This email is already registered on NOMOFEE");
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-47-
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-48-  const shopper = await db.shopperUser.create({
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-49-    data: { email, passwordHash: hashPassword(password), fullName, phone, lastLoginAt: new Date() },
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-50-  });
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-51-
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-52-  const token = await createSession("shopper", shopper.id);
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-53-
+/home/z/my-project/src/app/api/auth/shopper/register/route.ts-54-  // PHASE 2.2 GUEST CHECKOUT RESTORATION — registration signs the buyer in, so
+--
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts:66:      const row = await db.seller.findUnique({ where: { email: acc.email } });
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-67-      if (row && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-68-        verified.push({ ...acc, status: row.status });
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-69-      }
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-70-    } else {
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-71-      const row = await db.shopperUser.findUnique({ where: { email: acc.email } });
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-72-      if (row && row.status === "active" && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-73-        const affiliate = acc.type === "affiliate"
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-74-          ? await db.affiliateProfile.findUnique({ where: { userId: row.id }, select: { status: true } })
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-75-          : null;
+/home/z/my-project/src/app/api/auth/dev-accounts/route.ts-76-        if (acc.type !== "affiliate" || affiliate != null) {
+--
+/home/z/my-project/src/app/api/auth/register/route.ts:33:  const exists = await db.seller.findUnique({ where: { email } });
+/home/z/my-project/src/app/api/auth/register/route.ts-34-  if (exists) return fail(409, "EMAIL_TAKEN", "An account with this email already exists");
+/home/z/my-project/src/app/api/auth/register/route.ts-35-
+/home/z/my-project/src/app/api/auth/register/route.ts-36-  // unique slug
+/home/z/my-project/src/app/api/auth/register/route.ts-37-  let slug = slugify(body.storeSlug || storeName) || `store-${Date.now().toString(36)}`;
+/home/z/my-project/src/app/api/auth/register/route.ts-38-  let attempt = 0;
+/home/z/my-project/src/app/api/auth/register/route.ts-39-  while (await db.store.findUnique({ where: { slug } })) {
+/home/z/my-project/src/app/api/auth/register/route.ts-40-    attempt += 1;
+/home/z/my-project/src/app/api/auth/register/route.ts-41-    slug = `${slugify(body.storeSlug || storeName) || "store"}-${attempt}`;
+/home/z/my-project/src/app/api/auth/register/route.ts-42-    if (attempt > 50) {
+/home/z/my-project/src/app/api/auth/register/route.ts-43-      slug = `store-${Date.now().toString(36)}`;
+--
+/home/z/my-project/src/app/api/auth/register/route.ts:49:    const seller = await tx.seller.create({
+/home/z/my-project/src/app/api/auth/register/route.ts-50-      data: {
+/home/z/my-project/src/app/api/auth/register/route.ts-51-        email,
+/home/z/my-project/src/app/api/auth/register/route.ts-52-        passwordHash: hashPassword(password),
+/home/z/my-project/src/app/api/auth/register/route.ts-53-        fullName,
+/home/z/my-project/src/app/api/auth/register/route.ts-54-        displayName,
+/home/z/my-project/src/app/api/auth/register/route.ts-55-        countryCode: body.countryCode ?? "MY",
+/home/z/my-project/src/app/api/auth/register/route.ts-56-        phone: body.phone ?? null,
+/home/z/my-project/src/app/api/auth/register/route.ts-57-        status: "onboarding",
+/home/z/my-project/src/app/api/auth/register/route.ts-58-      },
+/home/z/my-project/src/app/api/auth/register/route.ts-59-    });
+--
+/home/z/my-project/src/app/api/store/publish/route.ts:14:    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+/home/z/my-project/src/app/api/store/publish/route.ts-15-    if (!seller?.store) return fail(404, "NO_STORE", "No store found for this seller.");
+/home/z/my-project/src/app/api/store/publish/route.ts-16-    // F-02 remediation: a suspended/terminated seller must not be able to
+/home/z/my-project/src/app/api/store/publish/route.ts-17-    // self-un-suspend their storefront by re-publishing the draft store that
+/home/z/my-project/src/app/api/store/publish/route.ts-18-    // suspension set. (The publish path is the import-claim flow's go-live
+/home/z/my-project/src/app/api/store/publish/route.ts-19-    // gate — onboarding-tier statuses keep their documented access.)
+/home/z/my-project/src/app/api/store/publish/route.ts-20-    if (seller.status === "suspended") {
+/home/z/my-project/src/app/api/store/publish/route.ts-21-      return fail(403, "ACCOUNT_SUSPENDED", "This seller account is suspended — the store cannot be published.");
+/home/z/my-project/src/app/api/store/publish/route.ts-22-    }
+/home/z/my-project/src/app/api/store/publish/route.ts-23-    if (seller.status === "terminated") {
+/home/z/my-project/src/app/api/store/publish/route.ts-24-      return fail(403, "ACCOUNT_TERMINATED", "This seller account is terminated — the store cannot be published.");
+--
+/home/z/my-project/src/app/api/auth/login/route.ts:49:  const seller = await db.seller.findUnique({ where: { email } });
+/home/z/my-project/src/app/api/auth/login/route.ts-50-  const sellerPwOk = await verifyPasswordAsync(password, seller?.passwordHash ?? DUMMY_PASSWORD_HASH);
+/home/z/my-project/src/app/api/auth/login/route.ts-51-  if (!seller || !sellerPwOk) {
+/home/z/my-project/src/app/api/auth/login/route.ts-52-    return fail(401, "INVALID_CREDENTIALS", "Invalid seller credentials");
+/home/z/my-project/src/app/api/auth/login/route.ts-53-  }
+/home/z/my-project/src/app/api/auth/login/route.ts-54-  // F-02/F-24 remediation: ineligible statuses are blocked at the login gate
+/home/z/my-project/src/app/api/auth/login/route.ts-55-  // (documented policy: suspended/terminated ⇒ 403; a suspended seller must
+/home/z/my-project/src/app/api/auth/login/route.ts-56-  // not be able to mint a fresh session and resume API access). Rejected
+/home/z/my-project/src/app/api/auth/login/route.ts-57-  // sellers CAN sign in — the documented revision loop (fix issues →
+/home/z/my-project/src/app/api/auth/login/route.ts-58-  // resubmit via /api/store/onboarding) requires it; store-operation routes
+/home/z/my-project/src/app/api/auth/login/route.ts-59-  // still gate them through requireActiveSellerStore where appropriate.
+--
+/home/z/my-project/src/app/api/auth/unified-login/route.ts:59:    db.seller.findUnique({ where: { email } }),
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-60-    db.shopperUser.findUnique({ where: { email } }),
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-61-  ]);
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-62-
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-63-  // Phase 1 (SEC-01/SEC-04): password verification per candidate — ALWAYS
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-64-  // exactly three asynchronous scrypt verifications (DUMMY hash when the
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-65-  // table has no row), run sequentially to keep the libuv thread pool
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-66-  // unsaturated. Inactive/invalid accounts fail exactly like a wrong
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-67-  // password (uniform 401, no existence or timing leak).
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-68-  const adminPwOk = await verifyPasswordAsync(password, admin?.passwordHash ?? DUMMY_PASSWORD_HASH);
+/home/z/my-project/src/app/api/auth/unified-login/route.ts-69-  const sellerPwOk = await verifyPasswordAsync(password, seller?.passwordHash ?? DUMMY_PASSWORD_HASH);
+--
+/home/z/my-project/src/app/api/import/jobs/route.ts:68:      const sellerStore = await db.seller.findUnique({
+/home/z/my-project/src/app/api/import/jobs/route.ts-69-        where: { id: sellerId },
+/home/z/my-project/src/app/api/import/jobs/route.ts-70-        select: { store: { select: { id: true } } },
+/home/z/my-project/src/app/api/import/jobs/route.ts-71-      });
+/home/z/my-project/src/app/api/import/jobs/route.ts-72-      const storeId = sellerStore?.store?.id ?? null;
+/home/z/my-project/src/app/api/import/jobs/route.ts-73-      // The scoped lookup references the new sellerId column. Until migration
+/home/z/my-project/src/app/api/import/jobs/route.ts-74-      // 20261105000000 is applied (and the dev server picks up the regenerated
+/home/z/my-project/src/app/api/import/jobs/route.ts-75-      // client) that reference can throw — degrade to "no pinned connection"
+/home/z/my-project/src/app/api/import/jobs/route.ts-76-      // and let the runner fail closed (409 NO_CONNECTION) instead of 500-ing
+/home/z/my-project/src/app/api/import/jobs/route.ts-77-      // job creation. Ownership isolation holds either way: the runner never
+/home/z/my-project/src/app/api/import/jobs/route.ts-78-      // falls back to another seller's connection.
+--
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts:22:    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-23-    const updated = await db.marketplaceConnection.updateMany({
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-24-      where: { platform, storeId: seller?.store?.id ?? "__none__" },
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-25-      data: { status: "disconnected" },
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-26-    });
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-27-    await logActivity({
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-28-      actorType: "seller",
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-29-      actorId: session.userId,
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-30-      action: "connection.disconnected",
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-31-      entityType: "marketplace_connection",
+/home/z/my-project/src/app/api/store/connections/disconnect/route.ts-32-      entityId: platform,
+--
+/home/z/my-project/src/app/api/store/connections/route.ts:19:    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+/home/z/my-project/src/app/api/store/connections/route.ts-20-    const connections = await db.marketplaceConnection.findMany({
+/home/z/my-project/src/app/api/store/connections/route.ts-21-      where: { storeId: seller?.store?.id ?? "__none__" },
+/home/z/my-project/src/app/api/store/connections/route.ts-22-      orderBy: { createdAt: "desc" },
+/home/z/my-project/src/app/api/store/connections/route.ts-23-      select: {
+/home/z/my-project/src/app/api/store/connections/route.ts-24-        id: true,
+/home/z/my-project/src/app/api/store/connections/route.ts-25-        platform: true,
+/home/z/my-project/src/app/api/store/connections/route.ts-26-        status: true,
+/home/z/my-project/src/app/api/store/connections/route.ts-27-        envConfigured: true,
+/home/z/my-project/src/app/api/store/connections/route.ts-28-        shopId: true,
+/home/z/my-project/src/app/api/store/connections/route.ts-29-        shopName: true,
+--
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts:69:    const seller = await db.seller.findUnique({ where: { id: session.userId }, select: { status: true } });
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-70-    if (!seller || seller.status === "suspended" || seller.status === "terminated") {
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-71-      return fail(403, "FORBIDDEN", "Seller account is not eligible for chat");
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-72-    }
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-73-  } else if (session.userType === "shopper") {
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-74-    const shopper = await db.shopperUser.findUnique({ where: { id: session.userId }, select: { status: true } });
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-75-    if (!shopper || shopper.status !== "active") {
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-76-      return fail(403, "FORBIDDEN", "Shopper account is not eligible for chat");
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-77-    }
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-78-  } else {
+/home/z/my-project/src/app/api/chat/hub-auth/route.ts-79-    // Admins have no chat surface (shopper↔seller conversations only).
+--
+/home/z/my-project/src/app/api/store/imports/route.ts:17:    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+/home/z/my-project/src/app/api/store/imports/route.ts-18-    const jobs = await db.importJob.findMany({
+/home/z/my-project/src/app/api/store/imports/route.ts-19-      where: { OR: [{ storeId: seller?.store?.id ?? "__none__" }, { claimedById: session.userId }] },
+/home/z/my-project/src/app/api/store/imports/route.ts-20-      orderBy: { createdAt: "desc" },
+/home/z/my-project/src/app/api/store/imports/route.ts-21-      take: 30,
+/home/z/my-project/src/app/api/store/imports/route.ts-22-      include: { _count: { select: { items: true } } },
+/home/z/my-project/src/app/api/store/imports/route.ts-23-    });
+/home/z/my-project/src/app/api/store/imports/route.ts-24-    const connections = await db.marketplaceConnection.findMany({
+/home/z/my-project/src/app/api/store/imports/route.ts-25-      where: { storeId: seller?.store?.id ?? "__none__" },
+/home/z/my-project/src/app/api/store/imports/route.ts-26-      select: { platform: true, status: true, shopName: true, expiresAt: true, envConfigured: true },
+/home/z/my-project/src/app/api/store/imports/route.ts-27-    });
+--
+/home/z/my-project/src/app/api/me/password/route.ts:53:    const seller = await db.seller.findUnique({ where: { id: sess.userId } });
+/home/z/my-project/src/app/api/me/password/route.ts-54-    if (!seller) return fail(401, "UNAUTHORIZED", "Seller not found");
+/home/z/my-project/src/app/api/me/password/route.ts-55-    if (seller.status === "terminated") return fail(403, "ACCOUNT_TERMINATED", "This account has been terminated");
+/home/z/my-project/src/app/api/me/password/route.ts-56-    if (!await verifyPasswordAsync(currentPassword, seller.passwordHash)) {
+/home/z/my-project/src/app/api/me/password/route.ts-57-      return fail(400, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
+/home/z/my-project/src/app/api/me/password/route.ts-58-    }
+/home/z/my-project/src/app/api/me/password/route.ts:59:    await db.seller.update({ where: { id: seller.id }, data: { passwordHash } });
+/home/z/my-project/src/app/api/me/password/route.ts-60-    const token = await rotateSession();
+/home/z/my-project/src/app/api/me/password/route.ts-61-    if (!token) return fail(401, "UNAUTHORIZED", "Session expired — sign in again");
+/home/z/my-project/src/app/api/me/password/route.ts-62-    await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.password_changed" });
+/home/z/my-project/src/app/api/me/password/route.ts-63-    return ok({
+/home/z/my-project/src/app/api/me/password/route.ts-64-      userType: "seller",
+/home/z/my-project/src/app/api/me/password/route.ts-65-      seller: {
+/home/z/my-project/src/app/api/me/password/route.ts-66-        id: seller.id, email: seller.email, fullName: seller.fullName,
+/home/z/my-project/src/app/api/me/password/route.ts-67-        displayName: seller.displayName, status: seller.status,
+/home/z/my-project/src/app/api/me/password/route.ts-68-      },
+/home/z/my-project/src/app/api/me/password/route.ts-69-      token,
+--
+/home/z/my-project/src/app/api/store/settings/route.ts:90:    const updatedSeller = await db.seller.update({ where: { id: me.id }, data: sellerData });
+/home/z/my-project/src/app/api/store/settings/route.ts-91-    updatedSellerOptIn = updatedSeller.marketplaceOptIn;
+/home/z/my-project/src/app/api/store/settings/route.ts-92-  }
+/home/z/my-project/src/app/api/store/settings/route.ts-93-  const updated = Object.keys(data).length > 0
+/home/z/my-project/src/app/api/store/settings/route.ts-94-    ? await db.store.update({ where: { id: store.id }, data })
+/home/z/my-project/src/app/api/store/settings/route.ts-95-    : store;
+/home/z/my-project/src/app/api/store/settings/route.ts-96-
+/home/z/my-project/src/app/api/store/settings/route.ts-97-  await logActivity({
+/home/z/my-project/src/app/api/store/settings/route.ts-98-    actorType: "seller",
+/home/z/my-project/src/app/api/store/settings/route.ts-99-    actorId: me.id,
+/home/z/my-project/src/app/api/store/settings/route.ts-100-    actorLabel: me.email,
+--
+/home/z/my-project/src/app/api/store/me/route.ts:13:    db.seller.findUnique({ where: { id: me.id } }),
+/home/z/my-project/src/app/api/store/me/route.ts-14-    db.product.count({ where: { storeId: store.id, status: { not: "archived" } } }),
+/home/z/my-project/src/app/api/store/me/route.ts-15-    db.bankAccount.findFirst({ where: { sellerId: me.id, verified: true } }),
+/home/z/my-project/src/app/api/store/me/route.ts-16-    db.order.findMany({
+/home/z/my-project/src/app/api/store/me/route.ts-17-      where: { storeId: store.id, paidAt: { not: null } },
+/home/z/my-project/src/app/api/store/me/route.ts-18-      select: { totalMinor: true, paidAt: true },
+/home/z/my-project/src/app/api/store/me/route.ts-19-    }),
+/home/z/my-project/src/app/api/store/me/route.ts-20-  ]);
+/home/z/my-project/src/app/api/store/me/route.ts-21-
+/home/z/my-project/src/app/api/store/me/route.ts-22-  const checklist = {
+/home/z/my-project/src/app/api/store/me/route.ts-23-    profile: !!(sellerRow?.fullName && sellerRow?.phone),
+--
+/home/z/my-project/src/app/api/store/onboarding/route.ts:14:  const seller = await db.seller.findUnique({ where: { id: me.id } });
+/home/z/my-project/src/app/api/store/onboarding/route.ts-15-  if (!seller) throw new ApiError(401, "UNAUTHORIZED", "Seller not found");
+/home/z/my-project/src/app/api/store/onboarding/route.ts-16-  if (!["onboarding", "rejected"].includes(seller.status)) {
+/home/z/my-project/src/app/api/store/onboarding/route.ts-17-    throw new ApiError(409, "INVALID_STATUS", `Cannot submit from status '${seller.status}'`);
+/home/z/my-project/src/app/api/store/onboarding/route.ts-18-  }
+/home/z/my-project/src/app/api/store/onboarding/route.ts-19-
+/home/z/my-project/src/app/api/store/onboarding/route.ts:20:  const updated = await db.seller.update({
+/home/z/my-project/src/app/api/store/onboarding/route.ts-21-    where: { id: seller.id },
+/home/z/my-project/src/app/api/store/onboarding/route.ts-22-    data: { status: "pending_review", submittedAt: new Date(), rejectReason: null },
+/home/z/my-project/src/app/api/store/onboarding/route.ts-23-  });
+/home/z/my-project/src/app/api/store/onboarding/route.ts-24-
+/home/z/my-project/src/app/api/store/onboarding/route.ts-25-  await notify({
+/home/z/my-project/src/app/api/store/onboarding/route.ts-26-    event: "kyc.submitted",
+/home/z/my-project/src/app/api/store/onboarding/route.ts-27-    channel: "email",
+/home/z/my-project/src/app/api/store/onboarding/route.ts-28-    recipient: "admin@nomofee.io",
+/home/z/my-project/src/app/api/store/onboarding/route.ts-29-    subject: `KYC review requested: ${seller.displayName}`,
+/home/z/my-project/src/app/api/store/onboarding/route.ts-30-  });
+--
+/home/z/my-project/src/app/api/store/seo/route.ts:14:  return db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+/home/z/my-project/src/app/api/store/seo/route.ts-15-}
+/home/z/my-project/src/app/api/store/seo/route.ts-16-
+/home/z/my-project/src/app/api/store/seo/route.ts-17-export const GET = handle(async function (_req: NextRequest) {
+/home/z/my-project/src/app/api/store/seo/route.ts-18-    const seller = await sellerStore();
+/home/z/my-project/src/app/api/store/seo/route.ts-19-    if (!seller?.store) return fail(401, "UNAUTHENTICATED", "Seller session required.");
+/home/z/my-project/src/app/api/store/seo/route.ts-20-    const storeSeo = await db.seoMeta.findUnique({ where: { entityType_entityId: { entityType: "store", entityId: seller.store.id } } });
+/home/z/my-project/src/app/api/store/seo/route.ts-21-    const products = await db.product.findMany({
+/home/z/my-project/src/app/api/store/seo/route.ts-22-      where: { storeId: seller.store.id },
+/home/z/my-project/src/app/api/store/seo/route.ts-23-      select: { id: true, title: true, slug: true, status: true, seoTitle: true, seoDescription: true, images: { orderBy: { sortOrder: "asc" }, take: 1 } },
+/home/z/my-project/src/app/api/store/seo/route.ts-24-      orderBy: { updatedAt: "desc" },
+--
+/home/z/my-project/src/app/api/webhooks/payments/process.ts:843:  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-844-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller for payout not found");
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-845-
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-846-  const at = new Date();
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-847-  // T4f reason: use the provider-supplied reason when present.
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-848-  const reason = args.reason ?? "provider reported failure";
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-849-  const subject = toStatus === "paid" ? `Payout ${payout.referenceNo} on the way` : `Payout ${payout.referenceNo} failed`;
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-850-
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-851-  // Phase 1 (E2): the SAME hardening the payment paths already carry —
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-852-  //   • withSerializableTxRetry: bounded P2034 retry of the WHOLE tx with
+/home/z/my-project/src/app/api/webhooks/payments/process.ts-853-  //     jittered exponential backoff, and 503 PAYMENT_TX_RETRY_EXHAUSTED on
+--
+/home/z/my-project/src/app/api/admin/export/route.ts:53:    const sellers = await db.seller.findMany({
+/home/z/my-project/src/app/api/admin/export/route.ts-54-      include: { store: { select: { name: true, slug: true } }, wallet: true },
+/home/z/my-project/src/app/api/admin/export/route.ts-55-      orderBy: { createdAt: "desc" },
+/home/z/my-project/src/app/api/admin/export/route.ts-56-      take: MAX_ROWS,
+/home/z/my-project/src/app/api/admin/export/route.ts-57-    });
+/home/z/my-project/src/app/api/admin/export/route.ts-58-    csv = [
+/home/z/my-project/src/app/api/admin/export/route.ts-59-      csvRow(["email", "display_name", "legal_name", "status", "kyc_status", "risk_tier", "store_name", "wallet_available_minor", "created_at"]),
+/home/z/my-project/src/app/api/admin/export/route.ts-60-      ...sellers.map((s) =>
+/home/z/my-project/src/app/api/admin/export/route.ts-61-        csvRow([
+/home/z/my-project/src/app/api/admin/export/route.ts-62-          s.email,
+/home/z/my-project/src/app/api/admin/export/route.ts-63-          s.displayName,
+--
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts:21:    ? await db.seller.findMany({
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-22-        where: { id: { in: sellerIds } },
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-23-        select: { id: true, email: true, displayName: true, store: { select: { name: true } } },
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-24-      })
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-25-    : [];
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-26-  const sMap = new Map(sellers.map((s) => [s.id, s]));
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-27-
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-28-  const data = batches.map((b) => ({
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-29-    ...b,
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-30-    payouts: b.payouts.map((p) => {
+/home/z/my-project/src/app/api/admin/payout-batches/route.ts-31-      const s = sMap.get(p.sellerId);
+--
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts:32:      ? await db.seller.findMany({
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-33-          where: { id: { in: sellerIds } },
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-34-          select: { id: true, displayName: true, email: true, store: { select: { name: true } } },
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-35-        })
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-36-      : [];
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-37-    const sMap = new Map(sellers.map((s) => [s.id, s]));
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-38-    const sellerNameOf = (sellerId: string) => {
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-39-      const s = sMap.get(sellerId);
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-40-      return s?.store?.name ?? s?.displayName ?? "Unknown";
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-41-    };
+/home/z/my-project/src/app/api/admin/reports/[type]/route.ts-42-
+--
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts:25:    ? await db.seller.findMany({
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-26-        where: { id: { in: sellerIds } },
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-27-        select: { id: true, email: true, displayName: true, store: { select: { id: true, name: true, slug: true } } },
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-28-      })
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-29-    : [];
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-30-  const sMap = new Map(sellers.map((s) => [s.id, s]));
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-31-
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-32-  const shaped = rows.map((p) => {
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-33-    const s = sMap.get(p.sellerId);
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-34-    return {
+/home/z/my-project/src/app/api/admin/payouts/requests/route.ts-35-      ...p,
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts:33:  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-34-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-35-
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-36-  // Keep ledger truth fresh so the wallet page immediately shows the released balance.
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-37-  await refreshWalletCache(payout.walletId);
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-38-
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-39-  await db.$transaction(async (tx) => {
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-40-    // CLAIM — atomic guard (no money moves here, but the transition itself must
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-41-    // stay exactly-once even under concurrent approve/reject).
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-42-    const claim = await tx.payout.updateMany({
+/home/z/my-project/src/app/api/admin/payouts/[id]/reject/route.ts-43-      where: { id, status: "requested" },
+--
+/home/z/my-project/src/app/api/admin/dashboard/route.ts:67:    db.seller.findMany({
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-68-      orderBy: { createdAt: "desc" },
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-69-      take: 5,
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-70-      select: { id: true, displayName: true, status: true, createdAt: true, store: { select: { name: true } } },
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-71-    }),
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-72-  ]);
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-73-
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-74-  // payouts due: ledger-derived available ≥ payout.min_minor (RM 10 default) —
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-75-  // identical eligibility + math to GET /api/admin/payouts/due and the batch run
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-76-  const payoutMinMinor = parseMaybeJson<number>(payoutMinSetting?.valueJson, 1000);
+/home/z/my-project/src/app/api/admin/dashboard/route.ts-77-  const availByWallet = new Map<string, number>();
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts:72:    const seller = await db.seller.findUnique({
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-73-      where: { id: payout.sellerId },
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-74-      include: { store: { select: { id: true, name: true } } },
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-75-    });
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-76-    if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-77-
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-78-    // Same period logic as approve: since the seller's previous PAID payout
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-79-    // (fallback: wallet creation → 30d). For an already-paid payout we must
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-80-    // exclude ITSELF from the prevPaid lookup or the period would start at its
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-81-    // own paidAt and aggregate nothing.
+/home/z/my-project/src/app/api/admin/payouts/[id]/sync/route.ts-82-    const prevPaid = await db.payout.findFirst({
+--
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts:23:    sellerIds.length ? db.seller.findMany({ where: { id: { in: sellerIds } }, select: { id: true, displayName: true, email: true } }) : [] as { id: string; displayName: string; email: string }[],
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-24-    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true } }) : [] as { id: string; title: string }[],
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-25-  ]);
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-26-  const cMap = new Map(categories.map((c) => [c.id, c.name] as const));
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-27-  const sMap = new Map(sellers.map((s) => [s.id, s] as const));
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-28-  const pMap = new Map(products.map((p) => [p.id, p.title] as const));
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-29-  const data = rows.map((r) => ({
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-30-    ...r,
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-31-    categoryName: r.categoryId ? cMap.get(r.categoryId) ?? null : null,
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-32-    sellerName: r.sellerId ? sMap.get(r.sellerId)?.displayName ?? null : null,
+/home/z/my-project/src/app/api/admin/commission/overrides/route.ts-33-    sellerEmail: r.sellerId ? sMap.get(r.sellerId)?.email ?? null : null,
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts:39:  const seller = await db.seller.findUnique({
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-40-    where: { id: payout.sellerId },
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-41-    include: { store: { select: { id: true, name: true } } },
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-42-  });
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-43-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-44-
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-45-  // Statement period: since the seller's previous PAID payout (fallback:
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-46-  // wallet creation). Ledger-derived numbers only — INTEGRITY RULE.
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-47-  // Built OUTSIDE the tx on purpose: buildLedgerStatementFromLedger reads
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-48-  // period aggregates via the plain db client (no tx param) and the statement
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-49-  // is a derived snapshot — it does not need to be transactional with the claim.
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts:98:    const sellerNow = await tx.seller.findUnique({ where: { id: payout.sellerId }, select: { id: true } });
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-99-    if (!sellerNow) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-100-    const truth = await walletTruth(payout.walletId, tx);
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-101-    if (truth.availableMinor < payout.amountMinor) {
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-102-      // Defensive revert of the claim inside the same tx before failing. The
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-103-      // throw below aborts the transaction, which rolls the claim back anyway —
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-104-      // this explicit revert documents intent and keeps the invariant intact
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-105-      // even if the claim is ever moved outside the tx.
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-106-      await tx.payout.updateMany({
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-107-        where: { id, status: "processing" },
+/home/z/my-project/src/app/api/admin/payouts/[id]/approve/route.ts-108-        data: { status: "requested" },
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts:33:  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-34-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-35-
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-36-  const txn = await db.$transaction(async (tx) => {
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-37-    // CLAIM — atomic race guard before any ledger movement.
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-38-    const claim = await tx.payout.updateMany({
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-39-      where: { id, status: "processing" },
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-40-      data: { status: "failed" },
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-41-    });
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-42-    if (claim.count === 0) {
+/home/z/my-project/src/app/api/admin/payouts/[id]/fail/route.ts-43-      throw new ApiError(409, "CONFLICT", "Payout is not in processing state (or already claimed)");
+--
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts:33:  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-34-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-35-
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-36-  const txn = await db.$transaction(async (tx) => {
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-37-    // CLAIM — atomic race guard before any ledger movement.
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-38-    const claim = await tx.payout.updateMany({
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-39-      where: { id, status: "processing" },
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-40-      data: { status: "paid" },
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-41-    });
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-42-    if (claim.count === 0) {
+/home/z/my-project/src/app/api/admin/payouts/[id]/mark-paid/route.ts-43-      throw new ApiError(409, "CONFLICT", "Payout is not in processing state (or already claimed)");
+--
+/home/z/my-project/src/app/api/admin/payouts/route.ts:37:    ? await db.seller.findMany({
+/home/z/my-project/src/app/api/admin/payouts/route.ts-38-        where: { id: { in: sellerIds } },
+/home/z/my-project/src/app/api/admin/payouts/route.ts-39-        select: { id: true, email: true, displayName: true, fullName: true, store: { select: { id: true, name: true, slug: true } } },
+/home/z/my-project/src/app/api/admin/payouts/route.ts-40-      })
+/home/z/my-project/src/app/api/admin/payouts/route.ts-41-    : [];
+/home/z/my-project/src/app/api/admin/payouts/route.ts-42-  const sMap = new Map(sellers.map((s) => [s.id, s]));
+/home/z/my-project/src/app/api/admin/payouts/route.ts-43-
+/home/z/my-project/src/app/api/admin/payouts/route.ts-44-  const data = rows.map((p) => {
+/home/z/my-project/src/app/api/admin/payouts/route.ts-45-    const s = sMap.get(p.sellerId);
+/home/z/my-project/src/app/api/admin/payouts/route.ts-46-    return { ...p, seller: s ?? null, storeName: s?.store?.name ?? null };
+/home/z/my-project/src/app/api/admin/payouts/route.ts-47-  });
+--
+/home/z/my-project/src/app/api/admin/sellers/[id]/reject/route.ts:17:  const seller = await db.seller.findUnique({ where: { id }, include: { store: true } });
+/home/z/my-project/src/app/api/admin/sellers/[id]/reject/route.ts-18-  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+/home/z/my-project/src/app/api/admin/sellers/[id]/reject/route.ts-19-  if (seller.status === "active") throw new ApiError(409, "CONFLICT", "Active seller cannot be rejected — suspend or terminate instead");
+/home/z/my-project/src/app/api/admin/sellers/[id]/reject/route.ts-20-
+
+[Showing results with pagination = limit: 400]

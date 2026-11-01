@@ -520,18 +520,33 @@ export async function postRefund(input: {
   commissionReversalMinor: number;
   /** Affiliate pool reversal for this refund (0 ⇒ no affiliate line). */
   affiliateReversalMinor?: number;
+  /** C1.2 (Phase 2.2): the portion of the affiliate reversal whose liability
+   *  already moved into PAYOUT_CLEARING (an APPROVED in-flight affiliate
+   *  payout claimed the entries; T-A3 posted). That portion debits
+   *  PAYOUT_CLEARING instead of AFFILIATE_LIABILITY so neither account goes
+   *  negative and the clearing account nets to zero across T-A3 / this line /
+   *  T-A4(-f) at the adjusted payout amount. Must be ≤ affiliateReversalMinor. */
+  affiliateClearingMinor?: number;
   /** The Refund row driving this posting — required for its dedup key. */
   refundId: string;
   tx?: Prisma.TransactionClient;
 }) {
   const affiliateReversal = Math.max(0, input.affiliateReversalMinor ?? 0);
+  const affiliateClearing = Math.min(Math.max(0, input.affiliateClearingMinor ?? 0), affiliateReversal);
+  const affiliateLiability = affiliateReversal - affiliateClearing;
   const sellerShare = input.amountMinor - input.commissionReversalMinor - affiliateReversal;
   const lines: LedgerLineInput[] = [
     { accountCode: ACCOUNTS.sellerPayable(input.walletId), direction: "debit", amountMinor: sellerShare, walletId: input.walletId, memo: `Refund seller share ${input.orderNumber}` },
     { accountCode: ACCOUNTS.revenueCommission(), direction: "debit", amountMinor: input.commissionReversalMinor, walletId: input.walletId, memo: `Commission reversal ${input.orderNumber}` },
   ];
-  if (affiliateReversal > 0) {
-    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: affiliateReversal, memo: `Affiliate reversal ${input.orderNumber}` });
+  if (affiliateLiability > 0) {
+    lines.push({ accountCode: ACCOUNTS.affiliateLiability(), direction: "debit", amountMinor: affiliateLiability, memo: `Affiliate reversal ${input.orderNumber}` });
+  }
+  if (affiliateClearing > 0) {
+    // C1.2: liability for these entries was already parked in payout clearing
+    // by T-A3 — reversing it out of AFFILIATE_LIABILITY would drive that
+    // account negative; take it from the clearing account instead.
+    lines.push({ accountCode: ACCOUNTS.payoutClearing(), direction: "debit", amountMinor: affiliateClearing, memo: `Affiliate reversal (in-flight payout) ${input.orderNumber}` });
   }
   lines.push({ accountCode: ACCOUNTS.gateway(input.provider), direction: "credit", amountMinor: input.amountMinor, memo: `Refund ${input.orderNumber}` });
   const t = await postTransaction({

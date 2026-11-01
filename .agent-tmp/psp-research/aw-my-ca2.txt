@@ -1,0 +1,985 @@
+[]
+
+Limited time offer - 1% uncapped cashback on international spend with Airwallex Visa cards.
+
+Claim offer
+
+×
+
+[]
+
+Products
+
+[Business Accounts]
+
+Business Accounts
+
+[]
+
+Borderless Cash[]
+
+Multi-currency accounts to receive funds
+
+FX & Transfers[]
+
+High-speed international transfers
+
+------------------------------------------------------------------------
+
+[Spend]
+
+Spend
+
+[]
+
+Corporate Cards[]
+
+Multi-currency company & employee cards
+
+Expense Management[]
+
+Expenses & reimbursement management
+
+Bill Pay[]
+
+Automated accounts payable management
+
+Purchase Orders[]
+
+Control the purchasing process
+
+------------------------------------------------------------------------
+
+[Payments]
+
+Payments
+
+[]
+
+Checkout[]
+
+Conversion-optimised prebuilt payment form
+
+Payment Plugins[]
+
+Integrations with eCommerce platforms
+
+Payment Links[]
+
+No-code payment acceptance
+
+POS Payments (Coming Soon)[]
+
+In-person payment acceptance
+
+------------------------------------------------------------------------
+
+[Billing]
+
+Billing
+
+[]
+
+Invoicing[]
+
+Create and send invoices globally
+
+Subscription Management[]
+
+Automate recurring revenue
+
+Usage-Based Billing[]
+
+Bill customers by actual usage
+
+------------------------------------------------------------------------
+
+[Platform APIs and Embedded Finance]
+
+Platform APIs and Embedded Finance
+
+[]
+
+Connected Accounts[]
+
+Programmatic account creation & onboarding
+
+Accounts[]
+
+Multi-currency account management, at scale
+
+Payments[]
+
+Global multi-currency payment acceptance
+
+Transactional FX[]
+
+Interbank FX rates & currency management
+
+Payouts[]
+
+Programmatic, cost-effective global payouts
+
+Issuing[]
+
+Global card issuance for a variety of use cases
+
+More
+
+Integrations []Product tour []
+
+FEATURED
+
+[]
+
+Explore Airwallex Business Accounts
+
+All-in-one business accounts to manage your finances globally
+
+Use cases
+
+Banking as a Service []Global Treasury []Payments for Platforms []
+
+Solutions
+
+Industries
+
+eCommerce and retail []
+
+Online and in-store retail
+
+Travel []
+
+Agencies, tour operators, hospitality
+
+Wholesale and trade []
+
+Wholesalers, manufacturing, logistics
+
+Professional services []
+
+People-based businesses
+
+Fintechs and financial services []
+
+Fintechs, lending, banks
+
+Software and technology []
+
+B2B and B2C software
+
+Digital and creator []
+
+Social, streaming, creator economy
+
+SaaS platforms []
+
+Integrated SaaS offerings
+
+Marketplaces []
+
+Goods and services marketplaces
+
+Featured Story
+
+[Featured Story]
+
+McLaren Racing modernises cross-border payments with Airwallex
+
+Learn more []
+
+Pricing
+
+Developers
+
+Docs & API references
+
+Product Documentation []
+
+Review detailed product information to get the most from your integration
+
+API Reference []
+
+Explore the full flexibility and power of our Airwallex API
+
+Quick Links
+
+Connected Accounts []
+
+Programmatic account creation and onboarding
+
+Accounts []
+
+Multi-currency account management, at scale
+
+Payments []
+
+Accept multi-currency payments globally
+
+Billing []
+
+Automate global customer billing
+
+Transactional FX []
+
+Interbank FX rates and transaction services
+
+Payouts []
+
+Make fast and cost-effective payouts
+
+Issuing []
+
+Create multi-currency cards
+
+Banking as a Service []
+
+Offer full-featured financial products
+
+Global Treasury []
+
+Collect, store, and disburse funds globally
+
+Payments for Platforms []
+
+Integrate end-to-end payments
+
+Company
+
+About Airwallex
+
+Who we are []
+
+A snapshot of Airwallex
+
+Operating principles []
+
+What matters to us
+
+Join us
+
+Careers []
+
+Come join us! We’re hiring
+
+Partnership program []
+
+Explore and join our partnership program
+
+Rewards []
+
+Exclusive rewards from our partners
+
+Resources
+
+Blog []
+
+Industry and product insights
+
+Case studies []
+
+Success stories from around the world
+
+Newsroom []
+
+Latest news on Airwallex
+
+FAQ []
+
+Answers to common questions
+
+Support []
+
+Connect with our team
+
+Share feedback []
+
+Service status []
+
+Featured Story
+
+[Featured Story]
+
+How EU Holidays boosted profit margins with Airwallex’s financial technology
+
+Learn more []
+
+[]EN
+
+Log inSee a demo
+
+Select region and language
+
+[]
+
+Australia
+
+English
+
+Canada
+
+English|Français
+
+China
+
+中文
+
+Europe
+
+English
+
+France
+
+Français|English
+
+Germany
+
+Deutsch
+
+Hong Kong SAR
+
+English|繁體中文
+
+Japan
+
+日本語
+
+Malaysia
+
+English
+
+Netherlands
+
+Nederlands|English
+
+New Zealand
+
+English
+
+Singapore
+
+English
+
+South Korea
+
+한국어
+
+Spain
+
+Español
+
+United Kingdom
+
+English
+
+United States
+
+English
+
+Vietnam
+
+Tiếng Việt|English
+
+Global
+
+English
+
+[]
+
+Get started
+
+[]
+
+[]
+
+[]
+
+[]
+
+Products
+
+[]
+
+[Business Accounts]
+
+Business Accounts
+
+Borderless Cash
+
+Multi-currency accounts to receive funds
+
+FX & Transfers
+
+High-speed international transfers
+
+[Spend]
+
+Spend
+
+Corporate Cards
+
+Multi-currency company & employee cards
+
+Expense Management
+
+Expenses & reimbursement management
+
+Bill Pay
+
+Automated accounts payable management
+
+Purchase Orders
+
+Control the purchasing process
+
+[Payments]
+
+Payments
+
+Checkout
+
+Conversion-optimised prebuilt payment form
+
+Payment Plugins
+
+Integrations with eCommerce platforms
+
+Payment Links
+
+No-code payment acceptance
+
+POS Payments (Coming Soon)
+
+In-person payment acceptance
+
+[Billing]
+
+Billing
+
+Invoicing
+
+Create and send invoices globally
+
+Subscription Management
+
+Automate recurring revenue
+
+Usage-Based Billing
+
+Bill customers by actual usage
+
+[Platform APIs and Embedded Finance]
+
+Platform APIs and Embedded Finance
+
+PRODUCTS
+
+Connected Accounts
+
+Programmatic account creation & onboarding
+
+Accounts
+
+Multi-currency account management, at scale
+
+Payments
+
+Global multi-currency payment acceptance
+
+Transactional FX
+
+Interbank FX rates & currency management
+
+Payouts
+
+Programmatic, cost-effective global payouts
+
+Issuing
+
+Global card issuance for a variety of use cases
+
+Use cases
+
+Banking as a Service
+
+Full featured services
+
+Global Treasury
+
+Manage global funds
+
+Payments for Platforms
+
+Embed payments
+
+More
+
+Integrations
+
+Product tour
+
+FEATURED
+
+[FEATURED]
+
+Explore Airwallex Business Accounts
+
+All-in-one business accounts to manage your finances globally
+
+[]
+
+Solutions
+
+[]
+
+Industries
+
+eCommerce and retail
+
+Travel
+
+Wholesale and trade
+
+Professional services
+
+Fintechs and financial services
+
+Software and technology
+
+Digital and creator
+
+SaaS platforms
+
+Marketplaces
+
+Featured Story
+
+[Featured Story]
+
+McLaren Racing modernises cross-border payments with Airwallex
+
+Learn more []
+
+Pricing
+
+Developers
+
+[]
+
+Docs & API references
+
+Product Documentation
+
+API Reference
+
+Company
+
+[]
+
+About Airwallex
+
+Who we are
+
+Operating principles
+
+Join us
+
+Careers
+
+Partnership program
+
+Rewards
+
+Resources
+
+Blog
+
+Case studies
+
+Newsroom
+
+FAQ
+
+Support
+
+Share feedback
+
+Service status
+
+Featured Story
+
+[Featured Story]
+
+How EU Holidays boosted profit margins with Airwallex’s financial technology
+
+Learn more []
+
+[]EN
+
+Log inSee a demo
+
+Select region and language
+
+[]
+
+Australia
+
+English
+
+Canada
+
+English|Français
+
+China
+
+中文
+
+Europe
+
+English
+
+France
+
+Français|English
+
+Germany
+
+Deutsch
+
+Hong Kong SAR
+
+English|繁體中文
+
+Japan
+
+日本語
+
+Malaysia
+
+English
+
+Netherlands
+
+Nederlands|English
+
+New Zealand
+
+English
+
+Singapore
+
+English
+
+South Korea
+
+한국어
+
+Spain
+
+Español
+
+United Kingdom
+
+English
+
+United States
+
+English
+
+Vietnam
+
+Tiếng Việt|English
+
+Global
+
+English
+
+Connected Accounts
+
+Improve revenue and engagement on your platform
+
+Equip your customers with a range of financial services, including high-speed payouts, card issuing, multi-currency account numbers, and more. We manage the full onboarding and screening process for a seamless experience.
+
+Contact sales
+
+[Hero Banner Image]
+
+Differentiate your platform or marketplace
+
+Programmatically create connected accounts for businesses and individuals, and enable them with rich financial capabilities. Unlock new revenue streams and improve customer engagement and retention.
+
+[]
+
+[]
+
+More value for your customers
+
+Offer customers a suite of financial capabilities directly within your platform, from multi-currency wallets, accounts with local bank details, payment acceptance, high-speed transfers, and card issuing.
+
+[]
+
+Multiple monetisation opportunities
+
+Explore various ways to monetise, such as payout fees on transactions, FX fees on currency conversions, issuing interchange rebates, and platform SaaS fees.
+
+[]
+
+Streamlined onboarding and compliance
+
+Let Airwallex manage full KYC, AML, sanctions screening, and identity requirements on your customers, ensuring they meet regulatory requirements.
+
+[]
+
+Simplified reconciliation
+
+Benefit from a multi-currency ledgering system for each customer. Automate fund flows among connected accounts and review reports and transaction level data.
+
+[]
+
+Get started with Connected Accounts
+
+Whether you’re a platform or marketplace, Airwallex makes it easy for you to securely create and onboard connected accounts around the world, while complying with local regulations.
+
+[]
+
+Ledger accounts for marketplace payouts
+
+Leverage an account type that further streamlines seller diligence in 200+ countries. Marketplaces using ledger accounts maintain ownership of funds prior to payout and can experience a faster go-to-market for payout needs.
+
+[]
+
+Full scale connected accounts
+
+Fully onboard customers, including in depth KYC, and provide them with their own multi-currency wallet, as well as a range of other financial services, from third-party payouts to physical and virtual card issuing.
+
+Explore connected accounts []
+
+Proven use cases for a variety of industries
+
+[]
+
+Marketplaces
+
+Onboard sellers to streamline global payouts, and introduce additional services like physical and virtual cards.
+
+[]
+
+SaaS platforms
+
+Consolidate end-to-end payments, from payment acceptance to payouts, to streamline customer experience.
+
+[]
+
+Fintechs and financial services
+
+Power global funds collection and money movement for your customers around the world.
+
+[]
+
+Digital and creator
+
+Onboard global creators and influencers, and provide a secure centralised wallet and card issuing.
+
+[]
+
+[]
+
+Hassle-Free Onboarding
+
+Onboard customers with minimal friction
+
+[]
+
+[]
+
+Effortlessly onboard users across the globe
+
+Onboard customers in 50+ markets. We dynamically adjust information collection to meet local compliance requirements.
+
+[]
+
+Leave the heavy lifting to us
+
+We take care of Know-Your-Customer (KYC), Anti-Money Laundering (AML), sanctions screening, and identity requirements for you.
+
+[]
+
+Choose the solution for your specific needs
+
+Enjoy a faster go-to-market for payouts with ledger accounts, or opt for standard connected accounts with full KYC of sellers.
+
+[]
+
+Multiple options for onboarding
+
+[]
+
+Hosted onboarding
+
+Redirect customers to an Airwallex-hosted web form to complete onboarding.
+
+[]
+
+Embedded components
+
+Leverage pre-built UI elements to onboard accounts globally via an API integration.
+
+[]
+
+Native API
+
+Fully customise your onboarding experience using Airwallex APIs.
+
+connected account console
+
+Easily manage connected accounts and gain insights
+
+[]
+
+[]
+
+Streamline connected account management
+
+Centrally manage operations to see all activity in your connected accounts, including overviews of all accounts in a single dashboard.
+
+[]
+
+Increase visibility for compliance processes
+
+View onboarding and KYC status, and respond to KYC Request for Information (RFI) on behalf of your connected accounts to speed up processes.
+
+[]
+
+Generate reporting and tracking for your accounts
+
+Export dashboard data to conduct analyses and generate insights relating to connected accounts.
+
+[]
+
+Ready to get started?
+
+Talk to our team to design the right solution for your business.
+
+Contact sales
+
+[]
+
+[][]
+
+-   Homepage[]
+-   Platform APIs and Embedded Finance[]
+-   Connected Accounts
+
+Business Accounts
+
+Business Accounts Overview
+
+Borderless Cash
+
+FX & Transfers
+
+Spend
+
+Spend Overview
+
+Corporate Cards
+
+Expense Management
+
+Bill Pay
+
+Purchase Orders
+
+Payments
+
+Payments Overview
+
+Checkout
+
+Payment Plugins
+
+Payment Links
+
+POS Payments (Coming Soon)
+
+Billing
+
+Billing Overview
+
+Invoicing
+
+Subscription Management
+
+Usage-Based Billing
+
+Platform APIs
+
+Platform APIs and Embedded Finance Overview
+
+Connected Accounts
+
+Accounts
+
+Payments
+
+Transactional FX
+
+Payouts
+
+Issuing
+
+Embedded Finance Use Cases
+
+Banking as a Service
+
+Global Treasury
+
+Payments for Platforms
+
+Plans
+
+Pricing
+
+Developers
+
+Product Documentation
+
+API Reference
+
+Company
+
+Who we are
+
+Operating principles
+
+Terms & policies
+
+Cookie Preference Centre
+
+Careers
+
+Partnership program
+
+Rewards
+
+Resources
+
+Blog
+
+Case studies
+
+Newsroom
+
+FAQ
+
+Support
+
+Share feedback
+
+Service status
+
+© Airwallex 2026. All rights reserved. Sitemap
+
+[][][]
+
+Airwallex (Malaysia) Sdn. Bhd., a company incorporated under the laws of Malaysia with company registration number 201801007747 (1269761-X), is regulated as a licensed currency exchange and remittance business under the Money Services Business Act 2011 (Licence number 00743 with an expiry date of 17 December 2027, an E-Money Issuer and a registered merchant acquirer under the Financial Services Act 2013. You can verify our licenses for currency exchange and remittance here, e-Money Issuer here and registration for merchant acquiring here.

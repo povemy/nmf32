@@ -50,8 +50,21 @@ export const GET = handle(async (req: NextRequest) => {
     ].join("\n");
     filename = "orders.csv";
   } else if (entity === "sellers") {
+    // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (default/include select → P2022
+    // pre-migration 20261107000000).
     const sellers = await db.seller.findMany({
-      include: { store: { select: { name: true, slug: true } }, wallet: true },
+      select: {
+        email: true,
+        displayName: true,
+        fullName: true,
+        status: true,
+        kycStatus: true,
+        riskTier: true,
+        createdAt: true,
+        store: { select: { name: true, slug: true } },
+        wallet: { select: { availableMinor: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: MAX_ROWS,
     });

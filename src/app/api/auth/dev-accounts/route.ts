@@ -63,7 +63,13 @@ export const GET = handle(async () => {
         verified.push({ ...acc, role: row.role });
       }
     } else if (acc.type === "seller") {
-      const row = await db.seller.findUnique({ where: { email: acc.email } });
+      // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+      // un-migrated Seller.emailVerifiedAt (default select → P2022 pre-
+      // migration 20261107000000).
+      const row = await db.seller.findUnique({
+        where: { email: acc.email },
+        select: { id: true, passwordHash: true, status: true },
+      });
       if (row && (await verifyPasswordAsync(acc.password, row.passwordHash))) {
         verified.push({ ...acc, status: row.status });
       }

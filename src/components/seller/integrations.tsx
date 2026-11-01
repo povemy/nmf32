@@ -112,7 +112,8 @@ type Endpoint = {
   events: string[];
   isActive: boolean;
   createdAt: string;
-  deliveries: { id: string; event: string; status: string; responseCode: number | null; createdAt: string }[];
+  // C2.8: real delivery state — "pending" rows are queued/retrying, NOT sent.
+  deliveries: { id: string; event: string; status: string; responseCode: number | null; attempts: number; lastAttemptAt: string | null; createdAt: string }[];
 };
 
 const EVENT_CATALOG = [
@@ -134,7 +135,7 @@ function SecretOnceDialog({ secret, onClose }: { secret: string | null; onClose:
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>Copy your signing secret now</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">Store it now — you won&apos;t see it again. Verify payloads with the <code>X-SM-Signature</code> header (HMAC of the raw body using this secret).</p>
+          <p className="text-xs text-muted-foreground">Store it now — you won&apos;t see it again. Verify payloads with the <code>x-nomofee-signature</code> header: lowercase hex HMAC-SHA256 of <code>{"${x-nomofee-timestamp}.${rawBody}"}</code> using this secret. Reject requests whose <code>x-nomofee-timestamp</code> is more than ±10 minutes from now.</p>
           <code className="block break-all rounded-lg bg-muted p-3 font-mono text-xs">{secret}</code>
           <Button
             variant="outline"
@@ -165,8 +166,22 @@ function WebhooksSection() {
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
 
   const sendTest = async (ep: Endpoint) => {
-    const ok = await runMutation(() => apiSend("POST", `/api/store/webhooks/${ep.id}/test`), "Test delivery sent (simulated, logged)");
-    if (ok) refetch();
+    // C2.8: the test is a REAL signed delivery — surface the endpoint's actual
+    // answer instead of claiming a simulated send.
+    try {
+      const res = await apiSend<{ status: string; responseCode: number | null; error: string | null; note: string }>(
+        "POST",
+        `/api/store/webhooks/${ep.id}/test`
+      );
+      if (res.status === "success") {
+        toast.success(`Test delivered — endpoint answered ${res.responseCode ?? "2xx"}`);
+      } else {
+        toast.error(`Test not accepted (${res.status}${res.responseCode ? `, HTTP ${res.responseCode}` : ""}${res.error ? ` — ${res.error}` : ""})`);
+      }
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Test delivery failed");
+    }
   };
 
   const toggleActive = async (ep: Endpoint, next: boolean) => {
@@ -251,9 +266,13 @@ function WebhooksSection() {
                   <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border p-2">
                     {ep.deliveries.map((d) => (
                       <div key={d.id} className="flex items-center gap-2 text-xs">
-                        <StatusChip status={d.status === "success" ? "success" : "failed"} />
+                        {/* C2.8: honest chip — "pending" = queued/retrying, not sent */}
+                        <StatusChip status={d.status} />
                         <span className="font-mono">{d.event}</span>
                         <span className="text-muted-foreground">{d.responseCode ?? "—"}</span>
+                        {d.attempts > 1 ? (
+                          <span className="text-muted-foreground" title="Attempts so far">×{d.attempts}</span>
+                        ) : null}
                         <span className="ml-auto text-muted-foreground">{fmtDateTime(d.createdAt)}</span>
                       </div>
                     ))}
@@ -355,7 +374,7 @@ function CreateWebhookDialog({ open, onOpenChange, onDone }: { open: boolean; on
                 ))}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">The signing secret is shown once after creation — verify payloads with the <code>X-SM-Signature</code> header (HMAC of the raw body using your secret).</p>
+            <p className="text-xs text-muted-foreground">The signing secret is shown once after creation — verify payloads with the <code>x-nomofee-signature</code> header (hex HMAC-SHA256 of <code>{"${x-nomofee-timestamp}.${rawBody}"}</code>; reject timestamps outside ±10 min). Failed deliveries are retried for up to 8 attempts over ~41 h.</p>
             <Button onClick={submit} disabled={busy} className="w-full min-h-[44px] gap-2">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create endpoint
             </Button>

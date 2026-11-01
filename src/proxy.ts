@@ -55,12 +55,13 @@ import { NextRequest, NextResponse } from "next/server";
  * their own throttle). The origin gate does not apply to them. */
 const SELF_AUTHENTICATED_PREFIXES = [
   "/api/webhooks/payments/", // HMAC-SHA256 (X-SM-Signature) + replay window
+  "/api/webhooks/email/", // Svix HMAC-SHA256 (svix-signature) + replay window (Phase 2.3)
   "/api/shipping/webhook/", // HMAC-SHA256 (x-shipping-signature) + replay window
   "/api/cron/", // x-cron-secret shared secret (fail-closed in production)
   "/api/checkout/payments/", // /simulate = HMAC-signed mock rail; [ref]/retry = capability URL
   "/api/claim/bind", // 192-bit hashed single-use token
   "/api/shipping/tick", // system tick (in-process throttle, documented design)
-  "/api/orders/expiry/tick", // system tick (in-process throttle, documented design)
+  "/api/orders/expiry/tick", // system tick (assertCronAuth since Phase 2.2)
 ] as const;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

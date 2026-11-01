@@ -121,6 +121,13 @@ model Seller {
   id                        String        @id @default(cuid())
   email                     String        @unique
   passwordHash              String
+  /// PHASE 2.3 (C2.7): timestamp of the seller's successful EMAIL OWNERSHIP
+  /// verification (purpose "seller-email" EmailOtpChallenge consumed → this
+  /// column is set in the SAME transaction as the consume). Null = NOT
+  /// verified — every display must treat null as unverified (KYC honesty
+  /// rule: never claim verification that did not occur). Migration
+  /// 20261107000000 (authored, not applied to the dev DB).
+  emailVerifiedAt           DateTime?
   fullName                  String
   displayName               String
   countryCode               String        @default("MY")
@@ -186,6 +193,11 @@ model Session {
 //   purpose "shopper-email" → subjectId = ShopperUser.id. Row PERSISTS with
 //     verifiedAt set — the durable proof of email ownership that gates
 //     guest-order claiming in claimGuestStateForShopper().
+//   purpose "seller-email" (PHASE 2.3 / C2.7) → subjectId = Seller.id. Row
+//     PERSISTS with verifiedAt set exactly like shopper-email, AND the
+//     winner's route transaction mirrors the proof onto Seller.emailVerifiedAt
+//     (migration 20261107000000) inside the same $transaction as the CAS
+//     consume — the challenge row and the seller column can never diverge.
 // Codes are stored ONLY as HMAC-SHA256(EMAIL_OTP_SECRET, "otp:v1:" + purpose +
 // ":" + subjectId + ":" + utcDayBucket + ":" + code) — never plaintext, never
 // logged. `attempts` survives re-issuance while a row is unexpired (repeated
@@ -782,7 +794,10 @@ model PaymentIntent {
 model PaymentGroup {
   id            String      @id @default(cuid())
   ref           String      @unique
-  shopperId     String
+  // PHASE 2.2 (guest checkout restoration): nullable — a guest checkout's
+  // group has no shopper account. Widened from `String` (was NOT NULL);
+  // existing rows unaffected. See migration 20261105000000.
+  shopperId     String?
   provider      String
   status        String      @default("requires_payment")
   currency      String      @default("MYR")
@@ -797,7 +812,7 @@ model PaymentGroup {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   orders        Order[]
-  shopper       ShopperUser @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  shopper       ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: Cascade)
 
   @@index([shopperId])
   // PHASE 2 / B: expiry-sweep candidate scan (cron, 30 s cadence) joins
@@ -1066,6 +1081,10 @@ model CouponRedemption {
   customerEmail String
   discountMinor Int
   createdAt     DateTime @default(now())
+
+  // PHASE 2.2 (C2.3): redemption-restoration sweep deletes by orderId
+  // (checkout-compensation.ts). See migration 20261105000000.
+  @@index([orderId])
 }
 
 model Address {
@@ -1139,6 +1158,10 @@ model UserVoucher {
 
   @@unique([userId, voucherId])
   @@index([userId, status])
+  // PHASE 2.2 (C2.3): redemption-restoration sweep looks up consumed
+  // vouchers by usedOrderId (checkout-compensation.ts). See migration
+  // 20261105000000.
+  @@index([usedOrderId])
 }
 
 model UserActivity {
@@ -1210,11 +1233,44 @@ model WebhookDelivery {
   createdAt     DateTime        @default(now())
   endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 
+  // C2.8 (Phase 2.3 — real webhook delivery): per-attempt audit trail in the
+  // NEW WebhookDeliveryAttempt table (migration
+  // 20261108000000_phase23_webhook_delivery — authored, NOT applied here).
+  // Relation-only field: NO new columns on this model, so default selects of
+  // WebhookDelivery (e.g. GET /api/store/webhooks `include: { deliveries }`)
+  // are unchanged and un-migrated environments keep working. The delivery
+  // state machine (status/attempts/responseCode/lastAttemptAt) runs entirely
+  // on the columns above; the retry schedule is derived (see
+  // lib/webhook-delivery.ts), and attempt-log access degrades gracefully
+  // while the migration is pending.
+  attemptLogs   WebhookDeliveryAttempt[]
+
   // PHASE 2 / B: admin deliveries listing filters by status + orders by
   // createdAt; endpointId FK index prevents cascade-delete scans on this
   // append-heavy table.
   @@index([status, createdAt])
   @@index([endpointId])
+}
+
+// C2.8 (Phase 2.3): one row per REAL outbound attempt (attemptNo 0 marks an
+// administrative transition with no HTTP attempt, e.g. event_unsubscribed).
+// Additive NEW table — no existing table or query is affected; while its
+// migration is unapplied, lib/webhook-delivery.ts writes/reads it
+// best-effort and the WebhookDelivery columns stay authoritative.
+model WebhookDeliveryAttempt {
+  id           String          @id @default(cuid())
+  deliveryId   String
+  attemptNo    Int
+  trigger      String          @default("sweep")
+  responseCode Int?
+  error        String?
+  responseBody String?
+  durationMs   Int?
+  signed       Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  delivery     WebhookDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId, attemptNo])
 }
 
 model ApiKey {
@@ -1298,6 +1354,40 @@ model NotificationLog {
   @@unique([channel, dedupKey])
 }
 
+// PHASE 2.3 (transactional email — provider delivery events): durable inbox
+// for SIGNED provider delivery webhooks (Resend/Svix). (provider,
+// providerEventId) is the exactly-once dedup key — provider retries reuse the
+// same svix-id, so replays converge on the existing row instead of
+// re-processing bounces/complaints. See migration 20261106000000.
+model EmailDeliveryEvent {
+  id             String   @id @default(cuid())
+  provider       String
+  providerEventId String
+  eventType      String   // email.delivered | email.bounced | email.complained | ...
+  emailId        String?  // provider email id
+  email          String?  // recipient address (lowercased)
+  payloadJson    String   @default("{}")
+  receivedAt     DateTime @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([email])
+  @@index([eventType, receivedAt])
+}
+
+// PHASE 2.3 (transactional email): hard-bounce / complaint suppression list.
+// The send adapters check this BEFORE delivery; the provider webhook keeps it
+// in sync (email.bounced / email.complained add; suppression.removed removes).
+model EmailSuppression {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  reason       String    // hard_bounce | complaint | manual
+  sourceEventId String?
+  createdAt    DateTime  @default(now())
+
+  @@index([reason])
+}
+
+
 model SupportTicket {
   id          String           @id @default(cuid())
   storeId     String?
@@ -1352,6 +1442,13 @@ model ExportJob {
 model MarketplaceConnection {
   id              String      @id @default(cuid())
   storeId         String?
+  // PHASE 2.2 (C3 — OAuth ownership): the seller whose OAuth flow created
+  // this connection. Written by the platform OAuth callback (from the signed
+  // `state`), scoped by the import runner and claim/bind so one seller can
+  // never import through or capture another seller's marketplace connection.
+  // Plain column (no FK — same loose-reference pattern as
+  // AffiliateCommissionEntry.payoutId). See migration 20261105000000.
+  sellerId        String?
   platform        String
   status          String      @default("pending")
   envConfigured   Boolean     @default(false)
@@ -1372,6 +1469,7 @@ model MarketplaceConnection {
 
   @@unique([platform, shopId])
   @@index([storeId])
+  @@index([sellerId])
 }
 
 model ImportJob {
@@ -1893,4 +1991,13 @@ model AffiliatePayout {
 
   @@index([affiliateId, status])
   @@index([status, requestedAt])
+  // PHASE 2.2 (C1.2): DB-level protection against duplicate open payout
+  // requests — a PARTIAL UNIQUE INDEX (not expressible in Prisma DSL; created
+  // by migration 20261105000000):
+  //   CREATE UNIQUE INDEX "AffiliatePayout_one_open_per_affiliate"
+  //     ON "AffiliatePayout"("affiliateId")
+  //     WHERE status IN ('requested','processing');
+  // The application layer additionally uses Serializable isolation +
+  // conditional claims (requestAffiliatePayout) — the index is the hard
+  // backstop for non-transactional writers.
 }

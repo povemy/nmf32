@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 const loadStores = publicCache(
   async () =>
     db.store.findMany({
-      where: { status: "live" },
+      // C1.3 (seller publication governance): the public directory lists only
+      // live stores of admin-approved sellers — store.status "live" alone is
+      // not proof of public eligibility.
+      where: { status: "live", seller: { is: { status: "active" } } },
       include: { _count: { select: { products: { where: { status: "active" } } } } },
       orderBy: { createdAt: "asc" },
     }),

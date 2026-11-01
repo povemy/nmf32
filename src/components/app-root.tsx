@@ -4,14 +4,38 @@
 // In production these live on separate hosts (market/nomofee.io, seller.nomofee.io,
 // admin.nomofee.io); in this sandbox they are surfaces on one route.
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useApp } from "@/lib/app-store";
 import ShopperShell from "@/components/shopper/shopper-shell";
-import SellerShell from "@/components/seller/seller-shell";
-import AdminShell from "@/components/admin/admin-shell";
 import PortalFab from "@/components/portal-fab";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2 } from "lucide-react";
 import { SESSION_EXPIRED_EVENT, isSessionStorageEvent } from "@/lib/session-events";
+
+// Phase 2.4 (C2.x) — portal code-splitting: the Seller Centre and Admin
+// Console bundles are only ever needed by authenticated seller/admin users,
+// so they are next/dynamic chunks instead of static imports. Shopper sessions
+// (the default surface) never download them. Loading fallback mirrors the
+// `me.loaded` boot loader so the async chunk fetch reads as the same spinner.
+// Rationale + measured-expectation notes: docs/phase24/portal-code-splitting.md
+function PortalChunkLoading() {
+  return (
+    <div className="flex-1 flex items-center justify-center" role="status" aria-label="Loading portal">
+      <div className="flex flex-col items-center gap-3 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="text-sm">Loading…</p>
+      </div>
+    </div>
+  );
+}
+const SellerShell = dynamic(() => import("@/components/seller/seller-shell"), {
+  ssr: false,
+  loading: PortalChunkLoading,
+});
+const AdminShell = dynamic(() => import("@/components/admin/admin-shell"), {
+  ssr: false,
+  loading: PortalChunkLoading,
+});
 
 export default function AppRoot() {
   const surface = useApp((s) => s.surface);

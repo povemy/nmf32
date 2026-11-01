@@ -1,0 +1,576 @@
+     1→     1→// ============================================================================
+     2→     2→// WEBHOOK DELIVERY ENGINE — C2.8 (Phase 2.3: real seller webhook delivery)
+     3→     3→// ----------------------------------------------------------------------------
+     4→     4→// BEFORE: dispatchStoreWebhooks (lib/api.ts) wrote WebhookDelivery rows with
+     5→     5→// status:"success", attempts:1, responseCode:200 WITHOUT any HTTP request —
+     6→     6→// simulated success records that lied to sellers and admins.
+     7→     7→//
+     8→     8→// NOW: every WebhookDelivery row is delivered for real through this engine.
+     9→     9→//   • dispatchStoreWebhooks — creates PENDING rows for matching endpoints and
+    10→    10→//     fires the first attempt inline (best-effort, catch-all, parallel across
+    11→    11→//     endpoints); it NEVER throws and NEVER writes success without a real 2xx.
+    12→    12→//   • deliverWebhookDelivery — one delivery attempt: atomic claim → SSRF-
+    13→    13→//     guarded signed POST (lib/safe-fetch.ts) → real response recorded.
+    14→    14→//   • sweepDueWebhookDeliveries — the retry rail; invoked by
+    15→    15→//     /api/cron/webhook-delivery (scheduler: mini-services/expiry-scheduler).
+    16→    16→//
+    17→    17→// STATE MACHINE (WebhookDelivery.status — EXISTING columns only):
+    18→    18→//   pending ──2xx──▶ success (TERMINAL; only a real accepted response)
+    19→    19→//   pending ──non-2xx / network error──▶ pending (retry on the backoff
+    20→    20→//        schedule below) ──attempts == 8──▶ failed (TERMINAL)
+    21→    21→//   pending ──endpoint event unsubscribed──▶ failed (no HTTP attempt;
+    22→    22→//        deterministic — the seller removed the event from the endpoint)
+    23→    23→//   pending ──older than 7 days (paused endpoint etc.)──▶ failed (stale)
+    24→    24→//   failed ──admin replay (force claim)──▶ pending → real attempt again
+    25→    25→//   success is terminal and is NEVER re-attempted or overwritten.
+    26→    26→//
+    27→    27→// RETRY SCHEDULE (deterministic — derived, no nextAttemptAt column needed):
+    28→    28→//   attempt 1 immediate (inline), then backoff after failures:
+    29→    29→//   1m → 5m → 15m → 1h → 4h → 12h → 24h (cap) — 8 attempts total, ≈41.4h
+    30→    30→//   horizon. nextRetryAt = lastAttemptAt + BACKOFF[attempts]; a row that has
+    31→    31→//   never been attempted (lastAttemptAt null) is due immediately.
+    32→    32→//
+    33→    33→// WHY NO NEW COLUMNS ON WebhookDelivery: the dev database is intentionally
+    34→    34→// un-migrated (dev.log shows `EmailOtpChallenge does not exist` — the running
+    35→    35→// environment lags the authored migrations), and WebhookDelivery has
+    36→    36→// default-select read sites on seller/admin paths (GET /api/store/webhooks
+    37→    37→// `include: { deliveries: … }`). Additive columns would 500 those routes AND
+    38→    38→// make every write from the live payment path fail with P2022. The schedule
+    39→    39→// above is a pure function of (attempts, lastAttemptAt), so it needs no
+    40→    40→// column; per-attempt audit records (error/response body/duration) live in
+    41→    41→// the NEW WebhookDeliveryAttempt table (additive — safe), and every access to
+    42→    42→// that table degrades gracefully while its migration is pending.
+    43→    43→//
+    44→    44→// ============================================================================
+    45→    45→// RECEIVER VERIFICATION CONTRACT (for sellers — mirrored in the seller UI
+    46→    46→// and the cron route comment):
+    47→    47→//   POST {endpoint.url}
+    48→    48→//     content-type:        application/json
+    49→    49→//     user-agent:          SHOPMESH-Webhooks/1.0
+    50→    50→//     x-nomofee-event:     <event name, e.g. "order.paid">
+    51→    51→//     x-nomofee-timestamp: <unix seconds at send time>
+    52→    52→//     x-nomofee-signature: <lowercase hex HMAC-SHA256 of
+    53→    53→//                           `${x-nomofee-timestamp}.${rawBody}` using the
+    54→    54→//                           endpoint's signing secret>
+    55→    55→//   The signature header is OMITTED when the endpoint has no secret
+    56→    56→//   configured — such deliveries are unsigned and receivers should treat
+    57→    57→//   them as unauthenticated notifications.
+    58→    58→//   Recommended verification:
+    59→    59→//     1. recompute HMAC-SHA256(secret, `${timestamp}.${rawBody}`) over the
+    60→    60→//        RAW request body (byte-exact — before any JSON re-serialization)
+    61→    61→//        and timing-safely compare with x-nomofee-signature;
+    62→    62→//     2. reject if |now − x-nomofee-timestamp| > 600 s (±10 min replay
+    63→    63→//        window; the timestamp is INSIDE the signed material, so an attacker
+    64→    64→//        cannot refresh it without invalidating the signature);
+    65→    65→//     3. dispatch on x-nomofee-event; respond 2xx quickly — anything else
+    66→    66→//        (or a >10 s timeout) is retried on the schedule above.
+    67→    67→// ============================================================================
+    68→    68→import { createHmac, timingSafeEqual } from "node:crypto";
+    69→    69→import { db } from "./db";
+    70→    70→import { parseJson } from "./json";
+    71→    71→import { safeRequestJson } from "./safe-fetch";
+    72→    72→
+    73→    73→// ---------------------------------------------------------------- constants
+    74→    74→
+    75→    75→/** Delivery attempt timeout (per hop; redirects are re-validated + re-POSTed). */
+    76→    76→export const WEBHOOK_TIMEOUT_MS = 10_000;
+    77→    77→/** Total attempts (initial inline attempt + 7 retries). */
+    78→    78→export const MAX_WEBHOOK_ATTEMPTS = 8;
+    79→    79→/** Backoff AFTER a failed attempt N (index = completed attempts): 1m, 5m,
+    80→    80→ *  15m, 1h, 4h, 12h, 24h cap. Index 0 = immediate (never-attempted rows). */
+    81→    81→export const WEBHOOK_BACKOFF_SCHEDULE_MS: readonly number[] = [
+    82→    82→  0,
+    83→    83→  60_000,
+    84→    84→  300_000,
+    85→    85→  900_000,
+    86→    86→  3_600_000,
+    87→    87→  14_400_000,
+    88→    88→  43_200_000,
+    89→    89→  86_400_000,
+    90→    90→];
+    91→    91→/** Receiver-side replay window we document (±10 minutes). */
+    92→    92→export const WEBHOOK_TIMESTAMP_TOLERANCE_MS = 10 * 60_000;
+    93→    93→/** Minimum spacing enforced by the atomic claim (matches the shortest
+    94→    94→ *  non-zero backoff): a row can be attempted at most once per minute, and a
+    95→    95→ *  racing sweep/inline/replay claim loses atomically. */
+    96→    96→const WEBHOOK_CLAIM_SPACING_MS = 60_000;
+    97→    97→/** Pending rows older than this are failed as abandoned (paused endpoint
+    98→    98→ *  etc.) — far past the ≈41.4 h retry horizon. */
+    99→    99→const WEBHOOK_STALE_PENDING_MS = 7 * 24 * 60 * 60_000;
+   100→   100→/** Synthetic event used by the seller "Send test" action; always deliverable
+   101→   101→ *  regardless of the endpoint's subscription list (it IS an explicit test). */
+   102→   102→export const WEBHOOK_TEST_EVENT = "webhook.test";
+   103→   103→
+   104→   104→const WEBHOOK_USER_AGENT = "SHOPMESH-Webhooks/1.0";
+   105→   105→export const WEBHOOK_SIGNATURE_HEADER = "x-nomofee-signature";
+   106→   106→export const WEBHOOK_TIMESTAMP_HEADER = "x-nomofee-timestamp";
+   107→   107→export const WEBHOOK_EVENT_HEADER = "x-nomofee-event";
+   108→   108→
+   109→   109→// ---------------------------------------------------------------- schedule (pure)
+   110→   110→
+   111→   111→export function webhookBackoffMs(attemptsCompleted: number): number {
+   112→   112→  const idx = Math.max(0, Math.min(attemptsCompleted, WEBHOOK_BACKOFF_SCHEDULE_MS.length - 1));
+   113→   113→  return WEBHOOK_BACKOFF_SCHEDULE_MS[idx];
+   114→   114→}
+   115→   115→
+   116→   116→/** Derived next-retry time: lastAttemptAt + backoff[attempts]; never-attempted
+   117→   117→ *  rows are due immediately; exhausted rows have no next retry (terminal). */
+   118→   118→export function webhookNextRetryAt(attempts: number, lastAttemptAt: Date | null, now = new Date()): Date | null {
+   119→   119→  if (attempts >= MAX_WEBHOOK_ATTEMPTS) return null;
+   120→   120→  if (!lastAttemptAt) return now;
+   121→   121→  return new Date(lastAttemptAt.getTime() + webhookBackoffMs(attempts));
+   122→   122→}
+   123→   123→
+   124→   124→// ---------------------------------------------------------------- signing (pure)
+   125→   125→
+   126→   126→/** HMAC-SHA256 over `${timestamp}.${rawBody}` — the timestamp is signed so
+   127→   127→ *  receivers can enforce the ±10 min window without it being forgeable. */
+   128→   128→export function signWebhookBody(secret: string, rawBody: string, timestampSeconds: string): string {
+   129→   129→  return createHmac("sha256", secret).update(`${timestampSeconds}.${rawBody}`).digest("hex");
+   130→   130→}
+   131→   131→
+   132→   132→/** Build the outbound header set for one delivery attempt. `secret == null`
+   133→   133→ *  ⇒ unsigned delivery (signature header omitted — documented contract). */
+   134→   134→export function buildWebhookHeaders(event: string, rawBody: string, secret: string | null, nowMs = Date.now()): Record<string, string> {
+   135→   135→  const timestamp = String(Math.floor(nowMs / 1000));
+   136→   136→  const headers: Record<string, string> = {
+   137→   137→    "content-type": "application/json",
+   138→   138→    "user-agent": WEBHOOK_USER_AGENT,
+   139→   139→    [WEBHOOK_EVENT_HEADER]: event,
+   140→   140→    [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+   141→   141→  };
+   142→   142→  if (secret) headers[WEBHOOK_SIGNATURE_HEADER] = signWebhookBody(secret, rawBody, timestamp);
+   143→   143→  return headers;
+   144→   144→}
+   145→   145→
+   146→   146→/** Receiver-side verifier for the contract above (pure; used by the
+   147→   147→ *  verification script and as reference for sellers). Validation order:
+   148→   148→ *  signature format → timestamp format → HMAC (timing-safe) → ±10 min
+   149→   149→ *  staleness — input-shape errors are reported before crypto runs. */
+   150→   150→export type WebhookVerifyResult = { valid: true } | { valid: false; reason: "BAD_SIGNATURE" | "STALE_TIMESTAMP" | "BAD_TIMESTAMP" };
+   151→   151→export function verifyWebhookSignature(input: {
+   152→   152→  secret: string;
+   153→   153→  rawBody: string;
+   154→   154→  timestamp: string;
+   155→   155→  signature: string;
+   156→   156→  nowMs?: number;
+   157→   157→}): WebhookVerifyResult {
+   158→   158→  const sig = input.signature.trim().toLowerCase();
+   159→   159→  if (!/^[0-9a-f]{64}$/.test(sig)) return { valid: false, reason: "BAD_SIGNATURE" };
+   160→   160→  if (!/^\d+$/.test(input.timestamp)) return { valid: false, reason: "BAD_TIMESTAMP" };
+   161→   161→  const expected = createHmac("sha256", input.secret).update(`${input.timestamp}.${input.rawBody}`).digest();
+   162→   162→  let provided: Buffer;
+   163→   163→  try {
+   164→   164→    provided = Buffer.from(sig, "hex");
+   165→   165→  } catch {
+   166→   166→    return { valid: false, reason: "BAD_SIGNATURE" };
+   167→   167→  }
+   168→   168→  if (provided.length !== expected.length || !timingSafeEqual(expected, provided)) {
+   169→   169→    return { valid: false, reason: "BAD_SIGNATURE" };
+   170→   170→  }
+   171→   171→  const ts = Number(input.timestamp) * 1000;
+   172→   172→  const now = input.nowMs ?? Date.now();
+   173→   173→  if (!Number.isFinite(ts) || Math.abs(now - ts) > WEBHOOK_TIMESTAMP_TOLERANCE_MS) {
+   174→   174→    return { valid: false, reason: "STALE_TIMESTAMP" };
+   175→   175→  }
+   176→   176→  return { valid: true };
+   177→   177→}
+   178→   178→
+   179→   179→// ---------------------------------------------------------------- helpers
+   180→   180→
+   181→   181→function errShort(e: unknown): string {
+   182→   182→  return e instanceof Error ? e.message : String(e);
+   183→   183→}
+   184→   184→
+   185→   185→/** SSRF refusals and malformed endpoint URLs are deterministic — retrying a
+   186→   186→ *  blocked target for 41 hours is pointless, so such errors fail the
+   187→   187→ *  delivery immediately (attempts stay honest: the refusal IS recorded). */
+   188→   188→const PERMANENT_DELIVERY_REASONS = new Set(["INVALID_URL", "SCHEME", "CREDENTIALS", "PRIVATE_HOST"]);
+   189→   189→export function isPermanentDeliveryError(reason: string): boolean {
+   190→   190→  if (PERMANENT_DELIVERY_REASONS.has(reason)) return true;
+   191→   191→  // dns-guard refusals surface inside NETWORK messages under Bun/Node
+   192→   192→  return reason.includes("EPRIVATEADDRESS") || reason.includes("Blocked resolution");
+   193→   193→}
+   194→   194→
+   195→   195→/** Is this Prisma/runtime error the "migration not applied / stale client"
+   196→   196→ *  shape? Used to degrade the attempt-log table access silently. */
+   197→   197→function isMissingSchemaError(e: unknown): boolean {
+   198→   198→  const code = (e as { code?: string } | null)?.code;
+   199→   199→  if (code === "P2021" || code === "P2022") return true; // table/column does not exist
+   200→   200→  return e instanceof TypeError; // stale in-memory client: model accessor undefined
+   201→   201→}
+   202→   202→
+   203→   203→let attemptLogBroken = false;
+   204→   204→
+   205→   205→/** Best-effort per-attempt audit row (WebhookDeliveryAttempt — NEW table,
+   206→   206→ *  migration authored but NOT applied in this environment). Absence never
+   207→   207→ *  affects the delivery state machine: status/attempts/responseCode/
+   208→   208→ *  lastAttemptAt on WebhookDelivery remain the authoritative record. */
+   209→   209→async function recordAttemptLog(data: {
+   210→   210→  deliveryId: string;
+   211→   211→  attemptNo: number;
+   212→   212→  trigger: string;
+   213→   213→  responseCode: number | null;
+   214→   214→  error: string | null;
+   215→   215→  responseBody: string | null;
+   216→   216→  durationMs: number | null;
+   217→   217→  signed: boolean;
+   218→   218→}): Promise<void> {
+   219→   219→  if (attemptLogBroken) return;
+   220→   220→  try {
+   221→   221→    await db.webhookDeliveryAttempt.create({
+   222→   222→      data: {
+   223→   223→        deliveryId: data.deliveryId,
+   224→   224→        attemptNo: data.attemptNo,
+   225→   225→        trigger: data.trigger,
+   226→   226→        responseCode: data.responseCode,
+   227→   227→        error: data.error ? data.error.slice(0, 500) : null,
+   228→   228→        responseBody: data.responseBody ? data.responseBody.slice(0, 2000) : null,
+   229→   229→        durationMs: data.durationMs,
+   230→   230→        signed: data.signed,
+   231→   231→      },
+   232→   232→      select: { id: true },
+   233→   233→    });
+   234→   234→  } catch (e) {
+   235→   235→    if (isMissingSchemaError(e)) {
+   236→   236→      attemptLogBroken = true;
+   237→   237→      console.warn("[webhook-delivery] attempt log unavailable (migration 20261108000000_phase23_webhook_delivery not applied) — delivery states remain authoritative");
+   238→   238→    } else {
+   239→   239→      console.error("[webhook-delivery] attempt log write failed:", errShort(e));
+   240→   240→    }
+   241→   241→  }
+   242→   242→}
+   243→   243→
+   244→   244→/** Latest per-attempt audit rows for a set of deliveries (admin visibility).
+   245→   245→ *  Returns {} when the table/migration is unavailable — callers degrade to
+   246→   246→ *  the delivery columns. */
+   247→   247→export async function latestAttemptLogs(deliveryIds: string[]): Promise<Map<string, { responseCode: number | null; error: string | null; responseBody: string | null; attemptNo: number; signed: boolean; at: Date }>> {
+   248→   248→  const out = new Map<string, { responseCode: number | null; error: string | null; responseBody: string | null; attemptNo: number; signed: boolean; at: Date }>();
+   249→   249→  if (deliveryIds.length === 0 || attemptLogBroken) return out;
+   250→   250→  try {
+   251→   251→    const rows = await db.webhookDeliveryAttempt.findMany({
+   252→   252→      where: { deliveryId: { in: deliveryIds } },
+   253→   253→      orderBy: [{ deliveryId: "asc" }, { attemptNo: "desc" }],
+   254→   254→      select: { deliveryId: true, attemptNo: true, responseCode: true, error: true, responseBody: true, signed: true, createdAt: true },
+   255→   255→    });
+   256→   256→    for (const r of rows) if (!out.has(r.deliveryId)) out.set(r.deliveryId, { responseCode: r.responseCode, error: r.error, responseBody: r.responseBody, attemptNo: r.attemptNo, signed: r.signed, at: r.createdAt });
+   257→   257→  } catch (e) {
+   258→   258→    if (isMissingSchemaError(e)) attemptLogBroken = true;
+   259→   259→    else console.error("[webhook-delivery] attempt log read failed:", errShort(e));
+   260→   260→  }
+   261→   261→  return out;
+   262→   262→}
+   263→   263→
+   264→   264→// ---------------------------------------------------------------- one attempt
+   265→   265→
+   266→   266→export type WebhookDeliveryOutcome = {
+   267→   267→  deliveryId: string;
+   268→   268→  /** false ⇒ no HTTP attempt was made this call (skipped / claimed elsewhere). */
+   269→   269→  attempted: boolean;
+   270→   270→  skipReason?: "not_found" | "terminal_success" | "terminal_failed" | "endpoint_inactive" | "event_unsubscribed" | "not_due" | "claimed_elsewhere";
+   271→   271→  status: "pending" | "success" | "failed";
+   272→   272→  attempts: number;
+   273→   273→  /** REAL HTTP status of THIS attempt — null when no response arrived. */
+   274→   274→  responseCode: number | null;
+   275→   275→  error: string | null;
+   276→   276→  responseBody: string | null;
+   277→   277→  durationMs: number | null;
+   278→   278→  nextRetryAt: string | null;
+   279→   279→  signed: boolean;
+   280→   280→};
+   281→   281→
+   282→   282→/** Attempt one webhook delivery for real.
+   283→   283→ *
+   284→   284→ * Idempotency: an ATOMIC conditional claim (status pending + lastAttemptAt
+   285→   285→ * spacing, or status pending|failed for a forced replay) increments `attempts`
+   286→   286→ * and stamps `lastAttemptAt` BEFORE the HTTP call — a racing sweep/inline/
+   287→   287→ * replay claim gets count 0 and skips, so a row is attempted at most once per
+   288→   288→ * claim-spacing window. Success is terminal (checked up front AND the final
+   289→   289→ * write is conditional on our own claim), and it is only ever written for a
+   290→   290→ * REAL 2xx response. */
+   291→   291→export async function deliverWebhookDelivery(
+   292→   292→  deliveryId: string,
+   293→   293→  opts: { trigger?: "inline" | "sweep" | "replay" | "test"; force?: boolean; timeoutMs?: number } = {}
+   294→   294→): Promise<WebhookDeliveryOutcome> {
+   295→   295→  const trigger = opts.trigger ?? "sweep";
+   296→   296→  const force = opts.force === true;
+   297→   297→  const now = new Date();
+   298→   298→
+   299→   299→  const delivery = await db.webhookDelivery.findUnique({
+   300→   300→    where: { id: deliveryId },
+   301→   301→    select: {
+   302→   302→      id: true,
+   303→   303→      status: true,
+   304→   304→      attempts: true,
+   305→   305→      lastAttemptAt: true,
+   306→   306→      event: true,
+   307→   307→      payloadJson: true,
+   308→   308→      responseCode: true,
+   309→   309→      endpoint: { select: { id: true, url: true, secret: true, isActive: true, eventsJson: true } },
+   310→   310→    },
+   311→   311→  });
+   312→   312→  if (!delivery) {
+   313→   313→    return { deliveryId, attempted: false, skipReason: "not_found", status: "pending", attempts: 0, responseCode: null, error: null, responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   314→   314→  }
+   315→   315→  if (delivery.status === "success") {
+   316→   316→    return { deliveryId, attempted: false, skipReason: "terminal_success", status: "success", attempts: delivery.attempts, responseCode: delivery.responseCode ?? null, error: null, responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   317→   317→  }
+   318→   318→  if (delivery.status === "failed" && !force) {
+   319→   319→    return { deliveryId, attempted: false, skipReason: "terminal_failed", status: "failed", attempts: delivery.attempts, responseCode: null, error: null, responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   320→   320→  }
+   321→   321→
+   322→   322→  // Endpoint guards. A PAUSED endpoint leaves rows pending (the seller may
+   323→   323→  // re-enable); an endpoint whose event list no longer covers this event can
+   324→   324→  // never be delivered → fail the row without an HTTP attempt (honest: it is
+   325→   325→  // failed, never faked-success). The synthetic test event always passes.
+   326→   326→  if (!delivery.endpoint) {
+   327→   327→    await db.webhookDelivery
+   328→   328→      .updateMany({ where: { id: delivery.id, status: "pending" }, data: { status: "failed" } })
+   329→   329→      .catch((e) => console.error("[webhook-delivery] endpoint_missing transition failed:", errShort(e)));
+   330→   330→    await recordAttemptLog({ deliveryId: delivery.id, attemptNo: 0, trigger, responseCode: null, error: "endpoint_missing", responseBody: null, durationMs: null, signed: false });
+   331→   331→    return { deliveryId, attempted: false, skipReason: "not_found", status: "failed", attempts: delivery.attempts, responseCode: null, error: "endpoint_missing", responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   332→   332→  }
+   333→   333→  if (!delivery.endpoint.isActive && !force) {
+   334→   334→    const due = webhookNextRetryAt(delivery.attempts, delivery.lastAttemptAt, now);
+   335→   335→    return { deliveryId, attempted: false, skipReason: "endpoint_inactive", status: "pending", attempts: delivery.attempts, responseCode: null, error: null, responseBody: null, durationMs: null, nextRetryAt: due ? due.toISOString() : null, signed: false };
+   336→   336→  }
+   337→   337→  const subscribed = parseJson<string[]>(delivery.endpoint.eventsJson, []);
+   338→   338→  if (delivery.event !== WEBHOOK_TEST_EVENT && !subscribed.includes(delivery.event)) {
+   339→   339→    await db.webhookDelivery
+   340→   340→      .updateMany({ where: { id: delivery.id, status: "pending" }, data: { status: "failed" } })
+   341→   341→      .catch((e) => console.error("[webhook-delivery] event_unsubscribed transition failed:", errShort(e)));
+   342→   342→    await recordAttemptLog({ deliveryId: delivery.id, attemptNo: 0, trigger, responseCode: null, error: "event_unsubscribed", responseBody: null, durationMs: null, signed: false });
+   343→   343→    return { deliveryId, attempted: false, skipReason: "event_unsubscribed", status: "failed", attempts: delivery.attempts, responseCode: null, error: "event_unsubscribed", responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   344→   344→  }
+   345→   345→
+   346→   346→  // Derived-schedule due check (skipped for forced replays).
+   347→   347→  if (!force) {
+   348→   348→    const due = webhookNextRetryAt(delivery.attempts, delivery.lastAttemptAt, now);
+   349→   349→    if (due && due.getTime() > now.getTime()) {
+   350→   350→      return { deliveryId, attempted: false, skipReason: "not_due", status: "pending", attempts: delivery.attempts, responseCode: null, error: null, responseBody: null, durationMs: null, nextRetryAt: due.toISOString(), signed: false };
+   351→   351→    }
+   352→   352→  }
+   353→   353→
+   354→   354→  // Atomic claim — the conditional WHERE makes double-attempt impossible:
+   355→   355→  // after ANY successful claim lastAttemptAt is "now", which fails both the
+   356→   356→  // null branch and the ≤ now−60 s branch for every competing claimer.
+   357→   357→  const claim = await db.webhookDelivery.updateMany({
+   358→   358→    where: force
+   359→   359→      ? { id: delivery.id, status: { in: ["pending", "failed"] } }
+   360→   360→      : { id: delivery.id, status: "pending", OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lte: new Date(Date.now() - WEBHOOK_CLAIM_SPACING_MS) } }] },
+   361→   361→    data: { status: "pending", attempts: { increment: 1 }, lastAttemptAt: now },
+   362→   362→  });
+   363→   363→  if (claim.count === 0) {
+   364→   364→    // The row's status is one of the three documented states (state machine
+   365→   365→    // in the model comment) — narrow for the outcome literal type.
+   366→   366→    const status = delivery.status as "pending" | "failed" | "success";
+   367→   367→    return { deliveryId, attempted: false, skipReason: "claimed_elsewhere", status, attempts: delivery.attempts, responseCode: null, error: null, responseBody: null, durationMs: null, nextRetryAt: null, signed: false };
+   368→   368→  }
+   369→   369→  const attemptNo = delivery.attempts + 1;
+   370→   370→
+   371→   371→  // ---- the REAL outbound attempt (SSRF-guarded, signed, 10 s timeout) ----
+   372→   372→  const secret = delivery.endpoint.secret && delivery.endpoint.secret.trim() ? delivery.endpoint.secret : null;
+   373→   373→  const headers = buildWebhookHeaders(delivery.event, delivery.payloadJson, secret);
+   374→   374→  const t0 = performance.now();
+   375→   375→  const res = await safeRequestJson(delivery.endpoint.url, {
+   376→   376→    method: "POST",
+   377→   377→    headers,
+   378→   378→    body: delivery.payloadJson,
+   379→   379→    timeoutMs: opts.timeoutMs ?? WEBHOOK_TIMEOUT_MS,
+   380→   380→  });
+   381→   381→  const durationMs = Math.round(performance.now() - t0);
+   382→   382→
+   383→   383→  const gotResponse = res.ok;
+   384→   384→  const responseCode = gotResponse ? res.status : null;
+   385→   385→  const isSuccess = gotResponse && res.status >= 200 && res.status < 300;
+   386→   386→  const error = isSuccess ? null : gotResponse ? `HTTP_${res.status}` : res.reason;
+   387→   387→  const responseBody = gotResponse && res.body ? res.body.slice(0, 2000) : null;
+   388→   388→  const permanent = !gotResponse && isPermanentDeliveryError(res.reason);
+   389→   389→  const finalStatus: "success" | "failed" | "pending" = isSuccess
+   390→   390→    ? "success"
+   391→   391→    : attemptNo >= MAX_WEBHOOK_ATTEMPTS || permanent
+   392→   392→      ? "failed"
+   393→   393→      : "pending";
+   394→   394→
+   395→   395→  // Final state — conditional on OUR claim (attempts == attemptNo, status
+   396→   396→  // still pending) so a concurrent terminal write can never be clobbered.
+   397→   397→  await db.webhookDelivery
+   398→   398→    .updateMany({
+   399→   399→      where: { id: delivery.id, status: "pending", attempts: attemptNo },
+   400→   400→      data: { status: finalStatus, responseCode },
+   401→   401→    })
+   402→   402→    .catch((e) => console.error("[webhook-delivery] final state write failed:", errShort(e)));
+   403→   403→
+   404→   404→  await recordAttemptLog({ deliveryId: delivery.id, attemptNo, trigger, responseCode, error, responseBody, durationMs, signed: !!secret });
+   405→   405→
+   406→   406→  const nextRetry = finalStatus === "pending" ? webhookNextRetryAt(attemptNo, now) : null;
+   407→   407→  return {
+   408→   408→    deliveryId,
+   409→   409→    attempted: true,
+   410→   410→    status: finalStatus,
+   411→   411→    attempts: attemptNo,
+   412→   412→    responseCode,
+   413→   413→    error,
+   414→   414→    responseBody,
+   415→   415→    durationMs,
+   416→   416→    nextRetryAt: nextRetry ? nextRetry.toISOString() : null,
+   417→   417→    signed: !!secret,
+   418→   418→  };
+   419→   419→}
+   420→   420→
+   421→   421→// ---------------------------------------------------------------- dispatch
+   422→   422→
+   423→   423→/** REAL webhook fan-out (C2.8). Same signature + call sites as the old
+   424→   424→ *  simulated version in lib/api.ts (which this replaces):
+   425→   425→ *    dispatchStoreWebhooks({ storeId, event, payload })
+   426→   426→ *  Creates PENDING WebhookDelivery rows (attempts 0) for the store's active,
+   427→   427→ *  subscribed endpoints and immediately attempts each inline — best-effort,
+   428→   428→ *  parallel across endpoints, catch-all: failures leave the row pending for
+   429→   429→ *  the retry sweep. NEVER throws (call sites are on live order paths) and
+   430→   430→ *  NEVER writes success without a real 2xx response. */
+   431→   431→export async function dispatchStoreWebhooks(input: { storeId: string; event: string; payload: unknown }): Promise<void> {
+   432→   432→  try {
+   433→   433→    const endpoints = await db.webhookEndpoint.findMany({
+   434→   434→      where: { storeId: input.storeId, isActive: true },
+   435→   435→      select: { id: true, eventsJson: true },
+   436→   436→    });
+   437→   437→    const matched = endpoints.filter((ep) => parseJson<string[]>(ep.eventsJson, []).includes(input.event));
+   438→   438→    if (matched.length === 0) return;
+   439→   439→
+   440→   440→    let payloadJson: string;
+   441→   441→    try {
+   442→   442→      payloadJson = JSON.stringify(input.payload ?? null);
+   443→   443→    } catch {
+   444→   444→      payloadJson = JSON.stringify({ error: "unserializable_webhook_payload" });
+   445→   445→    }
+   446→   446→
+   447→   447→    const created = await Promise.all(
+   448→   448→      matched.map((ep) =>
+   449→   449→        db.webhookDelivery.create({
+   450→   450→          data: { endpointId: ep.id, event: input.event, payloadJson, status: "pending", attempts: 0 },
+   451→   451→          select: { id: true },
+   452→   452→        })
+   453→   453→      )
+   454→   454→    );
+   455→   455→
+   456→   456→    // Happy path delivers inline; allSettled + internal catch-alls keep this
+   457→   457→    // total. Worst case adds ~one timeout window (10 s) to the calling route.
+   458→   458→    await Promise.allSettled(created.map((row) => deliverWebhookDelivery(row.id, { trigger: "inline" })));
+   459→   459→  } catch (e) {
+   460→   460→    console.error(
+   461→   461→      `[webhook-delivery] dispatch failed for ${input.event} (rows may be pending for the retry sweep):`,
+   462→   462→      errShort(e)
+   463→   463→    );
+   464→   464→  }
+   465→   465→}
+   466→   466→
+   467→   467→// ---------------------------------------------------------------- retry sweep
+   468→   468→
+   469→   469→export type WebhookSweepOutcome = {
+   470→   470→  scanned: number;
+   471→   471→  attempted: number;
+   472→   472→  succeeded: number;
+   473→   473→  retried: number;
+   474→   474→  failedFinal: number;
+   475→   475→  skippedNotDue: number;
+   476→   476→  skippedInactive: number;
+   477→   477→  unsubscribedFailed: number;
+   478→   478→  staleFailed: number;
+   479→   479→  errors: number;
+   480→   480→  remainingBacklog: number | null;
+   481→   481→  durationMs: number;
+   482→   482→  at: string;
+   483→   483→  schedule: string;
+   484→   484→};
+   485→   485→
+   486→   486→/** Retry rail: claim a bounded batch of DUE pending deliveries and attempt
+   487→   487→ *  them for real. `status:"failed"` rows are terminal (only an explicit admin
+   488→   488→ *  replay revives them), so the sweep only ever claims pending rows whose
+   489→   489→ *  derived nextAttemptAt has passed (coarse SQL pre-filter + exact per-row
+   490→   490→ *  check) with attempts < 8. Deadline-aware so the scheduler's 45 s tick
+   491→   491→ *  timeout is never breached; leftovers roll to the next tick. */
+   492→   492→export async function sweepDueWebhookDeliveries(opts: { deadlineMs?: number; batch?: number } = {}): Promise<WebhookSweepOutcome> {
+   493→   493→  const t0 = performance.now();
+   494→   494→  const deadlineMs = opts.deadlineMs ?? 35_000;
+   495→   495→  const batch = opts.batch ?? 25;
+   496→   496→  const counts = {
+   497→   497→    scanned: 0,
+   498→   498→    attempted: 0,
+   499→   499→    succeeded: 0,
+   500→   500→    retried: 0,
+   501→   501→    failedFinal: 0,
+   502→   502→    skippedNotDue: 0,
+   503→   503→    skippedInactive: 0,
+   504→   504→    unsubscribedFailed: 0,
+   505→   505→    staleFailed: 0,
+   506→   506→    errors: 0,
+   507→   507→  };
+   508→   508→
+   509→   509→  // Coarse candidate filter: due-ness is derived (lastAttemptAt + backoff),
+   510→   510→  // so the SQL narrows to "pending, under the attempt cap, last attempt at
+   511→   511→  // least one claim-spacing ago (or never attempted)"; the exact schedule is
+   512→   512→  // re-checked per row inside deliverWebhookDelivery.
+   513→   513→  let candidates: { id: string }[] = [];
+   514→   514→  try {
+   515→   515→    candidates = await db.webhookDelivery.findMany({
+   516→   516→      where: {
+   517→   517→        status: "pending",
+   518→   518→        attempts: { lt: MAX_WEBHOOK_ATTEMPTS },
+   519→   519→        OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lte: new Date(Date.now() - WEBHOOK_CLAIM_SPACING_MS) } }],
+   520→   520→      },
+   521→   521→      orderBy: { createdAt: "asc" },
+   522→   522→      take: 100,
+   523→   523→      select: { id: true },
+   524→   524→    });
+   525→   525→  } catch (e) {
+   526→   526→    console.error("[webhook-delivery] sweep candidate query failed:", errShort(e));
+   527→   527→  }
+   528→   528→  counts.scanned = candidates.length;
+   529→   529→
+   530→   530→  for (const c of candidates) {
+   531→   531→    if (counts.attempted >= batch) break;
+   532→   532→    if (Date.now() - t0 >= deadlineMs) break;
+   533→   533→    try {
+   534→   534→      const outcome = await deliverWebhookDelivery(c.id, { trigger: "sweep" });
+   535→   535→      if (outcome.attempted) {
+   536→   536→        counts.attempted++;
+   537→   537→        if (outcome.status === "success") counts.succeeded++;
+   538→   538→        else if (outcome.status === "failed") counts.failedFinal++;
+   539→   539→        else counts.retried++;
+   540→   540→      } else if (outcome.skipReason === "not_due") counts.skippedNotDue++;
+   541→   541→      else if (outcome.skipReason === "endpoint_inactive") counts.skippedInactive++;
+   542→   542→      else if (outcome.skipReason === "event_unsubscribed") counts.unsubscribedFailed++;
+   543→   543→    } catch (e) {
+   544→   544→      counts.errors++;
+   545→   545→      console.error("[webhook-delivery] sweep attempt error:", errShort(e));
+   546→   546→    }
+   547→   547→  }
+   548→   548→
+   549→   549→  // Abandoned-pending hygiene: rows pending for > 7 days (paused endpoint
+   550→   550→  // etc.) — far past the retry horizon — are closed as failed.
+   551→   551→  try {
+   552→   552→    const stale = await db.webhookDelivery.updateMany({
+   553→   553→      where: { status: "pending", createdAt: { lt: new Date(Date.now() - WEBHOOK_STALE_PENDING_MS) } },
+   554→   554→      data: { status: "failed" },
+   555→   555→    });
+   556→   556→    counts.staleFailed = stale.count;
+   557→   557→  } catch (e) {
+   558→   558→    console.error("[webhook-delivery] stale-pending sweep failed:", errShort(e));
+   559→   559→  }
+   560→   560→
+   561→   561→  let remainingBacklog: number | null = null;
+   562→   562→  try {
+   563→   563→    remainingBacklog = await db.webhookDelivery.count({ where: { status: "pending", attempts: { lt: MAX_WEBHOOK_ATTEMPTS } } });
+   564→   564→  } catch {
+   565→   565→    /* count is observability-only */
+   566→   566→  }
+   567→   567→
+   568→   568→  return {
+   569→   569→    ...counts,
+   570→   570→    remainingBacklog,
+   571→   571→    durationMs: Math.round(performance.now() - t0),
+   572→   572→    at: new Date().toISOString(),
+   573→   573→    schedule: "inline → 1m → 5m → 15m → 1h → 4h → 12h → 24h (8 attempts, then failed)",
+   574→   574→  };
+   575→   575→}
+   576→   576→

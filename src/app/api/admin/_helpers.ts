@@ -92,8 +92,11 @@ export function parseMaybeJson<T>(raw: string | null | undefined, fallback: T): 
   }
 }
 
-/** Strip password hashes before returning seller rows. */
-export function stripSeller<T extends { passwordHash?: string }>(s: T): Omit<T, "passwordHash"> {
+/** Strip password hashes before returning seller rows. Accepts rows WITH or
+ *  WITHOUT a passwordHash field — Phase 2.3 explicit selects never fetch it,
+ *  so the parameter must not require it (weak-type check) while still
+ *  stripping it from any row that carries one. */
+export function stripSeller<T extends object>(s: T & { passwordHash?: string }): Omit<T, "passwordHash"> {
   const { passwordHash: _ph, ...rest } = s;
-  return rest;
+  return rest as Omit<T, "passwordHash">;
 }

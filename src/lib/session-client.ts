@@ -88,6 +88,43 @@ export function deviceToken(key: string): string {
   return token;
 }
 
+/** Adopt the server-issued GUEST cart token (Phase 2.2 guest checkout
+ *  restoration). Every cart response from a guest-owned cart echoes its
+ *  token; mirroring it here keeps the X-Cart-Token header pointing at the
+ *  cart the server just returned (self-healing after the server's defensive
+ *  stale-token rotation: a header naming an account-bound row makes the
+ *  server mint a fresh guest token the client must adopt to stay in sync).
+ *  Account carts never echo a token (shapeCart nulls it), so this can never
+ *  latch a session-scoped row onto the guest identity. */
+export function syncCartToken(token: string | null | undefined): void {
+  if (typeof window === "undefined") return;
+  // Same charset/length class the server accepts (randomToken hex output).
+  if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return;
+  memoryTokens.set(CART_TOKEN_KEY, token);
+  try {
+    window.localStorage.setItem(CART_TOKEN_KEY, token);
+  } catch {
+    /* storage unavailable - the memory memo above keeps this page consistent */
+  }
+}
+
+/** Retire the device guest-cart token. PHASE 2.2 guest checkout restoration:
+ *  the server merges the guest cart into the shopper's account cart at
+ *  login/registration and retires ITS cookie token (clearCartToken) - the
+ *  client-side twin retires the localStorage/memo copy so post-logout
+ *  X-Cart-Token headers can never address the now account-bound cart row
+ *  (a stale header would make GET /api/cart read empty forever and every
+ *  add-to-cart mint an orphan row the client can never reach again). */
+export function clearDeviceCartToken(): void {
+  if (typeof window === "undefined") return;
+  memoryTokens.delete(CART_TOKEN_KEY);
+  try {
+    window.localStorage.removeItem(CART_TOKEN_KEY);
+  } catch {
+    /* storage unavailable - the memo delete above is what matters */
+  }
+}
+
 /** Headers carrying the guest cart + shopper device identity (plus the
  * CSRF origin-gate marker — see webHeaders above). */
 export function deviceHeaders(): Record<string, string> {

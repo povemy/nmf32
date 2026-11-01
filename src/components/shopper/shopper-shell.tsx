@@ -58,7 +58,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
-import { setSessionToken, webHeaders } from "@/lib/session-client";
+import { clearDeviceCartToken, setSessionToken, webHeaders } from "@/lib/session-client";
 import { UnifiedAuthPanel, type UnifiedUserType } from "@/components/auth/unified-auth-panel";
 import { SIGNED_OUT_EVENT, SHOPPER_VIEW_KEY } from "@/lib/session-events";
 import { formatMinor } from "@/lib/money";
@@ -92,6 +92,7 @@ import MeHubView from "./me-hub";
 import AffiliateHubView from "./affiliate-hub";
 import { AffiliateShowcaseView, AffiliateCollectionView } from "./affiliate-public";
 import {
+  CHAT_PAGE_SIZE,
   ChatHeader,
   ChatListItem,
   ChatListSkeleton,
@@ -1027,6 +1028,37 @@ function ShopperAuthDialog() {
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
 
+  // Phase 2.4 (C2.x): Back closes the modal instead of navigating away. Opening
+  // pushes a sentinel history entry ({nomofeeAuthModal}); a popstate that lands
+  // on a non-sentinel entry closes the modal. Closing via the UI (X button /
+  // successful auth) pops the sentinel again so the history stack never
+  // swallows a later Back press — closedByPopRef distinguishes the two paths.
+  const closedByPopRef = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    closedByPopRef.current = false;
+    try {
+      window.history.pushState({ nomofeeAuthModal: true }, "");
+    } catch {
+      /* history API unavailable — Back keeps legacy behavior */
+    }
+    const onPop = () => {
+      closedByPopRef.current = true;
+      close();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      if (!closedByPopRef.current) {
+        try {
+          if ((window.history.state as { nomofeeAuthModal?: boolean } | null)?.nomofeeAuthModal) window.history.back();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, [open, close]);
+
   useEffect(() => {
     if (open) setTab("login");
   }, [open]);
@@ -1070,6 +1102,12 @@ function ShopperAuthDialog() {
         password: f.get("password"),
       });
       setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
+      // PHASE 2.2 guest checkout restoration — registration signs the buyer in
+      // and folds the device's guest cart into the NEW account server-side
+      // (mergeGuestCartForShopper). Retire the client-side cart token twin so
+      // post-logout X-Cart-Token headers can never address the re-pointed
+      // (account-bound) cart row; a fresh guest token mints lazily later.
+      clearDeviceCartToken();
       if (res?.emailVerificationSent) {
         toast.success("Account created!", {
           description: "A verification code was sent to your email — verify it (Me → Profile) to see orders placed as a guest with that address.",
@@ -1144,6 +1182,12 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   const [activeThread, setActiveThread] = useState<{ storeName: string; storeSlug: string | null; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
+  // Phase 2.4 (C2.x): bounded history — the GET returns the latest
+  // CHAT_PAGE_SIZE messages + hasMore; "Load older messages" prepends the
+  // next keyset page (?before=<oldest id>) without losing the scroll anchor.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const prependRestoreRef = useRef<number | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1170,16 +1214,40 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       const d = await fetchJson<{
         thread: { storeName: string; storeSlug: string | null; orderNumber: string | null; contextType: string | null; subject: string | null };
         context: ThreadContextCard | null;
+        hasMore: boolean;
         messages: ChatMsg[];
-      }>(`/api/chat/threads/${threadId}`);
+      }>(`/api/chat/threads/${threadId}?limit=${CHAT_PAGE_SIZE}`);
       setMessages(d.messages);
+      setHasOlder(d.hasMore === true);
       setActiveThread({ storeName: d.thread.storeName, storeSlug: d.thread.storeSlug ?? null, orderNumber: d.thread.orderNumber, contextType: d.thread.contextType, subject: d.thread.subject });
       setContext(d.context ?? null);
     } catch {
       setMessages([]);
+      setHasOlder(false);
       setContext(null);
     }
   }, []);
+
+  /** Prepend the next older keyset page, pinning the viewport to the same
+   *  content (scrollTop = newHeight − prevHeight) so loading history never
+   *  jumps the user to the bottom. */
+  const loadOlder = useCallback(async () => {
+    if (!activeId || !messages?.length || loadingOlder) return;
+    setLoadingOlder(true);
+    const prevHeight = scrollRef.current?.scrollHeight ?? 0;
+    try {
+      const d = await fetchJson<{ hasMore: boolean; messages: ChatMsg[] }>(
+        `/api/chat/threads/${activeId}?limit=${CHAT_PAGE_SIZE}&before=${encodeURIComponent(messages[0].id)}`
+      );
+      prependRestoreRef.current = prevHeight;
+      setMessages((prev) => (prev ? [...d.messages.filter((n) => !prev.some((m) => m.id === n.id)), ...prev] : prev));
+      setHasOlder(d.hasMore === true);
+    } catch {
+      toast.error("Could not load older messages");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [activeId, messages, loadingOlder]);
 
   /** Debounced background list refresh — new threads + authoritative state. */
   const reloadThreadsSoon = useCallback(() => {
@@ -1298,10 +1366,17 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     },
   });
 
-  // auto-scroll to latest
+  // auto-scroll to latest — unless this render is an older-page PREPEND, in
+  // which case the viewport is pinned to the same content instead
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (prependRestoreRef.current != null) {
+      el.scrollTop = el.scrollHeight - prependRestoreRef.current;
+      prependRestoreRef.current = null;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
 
   // Instant client-side filtering of the live snapshot — pills + search are
@@ -1476,6 +1551,21 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
                   <ChatMessagesSkeleton />
                 ) : (
                   <>
+                    {hasOlder ? (
+                      <div className="pb-1 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void loadOlder()}
+                          disabled={loadingOlder}
+                          className="min-h-[36px] rounded-full text-xs"
+                          aria-label="Load older messages"
+                        >
+                          {loadingOlder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          Load older messages
+                        </Button>
+                      </div>
+                    ) : null}
                     {!context ? (
                       <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
                         💬 Direct message with this store

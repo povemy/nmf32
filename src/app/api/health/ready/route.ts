@@ -19,12 +19,23 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
+    // Phase 2.3 (P2.3-6): production sanitization — a DB probe failure can
+    // carry Prisma connection internals (server host/port, credentials shape);
+    // clients get the generic reason + a short ref id, the details stay in the
+    // server log. Dev keeps the full message for debugging.
+    const isProd = process.env.NODE_ENV === "production";
+    let refId = "";
+    if (isProd) {
+      refId = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+      console.error(`[health/ready] ref=${refId} probe failed:`, e);
+    }
     return Response.json(
       {
         error: {
           code: "NOT_READY",
-          message: e instanceof Error ? e.message : "readiness probe failed",
+          message: isProd ? "readiness probe failed" : e instanceof Error ? e.message : "readiness probe failed",
           dbProbeMs: Math.round((performance.now() - t0) * 10) / 10,
+          ...(isProd ? { meta: { refId } } : {}),
         },
       },
       { status: 503, headers: { "Cache-Control": "no-store" } },

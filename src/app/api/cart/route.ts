@@ -1,18 +1,21 @@
-import { getSession } from "@/lib/auth";
 import { handle, ok } from "@/lib/api";
-import { findCartForShopper, shapeCart } from "./cart";
+import { findCartForCaller, resolveCartCaller, shapeCart } from "./cart";
 import { trackViewCart } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/cart — the signed-in shopper's cart. Guests get an empty cart
-// (200, no error): carts require an account, the UI shows a sign-in prompt.
+// GET /api/cart — the caller's cart. PHASE 2.2 GUEST CHECKOUT RESTORATION:
+// signed-in shoppers read their ACCOUNT cart exactly as before; unauthenticated
+// visitors read the token-keyed guest cart ("sm_cart" cookie — created lazily
+// by add-to-cart, so a GET without one is simply an empty cart). The legacy
+// `requiresAuth` flag is kept for backwards compatibility and is now always
+// false (guest carts exist).
 export const GET = handle(async (req: Request) => {
-  const sess = await getSession();
-  const cart = sess?.userType === "shopper" ? await findCartForShopper(sess.userId) : null;
+  const { shopperId } = await resolveCartCaller();
+  const cart = await findCartForCaller(shopperId);
 
   // Seller Insights — view_cart, one event PER STORE present in the cart
-  // (once per cart+store per minute). Nothing recorded for empty/guest carts.
+  // (once per cart+store per minute). Nothing recorded for empty carts.
   if (cart && cart.items.length > 0) {
     const perStore = new Map<string, number>();
     for (const it of cart.items) {
@@ -22,9 +25,9 @@ export const GET = handle(async (req: Request) => {
       req,
       cart.id,
       [...perStore.entries()].map(([storeId, itemCount]) => ({ storeId, itemCount })),
-      sess?.userType === "shopper" ? sess.userId : null
+      shopperId
     );
   }
 
-  return ok({ cart: shapeCart(cart ?? null), requiresAuth: sess?.userType !== "shopper" });
+  return ok({ cart: shapeCart(cart ?? null), requiresAuth: false });
 });

@@ -225,7 +225,24 @@ export async function requireAdminRole(roles: string[]): Promise<AdminUserDTO> {
 export async function requireSeller(): Promise<SellerUserDTO> {
   const sess = await getSession();
   if (!sess || sess.userType !== "seller") throw new ApiError(401, "UNAUTHORIZED", "Seller session required");
-  const seller = await db.seller.findUnique({ where: { id: sess.userId }, include: { store: true } });
+  // PHASE 2.3 select hygiene (C2.7): explicit field list EXCLUDING
+  // Seller.emailVerifiedAt — a default/include select would read the column
+  // added by migration 20261107000000 and P2022 on the un-migrated dev DB,
+  // breaking EVERY seller-authenticated route. This is the identity tier used
+  // by /api/auth/me and (via requireActiveSellerStore) all /api/store/**.
+  // The verified flag is read separately, tolerantly, by
+  // src/lib/seller-email-verification.ts where it is actually needed.
+  const seller = await db.seller.findUnique({
+    where: { id: sess.userId },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      displayName: true,
+      status: true,
+      store: { select: { id: true, slug: true, name: true } },
+    },
+  });
   if (!seller) throw new ApiError(401, "UNAUTHORIZED", "Seller not found");
   return {
     id: seller.id, email: seller.email, fullName: seller.fullName, displayName: seller.displayName,

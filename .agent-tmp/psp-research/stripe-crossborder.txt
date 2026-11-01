@@ -1,0 +1,171 @@
+Skip to content
+
+[]
+
+Connect cross-border payouts
+
+Create account or Sign in
+
+[]
+
+[]Search/Ask AI[]
+
+Create accountSign in
+
+-   Get started
+-   Payments
+-   Revenue
+-   Risk
+-   Data
+-   Money management
+-   Stablecoins
+-   Embedded finance
+-   Developer resources
+
+More[]
+
+APIs & SDKs[]Help[]
+
+Overview
+
+Stripe Connect
+
+How Connect works
+
+[]Get started with Connect
+
+[]Design your integration
+
+[]Integration fundamentals
+
+[]Capabilities and information requirements
+
+[]Configure account Dashboards
+
+[]Onboard connected accounts
+
+[]Manage your Connect platform
+
+Payment processing
+
+[]Accept payments
+
+[]Pay out to accounts
+
+Manage connected account payouts
+
+Manage payout accounts for connected accounts
+
+Manage payout schedule
+
+Manual payouts
+
+Payout reversals
+
+Payout statement descriptors
+
+Instant Payouts
+
+Multiprocessor payouts for marketplaces
+
+[]Connect cross-border payouts
+
+Stablecoin payouts
+
+Customized start of day
+
+Embedded financial products
+
+[]Treasury for platforms
+
+[]Issuing
+
+[]Capital for platforms
+
+Managed support
+
+[]
+
+Hong Kong
+
+[]
+
+English (United States)
+
+[]
+
+1.  Home/
+2.  Embedded finance/
+3.  Pay out to accounts
+
+Connect cross-border payouts
+
+Transfer and pay out funds to connected accounts in other countries.
+
+[]Ask about this page
+
+[]Copy for LLM
+
+[]
+
+View as Markdown
+
+[]
+
+[]
+
+[]
+
+Set up agent
+
+Use cross-border payouts to transfer funds to connected accounts in their local currencies when your platform and connected accounts are in different supported regions.
+
+Availability[]
+
+Platforms based in the US, UK, EEA, Canada, or Switzerland can transfer funds to connected accounts in any of those regions, regardless of the payment settlement currency. For example:
+
+-   A platform in the UK can pay out to a seller in the US.
+-   A platform in Germany can pay out to a seller in Canada.
+
+Stripe doesn’t support self-serve cross-border payouts to countries outside the listed regions. Contact sales to discuss alternatives, or use Global Payouts.
+
+Compare integrations[]
+
+Global Payouts allows platforms in certain countries to transfer funds to recipients in any supported country. To choose between cross-border payouts and Global Payouts, you can review a detailed comparison.
+
+Pricing[]
+
+Cross-border payout fees depend on the location of the recipient. See Connect payout pricing.
+
+Limitations[]
+
+-   Service agreement: You can’t make cross-border payouts to connected accounts under a recipient service agreement. For those accounts, use Global payouts.
+-   Supported funds flows: Cross border payments supports the following funds flows
+    -   Separate charges and transfers without on_behalf_of
+    -   Top-ups and transfers
+    -   Destination charges without on_behalf_of
+
+See also[]
+
+-   []Required verification information
+-   []Supported settlement currencies
+-   []Bank account formats
+
+Was this page helpful?
+
+[]Yes[]No
+
+-   []Need help? Contact Support.
+-   []Chat with Stripe developers on Discord.
+-   []Check out our changelog.
+-   []Questions? Contact Sales.
+-   []LLM? Read llms.txt.
+-   Powered by Markdoc
+
+[]
+
+[]
+
+On this page
+
+[]

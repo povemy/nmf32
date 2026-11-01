@@ -14,7 +14,7 @@
 //   • DO NOT RECONNECT it in the UI while this flag is false.
 //   • The wallet API returns a `disabled` envelope instead of touching
 //     ShopperWallet; the claim endpoint rejects with FEATURE_DORMANT.
-//   • Existing demo wallet rows in SQLite are inert data — harmless.
+//   • Existing demo wallet rows are inert data — harmless.
 //
 // Flip this single flag to `true` to re-activate the whole suite AFTER:
 //   1. the finance roadmap discussion (user) is concluded, and

@@ -6,7 +6,9 @@ import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 export const dynamic = "force-dynamic";
 
 // store "marketplace opt-in" lives on the Seller model (schema) — filter through relation.
-const liveStore = { is: { status: "live", seller: { is: { marketplaceOptIn: true } } } };
+// C1.3 (seller publication governance): defense-in-depth — a live store is only
+// publicly sellable while its seller is admin-approved (status "active").
+const liveStore = { is: { status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } } };
 
 // PHASE 2 / C: public landing payload — per-request identical (no
 // personalization), cached 60 s with entity tags busted on product/store/
@@ -35,7 +37,9 @@ const loadHome = publicCache(
         take: 8,
       }),
       db.store.findMany({
-        where: { status: "live" },
+        // C1.3: featured stores must belong to an admin-approved seller —
+        // store.status alone is not proof of public eligibility.
+        where: { status: "live", seller: { is: { status: "active" } } },
         include: { _count: { select: { products: { where: { status: "active" } } } } },
         orderBy: { createdAt: "asc" },
         take: 6,

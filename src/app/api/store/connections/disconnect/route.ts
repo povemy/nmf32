@@ -19,7 +19,13 @@ export const DELETE = handle(async function (req: NextRequest) {
     if (!["shopee", "tiktok", "fixture"].includes(platform)) {
       return fail(400, "INVALID_PLATFORM", "Unsupported platform.");
     }
-    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+    // PHASE 2.3 select hygiene (C2.7): only the store id is used — selecting
+    // the relation explicitly keeps the un-migrated Seller.emailVerifiedAt
+    // column out of the query (default/include select → P2022 pre-migration).
+    const seller = await db.seller.findUnique({
+      where: { id: session.userId },
+      select: { store: { select: { id: true } } },
+    });
     const updated = await db.marketplaceConnection.updateMany({
       where: { platform, storeId: seller?.store?.id ?? "__none__" },
       data: { status: "disconnected" },

@@ -163,19 +163,24 @@ export const fixtureConnector: MarketplaceConnector = {
   async refreshIfNeeded() {},
 
   async getShop(_connectionId): Promise<NormalizedShop> {
-    const conn = await db.marketplaceConnection.findUnique({ where: { id: _connectionId } });
+    // PHASE 2.2 (C3): explicit select — shopId is the only field needed (avoids
+    // the full-row default select, which would fail pre-migration once sellerId
+    // lands in the generated client but not in the dev DB).
+    const conn = await db.marketplaceConnection.findUnique({ where: { id: _connectionId }, select: { shopId: true } });
     const slug = conn?.shopId ?? "demo-store";
     return { sourceShopId: slug, name: titleCase(slug), region: "MY" };
   },
 
   async listProductsPage(connectionId) {
-    const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId } });
+    // PHASE 2.2 (C3): explicit select — shopId only (see getShop note).
+    const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId }, select: { shopId: true } });
     const { products } = generateFixtureCatalogue(conn?.shopId ?? "demo-store");
     return { products: products.map((p) => ({ sourceProductId: p.sourceProductId })), nextCursor: null };
   },
 
   async getProduct(connectionId, sourceProductId) {
-    const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId } });
+    // PHASE 2.2 (C3): explicit select — shopId only (see getShop note).
+    const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId }, select: { shopId: true } });
     const { products } = generateFixtureCatalogue(conn?.shopId ?? "demo-store");
     const found = products.find((p) => p.sourceProductId === sourceProductId);
     if (!found) throw new Error(`Fixture product ${sourceProductId} not found`);

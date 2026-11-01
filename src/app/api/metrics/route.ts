@@ -3,8 +3,12 @@
 // EXCLUDED from the counters themselves (EXCLUDED_LABELS in lib/metrics).
 // Requires header: X-Metrics-Token: <METRICS_TOKEN from .env>. 503 if unset,
 // 401 on mismatch — never open by default.
+// Phase 2.4 (P2.4 cleanup §5.3): the token check is now CONSTANT-TIME
+// (digest + timingSafeEqual, same posture as cron-auth) — it was a plain
+// `!==` on the raw secret, a textbook timing oracle.
 import { snapshot } from "@/lib/metrics";
 import { db } from "@/lib/db";
+import { safeEqual } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +18,7 @@ export async function GET(req: Request) {
     return Response.json({ error: { code: "METRICS_UNCONFIGURED", message: "METRICS_TOKEN is not set; metrics are disabled (fail-closed)" } }, { status: 503 });
   }
   const got = req.headers.get("x-metrics-token");
-  if (got !== expected) {
+  if (!got || !safeEqual(got, expected)) {
     return Response.json({ error: { code: "UNAUTHORIZED", message: "Invalid or missing X-Metrics-Token" } }, { status: 401 });
   }
   // $metrics is a runtime-only Prisma extension on this generated client —

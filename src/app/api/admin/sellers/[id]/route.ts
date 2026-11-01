@@ -3,8 +3,37 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap, requireAnyCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optNum, optBool, str, stripSeller, daysAgo } from "@/app/api/admin/_helpers";
+import { getSellerEmailVerifiedAt } from "@/lib/seller-email-verification";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+// PHASE 2.3 select hygiene (C2.7): every Seller read/write below uses an
+// EXPLICIT field list that EXCLUDES emailVerifiedAt and passwordHash — a
+// default/include select would read the column added by migration
+// 20261107000000 and P2022 on the un-migrated dev DB. The verified timestamp
+// is read tolerantly (null = NOT verified) and surfaced as its own honest
+// field. Bank accounts are narrowed to masked-display fields — the ciphertext
+// (accountNumberEnc) is NEVER returned by a read surface (C2.5).
+const SELLER_SCALARS = {
+  id: true,
+  email: true,
+  fullName: true,
+  displayName: true,
+  countryCode: true,
+  phone: true,
+  status: true,
+  riskTier: true,
+  commissionOverridePercent: true,
+  holdDaysOverride: true,
+  kycStatus: true,
+  planCode: true,
+  marketplaceOptIn: true,
+  rejectReason: true,
+  submittedAt: true,
+  approvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 // GET /api/admin/sellers/[id] — full seller profile
 // F-26 (Phase 3): this profile bundles KYC documents, bank accounts, the
@@ -18,15 +47,24 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
   const seller = await db.seller.findUnique({
     where: { id },
-    include: {
+    select: {
+      ...SELLER_SCALARS,
       store: true,
       wallet: true,
       kycDocuments: { orderBy: { createdAt: "asc" } },
-      bankAccounts: { orderBy: { createdAt: "desc" } },
+      bankAccounts: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, holderName: true, bankName: true, accountNumberMasked: true, verified: true, verifiedAt: true, createdAt: true },
+      },
       sellerNotes: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
+
+  // PHASE 2.3 (C2.7) — honest email-verification state for the admin profile:
+  // tolerant read; a null timestamp (never verified, or storage not yet
+  // migrated) is reported as NOT verified. Never a facade "verified".
+  const emailVerifiedAt = await getSellerEmailVerifiedAt(id);
 
   const [recentProducts, recentOrders, productCount] = await Promise.all([
     db.product.findMany({
@@ -53,7 +91,7 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
     : { _sum: { totalMinor: 0 }, _count: { _all: 0 } };
 
   return ok({
-    seller: stripSeller(seller),
+    seller: { ...stripSeller(seller), emailVerifiedAt: emailVerifiedAt ? emailVerifiedAt.toISOString() : null },
     store: seller.store,
     kycDocuments: seller.kycDocuments,
     bankAccounts: seller.bankAccounts,
@@ -84,7 +122,12 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     ? await requireCap("commission.manage")
     : await requireAdmin();
 
-  const seller = await db.seller.findUnique({ where: { id } });
+  // PHASE 2.3 select hygiene: explicit fields for the audit "before" snapshot
+  // (excludes the un-migrated emailVerifiedAt and the passwordHash).
+  const seller = await db.seller.findUnique({
+    where: { id },
+    select: { id: true, riskTier: true, commissionOverridePercent: true, holdDaysOverride: true, marketplaceOptIn: true },
+  });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
   const data: {
@@ -113,7 +156,9 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
 
   if (Object.keys(data).length === 0) throw new ApiError(400, "VALIDATION", "Nothing to update");
 
-  const updated = await db.seller.update({ where: { id }, data });
+  // Same hygiene for the write: update() would RETURN all scalars (incl. the
+  // un-migrated emailVerifiedAt — P2022 pre-migration 20261107000000).
+  const updated = await db.seller.update({ where: { id }, data, select: { ...SELLER_SCALARS } });
 
   await auditAdmin({
     adminId: admin.id,

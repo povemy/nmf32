@@ -2,7 +2,9 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
+import { recordEvent } from "@/lib/metrics";
 import { bustPublicProductCache } from "@/lib/public-cache";
+import { expireUnpaidPaymentGroups } from "@/lib/expiry-sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -16,24 +18,22 @@ export const dynamic = "force-dynamic";
 // still payment_pending (performance/REPORT.md §3.4). Abandoned checkouts
 // leaked stock forever.
 //
-// WHAT IT DOES (per expired group, ONE transaction per group, claim-first):
-//   1. CLAIM: conditional updateMany `requires_payment → expired`. The loser
-//      of any race (another sweep, a payment confirmation) matches 0 rows and
-//      touches NOTHING → repeated/overlapping sweeps can never double-restock.
+// The per-group transaction logic now lives in ONE shared primitive —
+// `expireUnpaidPaymentGroups` (lib/expiry-sweep.ts) — so this rail and
+// /api/orders/expiry/tick execute IDENTICAL state transitions (C1.1):
+//   1. CLAIM the group first: conditional `requires_payment|failed → expired`.
 //   2. Per-order guard: `payment_pending → payment_expired` (conditional).
 //      An order that somehow became paid is skipped, not restocked.
-//   3. Stock release: INCREMENT per item + InventoryLog (`expiry:{ref}`) +
+//   3. Stock release: increment per item + InventoryLog (`expiry:{ref}`) +
 //      salesCount decrement (floor-guarded). Atomic with the claim → a
 //      committed expiry always owns its restock exactly once.
+//   4. Voucher/coupon redemption restoration (C2.3) in the same transaction.
 //
 // LATE PAYMENT AFTER RELEASE (defined recovery policy, exercised by the
 // webhook path): a payment.succeeded arriving for an expired group is refused
-// with 409 GROUP_EXPIRED — no money moves, no order is resurrected, the PSP
-// treats it as a permanent failure and (in production) refunds per its own
-// cadence. The mock PSP surfaces the refusal to the buyer directly. The
-// ±10 min webhook retry window vs the 30 min payment window means a real PSP
-// redelivery can only arrive for a group expired ≥ 20 min — the refusal is
-// the expected steady-state, not an anomaly.
+// with 409 GROUP_EXPIRED and converges on the durable PaymentReconciliation
+// refund obligation — no money moves, no order is resurrected, the PSP treats
+// it as a permanent failure and (in production) refunds per its own cadence.
 //
 // SCHEDULING (durable): this route is the worker TICK, not the scheduler. The
 // recurring invocation lives in mini-services/expiry-scheduler (port 3005,
@@ -48,7 +48,6 @@ export const dynamic = "force-dynamic";
 // ============================================================================
 
 const SWEEP_THROTTLE_MS = 1_500;
-const BATCH = 50;
 
 export const POST = handle(async (req: Request) => {
   const auth = assertCronAuth(req);
@@ -56,105 +55,22 @@ export const POST = handle(async (req: Request) => {
   const last = typeof g.__expirySweepAt === "number" ? (g.__expirySweepAt as number) : 0;
   const now = Date.now();
   if (now - last < SWEEP_THROTTLE_MS) {
+    // P2.3-7 (monitoring honesty): real expiry-sweep outcome counters on
+    // /api/metrics (events: "cron.expiry_sweep:*").
+    recordEvent("cron.expiry_sweep", "throttled");
     return ok({ throttled: true, expired: 0, auth: auth.mode });
   }
   g.__expirySweepAt = now;
 
   const t0 = performance.now();
-  const stats = { examined: 0, expired: 0, ordersExpired: 0, itemsRestocked: 0, skippedConcurrent: 0, anomalies: 0, failures: 0 };
-
-  const nowDate = new Date();
-  // Phase 1 (E1): candidates now include FAILED groups past their expiry —
-  // before this, a `payment.failed` webhook flipped the group to "failed"
-  // and the buyer's abandoned retry left the reserved stock held FOREVER
-  // (both sweeps filtered status: "requires_payment" only). The retry window
-  // is untouched: /api/checkout/payments/[ref]/retry re-opens failed sessions
-  // until expiresAt — release only happens AFTER that window closes. A late
-  // payment.succeeded arriving after release is refused by the webhook's
-  // existing expired-guard (409 GROUP_EXPIRED + durable refund obligation).
-  const candidates = await db.paymentGroup.findMany({
-    where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: nowDate } },
-    include: { orders: { include: { items: { select: { variantId: true, productId: true, qty: true } } } } },
-    orderBy: { expiresAt: "asc" },
-    take: BATCH,
-  });
-  stats.examined = candidates.length;
-
-  for (const group of candidates) {
-    try {
-      // ONE transaction per group: claim + order transitions + restock are
-      // atomic. Default isolation (READ COMMITTED) + conditional claims: the
-      // group claim is the first write and the only gate — concurrent sweeps,
-      // payment confirmations and post-failure retries can never both win it.
-      // Phase 1 (E1): the claim accepts requires_payment OR failed — a
-      // concurrent buyer retry (failed → requires_payment) simply loses/wins
-      // the row race; count 0 ⇒ someone else owns the transition.
-      const result = await db.$transaction(async (tx) => {
-        const claim = await tx.paymentGroup.updateMany({
-          where: { id: group.id, status: { in: ["requires_payment", "failed"] } },
-          data: { status: "expired" },
-        });
-        if (claim.count === 0) return { claimed: false as const };
-
-        let ordersExpired = 0;
-        let itemsRestocked = 0;
-        for (const order of group.orders) {
-          // Per-order guard: only still-unpaid orders expire; an order paid
-          // by a racing confirmation is skipped (its group claim would have
-          // lost anyway — this is belt-and-braces).
-          const moved = await tx.order.updateMany({
-            where: { id: order.id, status: "payment_pending" },
-            data: { status: "payment_expired", cancelledAt: nowDate },
-          });
-          if (moved.count === 0) {
-            stats.anomalies++;
-            continue; // never restock an order that is not safely unpaid
-          }
-          ordersExpired++;
-          await tx.orderStatusHistory.create({
-            data: { orderId: order.id, fromStatus: "payment_pending", toStatus: "payment_expired", actor: "system", note: `Payment window expired (${group.ref}) — stock released by expiry sweep` },
-          });
-          for (const item of order.items) {
-            // OrderItem.variantId is nullable (legacy/product-level lines have
-            // no variant row) — there is nothing to restock or log for them.
-            if (!item.variantId) continue;
-            await tx.productVariant.update({
-              where: { id: item.variantId },
-              data: { stock: { increment: item.qty } },
-            });
-            await tx.inventoryLog.create({
-              data: { variantId: item.variantId, delta: item.qty, reason: `expiry:${group.ref}`, refId: order.id },
-            });
-            if (item.productId) {
-              // Floor-guarded decrement: salesCount must never go negative.
-              await tx.product.updateMany({
-                where: { id: item.productId, salesCount: { gte: item.qty } },
-                data: { salesCount: { decrement: item.qty } },
-              });
-            }
-            itemsRestocked++;
-          }
-        }
-        return { claimed: true as const, ordersExpired, itemsRestocked };
-      });
-
-      if (result.claimed) {
-        stats.expired++;
-        stats.ordersExpired += result.ordersExpired;
-        stats.itemsRestocked += result.itemsRestocked;
-      } else {
-        stats.skippedConcurrent++;
-      }
-    } catch (e) {
-      stats.failures++;
-      console.error(`[expiry-sweep] group ${group.ref} failed (will retry next tick):`, e instanceof Error ? e.message : e);
-    }
-  }
+  // Shared core (C1.1): the SAME primitive the /api/orders/expiry/tick rail
+  // runs — one authoritative set of state-transition rules.
+  const stats = await expireUnpaidPaymentGroups({ actor: "expiry-sweep" });
 
   const remaining = await db.paymentGroup.count({
     where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
   });
-  const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), batchLimit: BATCH, auth: auth.mode };
+  const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), auth: auth.mode };
 
   // PHASE 2.1 (§9-A): released reservations restored stock — cached public
   // product/market data is stale. Bust ONLY when something was actually
@@ -168,6 +84,10 @@ export const POST = handle(async (req: Request) => {
     create: { key: "cron.expiry_sweep.last", valueJson: toJson(outcome), description: "Last expiry-sweep outcome (F3 remediation)" },
     update: { valueJson: toJson(outcome) },
   });
+
+  // P2.3-7 (monitoring honesty): in-memory outcome counter for /api/metrics
+  // (durable truth stays the Setting row above + /api/health/scheduler).
+  recordEvent("cron.expiry_sweep", stats.failures > 0 ? "ran-with-failures" : "ran");
 
   return ok(outcome);
 });

@@ -237,16 +237,11 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
 
   async function addToCart(): Promise<boolean> {
     if (!variant || variant.stock <= 0) return false;
-    // Carts are ACCOUNT-scoped (no guest cart) — guests must sign in first.
-    // Auth state is read from the STORE at call time, NOT from this render's
-    // closure: the sign-in dialog resumes this exact function via a stored
-    // callback AFTER `me` has changed, so a captured `shopper` would be stale
-    // and would wrongly re-open the dialog instead of adding the item.
-    const meNow = useApp.getState().me;
-    if (!(meNow.loaded ? meNow.shopper : null)) {
-      openShopperAuth(() => void addToCart());
-      return false;
-    }
+    // PHASE 2.2 GUEST CHECKOUT RESTORATION: guests add straight to a
+    // token-keyed cart ("sm_cart" cookie — minted server-side on the first
+    // add); NO auth dialog. Signed-in shoppers keep the account cart exactly
+    // as before, and a guest who later signs in gets this cart merged into
+    // their account (lib/shopper-merge.ts).
     setAdding(true);
     try {
       const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty: Math.max(moq, qty) });
@@ -262,7 +257,9 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
       if (data?.store?.slug) ctx.openCart(data.store.slug);
       return true;
     } catch (e) {
-      // Belt-and-braces: an expired session gets the same sign-in-first flow.
+      // Belt-and-braces: an INVALID shopper session (401 — e.g. suspended
+      // account) still gets the sign-in-first flow. Guests never land here:
+      // the token-cart path succeeds without a session.
       if (e instanceof ApiFail && (e.status === 401 || e.code === "SHOPPER_LOGIN_REQUIRED")) {
         openShopperAuth(() => void addToCart());
         return false;

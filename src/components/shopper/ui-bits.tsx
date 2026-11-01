@@ -7,7 +7,7 @@
 // ============================================================================
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { formatMinor } from "@/lib/money";
-import { deviceHeaders } from "@/lib/session-client";
+import { deviceHeaders, syncCartToken } from "@/lib/session-client";
 import { signalSessionExpired } from "@/lib/session-events";
 import { useApp } from "@/lib/app-store";
 import { fontStack, nameSizePx, priceSizePx, fontLinkHref, type CardStyleTokens } from "@/lib/fonts";
@@ -140,6 +140,11 @@ export type CartT = {
   storeId: string | null;
   storeSlug: string | null;
   storeName: string | null;
+  /** PHASE 2.2 guest checkout restoration — the guest cart's token, echoed by
+   *  the server ONLY for guest-owned carts (null for account carts). Mirrored
+   *  into the X-Cart-Token header identity via syncCartToken so the client
+   *  always addresses the cart the server just returned. */
+  token?: string | null;
   stores?: CartStoreT[];
   items: CartItemT[];
 };
@@ -330,8 +335,10 @@ export function readOrderRefs(): OrderRefT[] {
   }
 }
 
-/** Fetch the account cart and live-refresh on sm-cart-updated events + on any
- *  sign-in / sign-out change (carts are account-scoped — guests have none).
+/** Fetch the caller's cart and live-refresh on sm-cart-updated events + on any
+ *  sign-in / sign-out change. PHASE 2.2 guest checkout restoration: carts are
+ *  account-scoped for signed-in shoppers and TOKEN-keyed ("sm_cart" cookie /
+ *  X-Cart-Token header) for guests — one hook serves both.
  *
  *  Task 28: cart state lives in a MODULE-LEVEL shared store, so every useCart()
  *  instance (drawer, header badge, checkout) renders from the same snapshot —
@@ -371,9 +378,13 @@ export function mutateCartItems(mutate: (items: CartItemT[]) => CartItemT[]) {
 /** Adopt a server cart payload directly into the shared store (no refetch).
  *  Add-to-cart responses already carry the fresh cart — feeding it here keeps
  *  every consumer (badge, drawer, checkout) in sync in the same frame without
- *  the event-driven /api/cart refetch storm. */
+ *  the event-driven /api/cart refetch storm. PHASE 2.2 guest checkout
+ *  restoration: a GUEST cart payload also mirrors its token into the device
+ *  identity (syncCartToken), keeping the X-Cart-Token header pointed at the
+ *  cart the server just returned (self-healing token rotation). */
 export function applyServerCart(cart: CartT | null | undefined) {
   if (!cart) return;
+  syncCartToken(cart.token);
   cartState = { cart, loading: false };
   emitCart();
 }
@@ -396,6 +407,9 @@ export function useCart() {
   const refresh = useCallback(async () => {
     try {
       const data = await fetchJson<{ cart: CartT }>("/api/cart");
+      // PHASE 2.2: mirror an echoed GUEST cart token (account carts send null)
+      // so the next request addresses the same cart the server just returned.
+      syncCartToken(data.cart?.token);
       cartState = { cart: data.cart ?? EMPTY_CART, loading: false };
     } catch {
       cartState = { cart: EMPTY_CART, loading: false };

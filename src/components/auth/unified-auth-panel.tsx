@@ -34,7 +34,7 @@ import { Eye, EyeOff, KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authHeaders, setSessionToken } from "@/lib/session-client";
+import { authHeaders, clearDeviceCartToken, setSessionToken } from "@/lib/session-client";
 import { DevAccountsPanel } from "./dev-accounts-panel";
 
 export type UnifiedUserType = "admin" | "seller" | "shopper";
@@ -239,6 +239,15 @@ export function UnifiedAuthPanel({
     // localStorage bridge for cookie-less contexts (cross-site iframe
     // preview panels) — mirrors the previous per-portal login forms.
     setSessionToken(data.token);
+    // PHASE 2.2 guest checkout restoration — a SHOPPER sign-in folds the
+    // device's guest cart into the account cart server-side
+    // (mergeGuestCartForShopper) and retires the server's cart-token cookie.
+    // Retire the client-side twin (localStorage + in-memory memo) here too:
+    // while signed in the X-Cart-Token header is ignored, and after sign-out
+    // a stale token would name the now ACCOUNT-bound cart row — every
+    // add-to-cart would mint an orphan guest cart the header can never read
+    // back. A fresh guest token is minted lazily after the next sign-out.
+    if (data.userType === "shopper") clearDeviceCartToken();
     await onAuthed(data.userType, data);
   };
 

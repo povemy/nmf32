@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, stripSeller } from "@/app/api/admin/_helpers";
+import { planAdminStorePath, transitionStoreToward, TransitionError } from "@/lib/store-lifecycle";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,11 +18,28 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
   if (seller.status === "active") throw new ApiError(409, "CONFLICT", "Active seller cannot be rejected — suspend or terminate instead");
 
+  // C1.3 (seller publication governance): route the store takedown through the
+  // guarded state machine (transitionStore) instead of a raw db.store.update.
+  // "draft" is legal from live/claimed/suspended (maintenance passes through
+  // suspended); a pre-claim or archived store cannot legally reach "draft" —
+  // 409 BEFORE the seller row is mutated so the action fails without partial state.
+  if (seller.store && !planAdminStorePath(seller.store.status, "draft")) {
+    throw new ApiError(409, "CONFLICT", `Store in status "${seller.store.status}" cannot be taken down to draft — it must complete its own lifecycle first`);
+  }
+
   const updated = await db.seller.update({
     where: { id },
     data: { status: "rejected", kycStatus: "rejected", rejectReason: reason },
   });
-  if (seller.store) await db.store.update({ where: { id: seller.store.id }, data: { status: "draft" } });
+  if (seller.store) {
+    try {
+      await transitionStoreToward({ storeId: seller.store.id, to: "draft", actorId: admin.id, note: `seller rejected: ${reason}` });
+    } catch (err) {
+      // illegal/concurrent transition ⇒ conflict; anything else is a real error
+      if (err instanceof TransitionError) throw new ApiError(409, "CONFLICT", err.message);
+      throw err;
+    }
+  }
   // F-02 remediation: rejection revokes live sessions too — the seller must
   // re-authenticate after being told their application was rejected (fresh
   // login remains allowed for the documented revision loop; only the STALE

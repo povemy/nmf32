@@ -1,0 +1,480 @@
+# Razorpay
+
+- [Documentation](https://curlec.com/docs/home.md): Explore Razorpay Curlec's documentation for Payments, Partners and Developer Tools.
+- [Razorpay Curlec Payments Suite](https://curlec.com/docs/payments.md): Explore Razorpay Curlec Payment Gateway and the entire suite of products available as part of Razorpay Curlec Payments Suite.
+- [Quickstart Guide](https://curlec.com/docs/payments/quickstart.md): Complete guide to get started with Razorpay Curlec's payments platform.
+- [Ecommerce](https://curlec.com/docs/payments/solutions/ecommerce.md): Explore Razorpay Curlec's recommended products for the ecommerce industry, enabling easy access and management of payments, refunds, transfers, subscriptions, and more.
+- [Banking, Financial Services & Insurance](https://curlec.com/docs/payments/solutions/bfsi.md): Explore Razorpay Curlec's BFSI solutions to streamline transactions and enhance security with seamless integration and real-time analytics for superior service and growth.
+- [Travel](https://curlec.com/docs/payments/solutions/travel.md): Explore Razorpay Curlec's recommended products for the travel industry, ensuring secure and efficient transactions for seamless booking experiences.
+- [Set up a Razorpay Curlec Account](https://curlec.com/docs/payments/set-up.md): Set up a Razorpay Curlec account, submit your KYC using CKYC/Video KYC and start using the various Razorpay Curlec Payments and Banking Plus products.
+- [KYC Documents for Companies and Businesses](https://curlec.com/docs/payments/business-types-kyc-documents.md): List of required KYC Documents for companies and business types to register with Razorpay Curlec under the 2026 Master KYC guidelines.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/faqs.md): Find answers to some Frequently Asked Questions (FAQs) about Razorpay Curlec.
+- [About Dashboard](https://curlec.com/docs/payments/dashboard.md): Overview of the Razorpay Curlec Dashboard home page with key features including payments overview, insights, and product recommendations for managing your payment operations.
+- [Test and Live Modes](https://curlec.com/docs/payments/dashboard/test-live-modes.md): Check the Test (sandbox environment) and Live modes available on the Razorpay Curlec Dashboard and the difference between them.
+- [About Reports](https://curlec.com/docs/payments/dashboard/reports.md): Download and schedule various types of reports from the Razorpay Curlec Dashboard.
+- [List of Standard Reports](https://curlec.com/docs/payments/dashboard/reports/list-of-reports.md): Check and download the various types of Reports available on the Razorpay Curlec Dashboard.
+- [About Account & Settings](https://curlec.com/docs/payments/dashboard/account-settings.md): Check the various Account & Settings options on the Razorpay Curlec Dashboard.
+- [Business Website Details](https://curlec.com/docs/payments/dashboard/account-settings/business-website-details.md): Steps to add or update your business website or app details on the Razorpay Curlec Dashboard. You can also add or update additional website details.
+- [API Keys](https://curlec.com/docs/payments/dashboard/account-settings/api-keys.md): Generate and regenerate Test and Live API Keys using the Razorpay Curlec Dashboard.
+- [Webhooks](https://curlec.com/docs/payments/dashboard/account-settings/webhooks.md): Steps to set up webhooks on the Razorpay Curlec Dashboard.
+- [Account Details](https://curlec.com/docs/payments/dashboard/account-settings/account-details.md): Steps to update account details on the Razorpay Curlec Dashboard. You can update display name, profile name, email and phone number.
+- [Business Details](https://curlec.com/docs/payments/dashboard/account-settings/business-details.md): Steps to view business details on the Razorpay Curlec Dashboard.
+- [Customer Support Details](https://curlec.com/docs/payments/dashboard/account-settings/customer-support-details.md): Steps to add or update your business' customer support details on the Razorpay Curlec Dashboard.
+- [Account Activation Details](https://curlec.com/docs/payments/dashboard/account-settings/activation-details.md): Steps to view account activation details on the Razorpay Curlec Dashboard.
+- [Your Support Tickets](https://curlec.com/docs/payments/dashboard/account-settings/support-tickets.md): Raise a support ticket and view details of existing tickets raised by you on the Razorpay Curlec Dashboard.
+- [Manage Team](https://curlec.com/docs/payments/dashboard/account-settings/manage-team.md): Manage your team, add or remove users and provide appropriate roles to control access on the Razorpay Curlec Dashboard.
+- [Balances](https://curlec.com/docs/payments/dashboard/account-settings/balances.md): Details about various balances available and how you can add funds and maintain them from the Razorpay Curlec Dashboard.
+- [Transaction Limits](https://curlec.com/docs/payments/dashboard/account-settings/transaction-limits.md): Steps to update transaction limits on the Razorpay Curlec Dashboard.
+- [Capture and Refund Settings](https://curlec.com/docs/payments/dashboard/account-settings/capture-refund.md): Steps to configure payment capture and refund settings on the Razorpay Curlec Dashboard.
+- [Bank Account Details](https://curlec.com/docs/payments/dashboard/account-settings/bank-account-details.md): Steps to update your bank account details on the Razorpay Curlec Dashboard.
+- [Settlement Details](https://curlec.com/docs/payments/dashboard/account-settings/settlement-details.md): Steps to view your settlement details on the Razorpay Curlec Dashboard.
+- [Branding](https://curlec.com/docs/payments/dashboard/account-settings/branding.md): Steps to configure branding-related settings for Checkout on the Razorpay Curlec Dashboard.
+- [Checkout Styling](https://curlec.com/docs/payments/dashboard/account-settings/checkout-styling.md): Customise your checkout with your brand's colours, logos, fonts, and more on the Razorpay Curlec Dashboard.
+- [Checkout Features](https://curlec.com/docs/payments/dashboard/account-settings/checkout-features.md): Customise your checkout experience with options for email collection, quick flash checkout, personalised banners and more on the Razorpay Curlec Dashboard.
+- [Email, SMS and WhatsApp Notifications](https://curlec.com/docs/payments/dashboard/account-settings/email-sms-whatsapp.md): Steps to add or update notification settings on the Razorpay Curlec Dashboard.
+- [Payment Methods](https://curlec.com/docs/payments/dashboard/account-settings/payment-methods.md): Enable and disable different Payment Methods from the Razorpay Curlec Dashboard. Check how to respond to Action Required statuses.
+- [Support](https://curlec.com/docs/payments/dashboard/support.md): If you are a business using Razorpay Curlec products or exploring Razorpay Curlec solutions, contact our Support Team for all your technical and product queries.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/dashboard/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Dashboard.
+- [About Customers](https://curlec.com/docs/payments/customers.md): Create and edit Customers from the Razorpay Curlec Dashboard or using APIs.
+- [Customer Refunds](https://curlec.com/docs/payments/customers/customer-refunds.md): Request refund if you are a customer of businesses using Razorpay Curlec. Track refunds using payment, order, booking or refund id or raise a dispute chargeback.
+- [About Orders](https://curlec.com/docs/payments/orders.md): All about Razorpay Curlec Orders, their states and Razorpay Curlec Dashboard actions.
+- [Orders - Dashboard Actions](https://curlec.com/docs/payments/orders/dashboard.md): View Order details, subscribe to webhook events and view reports from the Razorpay Curlec Dashboard.
+- [Orders APIs](https://curlec.com/docs/payments/orders/apis.md): List of Orders APIs available to perform various actions.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/orders/faqs.md): Find answers to some Frequently Asked Questions (FAQs) about Razorpay Curlec Orders.
+- [About Payments](https://curlec.com/docs/payments/payments.md): Check payments, the various payment states and Razorpay Curlec Dashboard actions. Understand late authorisations.
+- [Test Card Details](https://curlec.com/docs/payments/payments/test-card-details.md): Use test cards to test Indian, international and EMI payments, and Subscriptions.
+- [Payment Capture Settings](https://curlec.com/docs/payments/payments/capture-settings.md): Configure auto and manual payment capture settings from Razorpay Curlec Dashboard and using APIs.
+- [Late Payment Authorisations](https://curlec.com/docs/payments/payments/late-authorisation.md): Check the Late Payment authorisation and its causes, differences between normal and late authorised payments and how to handle them.
+- [Handle Late Authorised Payments](https://curlec.com/docs/payments/payments/late-authorisation/handle.md): Use Orders API or webhooks to handle late authorisations.
+- [Payments - Dashboard Actions](https://curlec.com/docs/payments/payments/dashboard.md): View payment details, manually capture payments, issue a refund or view settlement details of a payment from the Razorpay Curlec Dashboard.
+- [Payments APIs](https://curlec.com/docs/payments/payments/apis.md): List of available Payments and Downtime APIs for various actions such as Capture, Fetch and Update.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/payments/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Payments.
+- [About International Payments](https://curlec.com/docs/payments/international-payments.md): Accept payments in international currencies, through international bank accounts and/or payments via cards issued by foreign banks. Check the list of supported purpose codes and currencies.
+- [Accept Payments from International Customers](https://curlec.com/docs/payments/international-payments/accept-payments-from-international-customers.md): Razorpay Curlec offers affordable solutions for Indian businesses to accept International Bank Transfers and International Card Payments, with funds settled directly to local bank accounts, ensuring minimal conversion loss and a smooth global payment experience.
+- [International Debit and Credit Cards](https://curlec.com/docs/payments/international-payments/international-debit-credit-cards.md): Enable/disable international payments using foreign cards. Check the eligibility criteria, prerequisites and the application process.
+- [Glossary](https://curlec.com/docs/payments/international-payments/glossary.md): List of commonly used terms related to Razorpay Curlec International Payments.
+- [International Payments | FAQs](https://curlec.com/docs/payments/international-payments/faqs.md): Find answers to frequently asked questions about Razorpay Curlec International Payments.
+- [About Payment Methods](https://curlec.com/docs/payments/payment-methods.md): Check the different payment methods that can be configured to accept payments from your customers using Razorpay Curlec products.
+- [FPX](https://curlec.com/docs/payments/payment-methods/fpx.md): Accept payments using the FPX payment method.
+- [FPX B2B Maker-Checker](https://curlec.com/docs/payments/payment-methods/fpx/b2b-maker-checker.md): Hold FPX payments made from a corporate bank account until the company's authorised checker approves them.
+- [UPI](https://curlec.com/docs/payments/payment-methods/upi.md): Accept payments from customers in India paying with any UPI app on Razorpay Curlec Checkout.
+- [About Card Payments](https://curlec.com/docs/payments/payment-methods/cards.md): Accept payments from your customers using cards.
+- [3D Secure 2.0 Authentication Protocol (3DS2)](https://curlec.com/docs/payments/payment-methods/cards/features/3ds2.0.md): Understand 3DS2, the payment flow and the supported authentication channels.
+- [DuitNow](https://curlec.com/docs/payments/payment-methods/duitnow.md): Accept real-time payments from Malaysian bank accounts and e-wallets with DuitNow.
+- [DuitNow QR](https://curlec.com/docs/payments/payment-methods/duitnow/qr.md): Accept payments from any Malaysian banking or e-wallet app with DuitNow QR.
+- [DuitNow Pay](https://curlec.com/docs/payments/payment-methods/duitnow/pay.md): Accept payments using DuitNow Pay.
+- [Apple Pay Standard Checkout](https://curlec.com/docs/payments/payment-methods/apple-pay.md): Accept Apple Pay payments from customers with Razorpay Curlec Checkout.
+- [Integration Steps](https://curlec.com/docs/payments/payment-methods/apple-pay/custom-integration.md): Accept Apple Pay payments from customers on your own checkout UI using the Razorpay Curlec Custom Checkout SDK.
+- [Apple Pay Web SDK](https://curlec.com/docs/payments/payment-methods/apple-pay/custom-integration/web-sdk.md): Integrate Apple Pay on your checkout page using the Razorpay Curlec Web SDK. Choose between the web component or headless JS integration methods.
+- [Web JS Integration](https://curlec.com/docs/payments/payment-methods/apple-pay/custom-integration/web-sdk/web-js-integration.md): Integrate Apple Pay using the headless Razorpay Curlec JS SDK with amount and currency passed at initialisation, with full control over button rendering and payment flow.
+- [Web Component Integration](https://curlec.com/docs/payments/payment-methods/apple-pay/custom-integration/web-sdk/web-component.md): Integrate Apple Pay on your checkout page using the Razorpay Curlec web component. Render the Apple Pay button with minimal JavaScript and handle payment events.
+- [Error Codes](https://curlec.com/docs/payments/payment-methods/apple-pay/custom-integration/error-codes.md): Reference for Apple Pay Custom Checkout error responses, canMakePayment reasons, payment error responses, client errors and a handling guide.
+- [S2S Integration](https://curlec.com/docs/payments/payment-methods/apple-pay/s2s-integration.md): Accept Apple Pay payments from customers with Razorpay Curlec S2S Integration.
+- [About Wallets](https://curlec.com/docs/payments/payment-methods/wallets.md): Accept payments using various Wallets like Touch'n Go and GrabPay at Razorpay Curlec Checkout.
+- [Alipay+](https://curlec.com/docs/payments/payment-methods/wallets/alipay-plus.md): Accept payments from overseas customers paying with wallets such as GCash, DANA, TrueMoney and Alipay on Razorpay Curlec Checkout.
+- [Boost](https://curlec.com/docs/payments/payment-methods/wallets/boost.md): Offer your customers Boost as a payment method on Razorpay Curlec Standard Checkout.
+- [MCash](https://curlec.com/docs/payments/payment-methods/wallets/mcash.md): Offer your customers MCash as a payment method on Razorpay Curlec Standard Checkout.
+- [Touch'n Go](https://curlec.com/docs/payments/payment-methods/wallets/touch-n-go.md): Offer your customers Touch'n Go as a payment method at the Razorpay Curlec Standard Checkout.
+- [Pay Later](https://curlec.com/docs/payments/payment-methods/pay-later.md): Let your customers split a purchase into three interest-free instalments with Atome on Razorpay Curlec Checkout.
+- [About Instalments](https://curlec.com/docs/payments/payment-methods/instalments.md): Let your customers avail instalment plans at Razorpay Curlec Standard Checkout.
+- [About Credit Card Instalments](https://curlec.com/docs/payments/payment-methods/instalments/credit-card-instalments.md): Let your customers avail Credit Card Instalments at Razorpay Curlec Standard Checkout.
+- [About Settlements](https://curlec.com/docs/payments/settlements.md): Check how Razorpay Curlec settles money received from your customers to your bank account- Settlement Cycle, Partial Settlements and Settlement States.
+- [Settlements - Dashboard Actions](https://curlec.com/docs/payments/settlements/dashboard.md): View settlement details, check the settlements break-up, enable settlements on hold and view reports from the Razorpay Curlec Dashboard.
+- [Settlements APIs](https://curlec.com/docs/payments/settlements/apis.md): List of Settlements APIs and Instant Settlements (On-demand Settlement) APIs available to perform actions.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/settlements/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Payment Settlements.
+- [About Refunds](https://curlec.com/docs/payments/refunds.md): Initiate Normal and Instant Refund payments using Razorpay Curlec Dashboard and APIs for your customers.
+- [Normal Refunds](https://curlec.com/docs/payments/refunds/normal.md): Check how to issue Normal Refunds to your customers, the refund process, processing time and refund fees.
+- [Auto-Refunds](https://curlec.com/docs/payments/refunds/auto-refunds.md): Know why Razorpay Curlec auto-refunds some payments, how to identify auto-refunds and how to prevent them.
+- [Issue Refunds](https://curlec.com/docs/payments/refunds/issue.md): Issue refunds to customers using Razorpay Curlec Dashboard and APIs.
+- [View Refunds](https://curlec.com/docs/payments/refunds/view.md): View details of Refunds and Settlements using the Razorpay Curlec Dashboard and APIs.
+- [Handle Refund Errors](https://curlec.com/docs/payments/refunds/errors.md): Check the errors that may occur while processing Refunds and how to handle these errors.
+- [Refunds APIs](https://curlec.com/docs/payments/refunds/apis.md): List of Refunds APIs to perform actions like creating, viewing and updating refunds.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/refunds/subscribe-to-webhooks.md): Subscribe to various webhook events related to Refunds to receive instant notifications.
+- [Refund Communication](https://curlec.com/docs/payments/refunds/communication.md): Check the refund-related emails sent to your customers after the refunds are initiated.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/refunds/faqs.md): Find answers to frequently asked questions about Refunds via Razorpay Curlec and IRCTC refunds.
+- [About Payment Gateway](https://curlec.com/docs/payments/payment-gateway.md): Accept payments using Razorpay Curlec Payment Gateway. Discover its advantages, when to use it and the various integration types.
+- [How Payment Gateway Works](https://curlec.com/docs/payments/payment-gateway/how-it-works.md): Understand the Razorpay Curlec Payment Gateway flow and how it works.
+- [Features](https://curlec.com/docs/payments/payment-gateway/features.md): List of features that will help you build a first-class payments experience with Razorpay Curlec Checkout.
+- [Web Standard Checkout Prerequisites](https://curlec.com/docs/payments/payment-gateway/web-integration/standard.md): Check the prerequisites before you integrate with Razorpay Curlec Web Standard Checkout.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/integration-steps.md): Steps to integrate the Standard Checkout form on your website.
+- [Callback URL](https://curlec.com/docs/payments/payment-gateway/callback-url.md): Reuse the web integration to process the payments.
+- [About Payment Methods Configuration](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods.md): Configure the payment methods of your choice at Razorpay Curlec Checkout.
+- [Understand the Configuration](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/understand-configuration.md): Understand the building blocks that are required to build a configuration of your choice.
+- [Display the Configuration](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/display-configuration.md): Display the configured payment methods on Razorpay Curlec Checkout.
+- [Sample Codes](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/sample-code.md): Sample codes to help you integrate the payment methods of your choice on Razorpay Curlec Checkout.
+- [Supported Methods](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/supported-methods.md): List of supported payment methods and instruments.
+- [Standard Web Integration - Configurability of Payment Methods](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/configure-restrict-payment-methods.md): Configure and restrict the payment methods of your choice on Razorpay Curlec Checkout.
+- [Best Practices for Standard Checkout Integration](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/best-practices.md): Best practices for a smoother Standard Checkout web integration and payment experience.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/web-integration/standard/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions related to Razorpay Curlec Web Standard Checkout Integration.
+- [Android Standard Checkout Prerequisites](https://curlec.com/docs/payments/payment-gateway/android-integration/standard.md): Check the prerequisites before you integrate with Razorpay Curlec Android Standard Checkout.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/android-integration/standard/integration-steps.md): Steps to integrate your Android application with Razorpay Curlec Android Standard SDK.
+- [Additional Support for Payment Methods](https://curlec.com/docs/payments/payment-gateway/android-integration/standard/payment-methods.md): Additional support features available for card, netbanking, wallets and more.
+- [Customisation Options](https://curlec.com/docs/payments/payment-gateway/android-integration/standard/customisation.md): Add company logo and disable Checkout on full screen using the Razorpay Curlec Android Standard SDK.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/android-integration/standard/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Standard Android integration.
+- [Google Play Console - Data Safety](https://curlec.com/docs/payments/payment-gateway/android-integration/standard/google-data-safety.md): Guidelines for filling out Razorpay Curlec SDK-related data points in Google Play Data Safety form.
+- [iOS Standard Checkout Prerequisites](https://curlec.com/docs/payments/payment-gateway/ios-integration/standard.md): Check the prerequisites before you integrate with Razorpay Curlec iOS Standard Checkout.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ios-integration/standard/integration-steps.md): Steps to integrate your iOS application with Razorpay Curlec iOS Standard SDK.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ios-integration/standard/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about standard iOS integration.
+- [React Native Standard Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/react-native-integration/standard.md): Check the prerequisites before you integrate Razorpay Curlec React Native Standard plugin with our native Android and iOS SDKs.
+- [Integration Steps (Android)](https://curlec.com/docs/payments/payment-gateway/react-native-integration/standard/integration-steps-android.md): Steps to integrate your React Native Android application with Razorpay Curlec Payment Gateway.
+- [Integration Steps (iOS)](https://curlec.com/docs/payments/payment-gateway/react-native-integration/standard/integration-steps-ios.md): Steps to integrate your React Native iOS application with Razorpay Curlec Payment Gateway.
+- [Troubleshooting and FAQs](https://curlec.com/docs/payments/payment-gateway/react-native-integration/standard/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Standard React Native integration.
+- [Cordova Standard SDK Prerequisites](https://curlec.com/docs/payments/payment-gateway/cordova-integration.md): Check the prerequisites before you integrate with Razorpay Curlec Cordova Standard SDK.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/cordova-integration/integration-steps.md): Steps to integrate the Cordova application with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/cordova-integration/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Cordova Integration.
+- [Flutter Standard Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/flutter-integration/standard.md): Check the prerequisites before you integrate Razorpay Curlec Flutter Standard plugin with our native Android and iOS SDKs.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/flutter-integration/standard/integration-steps.md): Steps to integrate the Flutter application with Razorpay Curlec Payment Gateway.
+- [API Classes and Methods](https://curlec.com/docs/payments/payment-gateway/flutter-integration/standard/payment-methods/api.md): API classes and methods available for the Flutter plugin.
+- [Integrate Turbo UPI TPV](https://curlec.com/docs/payments/payment-gateway/flutter-integration/standard/payment-methods/integration-tpv.md): Know how Razorpay Curlec performs Third-Party Validation (TPV) of investor bank accounts in real-time using Razorpay Turbo UPI.
+- [Troubleshooting and FAQs](https://curlec.com/docs/payments/payment-gateway/flutter-integration/standard/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Standard Flutter integration.
+- [Capacitor Standard SDK Prerequisites](https://curlec.com/docs/payments/payment-gateway/capacitor-integration.md): Check the prerequisites before you integrate with Razorpay Curlec Capacitor Standard SDK.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/capacitor-integration/integration-steps.md): Steps to integrate the Capacitor application with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/capacitor-integration/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Capacitor integration.
+- [About Server Integrations](https://curlec.com/docs/payments/server-integration.md): Integrate the Razorpay Curlec Payment Gateway using our server SDKs available in multiple languages.
+- [.NET Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/dot-net.md): Check the prerequisites before you integrate with Razorpay Curlec .NET server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/dot-net/integration-steps.md): Integrate your .NET-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/server-integration/dot-net/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Razorpay Curlec .NET SDK.
+- [Go Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/go.md): Check the prerequisites before you integrate with Razorpay Curlec Go server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/go/integration-steps.md): Integrate your Go-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Java Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/java.md): Check the prerequisites before you integrate with Razorpay Curlec Java server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/java/integration-steps.md): Integrate your Java-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Node.js Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/nodejs.md): Check the prerequisites before you integrate with Razorpay Curlec Node.js server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/nodejs/integration-steps.md): Integrate your Node.js-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/server-integration/nodejs/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Razorpay Curlec Node.js SDK.
+- [PHP Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/php.md): Check the prerequisites before you integrate with Razorpay Curlec PHP server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/php/integration-steps.md): Integrate your PHP-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/server-integration/php/troubleshooting-faqs.md): Troubleshoot common error scenarios and find answers to frequently asked questions about Razorpay Curlec PHP SDK.
+- [Python Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/python.md): Check the prerequisites before you integrate with Razorpay Curlec Python server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/python/integration-steps.md): Integrate your Python-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Ruby Server SDK Prerequisites](https://curlec.com/docs/payments/server-integration/ruby.md): Check the prerequisites before you integrate with Razorpay Curlec Ruby server-side SDK.
+- [Integration Steps](https://curlec.com/docs/payments/server-integration/ruby/integration-steps.md): Integrate your Ruby-based website with our SDK to start accepting payments using the Razorpay Curlec Payment Gateway.
+- [Unsupported Platforms and Integrations](https://curlec.com/docs/payments/payment-gateway/unsupported-platforms.md): Learn how to integrate Razorpay Curlec Payment Gateway with platforms that don't have an official plugin. Explore alternate integration options and workarounds.
+- [About Ecommerce Plugins](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins.md): Check the list of Razorpay Curlec Ecommerce Plugins to integrate with the plugin of your choice and accept payments from your customers.
+- [Shopify Razorpay Secure Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/shopify-razorpay-secure.md): Know how to integrate Razorpay Curlec Payment Gateway with your Shopify store. Complete guide for Shopify payment integration with Razorpay Secure app.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/shopify-razorpay-secure/integration-steps.md): Step-by-step guide to integrate Razorpay Curlec Payment Gateway with Shopify. Install Razorpay Secure app and start accepting payments on your Shopify store.
+- [Initiate Refunds](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/shopify-razorpay-secure/initiate-refunds.md): Know how to initiate refunds from the Shopify Dashboard.
+- [Reconcile Shopify Orders on the Dashboard](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/shopify-razorpay-secure/reconcile-payments.md): Reconcile payments made on your Shopify store via Razorpay Curlec Dashboard.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/shopify-razorpay-secure/faqs.md): Troubleshoot common errors and find answers to frequently asked questions about Shopify.
+- [WooCommerce Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/woocommerce.md): Integrate Razorpay Curlec Payment Gateway with WooCommerce. Complete prerequisites, setup guide and installation steps for WooCommerce Razorpay plugin.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/woocommerce/integration-steps.md): Step-by-step guide to integrate Razorpay Curlec Payment Gateway with WooCommerce. Install Razorpay WooCommerce plugin and start accepting payments on WordPress.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/woocommerce/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about WooCommerce Ecommerce Plugin integration.
+- [Wix Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wix.md): Check the prerequisites before you integrate your Wix website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wix/integration-steps.md): Steps to integrate your Wix website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wix/faqs.md): Find answers to frequently asked questions about Wix plugin.
+- [Magento Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/magento.md): Check the prerequisites before you integrate your Magento website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/magento/integration-steps.md): Steps to integrate your Magento Extensions with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/magento/troubleshooting.md): Know how to troubleshoot some of the common error messages and find answers to frequently asked questions for Magento extensions.
+- [Arastta Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/arastta.md): Check the prerequisites before you integrate your Arastta website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/arastta/integration-steps.md): Steps to integrate your Arastta website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/arastta/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about Arastta Ecommerce Plugin integration.
+- [CS-Cart Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/cs-cart.md): Check the prerequisites before you integrate your CS-Cart website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/cs-cart/integration-steps.md): Steps to integrate your CS-Cart website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/cs-cart/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about CS-Cart Ecommerce Plugin integration.
+- [Drupal Commerce Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/drupal-commerce.md): Check the prerequisites before you integrate your Drupal Commerce website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/drupal-commerce/integration-steps.md): Steps to integrate your Drupal Commerce website with the Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/drupal-commerce/troubleshooting-faqs.md): Find answers to frequently asked questions about Drupal Commerce plugin.
+- [Easy Digital Downloads Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/easy-digital-downloads.md): Check the prerequisites before you integrate your Easy Digital Downloads website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/easy-digital-downloads/integration-steps.md): Steps to integrate your Easy Digital Downloads website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/easy-digital-downloads/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about Easy Digital Downloads Plugin integration.
+- [Gravity Forms Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/gravity-forms.md): Check the prerequisites before you integrate your Gravity Forms website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/gravity-forms/integration-steps.md): Steps to integrate your WordPress website using the Gravity Forms plugin.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/gravity-forms/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about Gravity Forms Ecommerce Plugin integration.
+- [OpenCart Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/open-cart.md): Check the prerequisites before you integrate your OpenCart website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/open-cart/integration-steps.md): Steps to integrate your OpenCart Extension with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/open-cart/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about OpenCart Ecommerce Plugin integration.
+- [PrestaShop Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/prestashop.md): Check the prerequisites before you integrate your PrestaShop website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/prestashop/integration-steps.md): Steps to integrate your PrestaShop website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/prestashop/troubleshooting-faqs.md): Troubleshoot common errors and find answers to frequently asked questions about PrestaShop Ecommerce Plugin integration.
+- [WHMCS Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/whmcs.md): Check the prerequisites before you integrate your WHMCS website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/whmcs/integration-steps.md): Steps to integrate your WHMCS website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/whmcs/faqs.md): Find answers to frequently asked questions about WHMCS plugin.
+- [WordPress Plugin Prerequisites](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wordpress.md): Check the prerequisites before you integrate your WordPress website with Razorpay Curlec Payment Gateway.
+- [Integration Steps](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wordpress/integration-steps.md): Steps to integrate your WordPress website with Razorpay Curlec Payment Gateway.
+- [Troubleshooting & FAQs](https://curlec.com/docs/payments/payment-gateway/ecommerce-plugins/wordpress/faqs.md): Find answers to frequently asked questions about WordPress plugin.
+- [About Payment Links](https://curlec.com/docs/payments/payment-links.md): Create Razorpay Curlec Payments Links and share them with your customers from the Razorpay Curlec Dashboard or using APIs and start accepting payments. Check the advantages, payment methods, international currency support and more.
+- [Payment Links Use Cases](https://curlec.com/docs/payments/payment-links/use-cases.md): Explore the diverse use cases of Razorpay Curlec Payment Links, a robust payment collection solution for businesses.
+- [Standard Payment Links](https://curlec.com/docs/payments/payment-links/standard.md): Create Standard Payment Links and share them with your customers by email.
+- [How Payment Link Works](https://curlec.com/docs/payments/payment-links/how-it-works.md): Create Payment Links and send them to customers to receive payments and perform other actions.
+- [Payment Link States](https://curlec.com/docs/payments/payment-links/states.md): List of states of a Razorpay Curlec Payment Link and their significance.
+- [Create a Payment Link](https://curlec.com/docs/payments/payment-links/create.md): Create Standard Payment Links from the Dashboard or using APIs.
+- [Enable Partial Payments](https://curlec.com/docs/payments/payment-links/partial-payments.md): Enable partial payments for Payment Links issued to customers from the Dashboard or APIs.
+- [Edit a Payment Link](https://curlec.com/docs/payments/payment-links/edit.md): Know how to edit Payment Links.
+- [Cancel a Payment Link](https://curlec.com/docs/payments/payment-links/cancel.md): Cancel Payment Links that are in the created state from the Razorpay Curlec Dashboard.
+- [Duplicate a Payment Link](https://curlec.com/docs/payments/payment-links/duplicate.md): Duplicate a Payment Link from the Razorpay Curlec Dashboard.
+- [Search a Payment Link](https://curlec.com/docs/payments/payment-links/search.md): Search for a Payment Link using the various search filters.
+- [Resend a Payment Link](https://curlec.com/docs/payments/payment-links/resend.md): Resend a Payment Link to a customer by email.
+- [Create Payment Links in Batches](https://curlec.com/docs/payments/payment-links/batch.md): Generate Razorpay Curlec Payment Links in bulk using the Batch Upload feature.
+- [Send Reminders](https://curlec.com/docs/payments/payment-links/reminders.md): Enable or disable reminders for Payment Links.
+- [Customise Payment Links](https://curlec.com/docs/payments/payment-links/customise.md): Customise the Payment Links payment request page using Razorpay Curlec APIs. Make changes to the payment details and checkout sections.
+- [Manage Team](https://curlec.com/docs/payments/payment-links/manage-team.md): Mange your team, add or remove users and provide appropriate role to control access for Payment Links.
+- [View Reports](https://curlec.com/docs/payments/payment-links/view-reports.md): Generate the Razorpay Curlec Payment Links reports.
+- [Payment Links APIs](https://curlec.com/docs/payments/payment-links/apis.md): Create, update, cancel and fetch Payment Links and resend notifications using Payment Links APIs.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/payment-links/subscribe-to-webhooks.md): Subscribe to various webhook events related to Payment Links to receive instant notifications.
+- [FAQs (Frequently Asked Questions)](https://curlec.com/docs/payments/payment-links/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Payment Links.
+- [Glossary](https://curlec.com/docs/payments/payment-links/glossary.md): List of commonly used terms related to Razorpay Curlec Payment Links.
+- [About Payment Button](https://curlec.com/docs/payments/payment-button.md): Accept payments from your customers using Razorpay Curlec Payment Button.
+- [Payment Button Use Cases](https://curlec.com/docs/payments/payment-button/use-cases.md): Explore the diverse use cases of Razorpay Curlec Payment Button, a robust payment collection solution for businesses.
+- [How Payment Button Works](https://curlec.com/docs/payments/payment-button/how-it-works.md): Create Razorpay Curlec Payment Button and accept payments from customers on your website.
+- [Payment Button States](https://curlec.com/docs/payments/payment-button/states.md): List of states of a Payment Button and their significance.
+- [Quick Pay Button](https://curlec.com/docs/payments/payment-button/quick-pay.md): Create a Quick Pay Button and accept a fixed amount as payment.
+- [Buy Now Button](https://curlec.com/docs/payments/payment-button/buy-now.md): Create a Buy Now Button, sell products and accept payments from customers.
+- [Donations Button](https://curlec.com/docs/payments/payment-button/donations.md): Create a Donation Button and accept donations.
+- [Custom Button](https://curlec.com/docs/payments/payment-button/custom.md): Create a Custom Payment Button and accept payments from customers.
+- [Manage Payment Buttons](https://curlec.com/docs/payments/payment-button/manage.md): Edit, duplicate and update stock for a Payment Button.
+- [Prefill Amount Fields in Payment Button](https://curlec.com/docs/payments/payment-button/manage/prefill-amount-fields.md): Configure to prefill the amount fields of the Payment Button.
+- [Search a Payment Button](https://curlec.com/docs/payments/payment-button/search.md): Search for a Payment Button on the Razorpay Curlec Dashboard.
+- [Configure Generic Payment Button Receipt](https://curlec.com/docs/payments/payment-button/receipt.md): Configure automatic and manual payment receipts for the payments made using your Razorpay Curlec Payment Button.
+- [Add Facebook Pixel on Payment Success Page](https://curlec.com/docs/payments/payment-button/add-fb-pixel.md): Add your Facebook Pixel on your payment success page and track payments and conversions from your Facebook advertisements.
+- [View Reports](https://curlec.com/docs/payments/payment-button/view-reports.md): View and download report of payments received for a specific Payment Button.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/payment-button/subscribe-to-webhooks.md): Subscribe to various webhook events related to Payment Button to receive instant notifications.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/payment-button/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Payment Button.
+- [Glossary](https://curlec.com/docs/payments/payment-button/glossary.md): Check the frequently used terms and their definitions related to Razorpay Curlec Payment Button.
+- [About Payment Pages](https://curlec.com/docs/payments/payment-pages.md): Create custom-branded Razorpay Curlec Payment Pages in minutes with zero coding. Accept online payments instantly with memorable custom URLs.
+- [Payment Pages Use Cases](https://curlec.com/docs/payments/payment-pages/use-cases.md): Explore the diverse use cases of Razorpay Curlec Payment Pages, a robust payment collection solution for businesses.
+- [How Payment Pages Work](https://curlec.com/docs/payments/payment-pages/how-it-works.md): Create Payment Pages, send them to customers to receive payments and perform other actions.
+- [Payment Pages States](https://curlec.com/docs/payments/payment-pages/states.md): List of states of a Payment Page and their significance.
+- [Create a Payment Page](https://curlec.com/docs/payments/payment-pages/create.md): Create a Payment Page to start accepting payments.
+- [Add Images, Videos and More](https://curlec.com/docs/payments/payment-pages/add-images-videos.md): Add images, videos, hyperlinks, create lists and change font style and colour for your Razorpay Curlec Payment Pages.
+- [Manage Payment Pages](https://curlec.com/docs/payments/payment-pages/manage.md): Edit content, change settings or deactivate your Payment Page.
+- [Customise Payment Pages](https://curlec.com/docs/payments/payment-pages/customise.md): Customise Payment Pages and send different versions of the same Payment Page to different customers.
+- [Configure Payment Pages Receipt](https://curlec.com/docs/payments/payment-pages/receipt.md): Generate, download and share receipts with customers for payments on your Payment Pages. Send email notifications and PDF receipts to your customers.
+- [Search for Payment Pages](https://curlec.com/docs/payments/payment-pages/search.md): Search for a Payment Page on the Razorpay Curlec Dashboard.
+- [Upload Data on Payment Pages in Batches](https://curlec.com/docs/payments/payment-pages/batch.md): Share Razorpay Curlec Payment Page Link in bulk with customers via email and SMS.
+- [Configure Goal Tracker](https://curlec.com/docs/payments/payment-pages/goal-tracker.md): Create and configure a Donation Goal Tracker on your Payment Pages.
+- [Add Domain Link (Beta)](https://curlec.com/docs/payments/payment-pages/domain-linking.md): Create a customised URL for your Payment Page.
+- [Add Google Analytics Tracking ID](https://curlec.com/docs/payments/payment-pages/plugins-add-ons/google-analytics.md): Add your Google Tracking ID to your Payment Pages to track payments and conversions from your Google advertisements.
+- [Add Facebook Pixel](https://curlec.com/docs/payments/payment-pages/plugins-add-ons/fb-pixel.md): Add your Facebook Pixel to your Payment Pages to track payments and conversions from your Facebook advertisements.
+- [Add Facebook Pixel on Payment Success Page](https://curlec.com/docs/payments/payment-pages/plugins-add-ons/fb-payment-success.md): Add your Facebook Pixel on your payment success page. This helps you track payments and conversions from your Facebook advertisements.
+- [Integrate Payment Pages With Shiprocket](https://curlec.com/docs/payments/payment-pages/plugins-add-ons/shiprocket.md): Integrate Shiprocket with Razorpay Curlec Payment Pages to automate shipping and dispatch products seamlessly to customers.
+- [View Reports](https://curlec.com/docs/payments/payment-pages/view-reports.md): View the details of payments received for a specific Payment Page and download the report.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/payment-pages/subscribe-to-webhooks.md): Subscribe to various webhook events related to Payment Pages to receive instant notifications.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/payment-pages/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Payment Pages.
+- [Glossary](https://curlec.com/docs/payments/payment-pages/glossary.md): List of commonly used terms related to Razorpay Curlec Payment Pages.
+- [About Invoices](https://curlec.com/docs/payments/invoices.md): Issue Razorpay Curlec Invoices to your customers from the Razorpay Curlec Dashboard or using APIs and start accepting payments. Check the Payment Methods and International Currency support and more.
+- [Invoices Use Cases](https://curlec.com/docs/payments/invoices/use-cases.md): Explore the diverse use cases of Razorpay Curlec Invoices. A robust system to issue invoices to your customers.
+- [How Invoices Work](https://curlec.com/docs/payments/invoices/how-it-works.md): Create Invoices, send them to customers to receive payments and perform other actions.
+- [Invoice States](https://curlec.com/docs/payments/invoices/states.md): List of various Invoice states and their significance.
+- [Create an Invoice](https://curlec.com/docs/payments/invoices/create.md): Create and save an Invoice.
+- [Issue an Invoice](https://curlec.com/docs/payments/invoices/issue.md): Issue Invoices to customers and receive payments.
+- [Search an Invoice](https://curlec.com/docs/payments/invoices/search.md): Search for an Invoice.
+- [Update an Invoice](https://curlec.com/docs/payments/invoices/update.md): Edit an Invoice.
+- [Resend an Invoice](https://curlec.com/docs/payments/invoices/resend.md): Resend Invoices as a payment reminder or if the customer has not received the link.
+- [Duplicate an Invoice](https://curlec.com/docs/payments/invoices/duplicate.md): Create copies of existing Invoices to save time and reduce errors.
+- [Cancel an Invoice](https://curlec.com/docs/payments/invoices/cancel.md): Cancel an Invoice via Razorpay Curlec Dashboard or APIs.
+- [Delete an Invoice](https://curlec.com/docs/payments/invoices/delete.md): Delete an Invoice using the Razorpay Curlec Dashboard or API.
+- [Download and Print an Invoice](https://curlec.com/docs/payments/invoices/download-print.md): Download Invoices in PDF format and print them.
+- [About Items](https://curlec.com/docs/payments/invoices/items.md): Create Items that can be billed using Razorpay Curlec Invoices.
+- [Items Dashboard](https://curlec.com/docs/payments/invoices/items/dashboard.md): Create, update and delete Items using Razorpay Curlec Dashboard.
+- [Invoice APIs](https://curlec.com/docs/payments/invoices/apis.md): List of Invoice APIs available to perform various actions.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/invoices/subscribe-to-webhooks.md): Subscribe to various webhook events related to Invoices to receive instant notifications.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/invoices/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Invoices.
+- [Glossary](https://curlec.com/docs/payments/invoices/glossary.md): A list of commonly used terms related to Razorpay Curlec Invoices.
+- [About Subscriptions](https://curlec.com/docs/payments/subscriptions.md): Use Razorpay Curlec Subscriptions to accept recurring payments from your customers. Check the available billing models and the supported currencies.
+- [How Subscriptions Work](https://curlec.com/docs/payments/subscriptions/workflow.md): Check the Plans, free trial period, upfront (delivery or set up) amount, Subscriptions, checkout integration for Subscriptions and Subscription links.
+- [Subscriptions States](https://curlec.com/docs/payments/subscriptions/states.md): List of various Subscription states and their meanings.
+- [Subscriptions Use Cases](https://curlec.com/docs/payments/subscriptions/use-cases.md): Explore the use cases of Razorpay Curlec Subscriptions on how businesses streamline billing for memberships, premium content, and more.
+- [Supported Payment Methods](https://curlec.com/docs/payments/subscriptions/supported-payment-methods.md): Learn about the payment methods supported by Razorpay Curlec Subscriptions.
+- [Create Subscriptions](https://curlec.com/docs/payments/subscriptions/create.md): Create Razorpay Curlec Subscriptions and Plans for your customers. Set the Trial Period and Upfront Amount.
+- [Test Subscriptions](https://curlec.com/docs/payments/subscriptions/test.md): Test Razorpay Curlec Subscriptions, Plans, authenticate transaction and cancellation using Razorpay Curlec APIs or from the Razorpay Curlec Dashboard.
+- [Integrate With Subscriptions](https://curlec.com/docs/payments/subscriptions/integration-guide.md): Step-by-step guide on how to integrate Razorpay Curlec Subscriptions.
+- [Create and View Plans](https://curlec.com/docs/payments/subscriptions/create-plans.md): Create a Subscription Plan and view a list of created plans.
+- [Create Subscriptions via Links](https://curlec.com/docs/payments/subscriptions/create-subscription-links.md): Create a Subscription link from the Razorpay Curlec Dashboard.
+- [Charge a Card Manually](https://curlec.com/docs/payments/subscriptions/manually-charge-card.md): Manually charge a card for Razorpay Curlec Subscriptions from the Razorpay Curlec Dashboard.
+- [View Subscription Details](https://curlec.com/docs/payments/subscriptions/view.md): View Subscription details on the Razorpay Curlec Dashboard.
+- [Update a Subscription](https://curlec.com/docs/payments/subscriptions/update.md): Update a Subscription - start date, plan, quantity, duration and the notify customer flag.
+- [Pause, Resume and Cancel a Subscription](https://curlec.com/docs/payments/subscriptions/pause-resume-cancel.md): Pause, resume or cancel a Razorpay Curlec Subscription from the Razorpay Curlec Dashboard.
+- [Subscriptions Settings](https://curlec.com/docs/payments/subscriptions/settings.md): Configure payment method settings for Razorpay Curlec Subscriptions.
+- [Payment Retries](https://curlec.com/docs/payments/subscriptions/payment-retries.md): Handle payment retries when an auto-charge fails for Razorpay Curlec Subscriptions. Check different failure scenarios and handle them using webhooks.
+- [Supported Banks and Apps](https://curlec.com/docs/payments/subscriptions/supported-banks-apps.md): List of banks and apps that support Subscription using Emandate (Netbanking, Debit Card, Aadhaar), card and UPI.
+- [Razorpay Curlec Subscriptions Plugin for WooCommerce](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce.md): Accept recurring payments on your WooCommerce-enabled WordPress site using the Razorpay Curlec Subscription for WooCommerce plugin.
+- [1. Build Integration](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce/build-integration.md): A step-by-step guide on how to integrate WooCommerce-enabled WordPress site with Razorpay Curlec.
+- [2. Test Integration](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce/test-integration.md): Run test payments to make sure that your integration works.
+- [3. Go-live Checklist](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce/go-live-checklist.md): Accept live payments through the Razorpay Curlec Payment Gateway.
+- [Manage Subscriptions](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce/manage-subscriptions.md): Reactivate, cancel or put on hold an existing Razorpay Curlec Subscription plugin for WooCommerce and initiate refunds.
+- [Subscription Status](https://curlec.com/docs/payments/subscriptions/plugins/woocommerce/subscriptions-status.md): Check the different Subscription statuses mapped between WooCommerce and Razorpay Curlec Subscriptions.
+- [Notifications](https://curlec.com/docs/payments/subscriptions/notifications.md): Check the types of notifications available for Subscriptions, how they work and the steps to set up webhook events.
+- [Subscriptions APIs](https://curlec.com/docs/payments/subscriptions/apis.md): List of available Subscriptions APIs for various actions.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/subscriptions/subscribe-to-webhooks.md): Subscribe to various webhook events related to Subscriptions to receive instant notifications.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/subscriptions/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Subscriptions and Subscription links.
+- [Glossary](https://curlec.com/docs/payments/subscriptions/glossary.md): List of all the commonly used terms related to Razorpay Curlec Subscriptions.
+- [About Route](https://curlec.com/docs/payments/route.md)
+- [Route Use Cases](https://curlec.com/docs/payments/route/use-cases.md): Discover how Razorpay Curlec Route can simplify and streamline your business's payment operations by optimising payment processing and improving customer experience.
+- [Linked Accounts](https://curlec.com/docs/payments/route/linked-account.md): Use Linked Accounts to split payments between multiple third-parties, bank accounts and vendors. Add Linked Accounts and provide them access to issue refunds, view reversals and settlements and manage their profile.
+- [Integrate With Route](https://curlec.com/docs/payments/route/integration-guide.md): Step-by-step guide on how to integrate Razorpay Curlec Route.
+- [Route Dashboard](https://curlec.com/docs/payments/route/dashboard.md): Access Razorpay Curlec Route Dashboard, split payments to multiple third parties and initiate reversals and refunds.
+- [Transfer Funds to Linked Accounts](https://curlec.com/docs/payments/route/transfer-funds-to-linked-accounts.md): Transfer funds via Orders, Payments or directly to your Linked Accounts.
+- [Schedule Settlements](https://curlec.com/docs/payments/route/schedule-settlement.md): Schedule settlements for your Linked Accounts.
+- [Payment Reversals](https://curlec.com/docs/payments/route/reversal.md): Initiate a partial and full payment reversal to your business account.
+- [Refund to Customers](https://curlec.com/docs/payments/route/refund.md): Issue a refund to the customer from the Razorpay Curlec Dashboard.
+- [Transfers and Related Fees Example](https://curlec.com/docs/payments/route/transfer-fees-example.md): Transfers amount and related fee calculations for payments made to Linked Accounts using Route.
+- [Initiate Refund - Linked Account Dashboard](https://curlec.com/docs/payments/route/linked-account/initiate-refund.md): Initiate a refund from the Linked Account Dashboard.
+- [Reversals and Settlements - Linked Account Dashboard](https://curlec.com/docs/payments/route/linked-account/reversals-settlements.md): View Reversals and Settlements made from the Linked Account Dashboard.
+- [Manage Profile and Team - Linked Account Dashboard](https://curlec.com/docs/payments/route/linked-account/manage-profile.md): Manage your Linked Account profile and add team members from the Linked Account Dashboard.
+- [View Reports](https://curlec.com/docs/payments/route/view-reports.md): Generate Razorpay Curlec Route reports for transfers, reversals and a combined report for all transactions for linked accounts.
+- [Route APIs](https://curlec.com/docs/payments/route/apis.md): List of Route APIs available to perform various actions.
+- [Subscribe to Webhooks](https://curlec.com/docs/payments/route/subscribe-to-webhooks.md): Subscribe to various Webhook events related to Razorpay Curlec Route to receive instant notifications.
+- [FAQs (Frequently Asked Questions)](https://curlec.com/docs/payments/route/faqs.md): Find answers to frequently asked questions about Razorpay Curlec Route.
+- [Glossary](https://curlec.com/docs/payments/route/glossary.md): List of commonly used terms related to Razorpay Curlec Route.
+- [About Razorpay Curlec Payments Mobile App](https://curlec.com/docs/payments/mobile-app.md): Use the Razorpay Curlec Payments Mobile App to track payments and settlements, issue refunds and accept payments from customers by sharing Payment Links and Razorpay Curlec.me URL.
+- [Get Started](https://curlec.com/docs/payments/mobile-app/get-started.md): Create a Razorpay Curlec account and generate API keys using Razorpay Curlec Payments Mobile App.
+- [Create and Send Payment Links](https://curlec.com/docs/payments/mobile-app/accept-payments/payment-links.md): Use the Razorpay Curlec Payments Mobile App to create and share Payment Links to accept payments.
+- [Payment Pages on Mobile App](https://curlec.com/docs/payments/mobile-app/accept-payments/payment-pages.md): Create Razorpay Curlec Payment Pages with ready-to-use templates and collect payments using the Razorpay Curlec Payments Mobile App.
+- [Webstore on Mobile App](https://curlec.com/docs/payments/mobile-app/accept-payments/webstore.md): Create Razorpay Curlec Webstore and collect payments using the Razorpay Curlec Payments Mobile App.
+- [Payment Gateway](https://curlec.com/docs/payments/mobile-app/accept-payments/payment-gateway.md): Accept payments on the Razorpay Curlec Payments Mobile App using Payment Gateway and generate API keys.
+- [Track Payments](https://curlec.com/docs/payments/mobile-app/track-manage.md): Track payments made by customers using the Razorpay Curlec Payments Mobile App. Analyse payment trends on the Razorpay Curlec Dashboard and check the payment states.
+- [Issue Refunds](https://curlec.com/docs/payments/mobile-app/track-manage/issue-refunds.md): Issue refunds to customers using the Razorpay Curlec Payments Mobile App and check the various refund states.
+- [View Settlements](https://curlec.com/docs/payments/mobile-app/track-manage/view-settlements.md): View settlement details using the Razorpay Curlec Payments Mobile App and check the various settlement states.
+- [Roles and Permissions](https://curlec.com/docs/payments/mobile-app/roles-and-permissions.md): Allow all user roles to access the app and differentiate the access level as per the role assigned.
+- [Settings](https://curlec.com/docs/payments/mobile-app/settings.md): Check the tabs available under settings on the Razorpay Curlec Payments Mobile App - Account details, API keys, Razorpay Curlec Assist and Support.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/payments/mobile-app/faqs.md): Find answers to frequently asked questions about the Razorpay Curlec Payments Mobile App.
+- [Glossary](https://curlec.com/docs/payments/mobile-app/glossary.md): A list of commonly used terms related to Razorpay Curlec Payments Mobile app.
+- [Glossary](https://curlec.com/docs/payments/glossary.md): A list of commonly used terms related to Razorpay Curlec Payments.
+- [API Reference Guide](https://curlec.com/docs/api.md): Get started with Razorpay Curlec APIs and test them on Postman. Generate API Keys in Test and Live Modes.
+- [Understand Razorpay Curlec APIs](https://curlec.com/docs/api/understand.md): Explanation of Razorpay Curlec API structure and the various components such as HTTP methods, status codes, data types and parameter types. Details on versioning, rate limiting and pagination.
+- [API Authentication](https://curlec.com/docs/api/authentication.md): Authentication process for Razorpay Curlec APIs.
+- [API Sandbox Setup](https://curlec.com/docs/api/sandbox-setup.md): Sandbox setup for testing Razorpay Curlec APIs.
+- [Install the Razorpay Curlec CLI](https://curlec.com/docs/api/install-cli.md): Install the Razorpay Curlec CLI on macOS, Linux or Windows to interact with Razorpay Curlec APIs from your terminal.
+- [Best Practices](https://curlec.com/docs/api/best-practices.md): Find the best practices to follow while working with Razorpay Curlec APIs.
+- [Glossary](https://curlec.com/docs/api/glossary.md): A list of commonly used terms related to Razorpay Curlec APIs.
+- [Payments](https://curlec.com/docs/api/payments.md): Capture and fetch Payments using Razorpay Curlec APIs.
+- [Orders Entity](https://curlec.com/docs/api/orders/entity.md): Entity parameters and sample code for Orders API.
+- [Create an Order](https://curlec.com/docs/api/orders/create.md): Create an Order using Razorpay Curlec Orders API.
+- [Fetch All Orders](https://curlec.com/docs/api/orders/fetch-all.md): Fetch all Orders using Razorpay Curlec Orders API.
+- [Fetch All Orders (With Expanded Payments)](https://curlec.com/docs/api/orders/fetch-all-expanded-payments.md): Expand payments object when fetching Order details using Razorpay Curlec Orders API.
+- [Fetch All Orders (With Expand Card Payments)](https://curlec.com/docs/api/orders/fetch-all-expanded-card-payments.md): Expand card object when fetching payents for Orders using Razorpay Curlec Orders API.
+- [Fetch an Order With ID](https://curlec.com/docs/api/orders/fetch-with-id.md): Fetches an Order with its id using the Razorpay Curlec Orders API.
+- [Fetch Payments for an Order](https://curlec.com/docs/api/orders/fetch-payments.md): Fetch payments for an Order using Razorpay Curlec Orders API.
+- [Payments Entity](https://curlec.com/docs/api/payments/entity.md): Know about payment entities and their description.
+- [Capture a Payment](https://curlec.com/docs/api/payments/capture.md): Create a Payment using Razorpay Curlec Payments API.
+- [Fetch a Payment With ID](https://curlec.com/docs/api/payments/fetch-with-id.md): Fetch a Payment using Razorpay Curlec Payments API.
+- [Fetch a Payment (With Expanded Card Details)](https://curlec.com/docs/api/payments/fetch-payment-expanded-card.md): Fetch a Payment with Expanded Card Details using Razorpay Curlec Payments API.
+- [Fetch All Payments](https://curlec.com/docs/api/payments/fetch-all-payments.md): Fetch all Payments using Razorpay Curlec Payments API.
+- [Fetch All Payments (With Expanded Card Details)](https://curlec.com/docs/api/payments/fetch-all-payments-with-expanded-card-details.md): Fetch all Payments (With Expanded Card Details) using Razorpay Curlec Payments API.
+- [Fetch All Payments (With Expanded EMI Details)](https://curlec.com/docs/api/payments/fetch-all-payments-with-expanded-emi-details.md): Fetch all Payments (With Expanded EMI Details) using Razorpay Curlec Payments API.
+- [Fetch Payments Based on Orders](https://curlec.com/docs/api/payments/fetch-payments-orders.md): Fetch Payments Based on Orders using Razorpay Curlec Payments API.
+- [Fetch Card Details of a Payment](https://curlec.com/docs/api/payments/fetch-card-details-payment.md): Fetch Card Details of a Payment using Razorpay Curlec Payments API.
+- [Settlements](https://curlec.com/docs/api/settlements.md): Fetch Settlements and Settlements Recon information using Razorpay Curlec APIs.
+- [Settlements Entity](https://curlec.com/docs/api/settlements/entity.md): Know about the settlements entity parameters and their descriptions.
+- [Fetch All Settlements](https://curlec.com/docs/api/settlements/fetch-all.md): Fetch All Settlements using Razorpay Curlec Settlements API.
+- [Fetch Settlements With ID](https://curlec.com/docs/api/settlements/fetch-with-id.md): Fetch Settlements with Razorpay Curlec Settlements id.
+- [Refunds](https://curlec.com/docs/api/refunds.md): Initiate normal and instant refunds to your customers using Razorpay Curlec Refund APIs. View and update refund using APIs.
+- [Refunds Entity](https://curlec.com/docs/api/refunds/entity.md): Know about refunds entity parameters and their description.
+- [Create a Normal Refund](https://curlec.com/docs/api/refunds/create-normal.md): Create a Normal Refund using Razorpay Curlec Refunds API.
+- [Create a Normal Refund (Idempotent Request)](https://curlec.com/docs/api/refunds/normal-refunds-idempotent.md): Retry or send the same normal refund request multiple times safely using the Razorpay Curlec API.
+- [Fetch Multiple Refunds for a Payment](https://curlec.com/docs/api/refunds/fetch-multiple-refund-payment.md): Fetch Multiple Refunds for a Payment using Razorpay Curlec Refunds API.
+- [Fetch a Specific Refund for a Payment](https://curlec.com/docs/api/refunds/fetch-specific-refund-payment.md): Fetch a Specific Refund for a Payment using Razorpay Curlec Refunds API.
+- [Fetch All Refunds](https://curlec.com/docs/api/refunds/fetch-all.md): Fetch all Refunds using Razorpay Curlec Refunds API.
+- [Fetch Refund With ID](https://curlec.com/docs/api/refunds/fetch-with-id.md): Fetch Refund With id using Razorpay Curlec Refunds API.
+- [Customers](https://curlec.com/docs/api/customers.md): Create, edit, and fetch Customer details using Razorpay Curlec APIs.
+- [Customers Entity](https://curlec.com/docs/api/customers/entity.md): Entity parameters and sample code for Customers API.
+- [Create a Customer](https://curlec.com/docs/api/customers/create.md): Create a Customer using Razorpay Curlec Customers API.
+- [Edit Customer Details](https://curlec.com/docs/api/customers/edit.md): Edit Customer Details using Razorpay Curlec Customers API.
+- [Fetch All Customers](https://curlec.com/docs/api/customers/fetch-all.md): Fetch all Customers using Razorpay Curlec Customers API.
+- [Payment Links](https://curlec.com/docs/api/payments/payment-links.md): Create, update, delete, cancel, fetch and send Payment Links using Razorpay Curlec APIs.
+- [Payment Links Entity](https://curlec.com/docs/api/payments/payment-links/entity.md): Entity parameters and sample code for Payment Links API.
+- [Create a Standard Payment Link](https://curlec.com/docs/api/payments/payment-links/create-standard.md): Create a Standard Payment Link using this endpoint.
+- [Fetch All Standard Payment Links](https://curlec.com/docs/api/payments/payment-links/fetch-all-standard.md): Fetch all Standard Payment Links using this endpoint.
+- [Fetch Standard Payment Links With ID](https://curlec.com/docs/api/payments/payment-links/fetch-id-standard.md): Fetch Standard Payment Links with their Id using this endpoint.
+- [Send or Resend Notifications](https://curlec.com/docs/api/payments/payment-links/resend.md): Send or resend Payment Link notifications to your customers by email using this endpoint.
+- [Update Standard Payment Link](https://curlec.com/docs/api/payments/payment-links/update-standard.md): Update the details of a Standard Payment Link using this endpoint.
+- [Cancel a Standard Payment Link](https://curlec.com/docs/api/payments/payment-links/cancel-standard.md): Cancel a Standard Payment Link using this endpoint.
+- [Implement Thematic Changes in Payment Links Checkout Section](https://curlec.com/docs/api/payments/payment-links/checkout-theme.md): Customise the Checkout UI in the Payment Links payment request page using Razorpay Curlec APIs. Hide the top bar and prevent customers from choosing a different payment method.
+- [Change Business Name](https://curlec.com/docs/api/payments/payment-links/change-business-name.md): Customise the business name appearing on the Checkout section of the Payment Link payment request page using Razorpay Curlec APIs.
+- [Customise Payment Methods - Options and Method Parameters](https://curlec.com/docs/api/payments/payment-links/customise-payment-methods.md): Customise the payment methods available to customers while using Payment Links using Razorpay Curlec APIs.
+- [Customise Payment Methods - Options and Config Parameters](https://curlec.com/docs/api/payments/payment-links/customise-options-config.md): Customise the payment methods available to customers while using Payment Links using Razorpay Curlec APIs.
+- [Rename Labels in Checkout Section](https://curlec.com/docs/api/payments/payment-links/rename-checkout-labels.md): Customise and rename the labels in the Checkout Section of the Payment Links payment request page using Razorpay Curlec APIs.
+- [Rename Labels in Payment Details Section](https://curlec.com/docs/api/payments/payment-links/rename-payment-details-labels.md): Customise and rename the labels in the Payment Details section of the Payment Links payment request page using Razorpay Curlec APIs.
+- [Invoices](https://curlec.com/docs/api/payments/invoices.md): Create, update, delete, cancel, fetch and send Invoices using Razorpay Curlec APIs.
+- [Invoices Entity](https://curlec.com/docs/api/payments/invoices/entity.md): Entity parameters and sample code for Invoices API.
+- [Create an Invoice With Customer ID](https://curlec.com/docs/api/payments/invoices/create-with-customer-id.md): Create an Invoice with the Customer id.
+- [Create an Invoice With Customer Details](https://curlec.com/docs/api/payments/invoices/create-with-details.md): Create an Invoice with basic details such as name and billing address.
+- [Update an Invoice](https://curlec.com/docs/api/payments/invoices/update.md): Update the details of the Invoice using this endpoint.
+- [Issue an Invoice](https://curlec.com/docs/api/payments/invoices/issue.md): Issue an invoice using this endpoint.
+- [Delete an Invoice](https://curlec.com/docs/api/payments/invoices/delete.md): Delete an invoice using this endpoint.
+- [Cancel an Invoice](https://curlec.com/docs/api/payments/invoices/cancel.md): Cancel an invoice using this endpoint.
+- [Fetch an Invoice With ID](https://curlec.com/docs/api/payments/invoices/fetch-with-id.md): Fetch the details of an Invoice using this endpoint.
+- [Fetch All Invoices](https://curlec.com/docs/api/payments/invoices/fetch-all.md): Fetch the details of all Invoices using this endpoint.
+- [Send Notifications](https://curlec.com/docs/api/payments/invoices/resend.md): Send notifications to your customers via SMS and Email using this endpoint.
+- [Items Entity](https://curlec.com/docs/api/payments/invoices/item-entity.md): Entity parameters and sample code for Items API.
+- [Create an Item](https://curlec.com/docs/api/payments/invoices/create-item.md): Create an Item with basic details such as name and amount.
+- [Fetch Item With ID](https://curlec.com/docs/api/payments/invoices/fetch-with-id-item.md): Fetch an Item with your Item Id.
+- [Fetch All Items](https://curlec.com/docs/api/payments/invoices/fetch-all-items.md): Retrieve all the Items created till date.
+- [Update an Item](https://curlec.com/docs/api/payments/invoices/update-item.md): Update an Item details using this endpoint.
+- [Subscriptions](https://curlec.com/docs/api/payments/subscriptions.md): Know about Subscriptions and list of endpoints.
+- [Plans Entity](https://curlec.com/docs/api/payments/subscriptions/plans-entity.md): Know about the Plan entity and the associated parameter descriptions.
+- [Create a Plan](https://curlec.com/docs/api/payments/subscriptions/create-plan.md): Create a plan with basic details such as amount and currency
+- [Fetch All Plans](https://curlec.com/docs/api/payments/subscriptions/fetch-all-plans.md): Fetch details of all plans created using the Razorpay Curlec API.
+- [Fetch a Plan With ID](https://curlec.com/docs/api/payments/subscriptions/fetch-a-plan.md): Fetch a plan using the unique identifier
+- [Subscriptions Entity](https://curlec.com/docs/api/payments/subscriptions/entity.md): Know about the Subscription entity and the associated parameter descriptions.
+- [Create a Subscription](https://curlec.com/docs/api/payments/subscriptions/create-subscription.md): Create a Subscription using the Razorpay Curlec API.
+- [Create a Subscription Link](https://curlec.com/docs/api/payments/subscriptions/create-subscription-link.md): Create a Subscription link using the Razorpay Curlec API.
+- [Fetch All Subscriptions](https://curlec.com/docs/api/payments/subscriptions/fetch-subscriptions.md): Fetch all Subscriptions using the Razorpay Curlec API.
+- [Fetch a Subscription With ID](https://curlec.com/docs/api/payments/subscriptions/fetch-subscription-id.md): Fetch a Subscription using the unique identifier.
+- [Cancel a Subscription](https://curlec.com/docs/api/payments/subscriptions/cancel-subscription.md): Cancel a Subscription using the Razorpay Curlec API.
+- [Update a Subscription](https://curlec.com/docs/api/payments/subscriptions/update-subscription.md): Update a Subscription using the Razorpay Curlec API.
+- [Fetch Details of a Pending Update](https://curlec.com/docs/api/payments/subscriptions/fetch-pending-update-details.md): Fetch details of a pending update using the Razorpay Curlec API.
+- [Cancel an Update](https://curlec.com/docs/api/payments/subscriptions/cancel-update.md): Cancel an update using the Razorpay Curlec API.
+- [Pause a Subscription](https://curlec.com/docs/api/payments/subscriptions/pause-subscription.md): Pause a Subscription using the Razorpay Curlec API.
+- [Resume a Subscription](https://curlec.com/docs/api/payments/subscriptions/resume-subscription.md): Resume a Subscription using the Razorpay Curlec API.
+- [Fetch All Invoices of a Subscription](https://curlec.com/docs/api/payments/subscriptions/fetch-invoices.md): Fetch all invoices of a Subscription using the Razorpay Curlec API.
+- [Route](https://curlec.com/docs/api/payments/route.md): Use Route to create APIs for Linked Accounts, Stakeholders, Product Configuration and Stakeholders.
+- [Linked Account Entity](https://curlec.com/docs/api/payments/route/linked-account-entity.md): Know about linked account entity parameters and their description.
+- [Create a Linked Account](https://curlec.com/docs/api/payments/route/create-linked-account.md): Create a Linked Account using the Razorpay Curlec API.
+- [Update a Linked Account](https://curlec.com/docs/api/payments/route/update-linked-accounts.md): Update Linked Accounts using the Razorpay Curlec API.
+- [Fetch a Linked Account With ID](https://curlec.com/docs/api/payments/route/fetch-with-id.md): Fetch details of a Linked Account using the Razorpay Curlec API.
+- [Stakeholder Entity](https://curlec.com/docs/api/payments/route/stakeholder-entity.md): Know about stakeholder entity parameters and their description.
+- [Create a Stakeholder Account](https://curlec.com/docs/api/payments/route/create-stakeholder.md): Create a Stakeholder account using the Razorpay Curlec API.
+- [Update a Stakeholder Account](https://curlec.com/docs/api/payments/route/update-stakeholder.md): Update a stakeholder account using the Razorpay Curlec API.
+- [Product Configuration Entity](https://curlec.com/docs/api/payments/route/product-configuration-entity.md): Know about product configuration entity parameters and their description.
+- [Request a Product Configuration](https://curlec.com/docs/api/payments/route/request-product-config.md): Request a product configuration using the Razorpay Curlec API.
+- [Update a Product Configuration](https://curlec.com/docs/api/payments/route/update-product-config.md): Update a product configuration using the Razorpay Curlec API.
+- [Fetch a Product Configuration](https://curlec.com/docs/api/payments/route/fetch-product-config.md): Fetch a product configuration using the Razorpay Curlec API.
+- [Transfers Entity](https://curlec.com/docs/api/payments/route/transfers-entity.md): Know about transfers entity parameters and their description.
+- [Create Transfers From Orders](https://curlec.com/docs/api/payments/route/create-transfers-orders.md): Initiate Transfers when creating an Order using the Razorpay Curlec API.
+- [Create Transfers From Payments](https://curlec.com/docs/api/payments/route/create-transfers-payments.md): Initiate Transfers from captured payments using the Razorpay Curlec API.
+- [Create a Direct Transfer](https://curlec.com/docs/api/payments/route/direct-transfers.md): Create a Direct Transfer using the Razorpay Curlec API.
+- [Create a Direct Transfer (Idempotent Request)](https://curlec.com/docs/api/payments/route/direct-transfers-idempotent-request.md): Retry or send the same transfer request multiple times safely using the Razorpay Curlec API.
+- [Fetch Transfers for a Payment](https://curlec.com/docs/api/payments/route/fetch-transfers-payment.md): Fetch Transfers for a payment using the Razorpay Curlec API.
+- [Fetch Transfer for an Order](https://curlec.com/docs/api/payments/route/fetch-transfer-order.md): Fetch Transfer for an order using the Razorpay Curlec API.
+- [Fetch a Transfer With ID](https://curlec.com/docs/api/payments/route/fetch-a-transfer.md): Fetch a Transfer using the Razorpay Curlec API.
+- [Fetch Transfers for a Settlement](https://curlec.com/docs/api/payments/route/fetch-transfers-for-a-settlement.md): Fetch Transfers for a Settlement using the Razorpay Curlec API.
+- [Fetch Settlement Details](https://curlec.com/docs/api/payments/route/fetch-settlement-details.md): Fetch settlement details using the Razorpay Curlec API.
+- [Fetch Payments of a Linked Account](https://curlec.com/docs/api/payments/route/fetch-payments-linked-account.md): Fetch Payments of a Linked Account using the Razorpay Curlec API.
+- [Refund Payments and Reverse Transfer from a Linked Account](https://curlec.com/docs/api/payments/route/refund-payments-and-reverse-transfer.md): Refund Payments and reverse Transfer from a Linked Account using the Razorpay Curlec API.
+- [Reverse a Transfer](https://curlec.com/docs/api/payments/route/reverse-a-transfer.md): Reverse a Transfer using the Razorpay Curlec API.
+- [Fetch Reversals for a Transfer](https://curlec.com/docs/api/payments/route/fetch-reversals.md): Fetch Reversals for a Transfer using the Razorpay Curlec API.
+- [Modify Settlement Hold for Transfers](https://curlec.com/docs/api/payments/route/modify-settlement-hold.md): Modify Settlement Hold for Transfers using the Razorpay API.
+- [Developer Tools](https://curlec.com/docs/developer-tools.md): Discover essential developer tools documentation, including webhooks, security, and error handling. Optimise integration and ensure data integrity effortlessly.
+- [About CLI](https://curlec.com/docs/cli.md): Learn about the Razorpay Curlec CLI, a command-line tool to interact with Razorpay Curlec APIs directly from your terminal.
+- [Install the Razorpay Curlec CLI](https://curlec.com/docs/cli/install-cli.md): Install the Razorpay Curlec CLI on macOS, Linux or Windows to interact with Razorpay Curlec APIs from your terminal.
+- [About Errors](https://curlec.com/docs/errors.md): Check the errors returned in the API responses from Razorpay Curlec.
+- [Common Errors](https://curlec.com/docs/errors/common.md): Check the list of common errors returned in the API responses from Razorpay Curlec and their solutions. Also, check the steps to view API errors.
+- [List of Errors](https://curlec.com/docs/errors/payments/list.md): List of payment errors with descriptions and next steps.
+- [Cards Error Codes](https://curlec.com/docs/errors/payments/cards.md): Explore errors related to card payments, discover reasons, merchant descriptions, and actionable next steps.
+- [Payment Method Error Parameters](https://curlec.com/docs/errors/payments/payment-methods-error-parameters.md): List of values for Source and Step parameters for each payment method supported by Razorpay Curlec.
+- [About Webhooks](https://curlec.com/docs/webhooks.md): Use webhooks to get notified about events related to the payment flow such as orders, payments, settlements, disputes and workflow steps related to other Razorpay Curlec Products.
+- [Set Up and Edit Payments Webhooks](https://curlec.com/docs/webhooks/setup-edit-payments.md): Set up and edit Payments Webhooks from the Razorpay Curlec Dashboard.
+- [Best Practices](https://curlec.com/docs/webhooks/best-practices.md): Best practices to adhere to when using Razorpay Curlec notification webhooks.
+- [Validate and Test Webhooks](https://curlec.com/docs/webhooks/validate-test.md): Validate and test Payments and Payout Webhooks before you start using them. Read about idempotency and the importance of the order of Webhook Events.
+- [All Webhook Events](https://curlec.com/docs/webhooks/all.md): List of all Payments, Partners and Payouts webhook events.
+- [Orders Webhook Events](https://curlec.com/docs/webhooks/orders.md): List of Orders webhook events along with sample payloads.
+- [Payments Webhook Events](https://curlec.com/docs/webhooks/payments.md): List of Payments webhook events along with sample payloads.
+- [Refunds Webhook Events](https://curlec.com/docs/webhooks/refunds.md): List of Refunds webhook events along with sample payloads.
+- [Invoices Webhook Events](https://curlec.com/docs/webhooks/invoices.md): List of Invoices webhook events along with sample payloads.
+- [Subscriptions Webhook Events](https://curlec.com/docs/webhooks/subscriptions.md): List of Subscriptions webhook events along with sample payloads.
+- [Route Webhook Events](https://curlec.com/docs/webhooks/route.md): List of Route webhook events along with sample payloads.
+- [Settlements Webhook Events](https://curlec.com/docs/webhooks/settlements.md): List of Settlements webhook events along with sample payloads.
+- [Payment Links Webhook Events](https://curlec.com/docs/webhooks/payment-links.md): List of Payment Links webhook events along with sample payloads.
+- [Frequently Asked Questions (FAQs)](https://curlec.com/docs/webhooks/faqs.md): Find answers to frequently asked questions about Razorpay Curlec webhooks.
+- [About Razorpay Curlec Security](https://curlec.com/docs/security.md): Know about Razorpay Curlec's compliance certifications, firewalls, and authentication methods.
+- [Business Security Checklist](https://curlec.com/docs/security/checklist.md): List of security measures and best practices to ensure secure transactions using Razorpay Curlec.
+- [Shared Responsibility Model](https://curlec.com/docs/security/shared-responsibility-model.md): Know about the security responsibilities shared between businesses and Razorpay Curlec.
+- [Razorpay Curlec IPs and Certificates](https://curlec.com/docs/security/whitelists.md): Download Razorpay Curlec SSL certificates and whitelist our API and Webhooks IP addresses.
+- [Guidelines for SSL Certificate Rotation](https://curlec.com/docs/security/whitelists/guidelines-ssl-cert-rotation.md): How Razorpay Curlec's SSL certificates are managed, what your integration must support, and what to do if your systems pin or whitelist certificates.
+- [Security For Customers](https://curlec.com/docs/security/customers.md): Know how Razorpay Curlec handles customer security, saved cards and frauds.
+
+## Optional
+
+- [India](https://razorpay.com/docs)
+- [Singapore](https://razorpay.com/docs/sg)
+- [United States](https://razorpay.com/docs/us)

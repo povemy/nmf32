@@ -12,6 +12,7 @@
 // scripted job-spam now has to pass the resolve step (and its rate limit).
 import { NextRequest } from "next/server";
 import { handle, ok, fail, ApiError } from "@/lib/api";
+import { db } from "@/lib/db";
 import { createImportJob } from "@/lib/import/runner";
 import { rateLimit } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
@@ -48,6 +49,49 @@ export const POST = handle(async (req: NextRequest) => {
     enforceImportCapJobBudget(cap);
   }
   const job = await createImportJob({ inputUrl: body.url, allowFixture: body.allowFixture !== false });
+  // PHASE 2.2 (C3 — marketplace OAuth connection ownership): when a signed-in
+  // seller creates the job, pin its connectionId AT CREATION TIME to THAT
+  // seller's own marketplace connection (attributed via the OAuth sellerId or
+  // bound to their store). The runner then uses the pinned connection directly
+  // and can never fall back to another seller's tokens (the runner itself also
+  // re-scopes by claimedById and fails closed). Anonymous jobs are NOT pinned —
+  // they stay awaiting authorisation / fail closed until claimed or re-created
+  // by the connected seller. Fixture jobs are skipped (runner upserts its own
+  // pseudo-connection).
+  const sellerId = session?.userType === "seller" ? session.userId : null;
+  if (sellerId) {
+    const created = await db.importJob.findUnique({
+      where: { id: job.jobId },
+      select: { platform: true, isFixture: true, connectionId: true },
+    });
+    if (created && !created.isFixture && !created.connectionId) {
+      const sellerStore = await db.seller.findUnique({
+        where: { id: sellerId },
+        select: { store: { select: { id: true } } },
+      });
+      const storeId = sellerStore?.store?.id ?? null;
+      // The scoped lookup references the new sellerId column. Until migration
+      // 20261105000000 is applied (and the dev server picks up the regenerated
+      // client) that reference can throw — degrade to "no pinned connection"
+      // and let the runner fail closed (409 NO_CONNECTION) instead of 500-ing
+      // job creation. Ownership isolation holds either way: the runner never
+      // falls back to another seller's connection.
+      const ownConn = await db.marketplaceConnection.findFirst({
+        where: {
+          platform: created.platform,
+          status: "connected",
+          // storeId clause only when the seller actually has a store — a
+          // literal `storeId: null` would match ANY unbound connection.
+          OR: storeId ? [{ sellerId }, { storeId }] : [{ sellerId }],
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      }).catch(() => null);
+      if (ownConn) {
+        await db.importJob.update({ where: { id: job.jobId }, data: { connectionId: ownConn.id } });
+      }
+    }
+  }
   return ok({
     jobId: job.jobId,
     trackingToken: job.trackingToken,

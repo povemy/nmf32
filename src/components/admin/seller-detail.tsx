@@ -55,6 +55,10 @@ type SellerDetailBody = {
     submittedAt?: string | null;
     approvedAt?: string | null;
     createdAt: string;
+    // PHASE 2.3 (C2.7) — honest email-verification state. Absent/null =
+    // NOT verified (the API surfaces exactly the Seller.emailVerifiedAt
+    // column; nothing here may claim verification that did not occur).
+    emailVerifiedAt?: string | null;
   };
   store?: { id: string; name: string; slug: string; status: string } | null;
   kycDocuments: KycDoc[];
@@ -192,6 +196,17 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
         <StatusChip status={status} />
         <RiskChip tier={seller.riskTier} />
         <Badge variant="outline" className="capitalize">{seller.kycStatus.replace(/_/g, " ")} kyc</Badge>
+        {/* PHASE 2.3 (C2.7) — honest email-ownership state: the badge reads
+            ONLY the server-provided emailVerifiedAt (null = NOT verified). */}
+        {seller.emailVerifiedAt ? (
+          <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300">
+            email verified {fmtDT(seller.emailVerifiedAt)}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+            email unverified
+          </Badge>
+        )}
         <Badge variant="outline" className="capitalize">{seller.planCode} plan</Badge>
         <Badge variant="outline" className="capitalize">{seller.marketplaceOptIn ? "marketplace opt-in" : "marketplace off"}</Badge>
         {data.gmv30dMinor != null ? <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300">GMV 30d {formatMinor(data.gmv30dMinor)}</Badge> : null}
@@ -298,7 +313,10 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
           <Card className="py-0">
             <CardContent className="p-0">
               {docs.length === 0 ? (
-                <EmptyState title="No KYC documents" hint="Seller has not uploaded any documents yet." />
+                /* PHASE 2.3 KYC honesty: no document ingestion exists — rows
+                   are metadata records created out-of-band; do not imply an
+                   upload pipeline or document storage that is not there. */
+                <EmptyState title="No KYC document records" hint="No document metadata on file for this seller yet." />
               ) : (
                 <ScrollY>
                   <Table>

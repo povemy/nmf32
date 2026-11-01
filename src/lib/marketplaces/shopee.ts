@@ -65,7 +65,19 @@ type ItemBase = {
 type ModelListResp = { model?: { model_id: number; tier_index?: number[]; price_info?: { current_price?: number | string; original_price?: number | string }; model_sku?: string; model_status?: string; stock_info_v2?: { summary_info?: { total_available_stock?: number } } }[]; tier_variation?: { name?: string; option_list?: { option?: string; image?: string }[] }[] };
 
 async function getConnection(connectionId: string) {
-  const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId } });
+  // PHASE 2.2 (C3): explicit select — every column EXCEPT sellerId (the dev DB
+  // does not have the column until migration 20261105000000 is applied; a
+  // default full-row select would fail at runtime pre-migration).
+  const conn = await db.marketplaceConnection.findUnique({
+    where: { id: connectionId },
+    select: {
+      id: true, storeId: true, platform: true, status: true, envConfigured: true,
+      shopId: true, shopName: true, shopCipher: true, region: true,
+      accessTokenEnc: true, refreshTokenEnc: true, scopesJson: true,
+      expiresAt: true, lastRefreshAt: true, lastError: true,
+      createdAt: true, updatedAt: true,
+    },
+  });
   if (!conn || conn.platform !== "shopee") throw new ApiError(404, "CONNECTION_NOT_FOUND", "Shopee connection not found.");
   return conn;
 }
@@ -125,7 +137,7 @@ export const shopeeConnector: MarketplaceConnector = {
     return { authorizeUrl: u.toString() };
   },
 
-  async exchangeCode({ code, shopIdParam }) {
+  async exchangeCode({ code, shopIdParam, sellerId }) {
     const { partnerId, partnerKey, present } = creds();
     if (!present || !partnerId || !partnerKey) throw new ApiError(503, "CONNECTOR_NOT_CONFIGURED", "Shopee credentials are not configured.");
     const timestamp = Math.floor(Date.now() / 1000);
@@ -151,18 +163,29 @@ export const shopeeConnector: MarketplaceConnector = {
     } catch {
       // shop info is best-effort; token still valid
     }
-    await db.marketplaceConnection.upsert({
+    // PHASE 2.2 (C3 — OAuth ownership): attribute the connection to the seller
+    // whose OAuth flow created it (sellerId comes from the validated signed
+    // `state`). On create it is persisted directly; on update (existing shop
+    // re-authorised) a guarded follow-up attributes ONLY rows still unattributed
+    // — an attributed connection is never stolen by another seller's flow.
+    // select: { id } avoids the full-row return (sellerId is not applied on the
+    // update branch, so the row stays runtime-safe to read here).
+    const conn = await db.marketplaceConnection.upsert({
       where: { platform_shopId: { platform: "shopee", shopId } },
       create: {
         platform: "shopee", shopId, shopName: shop.name, region: shop.region ?? "MY", status: "connected",
         envConfigured: true, accessTokenEnc: sealSecret(t.access_token), refreshTokenEnc: sealSecret(t.refresh_token),
-        expiresAt, scopesJson: "[]",
+        expiresAt, scopesJson: "[]", sellerId: sellerId ?? null,
       },
       update: {
         status: "connected", accessTokenEnc: sealSecret(t.access_token), refreshTokenEnc: sealSecret(t.refresh_token),
         expiresAt, lastError: null, shopName: shop.name,
       },
+      select: { id: true },
     });
+    if (sellerId) {
+      await db.marketplaceConnection.updateMany({ where: { id: conn.id, sellerId: null }, data: { sellerId } });
+    }
     return { shop, expiresAt, scopes: [] };
   },
 
@@ -184,7 +207,7 @@ export const shopeeConnector: MarketplaceConnector = {
     });
     const json = (await res.json().catch(() => null)) as { error?: string; response?: TokenResp } | null;
     if (!json?.response) {
-      await db.marketplaceConnection.update({ where: { id: conn.id }, data: { status: "expired", lastError: "refresh failed" } });
+      await db.marketplaceConnection.update({ where: { id: conn.id }, data: { status: "expired", lastError: "refresh failed" }, select: { id: true } });
       throw new ApiError(502, "TOKEN_REFRESH_FAILED", "Shopee token refresh failed — reconnect the shop.");
     }
     // refresh token is single-use and rotated on every refresh (official docs)
@@ -197,6 +220,7 @@ export const shopeeConnector: MarketplaceConnector = {
         lastRefreshAt: new Date(),
         status: "connected",
       },
+      select: { id: true },
     });
   },
 

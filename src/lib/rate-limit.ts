@@ -247,7 +247,10 @@ export function rateLimit(req: Request, bucket: string, limit: number, windowMs 
  *  email, order number, account id, product id) rather than the client IP —
  *  so brute-force spread across many IPs still hits the per-identity window,
  *  and shared-NAT shoppers are not throttled by each other. Combine with the
- *  IP-based rateLimit() at call sites for defense in depth. */
+ *  IP-based rateLimit() at call sites for defense in depth.
+ *  C2.4: the identity must NEVER be a raw secret — hash it first (e.g.
+ *  sha256Hex(token).slice(0, 24)) so the bucket keys held in the bounded
+ *  store never contain credential material. */
 export function rateLimitKey(identity: string, bucket: string, limit: number, windowMs = 60_000): void {
   const now = Date.now();
   const key = `${bucket}:${identity.toLowerCase()}`;

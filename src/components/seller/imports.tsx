@@ -18,6 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -193,6 +194,16 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
           <h2 className="text-sm font-bold">Marketplace connections</h2>
           <span className="text-xs text-muted-foreground">— official APIs require the shop owner to authorise NOMOFEE once</span>
         </header>
+        {/* C3 (Phase 2.4) — imports are one-way; say so clearly wherever imported
+            products / connections are shown. NO two-way sync exists (by design). */}
+        <Alert className="mb-3 border-amber-200 bg-amber-50 text-amber-900">
+          <TriangleAlert className="h-4 w-4" />
+          <AlertTitle>Imports are one-way — no automatic sync</AlertTitle>
+          <AlertDescription className="text-amber-800">
+            Products imported from external marketplaces are not automatically synchronized. Stock and price changes made on
+            NOMOFEE do not automatically update your Shopee or TikTok listings.
+          </AlertDescription>
+        </Alert>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {(["shopee", "tiktok"] as const).map((p) => {
             const conn = data.connections.find((c) => c.platform === p && c.status !== "disconnected");

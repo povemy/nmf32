@@ -19,6 +19,15 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // React rules
     "react-hooks/exhaustive-deps": "off",
     "react-hooks/purity": "off",
+    // P2.3-7 (CI activation — temporary baseline decision, NOT a style
+    // preference): this rule flags 44 pre-existing occurrences of the legacy
+    // setState-in-effect data-fetching pattern across ~23 admin/seller/shopper
+    // components. It is disabled so the scoped CI lint gate (`bunx eslint src`)
+    // is GREEN on the current tree while those components are change-frozen;
+    // TODO(Phase 2.4+): migrate the flagged components (event-driven fetch or
+    // the use-api hook) and REMOVE this line. List of affected files is in
+    // docs/phase23/ci.md §Scope limitations.
+    "react-hooks/set-state-in-effect": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",

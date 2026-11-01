@@ -18,6 +18,26 @@ export const dynamic = "force-dynamic";
 // release the claimed entries back to available. Idempotent state machine:
 // conditional updateMany claims + ledger dedupKeys; no automated bank
 // transfer capability is claimed or implied.
+//
+// C1.2 (Phase 2.2) — REFUND COORDINATION + AMOUNT TRUTH:
+//   • Refunds now shrink an open payout's frozen amount transactionally (see
+//     reverseAffiliateForRefund): a refund and a payout can no longer both
+//     consume the same commission liability.
+//   • Because the payout row can change between the pre-tx read and the
+//     claim, EVERY action re-reads the payout row AFTER winning its
+//     conditional claim (the claim row lock makes the re-read stable) and
+//     uses the FRESH amountMinor for the ledger posting — T-A3/T-A4/T-A4f
+//     can never post a stale amount.
+//   • approve additionally RE-VALIDATES the frozen amount against live entry
+//     truth (Σ (amount − reversed) over the claimed live entries, minus the
+//     current recovery offset from paid entries). A refund that consumed
+//     recovery headroom since the request surfaces as 409 FROZEN_AMOUNT_STALE
+//     — the operator then rejects the payout so the affiliate can re-request
+//     at the correct amount. Approve is the transfer AUTHORIZATION point of
+//     the manual workflow, so this is the last fully-safe gate before money
+//     moves; refunds landing between approve and mark-paid shrink the amount
+//     further (and debit PAYOUT_CLEARING via the T5 split), keeping the books
+//     balanced at the adjusted figure.
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   rateLimit(req, "admin-aff-payout", 30);
   const admin = await requireCap("affiliate.finance");
@@ -47,8 +67,37 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
         data: { status: "processing", processedBy: admin.id },
       });
       if (claim.count === 0) throw new ApiError(409, "STATE_INVALID", "Only a requested payout can be approved");
-      await postAffiliatePayoutInitiated({ payoutId: payout.id, affiliateId: payout.affiliateId, amountMinor: payout.amountMinor, tx });
-      return { status: "processing" };
+      // C1.2: fresh read AFTER the claim (row lock held) — the frozen amount
+      // may have been shrunk by refunds since the pre-tx read.
+      const fresh = await tx.affiliatePayout.findUniqueOrThrow({ where: { id } });
+
+      // ---- C1.2 amount re-validation against live entry truth ------------
+      // truth = Σ(amount − reversed) over the payout's live claimed entries −
+      // the CURRENT recovery offset (reversals booked against already-paid
+      // entries). Equal to the frozen amount in the steady state; a refund
+      // that consumed recovery headroom makes truth < amount → refuse.
+      const claimed = await tx.affiliateCommissionEntry.findMany({
+        where: { payoutId: id, status: { in: ["available", "approved"] } },
+        select: { amountMinor: true, reversedMinor: true },
+      });
+      const recovery = (
+        await tx.affiliateCommissionEntry.aggregate({
+          where: { beneficiaryAffiliateId: fresh.affiliateId, status: "paid" },
+          _sum: { reversedMinor: true },
+        })
+      )._sum.reversedMinor ?? 0;
+      const liveValue = claimed.reduce((s, e) => s + e.amountMinor - e.reversedMinor, 0);
+      const truth = Math.max(0, liveValue - recovery);
+      if (truth < fresh.amountMinor) {
+        throw new ApiError(
+          409,
+          "FROZEN_AMOUNT_STALE",
+          `Commissions totalling ${fresh.amountMinor - truth} sen were reversed by refunds since this request was created — reject this payout so the affiliate can re-request at the correct amount`
+        );
+      }
+
+      await postAffiliatePayoutInitiated({ payoutId: fresh.id, affiliateId: fresh.affiliateId, amountMinor: fresh.amountMinor, tx });
+      return { status: "processing", amountMinor: fresh.amountMinor };
     }
 
     if (action === "mark-paid") {
@@ -57,19 +106,25 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
         data: { status: "paid", reference, processedAt: new Date(), processedBy: admin.id },
       });
       if (claim.count === 0) throw new ApiError(409, "STATE_INVALID", "Only a processing payout can be marked paid");
-      await postAffiliatePayoutConfirmed({ payoutId: payout.id, amountMinor: payout.amountMinor, reference: reference!, tx });
+      // C1.2: fresh read AFTER the claim — refunds between approve and the
+      // bank transfer shrink the amount transactionally; the ledger must
+      // record the adjusted figure (finance should transfer the CURRENT
+      // amount shown in the queue, and the T5 clearing split keeps the books
+      // balanced at exactly this number).
+      const fresh = await tx.affiliatePayout.findUniqueOrThrow({ where: { id } });
+      await postAffiliatePayoutConfirmed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reference: reference!, tx });
       const paidAt = new Date();
       // The claimed entries become paid (skip any reversed in the interim —
       // those remain recovery offsets rather than double-counting).
       await tx.affiliateCommissionEntry.updateMany({
-        where: { payoutId: payout.id, status: { in: ["available", "approved"] } },
+        where: { payoutId: fresh.id, status: { in: ["available", "approved"] } },
         data: { status: "paid", paidAt },
       });
       // Advance the PARENT commission rows to paid once EVERY entry on them is
       // paid (spec §10 lifecycle: the commission row's status mirrors its
       // entries — payouts flip both, not only the per-beneficiary entries).
       const covered = await tx.affiliateCommissionEntry.findMany({
-        where: { payoutId: payout.id },
+        where: { payoutId: fresh.id },
         select: { commissionId: true },
       });
       const commissionIds = [...new Set(covered.map((e) => e.commissionId))];
@@ -85,7 +140,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
           });
         }
       }
-      return { status: "paid", reference };
+      return { status: "paid", reference, amountMinor: fresh.amountMinor };
     }
 
     if (action === "fail") {
@@ -94,13 +149,16 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
         data: { status: "failed", failReason: reason, processedAt: new Date(), processedBy: admin.id },
       });
       if (claim.count === 0) throw new ApiError(409, "STATE_INVALID", "Only a processing payout can be marked failed");
-      await postAffiliatePayoutFailed({ payoutId: payout.id, amountMinor: payout.amountMinor, reason: reason ?? "unspecified", tx });
+      // C1.2: fresh read AFTER the claim — T-A4f must release the ADJUSTED
+      // amount so PAYOUT_CLEARING nets to zero against T-A3 + any T5 splits.
+      const fresh = await tx.affiliatePayout.findUniqueOrThrow({ where: { id } });
+      await postAffiliatePayoutFailed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reason: reason ?? "unspecified", tx });
       // Release the claimed entries back to the available pool.
       await tx.affiliateCommissionEntry.updateMany({
-        where: { payoutId: payout.id, status: { in: ["available", "approved"] } },
+        where: { payoutId: fresh.id, status: { in: ["available", "approved"] } },
         data: { payoutId: null },
       });
-      return { status: "failed", reason };
+      return { status: "failed", reason, amountMinor: fresh.amountMinor };
     }
 
     // reject — a REQUESTED payout never moved money; release the claim.
@@ -110,10 +168,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     });
     if (claim.count === 0) throw new ApiError(409, "STATE_INVALID", "Only a requested payout can be rejected");
     await tx.affiliateCommissionEntry.updateMany({
-      where: { payoutId: payout.id, status: { in: ["available", "approved"] } },
+      where: { payoutId: id, status: { in: ["available", "approved"] } },
       data: { payoutId: null },
     });
-    return { status: "rejected", reason };
+    return { status: "rejected", reason, amountMinor: payout.amountMinor };
   });
 
   await auditAdmin({
@@ -123,7 +181,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     entityType: "affiliate_payout",
     entityId: id,
     before: { status: payout.status, amountMinor: payout.amountMinor },
-    after: { ...result, amountMinor: payout.amountMinor },
+    after: result,
   });
 
   return ok(result);

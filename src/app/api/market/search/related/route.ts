@@ -5,7 +5,9 @@ import { tokenize, buildAnyTokenWhere, scoreProduct } from "../../_shared/search
 
 export const dynamic = "force-dynamic";
 
-const liveStore = { is: { status: "live", seller: { is: { marketplaceOptIn: true } } } };
+// C1.3 (seller publication governance): defense-in-depth — a live store is only
+// publicly sellable while its seller is admin-approved (status "active").
+const liveStore = { is: { status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } } };
 
 // GET /api/market/search/related?q=&exclude=id,id&limit=8
 // "Standard e-commerce" step of the advanced search system: suggest a few

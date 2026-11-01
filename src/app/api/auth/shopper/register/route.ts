@@ -5,6 +5,7 @@ import { handle, ok, fail, logActivity } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { getEmailChannel } from "@/lib/email-provider";
 import { getShopperEmailVerified, issueEmailOtp, assertEmailOtpStorage } from "@/lib/guest-otp";
+import { mergeGuestCartForShopper } from "@/lib/shopper-merge";
 
 // POST /api/auth/shopper/register { fullName, email, password, phone? } — buyer signup.
 //
@@ -40,7 +41,9 @@ export const POST = handle(async (req: Request) => {
   if (exists) return fail(409, "EMAIL_TAKEN", "An account with this email already exists");
 
   // A shopper email must not collide with seller/admin accounts (separate portals).
-  const sellerClash = await db.seller.findUnique({ where: { email } });
+  // PHASE 2.3 select hygiene (C2.7): existence probe — explicit id-only select
+  // so the un-migrated Seller.emailVerifiedAt column is never read (P2022).
+  const sellerClash = await db.seller.findUnique({ where: { email }, select: { id: true } });
   const adminClash = sellerClash ? null : await db.adminUser.findUnique({ where: { email } });
   if (sellerClash || adminClash) return fail(409, "EMAIL_TAKEN", "This email is already registered on NOMOFEE");
 
@@ -49,6 +52,12 @@ export const POST = handle(async (req: Request) => {
   });
 
   const token = await createSession("shopper", shopper.id);
+
+  // PHASE 2.2 GUEST CHECKOUT RESTORATION — registration signs the buyer in, so
+  // the device's guest cart ("sm_cart" cookie) folds into the NEW account's
+  // cart here (best-effort, never blocks registration). A brand-new account
+  // has no cart yet, so this simply re-points the guest cart.
+  const guestCartMerged = await mergeGuestCartForShopper(shopper.id);
 
   // Best-effort verification kickoff — never blocks registration.
   let emailVerificationSent = false;
@@ -87,7 +96,7 @@ export const POST = handle(async (req: Request) => {
     actorId: shopper.id,
     actorLabel: shopper.email,
     action: "shopper.register",
-    meta: { emailVerificationSent },
+    meta: { emailVerificationSent, guestCartMerged: guestCartMerged.itemsMerged },
   });
   return ok({
     userType: "shopper",
@@ -96,5 +105,6 @@ export const POST = handle(async (req: Request) => {
     claimed: { addressesClaimed: 0, ordersClaimed: 0 },
     emailVerified,
     emailVerificationSent,
+    guestCartMerged: guestCartMerged.itemsMerged,
   });
 });

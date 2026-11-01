@@ -30,7 +30,9 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
   assertTransition(payout.status, "paid");
 
-  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+  // PHASE 2.3 select hygiene (C2.7): only seller.email is used — explicit
+  // select keeps the un-migrated Seller.emailVerifiedAt out of the query.
+  const seller = await db.seller.findUnique({ where: { id: payout.sellerId }, select: { email: true } });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
   const txn = await db.$transaction(async (tx) => {

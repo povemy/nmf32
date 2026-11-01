@@ -45,6 +45,8 @@
 //     never codes, never grant tokens.
 // ============================================================================
 import { ApiError } from "./api";
+import { getResendChannel } from "./email-providers/resend";
+import { getMailpitChannel } from "./email-providers/mailpit";
 
 /** One transactional email. `meta` is audit context only — NEVER a code. */
 export interface TransactionalEmail {
@@ -61,29 +63,39 @@ export interface TransactionalEmailChannel {
   send(email: TransactionalEmail): Promise<void>;
 }
 
-/** Supported provider ids (selection happens via EMAIL_PROVIDER env var once
- *  an adapter ships). Kept as documentation of the seam, not a promise. */
-export type EmailProviderId = "resend" | "postmark" | "ses" | "supabase-auth";
+/** Supported provider ids — selection via the EMAIL_PROVIDER env var.
+ *  Phase 2.3: "resend" (production provider — 2026-11-06 research verification)
+ *  and "mailpit" (dev-only local catcher) are IMPLEMENTED; postmark/ses remain
+ *  documented candidates behind the same seam. */
+export type EmailProviderId = "resend" | "mailpit" | "postmark" | "ses" | "supabase-auth";
 
 /**
- * The configured channel, or null when no provider decision has landed.
- * Today this ALWAYS returns null: no adapter is compiled in (mandate §4 —
- * do not implement external delivery before the provider decision; do not
- * simulate a delivery mechanism either).
+ * The configured channel, or null when no provider is configured/valid.
+ * THE single selection point — swapping providers never touches security
+ * logic (guest-otp.ts depends only on TransactionalEmailChannel).
  *
- * When an adapter ships, this function becomes the single selection point:
- *   switch (process.env.EMAIL_PROVIDER) { case "resend": ... }
- * — nothing else in the codebase changes.
+ * Phase 2.3 (implemented):
+ *   EMAIL_PROVIDER=resend   → Resend adapter (RESEND_API_KEY + EMAIL_FROM;
+ *                             missing config ⇒ null ⇒ fail-closed 503).
+ *   EMAIL_PROVIDER=mailpit  → local Mailpit catcher (dev only; production
+ *                             ignores it — fail closed).
  */
 export function getEmailChannel(): TransactionalEmailChannel | null {
   const requested = (process.env.EMAIL_PROVIDER ?? "").trim().toLowerCase();
   if (!requested) return null;
-  // A provider is NAMED but no adapter exists yet → surface loudly instead of
-  // silently ignoring the env var (misconfiguration must be visible).
-  console.warn(
-    `[email-provider] EMAIL_PROVIDER="${requested}" is set but no provider adapter is compiled in — email delivery stays disabled (fail closed). Implement the adapter in src/lib/email-provider.ts after the provider decision.`
-  );
-  return null;
+  switch (requested) {
+    case "resend":
+      return getResendChannel();
+    case "mailpit":
+      return getMailpitChannel();
+    default:
+      // A provider is NAMED but no adapter exists → surface loudly instead of
+      // silently ignoring the env var (misconfiguration must be visible).
+      console.warn(
+        `[email-provider] EMAIL_PROVIDER="${requested}" has no adapter compiled in — email delivery stays disabled (fail closed). Implemented providers: resend, mailpit.`
+      );
+      return null;
+  }
 }
 
 /** Fail-closed pre-flight used by every OTP-issuing route BEFORE any

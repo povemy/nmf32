@@ -2,21 +2,47 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { refreshWalletCache } from "@/lib/ledger";
+import { getSellerEmailVerifiedAt } from "@/lib/seller-email-verification";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/store/me — seller + store + wallet + onboarding checklist + stats.
+//
+// PHASE 2.3 (C2.7): the seller object now carries emailVerified /
+// emailVerifiedAt — the CONSOLE's honest signal for the “Verify your email”
+// card. The read is tolerant (stale client / un-migrated column → null = NOT
+// verified), and the main seller query uses an explicit field list that
+// EXCLUDES emailVerifiedAt so the un-migrated dev server keeps serving.
 export const GET = handle(async () => {
   const { me, store } = await requireActiveSellerStore();
 
-  const [sellerRow, productCount, bankVerified, orders30] = await Promise.all([
-    db.seller.findUnique({ where: { id: me.id } }),
+  const [sellerRow, productCount, bankVerified, orders30, emailVerifiedAt] = await Promise.all([
+    // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (default select → P2022 pre-
+    // migration 20261107000000); the verified timestamp is read tolerantly
+    // below/above via getSellerEmailVerifiedAt (null = NOT verified).
+    db.seller.findUnique({
+      where: { id: me.id },
+      select: {
+        id: true,
+        fullName: true,
+        phone: true,
+        status: true,
+        kycStatus: true,
+        riskTier: true,
+        planCode: true,
+        marketplaceOptIn: true,
+        submittedAt: true,
+        rejectReason: true,
+      },
+    }),
     db.product.count({ where: { storeId: store.id, status: { not: "archived" } } }),
     db.bankAccount.findFirst({ where: { sellerId: me.id, verified: true } }),
     db.order.findMany({
       where: { storeId: store.id, paidAt: { not: null } },
       select: { totalMinor: true, paidAt: true },
     }),
+    getSellerEmailVerifiedAt(me.id),
   ]);
 
   const checklist = {
@@ -63,6 +89,10 @@ export const GET = handle(async () => {
       marketplaceOptIn: sellerRow?.marketplaceOptIn ?? true,
       submittedAt: sellerRow?.submittedAt ?? null,
       rejectReason: sellerRow?.rejectReason ?? null,
+      // PHASE 2.3 (C2.7) — honest email-verification state: null timestamp
+      // (or storage not migrated yet) is reported as NOT verified.
+      emailVerified: emailVerifiedAt != null,
+      emailVerifiedAt: emailVerifiedAt ? emailVerifiedAt.toISOString() : null,
     },
     store: {
       id: store.id,

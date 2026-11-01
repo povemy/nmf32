@@ -1,16 +1,20 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { requireShopper } from "@/lib/auth";
-import { createCartForShopper, findCartForShopper, loadAddableVariant, shapeCart } from "../cart";
+import { ensureCartForCaller, findCartForCaller, resolveCartCaller, loadAddableVariant, shapeCart } from "../cart";
 import { trackAddToCart } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/cart/items {variantId, qty>0} — SIGN-IN REQUIRED. The cart is the
-// shopper's account cart (one active cart, many sellers allowed — Option A
-// splits per-seller orders at checkout behind ONE platform payment).
+// POST /api/cart/items {variantId, qty>0} — PHASE 2.2 GUEST CHECKOUT
+// RESTORATION: works for signed-in shoppers (account cart, exactly as before)
+// AND for unauthenticated visitors (token-keyed guest cart, created lazily on
+// this first add — the "sm_cart" cookie is minted by ensureCartForCaller).
+// Multi-seller: one cart, many sellers — Option A splits per-seller orders at
+// checkout behind ONE platform payment.
 export const POST = handle(async (req: Request) => {
-  const me = await requireShopper(); // 401 SHOPPER_LOGIN_REQUIRED for guests — the client opens the auth dialog
+  // Shopper sessions keep the exact requireShopper() semantics (invalid /
+  // suspended account → 401); guests resolve to { shopperId: null }.
+  const { shopperId: meId } = await resolveCartCaller();
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -28,10 +32,9 @@ export const POST = handle(async (req: Request) => {
   // can never hold a below-MOQ line (checkout re-validates it as well).
   const moq = Math.max(1, variant.moq);
 
-  let cart = await findCartForShopper(me.id);
+  let cart = await findCartForCaller(meId);
   if (!cart) {
-    await createCartForShopper(me.id);
-    cart = (await findCartForShopper(me.id))!;
+    cart = await ensureCartForCaller(meId);
   }
 
   let notice: string | null = null;
@@ -53,7 +56,7 @@ export const POST = handle(async (req: Request) => {
         cartItemId: existing.id,
         preQty: existing.qty,
         postQty: capped,
-        shopperId: me.id,
+        shopperId: meId,
       });
     }
   } else {
@@ -76,10 +79,10 @@ export const POST = handle(async (req: Request) => {
       cartItemId: created.id,
       preQty: 0,
       postQty: capped,
-      shopperId: me.id,
+      shopperId: meId,
     });
   }
 
-  const fresh = await findCartForShopper(me.id);
+  const fresh = await findCartForCaller(meId);
   return ok({ cart: shapeCart(fresh), notice }, { status: 201 });
 });

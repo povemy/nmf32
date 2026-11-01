@@ -1,0 +1,191 @@
+[]
+
+Products[]
+
+Pricing
+
+Developers[]
+
+Resources[]
+
+Support
+
+Log inSign up
+
+[]
+
+Products[]Payments
+
+CollectionPayment OrderPricing
+
+Products[]E-commerce
+
+Catalog Link[]Catalog Store[]
+
+Products[]More
+
+Payment methodsPlugins
+
+Developers
+
+IntegrationsPluginsAPI documentation[]Sandbox[]Github[]Dev Community[]
+
+Resources
+
+System status[]Transaction status[]Bank status[]Customers
+
+Support
+
+Help centerContactGuide[]
+
+Company
+
+AboutSecurityReferralTermsPrivacyBlog
+
+Log inSign up
+
+SECURITY
+
+Enterprise security. Zero compromise.
+
+We secure billions in annual transactions. Your payments are protected by the same standards trusted by banks, government agencies and Malaysia's largest organizations.
+
+Payment industry certifications
+
+[PCI DSS Level 1 certified]
+
+PCI DSS Level 1 certified
+
+The highest level of payment card security compliance, verified through annual audits of our payment processing environment.
+
+[Visa Payment Facilitator]
+
+Visa Payment Facilitator
+
+Authorized by Visa to provide payment services, enabling you to accept Visa payments through a single, compliant platform.
+
+[PayNet system integrator]
+
+PayNet system integrator
+
+Certified by PayNet Malaysia to integrate DuitNow payments, providing direct access to Malaysia's instant payment network for real-time, bank-to-bank transactions.
+
+[Pekeliling Perbendaharaan Malaysia PS 2.1 Compliant]
+
+Pekeliling Perbendaharaan Malaysia PS 2.1 Compliant
+
+We meet the Malaysian government's payment standards: real-time settlement, capped transaction costs, and transparent pricing.
+
+International security standards
+
+We inherit enterprise-grade security from our cloud infrastructure, maintained and audited continuously.
+
+[ISO 27001:2013]
+
+ISO 27001:2013
+
+Information Security Management System certified. Systematic controls protect your data at every level.
+
+[ISO 27017:2015]
+
+ISO 27017:2015
+
+Cloud-specific security controls protect your data in cloud environments.
+
+[ISO 27018:2019]
+
+ISO 27018:2019
+
+Personal data protection for cloud services. Customer information handled per international privacy standards.
+
+[SOC 2 Type II]
+
+SOC 2 Type II
+
+Comprehensive audit of security, availability, and confidentiality controls. Independently verified annually.
+
+Infrastructure security
+
+[99.9% historical uptime]
+
+99.9% historical uptime
+
+Your business doesn't stop. Neither do we. Auto-scaling infrastructure, multi-region redundancy, and real-time monitoring.
+
+[2,048-bit SSL encryption]
+
+2,048-bit SSL encryption
+
+Every API call, every transaction, every piece of data transmitted is encrypted end-to-end. No exceptions.
+
+[Auto-scaling infrastructure]
+
+Auto-scaling infrastructure
+
+Automatic scaling during peak loads. Web applications and worker processes expand instantly to handle traffic surges.
+
+[Multi-region redundancy]
+
+Multi-region redundancy
+
+Data distributed globally via Cloudflare's edge network, ensuring fast access and protection against regional failures.
+
+[Real-time monitoring]
+
+Real-time monitoring
+
+Sentry application monitoring tracks every error in real-time, resolving issues before they impact your business.
+
+[Centralized audit trails]
+
+Centralized audit trails
+
+Papertrail log management maintains complete records of all system activities for security audits and compliance verification.
+
+Is Billplz safe?
+
+Yes. Billplz is PCI DSS Level 1 certified, audited annually. It is a certified PayNet system integrator, complies with Pekeliling Perbendaharaan PS 2.1, and maintains 99.9% historical uptime.
+
+Questions about our security practices?
+
+Our team is here to help you understand how we protect your business and your customers.
+
+Contact us
+
+Start accepting payments today
+
+Get started for free[]Contact sales
+
+[]
+
+Fastest.
+
+Lowest.
+
+Possible.
+
+Products
+
+CollectionPayment OrderCatalog LinkCatalog StoreZakatPricing
+
+Developers
+
+IntegrationsAPI docsPluginsSandboxCommunity
+
+Company
+
+AboutSecurityTermsBrandCustomersReferralBlog
+
+Support
+
+Help centerGuideTutorials
+
+Resources
+
+System statusTransaction statusBank status
+
+© 2026 Billplz Sdn Bhd
+
+[][][][][]
+
+[][]

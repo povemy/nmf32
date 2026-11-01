@@ -4,7 +4,7 @@ import { verifyPasswordAsync, DUMMY_PASSWORD_HASH } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { getMfaEnrollment, createMfaChallenge } from "@/lib/mfa";
 import { handle, ok, fail, logActivity } from "@/lib/api";
-import { claimGuestStateForShopper } from "@/lib/shopper-merge";
+import { claimGuestStateForShopper, mergeGuestCartForShopper } from "@/lib/shopper-merge";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 // POST /api/auth/unified-login { email, password, portal? }
@@ -56,7 +56,13 @@ export const POST = handle(async (req: NextRequest) => {
   // establishment — never a client-supplied role).
   const [admin, seller, shopper] = await Promise.all([
     db.adminUser.findUnique({ where: { email } }),
-    db.seller.findUnique({ where: { email } }),
+    // PHASE 2.3 select hygiene (C2.7): explicit field list EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (migration 20261107000000) — a default
+    // select would raise P2022 and break seller login on the dev DB.
+    db.seller.findUnique({
+      where: { email },
+      select: { id: true, email: true, passwordHash: true, fullName: true, displayName: true, status: true },
+    }),
     db.shopperUser.findUnique({ where: { email } }),
   ]);
 
@@ -142,11 +148,14 @@ export const POST = handle(async (req: NextRequest) => {
     // claimGuestStateForShopper — unverified accounts claim nothing.
     const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
     const emailVerified = claimed.skipped !== "email-unverified";
+    // PHASE 2.2 guest checkout restoration — fold the guest cart into the
+    // account cart (best-effort; never fails login).
+    const guestCartMerged = await mergeGuestCartForShopper(shopper.id);
     const affiliateProfile = await db.affiliateProfile.findUnique({
       where: { userId: shopper.id },
       select: { status: true },
     });
-    await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login", meta: { via: "unified" } });
+    await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login", meta: { via: "unified", guestCartMerged: guestCartMerged.itemsMerged } });
     return ok({
       userType: "shopper",
       shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
@@ -154,6 +163,7 @@ export const POST = handle(async (req: NextRequest) => {
       token,
       claimed,
       emailVerified,
+      guestCartMerged: guestCartMerged.itemsMerged,
     });
   }
 

@@ -272,8 +272,10 @@ type TouchRow = {
  *  settings ONCE per request (it needs them anyway for the sponsor-policy
  *  freeze) instead of this helper re-reading them internally. */
 export async function resolveAffiliateAttributionForCart(input: {
-  /** Shopper placing the order (self-purchase exclusion). */
-  shopperId: string;
+  /** Shopper placing the order (self-purchase exclusion). PHASE 2.2 guest
+   *  checkout restoration: nullable — guests have no account, so self-purchase
+   *  exclusion simply does not apply (every affiliate stays eligible). */
+  shopperId: string | null;
   lines: { variantId: string; productId: string | null; storeId: string }[];
   preloadedSettings?: Awaited<ReturnType<typeof getAffiliateSettings>>;
 }): Promise<Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>> {
@@ -316,7 +318,14 @@ export async function resolveAffiliateAttributionForCart(input: {
     select: { id: true, userId: true, status: true, sponsorId: true },
   });
   const affiliateById = new Map(affiliates.map((a) => [a.id, a]));
-  const selfUserIds = new Set(affiliates.filter((a) => a.userId === input.shopperId).map((a) => a.id));
+  // Self-purchase exclusion — shoppers only (a guest has no account to be the
+  // affiliate's own). PHASE 2.2: null shopperId must NOT match affiliates whose
+  // userId is null (they are not "self"), so the filter is skipped entirely.
+  const selfUserIds = new Set(
+    input.shopperId != null
+      ? affiliates.filter((a) => a.userId === input.shopperId).map((a) => a.id)
+      : []
+  );
 
   // Product + store enrollment snapshot for the cart's products.
   const products = productIds.length

@@ -1,5 +1,6 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit } from "@/lib/ratelimit";
+import { recordEvent } from "@/lib/metrics";
 import { processPaymentWebhook } from "../process";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,12 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
     rawBody,
     headerSignature,
   });
+
+  // P2.3-7 (monitoring honesty): real payment-webhook outcome counter surfaced
+  // on /api/metrics (events: "webhook.payments:*"). Additive only — the
+  // processor itself (webhooks/payments/process.ts) is change-frozen this
+  // phase; route-level latency/status counters come from handle().
+  recordEvent("webhook.payments", outcome.duplicate ? "duplicate" : "processed");
 
   return ok({ ok: true, duplicate: outcome.duplicate, orderNumber: outcome.orderNumber, orderStatus: outcome.orderStatus });
 });

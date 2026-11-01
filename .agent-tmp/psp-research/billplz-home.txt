@@ -1,0 +1,431 @@
+[]
+
+Products[]
+
+Pricing
+
+Developers[]
+
+Resources[]
+
+Support
+
+Log inSign up
+
+[]
+
+Products[]Payments
+
+CollectionPayment OrderPricing
+
+Products[]E-commerce
+
+Catalog Link[]Catalog Store[]
+
+Products[]More
+
+Payment methodsPlugins
+
+Developers
+
+IntegrationsPluginsAPI documentation[]Sandbox[]Github[]Dev Community[]
+
+Resources
+
+System status[]Transaction status[]Bank status[]Customers
+
+Support
+
+Help centerContactGuide[]
+
+Company
+
+AboutSecurityReferralTermsPrivacyBlog
+
+Log inSign up
+
+Payment gateway for Malaysian businesses
+
+Accept payments from anywhere in Malaysia, with fees as low as MYR 0.75 per transaction.
+
+Get started for free[]Contact sales
+
+[Billplz payment interface mockup showing bill payment and analytics component]
+
+[PDRM]
+
+[Perodua]
+
+[Boost]
+
+[Wahed]
+
+[Lembaga Zakat Selangor]
+
+[Pandora]
+
+[Farm Fresh]
+
+[PTPTN]
+
+[PDRM]
+
+[Perodua]
+
+[Boost]
+
+[Wahed]
+
+[Lembaga Zakat Selangor]
+
+[Pandora]
+
+[Farm Fresh]
+
+[PTPTN]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+WHY BILLPLZ?
+
+Trusted where payments can't fail
+
+From traffic summons to zakat, Malaysia's institutions collect with Billplz. View customer stories[]
+
+[PDRM]
+
+MyBayar Saman by PDRM
+
+Traffic summons paid online, settled with real-time payout.
+
+[Lembaga Zakat Selangor]
+
+Lembaga Zakat Selangor
+
+Zakat contributions collected online for Selangor.
+
+[PTPTN]
+
+PTPTN
+
+Education loan repayments, collected nationwide.
+
+60,000+
+
+Malaysian
+organizations
+
+19.5M+
+
+Transactions
+in 2025
+
+MYR 5.4B+
+
+Processed
+in 2025
+
+99.9%
+
+Historical
+uptime
+
+[Mastercard][Visa][DuitNow][GrabPay][Boost][FPX][Maybank][Touch 'n Go eWallet][ShopeePay][Atome][CIMB]
+
+[Mastercard][Atome][FPX][Maybank][Boost][Mastercard][Atome][FPX][Maybank][Boost][Mastercard][Atome][FPX][Maybank][Boost][][][][][][][][][][][][][][][]
+
+[CIMB][DuitNow][Touch 'n Go eWallet][GrabPay][Visa][ShopeePay][CIMB][DuitNow][Touch 'n Go eWallet][GrabPay][Visa][ShopeePay][CIMB][DuitNow][Touch 'n Go eWallet][GrabPay][Visa][ShopeePay][][][][][][][][][][][][][][][][][][]
+
+Accept FPX, Wallet, Card, and Instalments, all in one place
+
+Your customers pay the way they prefer. You collect everything through Billplz.
+From FPX bank transfers to Wallet payments to Card and Instalment options.
+
+Check out our payment methods[]
+
+[]Some payment methods require additional verification. Apply early to avoid delays.
+
+PAYMENTS
+
+Collect and disburse from one platform
+
+Accept payments through Billplz Collection, send funds with Billplz Payment Order. Track everything from a single dashboard, with fast or real-time payouts.
+
+See our pricing[]
+
+[Payment methods]
+
+COLLECTION
+
+Accept payments
+
+Create bills, collect payments, and track receipts from your dashboard. Or connect to your platform with our API or plugins. Learn about Collection[]
+
+[Bill page]
+
+PAYMENT ORDER
+
+Disburse funds
+
+Send payments to your customers, agents or even part-timers in one go. Only available through Billplz's API. Learn about Payment Order[]
+
+[Payment Order receipt]
+
+[]
+
+Flat rate
+
+Enjoy FPX at a transparent flat rate
+
+[]
+
+Fast payout
+
+Next business day FPX payout or real-time
+
+[]
+
+Split payments
+
+Automated split payments between multiple accounts
+
+[]
+
+Bank-level security
+
+Enterprise-grade protection for every transaction
+
+DEVELOPERS
+
+Build custom experiences
+
+Flexible integration options to match your needs. Use our REST API for complete control or our wide range of pre-built plugins for faster setup.
+Learn about Integrations[]
+
+API
+
+REST APIs for custom integration. Build exactly what your business needs, from one-time payments to card-on-file charging with Auto-Deduct. Explore API docs[]
+
+[API example]
+
+Plugins
+
+Pre-built plugins for major platforms. Get up and running quickly with our ready-to-use integrations for popular e-commerce platforms, no coding required. Plugins[]
+
+[Plugins example]
+
+[]
+
+REST API
+
+Clear patterns and consistent behavior
+
+[]
+
+Webhooks
+
+Stay synchronized with real-time notifications
+
+[]
+
+Auto-Deduct
+
+Tokenize once, charge saved cards on demand
+
+[]
+
+Authentication
+
+Authentication mechanisms to protect your integration
+
+OPERATIONS
+
+Run your business efficiently
+
+Streamline your operations with tools designed to give you complete control and visibility. Spend less time managing payments, more time growing your business.
+
+REPORTING
+
+Monitor your revenue in real-time
+
+Monitor your business health with real-time insights. From transaction status to financial reports, get the clarity you need to make informed decisions.
+
+ANALYTICS
+
+Make data-driven business decisions
+
+Understand your payment patterns and success rates. Make data-driven decisions with confidence. No more guesswork.
+
+ACCOUNT MANAGEMENT
+
+Manage multiple business accounts
+
+Manage multiple businesses under one roof. Add team members and set permissions. Control exactly how you need them.
+
+SPLIT PAYMENTS
+
+Distribute funds automatically
+
+Automatically split payments between multiple accounts. Perfect for affiliates or managing multiple revenue streams.
+
+TEAM
+
+Control access and streamline approvals
+
+Give your team the access they need while maintaining control. Set roles, track actions, and streamline approvals.
+
+SECURITY
+
+Bank-level protection for your business
+
+Rest easy with bank-level security, 2FA, and PCI DSS compliance. We handle the security so you can focus on growth.
+
+E-COMMERCE
+
+Sell online with Catalog
+
+Set up an online store or payment link and start collecting through Billplz. No developer needed.
+
+CATALOG LINK
+
+Prebuilt payment link
+
+Create branded payment links in minutes. Perfect for service providers, fundraising, or event registration with no website needed.
+Learn about Link[]
+
+[Payment Link example showing a fundraising campaign interface]
+
+CATALOG STORE
+
+Online storefront
+
+Launch your own online store with inventory management, product categories, and a seamless checkout experience.
+Learn about Store[]
+
+[Commerce platform showing product listings]
+
+[]
+
+Free to start
+
+Begin with zero cost and scale as you grow
+
+[]
+
+Quick setup
+
+Up and running in minutes with no coding required
+
+[]
+
+Payment options
+
+All the trusted payment methods you already use
+
+[]
+
+Seamless integration
+
+Payment and commerce data, always in sync
+
+SECURITY
+
+Certified to protect every transaction
+
+Every transaction is protected with bank-grade encryption, continuous monitoring and independent third-party audits.
+
+Learn about Security[]
+
+[PCI DSS Compliant]
+
+[ISO 27018:2019]
+
+[PayNet System Integrator]
+
+PRICING
+
+Transparent pricing, pay per transaction
+
+Start with our free Basic plan. No hidden fees, no trial, no contract.
+
+Basic
+
+Ideal for new organizations launching online
+
+MYR 0/ year
+
++ processing fees
+
+Compare plans
+
+Standard
+
+For growing organizations with consistent sales volume
+
+MYR 999/ year
+
++ processing fees
+
+Compare plans
+
+Enterprise
+
+For organizations at scale that need customized features
+
+Custom pricing
+
++ processing fees
+
+Contact sales
+
+Start accepting payments today
+
+Get started for free[]Contact sales
+
+[]
+
+Fastest.
+
+Lowest.
+
+Possible.
+
+Products
+
+CollectionPayment OrderCatalog LinkCatalog StoreZakatPricing
+
+Developers
+
+IntegrationsAPI docsPluginsSandboxCommunity
+
+Company
+
+AboutSecurityTermsBrandCustomersReferralBlog
+
+Support
+
+Help centerGuideTutorials
+
+Resources
+
+System statusTransaction statusBank status
+
+© 2026 Billplz Sdn Bhd
+
+[][][][][]
+
+[][]

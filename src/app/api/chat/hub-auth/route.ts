@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, fail } from "@/lib/api";
-import { rateLimit } from "@/lib/rate-limit";
-import { createHash } from "crypto";
+import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { sha256Hex } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -25,18 +25,40 @@ const MAX_ROOMS_PER_CALL = 100;
 const TOKEN_RE = /^[a-f0-9]{16,128}$/i;
 
 export const POST = handle(async (req: Request) => {
-  rateLimit(req, "chat-hub-auth", 120);
+  // C2.4 — two-tier rate limiting. The chat hub mini-service calls this
+  // endpoint over loopback WITHOUT forwarding any client IP header, so the
+  // per-IP bucket below is ONE shared bucket ("chat-hub-auth:unknown") for
+  // the entire platform. At the old 120/min, an ordinary browser reconnect
+  // storm (reconnectionAttempts: Infinity, ~60 sockets/min) exhausted it →
+  // 429 → hub disconnect → infinite retry loop → platform-wide chat outage.
+  // Tier 1 raises that shared bucket to a 600/min platform-wide backstop: it
+  // bounds the session lookups a token-spray attacker (unlimited unique
+  // tokens, each landing in its own Tier 2 bucket) can force, without
+  // throttling legitimate aggregate reconnect load.
+  rateLimit(req, "chat-hub-auth", 600);
   const body = (await req.json().catch(() => ({}))) as { token?: string; rooms?: unknown };
   const token = typeof body.token === "string" ? body.token.trim().toLowerCase() : "";
   const rooms = Array.isArray(body.rooms)
     ? body.rooms.filter((r): r is string => typeof r === "string" && r.length > 0 && r.length <= 128).slice(0, MAX_ROOMS_PER_CALL)
     : [];
+  // C2.4 Tier 2 — identity-based: one bucket PER CREDENTIAL, keyed by the
+  // first 24 hex chars of sha256(token) — never the raw secret, and never a
+  // client-supplied identity header (the hub is not trusted to forward
+  // identity; the hub also does NOT forward client IPs, which is why the
+  // identity must come from the presented credential itself). 120/min per
+  // credential means one shopper's reconnect loop can no longer consume
+  // another's quota — the shared-"unknown" outage above becomes structurally
+  // impossible. Applied before the session lookup so repeated identical
+  // tokens (valid or not) are bounded before any DB work. The same full hash
+  // doubles as the Session.token lookup key below.
+  const tokenHash = sha256Hex(token);
+  rateLimitKey(tokenHash.slice(0, 24), "chat-hub-auth:t", 120);
   if (!TOKEN_RE.test(token)) return fail(401, "UNAUTHORIZED", "A valid session token is required");
 
   // Session validation WITHOUT the request's own cookie/Bearer context — the
   // hub presents the socket's token explicitly. Phase 1 (C2): the token is
   // hashed before lookup — Session.token stores sha256(raw), never the raw.
-  const session = await db.session.findUnique({ where: { token: createHash("sha256").update(token).digest("hex") } });
+  const session = await db.session.findUnique({ where: { token: tokenHash } });
   if (!session || session.expiresAt < new Date()) {
     return fail(401, "UNAUTHORIZED", "Session not found or expired");
   }

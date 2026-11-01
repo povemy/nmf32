@@ -4,6 +4,24 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
+import {
+  als,
+  routeLabel,
+  enterRequest,
+  exitRequest,
+  recordRequest,
+  commitScopeToRoute,
+  type ReqScope,
+} from "./metrics";
+
+// C2.8 (Phase 2.3 — real seller webhook delivery): dispatchStoreWebhooks now
+// lives in lib/webhook-delivery.ts and performs REAL HTTP delivery (HMAC-
+// signed, SSRF-guarded, retried by /api/cron/webhook-delivery). It is
+// re-exported here so every existing import/call site
+// (webhooks/payments/process.ts, store orders ship/deliver, shipping.ts,
+// admin refunds process) keeps working unchanged. The old implementation
+// wrote status:"success"/responseCode:200 rows WITHOUT any HTTP request.
+export { dispatchStoreWebhooks } from "./webhook-delivery";
 
 export class ApiError extends Error {
   status: number;
@@ -34,20 +52,97 @@ export function fail(status: number, code: string, message: string, details?: un
   return NextResponse.json({ error: { code, message, details } }, { status, headers });
 }
 
-/** Wrap a route handler: converts thrown ApiErrors into envelope responses. */
+// ============================================================================
+// Phase 2.3 (P2.3-6) — production error sanitization helpers.
+// ----------------------------------------------------------------------------
+// Unhandled exceptions (Prisma internals like table/column names and query
+// text, filesystem paths, stack fragments) must never reach API clients when
+// NODE_ENV=production. Dev keeps the historical full-message behavior.
+// ============================================================================
+
+export function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+/** Short correlation id stamped on sanitized production error responses so a
+ * support report ("ref a1b2c3d4") maps back to the full server-side log line. */
+export function errorRefId(): string {
+  try {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  } catch {
+    return Math.random().toString(16).slice(2, 10);
+  }
+}
+
+/** Wrap a route handler: converts thrown ApiErrors into envelope responses.
+ *
+ * Phase 2.3 (P2.3-6) production sanitization: a NON-ApiError throw returns
+ * {error: {code: "INTERNAL", message: "Something went wrong on our side",
+ * meta: {refId}}} — the raw message/stack is logged server-side under the
+ * same refId, never serialized to the client. ApiErrors keep their intentional
+ * client-facing message in every environment (that IS the contract). DEV is
+ * unchanged: full exception message in the 500 envelope for debugging. The
+ * response shape stays {error: {code, message, ...}} — clients only read
+ * error.code / error.message / error.details (verified across components),
+ * so the added meta field is additive, not a contract change.
+ *
+ * P2.3-7 (monitoring honesty — Phase 2.3 audit "dead metrics code"): the
+ * metrics registry (lib/metrics.ts) previously had recordRequest/
+ * enterRequest/exitRequest defined but ZERO callers — every /api/metrics
+ * response carried permanently-empty routes/totals sections. handle() is
+ * the single choke point every API route already flows through, so wiring
+ * the recorders HERE makes route latency, status codes, in-flight gauges
+ * and (via the ALS scope + the lib/db.ts Prisma hook) per-route DB time
+ * REAL for every endpoint — including the audit's named surfaces that were
+ * not safely touchable this phase: checkout admission (byStatus on
+ * POST /api/checkout/*, incl. 503 CHECKOUT_BUSY), payout failures
+ * (byStatus/errors on payout routes) and webhook outcomes. /api/metrics
+ * remains excluded from its own counters (EXCLUDED_LABELS). All metric
+ * calls are non-throwing so instrumentation can never fail a response. */
 export function handle<Args extends unknown[]>(
   fn: (...args: Args) => Promise<NextResponse>
 ): (...args: Args) => Promise<NextResponse> {
   return async (...args: Args) => {
+    // Route label from the first argument when it is a Request (all App-Router
+    // route handlers). Anything else (direct lib call) is skipped defensively.
+    let label: string | null = null;
     try {
-      return await fn(...args);
+      const first = args[0];
+      if (first instanceof Request) label = routeLabel(first.method, new URL(first.url).pathname);
+    } catch {
+      label = null;
+    }
+    const tracked = label != null && enterRequest(label);
+    const scope: ReqScope | null = tracked && label != null
+      ? { label, dbMs: 0, dbCount: 0, dbSlowestMs: 0, dbSlowestModel: null, dbSlowestOp: null }
+      : null;
+    const t0 = performance.now();
+    try {
+      const res = scope ? await als.run(scope, () => fn(...args)) : await fn(...args);
+      if (tracked) recordRequest(label, res.status, performance.now() - t0);
+      return res;
     } catch (e) {
+      if (tracked) recordRequest(label, e instanceof ApiError ? e.status : 500, performance.now() - t0);
       if (e instanceof ApiError) {
         return fail(e.status, e.code, e.message, e.details, e.headers);
       }
-      console.error("[api]", e);
-      const message = e instanceof Error ? e.message : "Internal error";
-      return fail(500, "INTERNAL", message);
+      if (!isProduction()) {
+        console.error("[api]", e);
+        const message = e instanceof Error ? e.message : "Internal error";
+        return fail(500, "INTERNAL", message);
+      }
+      const refId = errorRefId();
+      // Full details (message, stack, Prisma error internals) stay server-side.
+      console.error(`[api] ref=${refId} unhandled error:`, e);
+      return NextResponse.json(
+        { error: { code: "INTERNAL", message: "Something went wrong on our side", meta: { refId } } },
+        { status: 500 }
+      );
+    } finally {
+      if (tracked) {
+        commitScopeToRoute(label);
+        exitRequest(label);
+      }
     }
   };
 }
@@ -147,26 +242,6 @@ export async function notify(input: { event: string; channel: "email" | "whatsap
     throw e;
   }
   return { skipped: false };
-}
-
-/** Simulated outbound webhook fan-out (M13): enqueue deliveries for store endpoints. */
-export async function dispatchStoreWebhooks(input: { storeId: string; event: string; payload: unknown }) {
-  const endpoints = await db.webhookEndpoint.findMany({ where: { storeId: input.storeId, isActive: true } });
-  for (const ep of endpoints) {
-    const events = JSON.parse(ep.eventsJson || "[]") as string[];
-    if (!events.includes(input.event)) continue;
-    await db.webhookDelivery.create({
-      data: {
-        endpointId: ep.id,
-        event: input.event,
-        payloadJson: JSON.stringify(input.payload),
-        status: "success",
-        attempts: 1,
-        responseCode: 200,
-        lastAttemptAt: new Date(),
-      },
-    });
-  }
 }
 
 /** Advance order status with history + side-effects.

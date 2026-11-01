@@ -27,15 +27,18 @@ const loadSuggest = publicCache(
     const tokenWhere = buildTokenWhere(tokens);
     const where: Prisma.ProductWhereInput = {
       status: "active",
-      store: { is: { status: "live", seller: { is: { marketplaceOptIn: true } } } },
+      // C1.3 (seller publication governance): only an admin-approved seller's
+      // live store may surface in public autocomplete.
+      store: { is: { status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } } },
       ...(tokenWhere ? { AND: [tokenWhere] } : {}),
     };
     const [rows, storeRows] = await Promise.all([
       db.product.findMany({ where, include: productCardInclude, orderBy: { salesCount: "desc" }, take: 30 }),
       db.store.findMany({
         where: {
+          // C1.3: same seller-status defense-in-depth for the store suggestions.
           status: "live",
-          seller: { is: { marketplaceOptIn: true } },
+          seller: { is: { status: "active", marketplaceOptIn: true } },
           name: { contains: raw, mode: "insensitive" },
         },
         select: { name: true, slug: true, logoUrl: true },

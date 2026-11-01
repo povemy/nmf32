@@ -492,8 +492,54 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const [draft, setDraft] = useState<DraftT>(loadDraft);
   useEffect(() => persistDraft(draft), [draft]);
 
-  // Contact details come from the ACCOUNT (carts/checkout are account-scoped);
-  // only fill blanks so the shopper can still override per-order (gifts etc.).
+  // --------------------------------------------- Phase 2.4 (C2.x): browser back
+  // Mobile shoppers pressing Back mid-checkout should step back through the
+  // phases (Review → Delivery → Information), not exit the site. Forward
+  // transitions push real history entries carrying the phase marker
+  // ({nomofeeCheckoutPhase}); a popstate handler restores whatever phase the
+  // entry being returned to was on. Backward/error transitions replaceState
+  // so the stack stays aligned with the visible phase. The sessionStorage
+  // draft already keeps the phase across reloads — this only wires the
+  // history stack (documented limitation: after the order is placed and the
+  // shopper leaves the checkout view, its phase entries stay on the stack, so
+  // a few Back presses are consumed harmlessly before the site is exited).
+  const mountPhaseRef = useRef(draft.phase);
+  useEffect(() => {
+    // stamp the entry the shopper landed on — a reload at phase 2/3 restores
+    // the draft phase; without the marker the FIRST Back would exit the site.
+    try {
+      const cur = (window.history.state as { nomofeeCheckoutPhase?: unknown } | null)?.nomofeeCheckoutPhase;
+      if (cur !== 1 && cur !== 2 && cur !== 3) {
+        window.history.replaceState({ nomofeeCheckoutPhase: mountPhaseRef.current }, "");
+      }
+    } catch {
+      /* history API unavailable (rare embedders) — Back keeps legacy behavior */
+    }
+  }, []);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const p = (e.state as { nomofeeCheckoutPhase?: unknown } | null)?.nomofeeCheckoutPhase;
+      if (p === 1 || p === 2 || p === 3) setDraft((d) => (d.phase === p ? d : { ...d, phase: p }));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  /** Phase transition + history bookkeeping: "push" for forward steps (Back
+   *  steps back), "replace" for backward/error corrections (stack stays put). */
+  function goPhase(n: 1 | 2 | 3, mode: "push" | "replace") {
+    setDraft((d) => (d.phase === n ? d : { ...d, phase: n }));
+    try {
+      if (mode === "push") window.history.pushState({ nomofeeCheckoutPhase: n }, "");
+      else window.history.replaceState({ nomofeeCheckoutPhase: n }, "");
+    } catch {
+      /* history API unavailable — the phase still switches */
+    }
+  }
+
+  // Contact details come from the ACCOUNT for signed-in shoppers (only fill
+  // blanks so the shopper can still override per-order — gifts etc.).
+  // PHASE 2.2 GUEST CHECKOUT RESTORATION: guests keep manual entry (the draft
+  // pre-fills from the last checkout's locally saved contact details).
   useEffect(() => {
     if (!shopper) return;
     setDraft((d) => ({
@@ -512,6 +558,20 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const [formBusy, setFormBusy] = useState(false);
   const [deleteArm, setDeleteArm] = useState<string | null>(null);
 
+  // PHASE 2.2 GUEST CHECKOUT RESTORATION — guest email verification + inline
+  // delivery address. The verified-email token is held STRICTLY IN MEMORY
+  // (same posture as the order-access grants: never localStorage/sessionStorage
+  // — a page reload re-verifies through the email round-trip). The server's
+  // /api/checkout/create fails closed without it, so the UI gates phase 1 on it.
+  const [guestVerified, setGuestVerified] = useState<{ email: string; token: string; expiresAtMs: number } | null>(null);
+  const [guestCodeSentTo, setGuestCodeSentTo] = useState<string | null>(null);
+  const [guestCode, setGuestCode] = useState("");
+  const [guestCodeBusy, setGuestCodeBusy] = useState(false);
+  const [guestVerifyError, setGuestVerifyError] = useState<string | null>(null);
+  // Guests use the SAME inline address form component as the account editor —
+  // no address book (that stays account-only; guests check out inline only).
+  const [guestForm, setGuestForm] = useState(emptyForm);
+
   const [quote, setQuote] = useState<QuoteT | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [couponInput, setCouponInput] = useState("");
@@ -523,13 +583,40 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const [heldVouchers, setHeldVouchers] = useState<HeldVoucherT[] | null>(null);
   const [voucherSel, setVoucherSel] = useState<Record<string, string>>({}); // storeId → userVoucherId
 
-  const selectedAddr = useMemo(
+  const accountAddr = useMemo(
     () => addresses?.find((a) => a.id === draft.addressId) ?? null,
     [addresses, draft.addressId]
   );
 
-  // load the device address book once
+  // PHASE 2.2: guests have no address book — the INLINE form drives the same
+  // `selectedAddr` contract every downstream phase (delivery method, review,
+  // place order) already consumes. The synthetic address exists ONLY when the
+  // form is complete and valid.
+  const guestAddressErrors = validateForm(guestForm);
+  const guestAddressValid = Object.values(guestAddressErrors).every((e) => !e);
+  const guestAddr: AddressT | null =
+    !shopper && guestAddressValid
+      ? {
+          id: "guest-inline",
+          label: "Delivery address",
+          name: guestForm.name.trim(),
+          phone: guestForm.phone.trim() || null,
+          line1: guestForm.line1.trim(),
+          city: guestForm.city.trim(),
+          state: guestForm.state,
+          postcode: guestForm.postcode.trim(),
+          isDefault: false,
+        }
+      : null;
+  const selectedAddr = shopper ? accountAddr : guestAddr;
+
+  // load the ACCOUNT address book (signed-in shoppers only — the book is
+  // account-scoped by design; guests check out with the inline form above).
+  // Re-runs if the auth state flips mid-session (guest → sign-in from the
+  // header): for always-signed-in shoppers the dependency is stable, so this
+  // stays a single fetch exactly as before.
   useEffect(() => {
+    if (!shopper) return;
     let alive = true;
     fetchJson<{ addresses: AddressT[] }>("/api/checkout/addresses")
       .then((d) => {
@@ -546,7 +633,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [shopper]);
 
   const payloadItems = useMemo(() => items.map((i) => ({ variantId: i.variantId, qty: i.qty })), [items]);
   const destState = selectedAddr?.state ?? null;
@@ -748,6 +835,70 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     }
   }
 
+  // -------------------------------------------------- guest email verification
+  // PHASE 2.2 GUEST CHECKOUT RESTORATION — two-step OTP (the same UX shape as
+  // the LookupView order verification): send a code to the checkout email,
+  // then exchange it for the short-lived verified-email token the create
+  // route requires. The token lives in MEMORY ONLY (see state above).
+  const guestEmail = draft.email.trim().toLowerCase();
+  const guestEmailOk =
+    !!shopper ||
+    (!!guestVerified && guestVerified.email === guestEmail && guestVerified.expiresAtMs > Date.now());
+
+  async function requestGuestCode() {
+    if (!EMAIL_RE.test(guestEmail)) {
+      setGuestVerifyError("Enter a valid email address in the contact details first");
+      return;
+    }
+    setGuestCodeBusy(true);
+    setGuestVerifyError(null);
+    try {
+      await postJson<{ sent: boolean; message: string }>("/api/checkout/guest-verify/request", { email: guestEmail });
+      setGuestCodeSentTo(guestEmail);
+      setGuestCode("");
+    } catch (e) {
+      if (e instanceof ApiFail && e.status === 503) {
+        setGuestVerifyError(
+          "Email delivery isn't configured on this deployment yet, so guest checkout verification is unavailable. Sign in to an account to check out."
+        );
+      } else {
+        setGuestVerifyError(e instanceof Error ? e.message : "Could not send the verification code");
+      }
+    } finally {
+      setGuestCodeBusy(false);
+    }
+  }
+
+  async function verifyGuestCode() {
+    const digits = guestCode.replace(/[^0-9]/g, "");
+    if (digits.length !== 6) {
+      setGuestVerifyError("Enter the 6-digit code from the email.");
+      return;
+    }
+    setGuestCodeBusy(true);
+    setGuestVerifyError(null);
+    try {
+      const verified = await postJson<{ token: string; email: string; expiresAt: string }>(
+        "/api/checkout/guest-verify/verify",
+        { email: guestEmail, code: digits }
+      );
+      // In-memory only — never persisted to localStorage/sessionStorage.
+      setGuestVerified({ email: verified.email, token: verified.token, expiresAtMs: new Date(verified.expiresAt).getTime() });
+      setGuestCode("");
+      toast.success("Email verified", { description: "You can complete your guest checkout now." });
+    } catch (e) {
+      setGuestVerifyError(
+        e instanceof ApiFail && e.code === "INVALID"
+          ? "That code isn't valid. Check the latest email and try again."
+          : e instanceof Error
+            ? e.message
+            : "Verification failed"
+      );
+    } finally {
+      setGuestCodeBusy(false);
+    }
+  }
+
   // ------------------------------------------------------------- phase validation
   const contactErrors = {
     name: draft.name.trim().length >= 2 ? null : "Full name is required",
@@ -756,16 +907,21 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   };
   const contactValid = !Object.values(contactErrors).some(Boolean);
   const addressPicked = !!selectedAddr;
-  const phase1Valid = contactValid && addressPicked;
+  // PHASE 2.2: guests additionally need the VERIFIED email before delivery.
+  const phase1Valid = contactValid && addressPicked && guestEmailOk;
 
   function goToDelivery() {
     setTried(true);
     if (!phase1Valid) {
-      if (!addressPicked) toast.error("Choose or save a delivery address first");
+      if (!guestEmailOk) {
+        toast.error("Verify your email with the one-time code to continue");
+        return;
+      }
+      if (!addressPicked) toast.error(shopper ? "Choose or save a delivery address first" : "Complete your delivery address first");
       return;
     }
     setTried(false);
-    setDraft((d) => ({ ...d, phase: 2 }));
+    goPhase(2, "push");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -775,7 +931,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       toast.error(sel.reason ?? "Please pick an available delivery option");
       return;
     }
-    setDraft((d) => ({ ...d, phase: 3 }));
+    goPhase(3, "push");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -784,6 +940,14 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     if (submitting) return; // double-tap guard
     setTried(true);
     if (!quote || !selectedAddr || items.length === 0) return;
+    // PHASE 2.2: a guest cannot pay without the verified-email token — bounce
+    // back to phase 1 (Information) where the verification step lives (e.g. a
+    // page reload dropped the in-memory token mid-checkout).
+    if (!guestEmailOk) {
+      goPhase(1, "replace");
+      toast.error("Verify your email with the one-time code before paying");
+      return;
+    }
     if (stockIssues.length > 0) {
       toast.error("Some items exceed available stock — please update your cart");
       return;
@@ -805,6 +969,11 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         {
           items: payloadItems,
           customer: { name: draft.name.trim(), email: draft.email.trim(), phone: draft.phone.trim() || undefined },
+          // PHASE 2.2 GUEST CHECKOUT RESTORATION — the in-memory verified-email
+          // token (guests only; the account path sends nothing extra and stays
+          // byte-identical). The server verifies it constant-time and requires
+          // customer.email to match the verified address.
+          ...(shopper || !guestVerified ? {} : { guestVerification: guestVerified.token }),
           shippingAddress: {
             line1: selectedAddr.line1,
             city: selectedAddr.city,
@@ -843,7 +1012,12 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       ctx.nav({ name: "pay", ref: res.orderPaymentRef });
     } catch (e) {
       if (e instanceof ApiFail && e.code === "SHIPPING_UNAVAILABLE") {
-        setDraft((d) => ({ ...d, phase: 2 }));
+        goPhase(2, "replace");
+      }
+      if (e instanceof ApiFail && e.code === "GUEST_VERIFICATION_REQUIRED") {
+        // PHASE 2.2: token missing/expired server-side (fail-closed) — back to
+        // the verification step.
+        goPhase(1, "replace");
       }
       if (e instanceof ApiFail && e.code === "OUT_OF_STOCK") {
         refreshCart();
@@ -891,27 +1065,6 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                 Start shopping
               </Button>
             )
-          }
-        />
-      </div>
-    );
-  }
-
-  // Checkout is account-only — carts, addresses and orders all live on the account.
-  if (!shopper) {
-    return (
-      <div className="flex-1">
-        <EmptyState
-          icon={LogIn}
-          title="Sign in to check out"
-          hint="Your cart, saved addresses and orders are tied to your NOMOFEE account so they follow you on every device."
-          action={
-            <Button
-              onClick={() => openShopperAuth()}
-              className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110 gap-2"
-            >
-              <LogIn className="h-4 w-4" /> Sign in or create account
-            </Button>
           }
         />
       </div>
@@ -966,7 +1119,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
       </p>
 
       <div className="mt-5 rounded-xl border bg-card p-4 shadow-soft sm:px-6">
-        <Stepper phase={draft.phase} onJump={(n) => setDraft((d) => ({ ...d, phase: n }))} />
+        <Stepper phase={draft.phase} onJump={(n) => goPhase(n, "replace")} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-5">
@@ -986,6 +1139,106 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                     {field("Phone (optional)", <Input value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder="012-345 6789" className="min-h-[44px]" />, tried ? contactErrors.phone : null)}
                   </div>
                 </div>
+
+                {/* PHASE 2.2 GUEST CHECKOUT RESTORATION — email verification for
+                    unauthenticated buyers (two-step OTP, same UX shape as the
+                    order LookupView). Signed-in shoppers never see this block. */}
+                {!shopper ? (
+                  <div className="space-y-3 rounded-lg border border-teal-700/25 bg-teal-50/40 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-2 text-sm font-bold">
+                        <ShieldCheck className="h-4 w-4 text-teal-700" />
+                        Checking out as guest
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => openShopperAuth()}
+                        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-md px-2 text-xs font-bold text-teal-700 underline-offset-2 hover:underline"
+                      >
+                        <LogIn className="h-3.5 w-3.5" /> Have an account? Sign in
+                      </button>
+                    </div>
+                    {guestEmailOk ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <BadgeCheck className="h-4 w-4 shrink-0" aria-hidden />
+                          <span className="min-w-0 truncate">
+                            <span className="font-bold">{guestEmail}</span> verified — you can check out without an account.
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          className="min-h-[36px] rounded-md px-2 text-xs font-bold text-emerald-800 underline underline-offset-2 hover:no-underline"
+                          onClick={() => {
+                            setGuestVerified(null);
+                            setGuestCodeSentTo(null);
+                            setGuestCode("");
+                            setGuestVerifyError(null);
+                          }}
+                        >
+                          Use a different email
+                        </button>
+                      </div>
+                    ) : guestCodeSentTo === guestEmail ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-muted-foreground">
+                          A 6-digit code was sent to <span className="font-bold">{guestEmail}</span>. It expires in 10 minutes.
+                        </p>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="guest-code" className="text-xs font-semibold text-muted-foreground">Verification code</Label>
+                          <Input
+                            id="guest-code"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            value={guestCode}
+                            onChange={(e) => setGuestCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                            placeholder="••••••"
+                            className="min-h-[44px] max-w-[220px] text-center font-mono text-lg tracking-[0.4em]"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            onClick={() => void verifyGuestCode()}
+                            disabled={guestCodeBusy || guestCode.replace(/[^0-9]/g, "").length !== 6}
+                            className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110"
+                          >
+                            {guestCodeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify email
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={guestCodeBusy}
+                            onClick={() => void requestGuestCode()}
+                            className="min-h-[44px]"
+                            title="Request a fresh code (rate-limited)"
+                          >
+                            <RotateCcw className="h-4 w-4" /> Send another code
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                          Verify this email with a one-time code — your receipt and order lookup use it (no account needed).
+                          {guestVerified ? " It changed after verification, so verify the new address." : ""}
+                        </p>
+                        <Button
+                          onClick={() => void requestGuestCode()}
+                          disabled={guestCodeBusy || !EMAIL_RE.test(guestEmail)}
+                          className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110"
+                        >
+                          {guestCodeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Send my code
+                        </Button>
+                      </div>
+                    )}
+                    {guestVerifyError ? (
+                      <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
+                        {guestVerifyError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </section>
 
               <section className="space-y-4 rounded-xl border bg-card p-5 shadow-soft" aria-labelledby="checkout-addresses">
@@ -993,7 +1246,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   <h2 id="checkout-addresses" className="flex items-center gap-2 text-base font-bold">
                     <MapPin className="h-4 w-4 text-teal-700" /> Delivery address
                   </h2>
-                  {!formMode ? (
+                  {shopper && !formMode ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1009,6 +1262,18 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                   ) : null}
                 </div>
 
+                {/* PHASE 2.2 GUEST CHECKOUT RESTORATION — guests get the INLINE
+                    delivery form only (the address book stays account-only); the
+                    account branch below is the untouched saved-address UI. */}
+                {!shopper ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Delivery details for this order — sign in to save addresses for next time.
+                    </p>
+                    <AddressFormFields form={guestForm} setForm={setGuestForm} errors={tried ? guestAddressErrors : {}} />
+                  </div>
+                ) : (
+                  <>
                 {addressesLoading ? (
                   <div className="space-y-2">
                     <Skeleton className="h-20 rounded-lg" />
@@ -1117,11 +1382,15 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                     </div>
                   </div>
                 ) : null}
+                  </>
+                )}
               </section>
 
               {tried && !phase1Valid ? (
                 <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
-                  Please complete your contact details and choose a delivery address to continue.
+                  {shopper
+                    ? "Please complete your contact details and choose a delivery address to continue."
+                    : "Please verify your email, complete your contact details and fill in the delivery address to continue."}
                 </p>
               ) : null}
 
@@ -1145,7 +1414,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                       {selectedAddr.line1}, {selectedAddr.city}, {selectedAddr.state} {selectedAddr.postcode}
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))}>
+                  <Button variant="outline" size="sm" className="min-h-[40px] border-teal-700/40 text-teal-800 hover:bg-teal-50" onClick={() => goPhase(1, "replace")}>
                     <Pencil className="h-3.5 w-3.5" /> Change
                   </Button>
                 </div>
@@ -1210,7 +1479,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
               </section>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="min-h-[48px]">
+                <Button variant="outline" size="lg" onClick={() => goPhase(1, "replace")} className="min-h-[48px]">
                   Back
                 </Button>
                 <Button size="lg" onClick={goToPayment} disabled={quoting} className="min-h-[48px] flex-1 bg-brand-gradient-deep text-white hover:brightness-110 sm:flex-none sm:px-10">
@@ -1231,7 +1500,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                       <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                         <MapPin className="h-3.5 w-3.5" /> Deliver to
                       </p>
-                      <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 1 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+                      <button type="button" onClick={() => goPhase(1, "replace")} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
                         Edit
                       </button>
                     </div>
@@ -1246,7 +1515,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
                     <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       <Truck className="h-3.5 w-3.5" /> Delivery
                     </p>
-                    <button type="button" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
+                    <button type="button" onClick={() => goPhase(2, "replace")} className="text-xs font-semibold text-teal-700 underline-offset-2 hover:underline">
                       Edit
                     </button>
                   </div>
@@ -1313,7 +1582,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="lg" onClick={() => setDraft((d) => ({ ...d, phase: 2 }))} className="min-h-[48px]">
+                <Button variant="outline" size="lg" onClick={() => goPhase(2, "replace")} className="min-h-[48px]">
                   Back
                 </Button>
                 <Button
@@ -1428,8 +1697,11 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
               )}
             </div>
 
-            {/* claimable vouchers — one per seller group (Task 10-b) */}
-            {storeGroups.length > 0 ? (
+            {/* claimable vouchers — one per seller group (Task 10-b).
+                PHASE 2.2: wallet vouchers are account-bound — guests never
+                see the selector (the create route drops guest voucher
+                submissions server-side as well). */}
+            {shopper && storeGroups.length > 0 ? (
               <div className="space-y-2.5">
                 <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   <TicketPercent className="h-3.5 w-3.5 text-teal-700" /> Shop vouchers
@@ -2718,7 +2990,7 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
             <ShieldCheck className="h-5 w-5 text-teal-700" /> Track your order
           </h1>
           <p className="text-sm text-muted-foreground">
-            Enter the email you checked out with and your order number (e.g. SM-100017) — we&apos;ll send a one-time code to that address to confirm it&apos;s you.
+            Enter the email you checked out with and your order number (e.g. NM-100017) — we&apos;ll send a one-time code to that address to confirm it&apos;s you.
           </p>
         </div>
 
@@ -2736,7 +3008,7 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lk-num" className="text-xs font-semibold text-muted-foreground">Order number</Label>
-              <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="SM-100017" className="min-h-[44px] font-mono" />
+              <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="NM-100017" className="min-h-[44px] font-mono" />
             </div>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={busy} className="min-h-[44px] w-full bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto">

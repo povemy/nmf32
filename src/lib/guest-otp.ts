@@ -57,6 +57,7 @@
 // ids/status only.
 // ============================================================================
 import { randomBytes } from "crypto";
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { ApiError } from "./api";
 import { hmacSha256Hex, safeEqualHex } from "./password";
@@ -69,12 +70,27 @@ export const EMAIL_OTP_MAX_ATTEMPTS = 5;
 export const EMAIL_OTP_DIGITS = 6;
 /** Access-grant lifetime — short by design; no refresh token exists. */
 export const ORDER_ACCESS_GRANT_TTL_MS = 15 * 60 * 1000;
+/** Guest-checkout verified-email token lifetime ("gcv:v1:") — Phase 2.2
+ *  guest checkout restoration. Short by design (same posture as the order
+ *  access grant): just long enough to complete a checkout, no refresh. */
+export const GUEST_CHECKOUT_TOKEN_TTL_MS = 30 * 60 * 1000;
 
-/** The two challenge purposes sharing this machinery. */
-export type EmailOtpPurpose = "guest-order" | "shopper-email";
+/** The challenge purposes sharing this machinery. "guest-checkout" (Phase
+ *  2.2) lets an UNAUTHENTICATED buyer prove ownership of the email they are
+ *  checking out with — it authorizes NOTHING by itself; the minted
+ *  guest-checkout token is required by /api/checkout/create for guest orders.
+ *  "seller-email" (Phase 2.3 / C2.7) lets a SESSION-AUTHENTICATED seller
+ *  prove ownership of the email on their own account — the durable proof
+ *  (row persists with verifiedAt, exactly like shopper-email) is mirrored
+ *  onto Seller.emailVerifiedAt by the verify route IN THE SAME $transaction
+ *  as the consume (the optional onWin hook below). */
+export type EmailOtpPurpose = "guest-order" | "shopper-email" | "guest-checkout" | "seller-email";
 
 const OTP_HASH_DOMAIN = "otp:v1:";
 const GRANT_DOMAIN = "oag:v1:";
+/** DISTINCT domain for the guest-checkout verified-email token — never
+ *  interchangeable with "oag:v1:" grants or "otp:v1:" code hashes. */
+const GUEST_CHECKOUT_DOMAIN = "gcv:v1:";
 const DAY_MS = 86_400_000;
 
 /* --------------------------------------------------------------- secrets */
@@ -195,6 +211,81 @@ export function verifyOrderAccessGrant(
     return null;
   }
   return { orderId, expiresAtMs };
+}
+
+/* ------------------------------------------ guest-checkout verified-email */
+
+// PHASE 2.2 GUEST CHECKOUT RESTORATION — the "gcv:v1:" token. Template is
+// issueOrderAccessGrant/verifyOrderAccessGrant above, with one representational
+// difference: the SUBJECT is an email address, which can contain "." (and "@"),
+// so it cannot ride in the dot-separated grant body. It is carried
+// base64url-encoded (alphabet [A-Za-z0-9_-] — dot-free, split-safe) and the MAC
+// binds the DECODED email + expiry under the "gcv:v1:" domain with the
+// EMAIL_OTP_SECRET (the token is an email-ownership artifact, the same trust
+// domain as the OTP code hashes; rotating EMAIL_OTP_SECRET instantly kills all
+// outstanding tokens — fail-closed by construction).
+//   • Minted ONLY by /api/checkout/guest-verify/verify AFTER a successful
+//     exactly-once OTP consume (purpose "guest-checkout").
+//   • 30-minute TTL, no refresh, stateless MAC, constant-time compare.
+//   • /api/checkout/create REQUIRES it for guest orders (fail-closed without
+//     it) and additionally requires body.customer.email === token.email.
+//   • NEVER logged, never persisted client-side (the SPA keeps it in memory
+//     only — same posture as the order-access grants).
+
+const EMAIL_RE_STRICT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function b64urlFromEmail(email: string): string {
+  return Buffer.from(email, "utf8").toString("base64url");
+}
+
+function emailFromB64url(b64: string): string | null {
+  try {
+    const email = Buffer.from(b64, "base64url").toString("utf8");
+    return email.length <= 254 && EMAIL_RE_STRICT.test(email) ? email : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mint a 30-minute guest-checkout verified-email token binding `email`. */
+export function issueGuestCheckoutToken(email: string, nowMs: number = Date.now()): string {
+  const expiresAtMs = nowMs + GUEST_CHECKOUT_TOKEN_TTL_MS;
+  const mac = hmacSha256Hex(emailOtpSecret(), `${GUEST_CHECKOUT_DOMAIN}${email}:${expiresAtMs}`);
+  return `v1.${b64urlFromEmail(email)}.${expiresAtMs}.${mac}`;
+}
+
+export type GuestCheckoutToken = { email: string; expiresAtMs: number };
+
+/** Verify a guest-checkout token: strict shape checks, absolute expiry
+ *  (minted server-side — no skew tolerance needed), canonical email recovery,
+ *  constant-time MAC compare. Returns null on ANY failure — callers treat null
+ *  as "not verified" (checkout create FAILS CLOSED). */
+export function verifyGuestCheckoutToken(
+  raw: string | null | undefined,
+  nowMs: number = Date.now()
+): GuestCheckoutToken | null {
+  if (!raw) return null;
+  const parts = raw.split(".");
+  if (parts.length !== 4) return null;
+  const [version, emailB64, expiresAt, mac] = parts;
+  if (version !== "v1") return null;
+  if (!/^[A-Za-z0-9_-]{4,1100}$/.test(emailB64)) return null; // base64url of ≤254-char emails (multibyte-safe)
+  if (!/^\d{13,16}$/.test(expiresAt)) return null;
+  if (!/^[0-9a-f]{64}$/.test(mac)) return null;
+  const expiresAtMs = Number(expiresAt);
+  if (expiresAtMs <= nowMs) return null;
+  const email = emailFromB64url(emailB64);
+  if (!email) return null;
+  let secret: string;
+  try {
+    secret = emailOtpSecret();
+  } catch {
+    return null; // production without the secret → nothing can verify
+  }
+  if (!safeEqualHex(mac, hmacSha256Hex(secret, `${GUEST_CHECKOUT_DOMAIN}${email}:${expiresAtMs}`))) {
+    return null;
+  }
+  return { email, expiresAtMs };
 }
 
 /* ------------------------------------------- storage probe (P2021 guard) */
@@ -346,12 +437,25 @@ export type VerifyEmailOtpResult =
  *  • guest-order    : DELETE WHERE (id, codeHash) — replay finds no row;
  *  • shopper-email  : UPDATE verifiedAt=now WHERE verifiedAt IS NULL — the
  *    row PERSISTS as the durable email-ownership proof that gates claiming,
- *    and only ONE concurrent verify can win. */
+ *    and only ONE concurrent verify can win;
+ *  • seller-email   : same persisting CAS consume, plus — when the caller
+ *    passes `onWin` — the side effect runs INSIDE the same db.$transaction
+ *    as the consume (Phase 2.3 / C2.7: the seller verify route mirrors the
+ *    proof onto Seller.emailVerifiedAt there, so the challenge row and the
+ *    seller column can never diverge, even across a crash).
+ *
+ *  `onWin` is STRICTLY OPTIONAL and additive: no existing caller passes it,
+ *  so existing purposes take the byte-identical legacy path. When passed, a
+ *  consume-race still skips the hook entirely (nothing commits). */
 export async function verifyEmailOtp(input: {
   purpose: EmailOtpPurpose;
   subjectId: string;
   code: string;
   nowMs?: number;
+  /** Optional winner-only side effect, executed in the SAME $transaction as
+   *   the persist-branch CAS consume (skipped for guest-order / guest-checkout
+   *   single-shot purposes — their artifacts are minted at the route). */
+  onWin?: (tx: Prisma.TransactionClient) => Promise<void>;
 }): Promise<VerifyEmailOtpResult> {
   await assertEmailOtpStorage();
   const model = emailOtpModel();
@@ -382,12 +486,35 @@ export async function verifyEmailOtp(input: {
     return { ok: false, reason: "wrong-code" };
   }
 
-  if (input.purpose === "guest-order") {
+  if (input.purpose === "guest-order" || input.purpose === "guest-checkout") {
+    // Both are single-shot challenges: CAS DELETE (WHERE id + codeHash) so the
+    // same code can never verify twice; concurrent duplicates produce exactly
+    // ONE winner. The durable proof differs: guest-order mints an order access
+    // grant at the route; guest-checkout mints a "gcv:v1:" token at the route.
     const consumed = await model.deleteMany({
       where: { id: row.id, codeHash: row.codeHash },
     });
     if (consumed.count !== 1) return { ok: false, reason: "consume-race" };
     return { ok: true, verifiedAt: null };
+  }
+
+  if (input.onWin) {
+    // PHASE 2.3 (C2.7) transactional persist-branch: CAS consume + the
+    // caller's winner-only side effect commit TOGETHER (or roll back
+    // together). The hook runs ONLY for the single CAS winner; a race loser
+    // sees consume-race and nothing commits.
+    let won = false;
+    await db.$transaction(async (tx) => {
+      const consumed = await tx.emailOtpChallenge.updateMany({
+        where: { id: row.id, codeHash: row.codeHash, verifiedAt: null },
+        data: { verifiedAt: new Date(now) },
+      });
+      if (consumed.count !== 1) return; // lost the race — hook NOT executed
+      won = true;
+      await input.onWin!(tx);
+    });
+    if (!won) return { ok: false, reason: "consume-race" };
+    return { ok: true, verifiedAt: new Date(now) };
   }
 
   const consumed = await model.updateMany({
@@ -422,3 +549,5 @@ export async function getShopperEmailVerified(shopperId: string): Promise<boolea
     throw e;
   }
 }
+
+// End of guest-otp.ts — Phase 2.2 guest checkout restoration (cache-buster comment).

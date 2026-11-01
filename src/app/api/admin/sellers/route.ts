@@ -31,9 +31,34 @@ export const GET = handle(async (req: NextRequest) => {
   };
 
   const [rows, total] = await Promise.all([
+    // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (default/include select → P2022
+    // pre-migration 20261107000000) — passwordHash is also never selected,
+    // so stripSeller below is pure defense in depth.
     db.seller.findMany({
       where,
-      include: { store: true, wallet: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        displayName: true,
+        countryCode: true,
+        phone: true,
+        status: true,
+        riskTier: true,
+        commissionOverridePercent: true,
+        holdDaysOverride: true,
+        kycStatus: true,
+        planCode: true,
+        marketplaceOptIn: true,
+        rejectReason: true,
+        submittedAt: true,
+        approvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        store: true,
+        wallet: true,
+      },
       orderBy: { createdAt: "desc" },
       skip,
       take,

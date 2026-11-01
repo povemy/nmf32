@@ -4,6 +4,12 @@
 //  - binding happens in a guarded transaction (two sellers can never claim concurrently)
 //  - OAuth methods additionally verify the authorised shop identity matches the imported shop
 //  - fixture demo stores are claimed with the claim token itself (clearly-labelled demo)
+//  - PHASE 2.2 (C3 — marketplace OAuth connection ownership): the OAuth
+//    verification connection must be the claiming seller's OWN (attributed via
+//    the OAuth sellerId) or a legacy unattributed connection matching the
+//    imported shop; the post-claim bulk-bind likewise only attaches the
+//    claimer's own (or the shop-matched legacy) unbound connections — never
+//    another seller's fresh OAuth handshakes.
 // NOTE (p10-a): handler normalised to the repo-standard `handle(...)` pattern
 // (previously returned the wrapped function instead of a Response → 500).
 import { NextRequest } from "next/server";
@@ -49,18 +55,34 @@ export const POST = handle(async (req: NextRequest) => {
     if (platform !== job.platform) {
       return fail(400, "METHOD_MISMATCH", `This store was imported from ${job.platform}; connect the ${job.platform} account instead.`);
     }
-    const seller = await db.seller.findUnique({ where: { id: session.userId }, select: { id: true } });
+    // PHASE 2.2 (C3 — marketplace OAuth connection ownership): scope the
+    // verification lookup to connections the claiming seller owns — attributed
+    // to them by the OAuth callback (sellerId) — or legacy unattributed rows
+    // (sellerId null; pre-C3 handshakes), which remain claimable via the
+    // single-use claim token plus the shop match below. Another seller's
+    // attributed connection can never verify this claim.
     const conn = await db.marketplaceConnection.findFirst({
-      where: { platform, status: "connected", shopId: job.sourceShopId ?? undefined },
-      select: { id: true, shopId: true, shopName: true },
+      where: {
+        platform,
+        status: "connected",
+        shopId: job.sourceShopId ?? undefined,
+        OR: [{ sellerId: session.userId }, { sellerId: null }],
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, shopId: true, shopName: true, sellerId: true },
     });
     if (!conn || !job.sourceShopId || conn.shopId !== job.sourceShopId) {
       return fail(403, "OWNERSHIP_NOT_VERIFIED",
         "Authorised marketplace account does not match the imported shop. Connect the marketplace account that owns this shop and try again.");
     }
     // bind connection to the claiming seller's store
-    verification = { ...verification, connectionId: conn.id, shopId: conn.shopId, shopName: conn.shopName };
-    void seller;
+    verification = {
+      ...verification,
+      connectionId: conn.id,
+      shopId: conn.shopId,
+      shopName: conn.shopName,
+      connectionOwnership: conn.sellerId === session.userId ? "seller_attributed" : "legacy_shop_matched",
+    };
   } else if (method === "claim_code") {
     if (!job.isFixture) {
       return fail(400, "METHOD_UNAVAILABLE", "Claim-code verification is only available for demo fixture stores.");
@@ -111,8 +133,19 @@ export const POST = handle(async (req: NextRequest) => {
   await transitionStore({ storeId: result!.id, to: "claimed", actorType: "seller", actorId: session.userId, note: "store claimed via verified claim token" }).catch(() => undefined);
   // claimed → draft so the owner can configure before publishing
   await transitionStore({ storeId: result!.id, to: "draft", actorType: "seller", actorId: session.userId, note: "owner configuration phase" }).catch(() => undefined);
-  // bind fixture connection (if any) to the store
-  await db.marketplaceConnection.updateMany({ where: { platform: job.platform, storeId: null }, data: { storeId: result!.id } }).catch(() => undefined);
+  // bind fixture/own connections (if any) to the store — PHASE 2.2 (C3): this
+  // previously attached ALL unbound connections of the platform (including
+  // other sellers' fresh OAuth handshakes) to the claimer's store. Now only the
+  // claimer's OWN unbound connections, plus legacy unattributed ones matching
+  // the imported shop of this claim token's job, are attached.
+  await db.marketplaceConnection.updateMany({
+    where: {
+      platform: job.platform,
+      storeId: null,
+      OR: [{ sellerId: session.userId }, { sellerId: null, shopId: job.sourceShopId }],
+    },
+    data: { storeId: result!.id },
+  }).catch(() => undefined);
 
   await logActivity({
     actorType: "seller",

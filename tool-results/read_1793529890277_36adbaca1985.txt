@@ -1,0 +1,639 @@
+     1→     1→import { db } from "@/lib/db";
+     2→     2→import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
+     3→     3→import { bustPublicProductCache } from "@/lib/public-cache";
+     4→     4→import { requireShopper } from "@/lib/auth";
+     5→     5→import { computeGroupPricing, assertShippingAvailable } from "../pricing";
+     6→     6→import { computeOrderCommissions, loadRateContext } from "@/lib/commission";
+     7→     7→import { randomToken } from "@/lib/password";
+     8→     8→import { toJson } from "@/lib/json";
+     9→     9→import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
+    10→    10→import { withCheckoutAdmission, checkoutGateStats } from "@/lib/checkout-gate";
+    11→    11→import { startCheckoutTiming, type CheckoutTimingRecord } from "@/lib/checkout-timing";
+    12→    12→import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
+    13→    13→import { resolveAttribution } from "@/lib/analytics/attribution";
+    14→    14→import { resolveAffiliateAttributionForCart } from "@/lib/affiliate-attribution";
+    15→    15→import { getAffiliateSettings } from "@/lib/affiliate";
+    16→    16→
+    17→    17→export const dynamic = "force-dynamic";
+    18→    18→
+    19→    19→// F-14: single source of truth — the buyer-facing method list lives in
+    20→    20→// lib/payment-methods.ts and is shared with the shopper checkout UI, so the
+    21→    21→// server-accepted set and the buyer-selectable set can never drift again.
+    22→    22→
+    23→    23→// POST /api/checkout/create — header Idempotency-Key REQUIRED.
+    24→    24→// OPTION B (one licensed-PSP charge per checkout; no platform custody): the
+    25→    25→// buyer pays ONCE even when the cart spans N sellers. Server recomputes ALL
+    26→    26→// money math, groups cart lines per seller, and creates ONE PaymentGroup + N
+    27→    27→// per-seller Orders in a single transaction. Stock + salesCount move here (NOT
+    28→    28→// in the webhook). Each order carries its own commission lines → ledger →
+    29→    29→// seller wallet payout hold.
+    30→    30→// Task 10-b claimable vouchers: body.vouchers = [{storeId, userVoucherId}] per
+    31→    31→// payment group. Verdicts run per seller group (lib/vouchers); a valid discount
+    32→    32→// voucher adds to the group discount (capped at the subtotal), freeshipping
+    33→    33→// zeroes that group's parcel cost. Redemption — UserVoucher→USED (usedAt,
+    34→    34→// usedOrderId) + Voucher.claimedCount+1 + Order.voucherId + discount applied —
+    35→    35→// happens INSIDE the same transaction as the orders (atomic). Idempotent per
+    36→    36→// order: the Idempotency-Key replay path above returns before any redemption,
+    37→    37→// and the status-guarded updateMany prevents concurrent double-redemption.
+    38→    38→// Redemption follows the existing coupon semantics: recorded at order CREATE,
+    39→    39→// not at payment.
+    40→    40→//
+    41→    41→// PHASE 2 / A2 — checkout round-trip diet (NO change to transaction
+    42→    42→// correctness; every financial/inventory guard is untouched):
+    43→    43→//   • idempotency replays run in ONE parallel batch (were 2 sequential reads)
+    44→    44→//   • commission context is loaded ONCE for ALL seller groups via the batched
+    45→    45→//     loadRateContext (was (5+2·D) sequential queries per LINE per group)
+    46→    46→//   • affiliate settings are fetched once and shared with the attribution
+    47→    47→//     resolver (was a duplicate setting.findMany)
+    48→    48→//   • the cart is read token-only (was a full deep include of every cart line)
+    49→    49→//   • in-tx fast-fail re-validation is ONE findMany (was per-line findUnique)
+    50→    50→//   • inventory logs are one createMany per seller group (was per-line create)
+    51→    51→//   • salesCount increments are aggregated per distinct product
+    52→    52→//   • the post-commit orders re-read is GONE — the summary is returned from
+    53→    53→//     inside the transaction (strictly more consistent), and notify/logActivity
+    54→    54→//     fan out in parallel
+    55→    55→// The AUTHORITATIVE oversell guard stays EXACTLY where it was: the conditional
+    56→    56→// `updateMany … WHERE stock >= qty` decrement, per line, inside the tx.
+    57→    57→export const POST = handle(async (req: Request) => {
+    58→    58→  const idemKey = req.headers.get("Idempotency-Key")?.trim();
+    59→    59→  if (!idemKey) {
+    60→    60→    throw new ApiError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required");
+    61→    61→  }
+    62→    62→
+    63→    63→  // PHASE 2 / A2: latency-anatomy instrumentation (src/lib/checkout-timing.ts)
+    64→    64→  // — one stdout JSON line per checkout when CHECKOUT_TIMING=1, zero overhead
+    65→    65→  // otherwise. Emitted on success AND error paths (status 0 = error path). The
+    66→    66→  // success emit is DEFERRED until the admission gate returns so the measured
+    67→    67→  // queue wait (gateWaitMs) is included.
+    68→    68→  const timing = startCheckoutTiming(idemKey);
+    69→    69→  // Holder object dodges TS's closure-assignment narrowing (pendingEmit is set
+    70→    70→  // inside runCheckout, consumed after withCheckoutAdmission).
+    71→    71→  const emitHolder: { pending: { status: number; extra: Partial<CheckoutTimingRecord> } | null } = { pending: null };
+    72→    72→  // checkoutGateStats() → the timing record's field names (gateActive/gateQueued).
+    73→    73→  const gateStats = (): Pick<CheckoutTimingRecord, "gateActive" | "gateQueued"> => {
+    74→    74→    const s = checkoutGateStats();
+    75→    75→    return { gateActive: s.inflight, gateQueued: s.waiting };
+    76→    76→  };
+    77→    77→
+    78→    78→  try {
+    79→    79→    // Checkout is account-only: orders are tied to the signed-in shopper.
+    80→    80→    const me = await requireShopper();
+    81→    81→    timing.mark("auth");
+    82→    82→
+    83→    83→    // Idempotent replays — both unique-key lookups, fetched in ONE parallel
+    84→    84→    // batch (replays never consume admission slots, unchanged).
+    85→    85→    const [existingGroup, existing] = await Promise.all([
+    86→    86→      db.paymentGroup.findUnique({
+    87→    87→        where: { idemKey },
+    88→    88→        include: { orders: { orderBy: { createdAt: "asc" } } },
+    89→    89→      }),
+    90→    90→      db.order.findUnique({
+    91→    91→        where: { idemKey },
+    92→    92→        include: { paymentIntents: { orderBy: { createdAt: "desc" }, take: 1 } },
+    93→    93→      }),
+    94→    94→    ]);
+    95→    95→    timing.mark("idem");
+    96→    96→
+    97→    97→    if (existingGroup) {
+    98→    98→      if (existingGroup.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
+    99→    99→      timing.emit(200, { gateWaitMs: 0, ...gateStats() });
+   100→   100→      return ok({
+   101→   101→        orderNumber: existingGroup.orders[0]?.orderNumber ?? "",
+   102→   102→        orderNumbers: existingGroup.orders.map((o) => o.orderNumber),
+   103→   103→        orderPaymentRef: existingGroup.ref,
+   104→   104→        paymentRef: existingGroup.ref,
+   105→   105→        totalMinor: existingGroup.totalMinor,
+   106→   106→        status: existingGroup.orders[0]?.status ?? "payment_pending",
+   107→   107→        duplicate: true,
+   108→   108→      });
+   109→   109→    }
+   110→   110→
+   111→   111→    // Idempotent replay #2 — legacy single-order checkout with this key.
+   112→   112→    if (existing) {
+   113→   113→      if (existing.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
+   114→   114→      timing.emit(200, { gateWaitMs: 0, ...gateStats() });
+   115→   115→      return ok({
+   116→   116→        orderNumber: existing.orderNumber,
+   117→   117→        orderNumbers: [existing.orderNumber],
+   118→   118→        orderPaymentRef: existing.paymentIntents[0]?.providerRef ?? null,
+   119→   119→        paymentRef: existing.paymentIntents[0]?.providerRef ?? null,
+   120→   120→        totalMinor: existing.totalMinor,
+   121→   121→        status: existing.status,
+   122→   122→        duplicate: true,
+   123→   123→      });
+   124→   124→    }
+   125→   125→
+   126→   126→    // F2 REMEDIATION — bounded admission control. Everything below (pricing
+   127→   127→    // reads + the create transaction) runs under a process-level semaphore:
+   128→   128→    // excess arrivals WAIT (bounded FIFO, queue time measured separately) and,
+   129→   129→    // when the wait budget is exhausted, receive a CLEAN retryable
+   130→   130→    // `503 CHECKOUT_BUSY` + `Retry-After` instead of a raw 500. The gate sits
+   131→   131→    // AFTER the idempotency replays (key replays never consume admission
+   132→   132→    // slots) and BEFORE any write (a busy rejection leaves the cart untouched).
+   133→   133→    // The buyer retries with the SAME Idempotency-Key, so a post-busy retry
+   134→   134→    // converges on this checkout instead of duplicating it.
+   135→   135→    const runCheckout = async () => {
+   136→   136→
+   137→   137→      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+   138→   138→
+   139→   139→      // Contact details prefill from the account; a shopper may still override
+   140→   140→      // them per-order (e.g. sending a gift), but blanks fall back to the account.
+   141→   141→      const customer = (body.customer ?? {}) as Record<string, unknown>;
+   142→   142→      const customerName = String(customer.name ?? "").trim() || me.fullName;
+   143→   143→      const customerEmail = (String(customer.email ?? "").trim() || me.email).toLowerCase();
+   144→   144→      const customerPhone = customer.phone != null ? String(customer.phone).trim() || null : me.phone;
+   145→   145→      if (!customerName) throw new ApiError(400, "VALIDATION", "customer.name is required");
+   146→   146→      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new ApiError(400, "VALIDATION", "customer.email is invalid");
+   147→   147→      if (customerPhone && !/^[+()\d\s-]{6,20}$/.test(customerPhone)) throw new ApiError(400, "VALIDATION", "customer.phone is invalid");
+   148→   148→
+   149→   149→      const provider = String(body.provider ?? "fpx_toyyibpay");
+   150→   150→      if (!KNOWN_PAYMENT_METHODS.includes(provider)) {
+   151→   151→        throw new ApiError(400, "INVALID_PROVIDER", `provider must be one of: ${KNOWN_PAYMENT_METHODS.join(", ")}`);
+   152→   152→      }
+   153→   153→
+   154→   154→      // Shipping address — full destination is REQUIRED (drives delivery eligibility).
+   155→   155→      const shippingAddress = (body.shippingAddress ?? {}) as Record<string, unknown>;
+   156→   156→      const addr = {
+   157→   157→        line1: String(shippingAddress.line1 ?? "").trim(),
+   158→   158→        city: String(shippingAddress.city ?? "").trim(),
+   159→   159→        state: String(shippingAddress.state ?? "").trim(),
+   160→   160→        postcode: String(shippingAddress.postcode ?? "").trim(),
+   161→   161→      };
+   162→   162→      if (!addr.line1 || !addr.city || !addr.state || !addr.postcode) {
+   163→   163→        throw new ApiError(400, "VALIDATION", "shippingAddress.line1, city, state and postcode are required");
+   164→   164→      }
+   165→   165→      if (!/^\d{5}$/.test(addr.postcode)) throw new ApiError(400, "VALIDATION", "shippingAddress.postcode must be a 5-digit Malaysian postcode");
+   166→   166→      const shippingAddressJson = toJson(addr);
+   167→   167→      timing.mark("body");
+   168→   168→
+   169→   169→      // One clock for the whole checkout: commission context, order timestamps,
+   170→   170→      // voucher redemption stamps and the expiry window all read the SAME
+   171→   171→      // `now` (previously each helper minted its own — ms-level drift between
+   172→   172→      // groups; a single snapshot is strictly more deterministic).
+   173→   173→      const now = new Date();
+   174→   174→      const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+   175→   175→
+   176→   176→      // Recompute totals EXACTLY like quote — never trust client numbers.
+   177→   177→      const pricing = await computeGroupPricing({
+   178→   178→        items: (body.items ?? []) as { variantId: string; qty: number }[],
+   179→   179→        couponCode: body.couponCode != null ? String(body.couponCode) : null,
+   180→   180→        shippingRateId: body.shippingRateId != null ? String(body.shippingRateId) : null,
+   181→   181→        state: addr.state,
+   182→   182→      });
+   183→   183→
+   184→   184→      // Destination-aware delivery rule, enforced server-side (applies to every parcel).
+   185→   185→      assertShippingAvailable(pricing.shippingRateId, addr.state);
+   186→   186→      timing.mark("pricing");
+   187→   187→
+   188→   188→      // Claimable vouchers per seller group — hard mode: any unusable selection
+   189→   189→      // fails the checkout with 409 so the buyer can re-quote (never silently
+   190→   190→      // drop a voucher). One voucher per seller group (first entry wins).
+   191→   191→      const voucherEntriesRaw = Array.isArray(body.vouchers)
+   192→   192→        ? (body.vouchers as VoucherEntryInput[]).filter((e) => e && typeof e === "object")
+   193→   193→        : [];
+   194→   194→      const seenStores = new Set<string>();
+   195→   195→      const voucherEntries = voucherEntriesRaw.filter((e) => {
+   196→   196→        const k = String(e?.storeId ?? "");
+   197→   197→        if (!k || seenStores.has(k)) return false;
+   198→   198→        seenStores.add(k);
+   199→   199→        return true;
+   200→   200→      });
+   201→   201→      const voucherOutcomes =
+   202→   202→        voucherEntries.length > 0
+   203→   203→          ? await buildVoucherOutcomes({
+   204→   204→              entries: voucherEntries,
+   205→   205→              shopperId: me.id,
+   206→   206→              groups: pricing.groups.map((g) => ({ storeId: g.storeId, subtotalMinor: g.subtotalMinor })),
+   207→   207→              addressState: addr.state,
+   208→   208→              hard: true,
+   209→   209→            })
+   210→   210→          : [];
+   211→   211→      const outcomeByStore = new Map(voucherOutcomes.map((o) => [o.storeId, o]));
+   212→   212→      const { groups: adjustedGroups, totals: adjustedTotals } = applyVoucherOutcomesToGroups(pricing.groups, voucherOutcomes);
+   213→   213→      timing.mark("voucher");
+   214→   214→
+   215→   215→      // AFFILIATE (Hub): money-grade per-item attribution is resolved server-side
+   216→   216→      // FIRST (last eligible click per product from the visitor-cookie touch
+   217→   217→      // table, 30-day window, self-purchases excluded, enrollment re-checked),
+   218→   218→      // then fed into the commission computation so the seller-funded affiliate
+   219→   219→      // pool is carved from seller proceeds in the SAME snapshot math. The client
+   220→   220→      // never supplies affiliate ids.
+   221→   221→      //
+   222→   222→      // POST-IMPLEMENTATION AUDIT (P3): freeze the sponsor-override policy TOGETHER
+   223→   223→      // with the attribution snapshot so the compensation arrangement of THIS order
+   224→   224→      // is fully determined at checkout. Later affiliate.sponsor_enabled changes
+   225→   225→      // affect new orders only — the payment webhook posts from this frozen value
+   226→   226→      // (OrderItem.affiliateSponsorEnabled), never from the live setting.
+   227→   227→      //
+   228→   228→      // PHASE 2 / A2: settings are fetched ONCE here and passed into the
+   229→   229→      // attribution resolver (previously resolveAffiliateAttributionForCart
+   230→   230→      // re-read them internally — a duplicate setting.findMany per checkout).
+   231→   231→      const affiliateSettings = await getAffiliateSettings();
+   232→   232→      const affiliateMap = await resolveAffiliateAttributionForCart({
+   233→   233→        shopperId: me.id,
+   234→   234→        lines: pricing.groups.flatMap((g) => g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, storeId: g.storeId }))),
+   235→   235→        preloadedSettings: affiliateSettings,
+   236→   236→      }).catch(() => new Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>());
+   237→   237→
+   238→   238→      // Commission preview per seller group (percent + fixed fee parts per line).
+   239→   239→      // Computed on the VOUCHER-ADJUSTED totals so the discount reaches the ledger.
+   240→   240→      // A live store always has an owner — the ?? "" is a defensive fallback that
+   241→   241→      // resolves to default commission settings instead of throwing.
+   242→   242→      //
+   243→   243→      // PHASE 2 / A2: ONE batched rate context for EVERY seller group (fixed ~6
+   244→   244→      // round-trips, item-count independent) shared across the per-group
+   245→   245→      // computeOrderCommissions calls — previously each group resolved rates
+   246→   246→      // line-by-line with (5+2·D) sequential queries per line. Parity with the
+   247→   247→      // sequential resolver is byte-proven by scripts/test-commission-parity.ts.
+   248→   248→      const commissionCtx = await loadRateContext({
+   249→   249→        sellerIds: adjustedGroups.map((g) => g.sellerId ?? "").filter(Boolean),
+   250→   250→        productIds: adjustedGroups.flatMap((g) => g.lines.map((l) => l.productId ?? "")).filter(Boolean),
+   251→   251→        categoryIds: adjustedGroups.flatMap((g) => g.lines.map((l) => l.categoryId ?? "")).filter(Boolean),
+   252→   252→        now,
+   253→   253→      });
+   254→   254→      const groupCommissions = await Promise.all(
+   255→   255→        adjustedGroups.map((g) =>
+   256→   256→          computeOrderCommissions(
+   257→   257→            {
+   258→   258→              sellerId: g.sellerId ?? "",
+   259→   259→              items: g.lines.map((l) => ({
+   260→   260→                productId: l.productId,
+   261→   261→                categoryId: l.categoryId,
+   262→   262→                title: l.title,
+   263→   263→                variantLabel: l.variantLabel,
+   264→   264→                unitPriceMinor: l.unitPriceMinor,
+   265→   265→                qty: l.qty,
+   266→   266→                affiliate: affiliateMap.get(l.variantId) ?? null,
+   267→   267→              })),
+   268→   268→              orderDiscountMinor: g.discountMinor,
+   269→   269→              shippingMinorTotal: g.shippingMinor,
+   270→   270→              now,
+   271→   271→            },
+   272→   272→            commissionCtx
+   273→   273→          )
+   274→   274→        )
+   275→   275→      );
+   276→   276→      timing.mark("commission");
+   277→   277→
+   278→   278→      const providerRef = `ref_${randomToken(8)}`;
+   279→   279→
+   280→   280→      // The orders record the shopper's cart token so the webhook can clear the
+   281→   281→      // purchased items from the account cart once payment is verified.
+   282→   282→      // PHASE 2 / A2: token-only read (the previous deep include dragged every
+   283→   283→      // cart line's variant→product→store graph over the wire for one string).
+   284→   284→      const shopperCart = await db.cart.findUnique({ where: { shopperId: me.id }, select: { token: true } });
+   285→   285→      const cartToken = shopperCart?.token ?? null;
+   286→   286→      timing.mark("cart");
+   287→   287→
+   288→   288→      // Marketing Intelligence — resolve the shopper's validated attribution
+   289→   289→      // (last-touch cookie) BEFORE the transaction so it can be frozen onto every
+   290→   290→      // order as constant snapshot columns (same pattern as the country snapshot).
+   291→   291→      // Best-effort by design: an unreadable/absent cookie simply means untagged.
+   292→   292→      const attribution = await resolveAttribution().catch(() => null);
+   293→   293→
+   294→   294→      const orderNumbers = await Promise.all(pricing.groups.map(() => nextOrderNumber()));
+   295→   295→      timing.mark("counter");
+   296→   296→
+   297→   297→      // --- Transaction anatomy marks (see src/lib/checkout-timing.ts) ---------
+   298→   298→      let txAcquireMs = 0;
+   299→   299→      let txStatements = 0;
+   300→   300→      const txCallAt = performance.now();
+   301→   301→
+   302→   302→      // Per-order summary collected INSIDE the transaction (replaces the
+   303→   303→      // post-commit orders re-read — the data is exactly what this request
+   304→   304→      // wrote, with no re-read window).
+   305→   305→      const orderSummaries: { id: string; orderNumber: string; storeId: string; storeSlug: string; storeName: string; totalMinor: number }[] = [];
+   306→   306→
+   307→   307→      const group = await db.$transaction(async (tx) => {
+   308→   308→        txAcquireMs = performance.now() - txCallAt; // callback entry = connection acquired (the P2028 window)
+   309→   309→
+   310→   310→        // Friendly fast-fail re-validation inside the transaction (stock snapshot;
+   311→   311→        // the AUTHORITATIVE race-proof guard is the conditional decrement below).
+   312→   312→        // PHASE 2 / A2: one findMany for every line (was per-line findUnique).
+   313→   313→        const variantIds = pricing.items.map((l) => l.variantId);
+   314→   314→        const variantRows = await tx.productVariant.findMany({
+   315→   315→          where: { id: { in: variantIds } },
+   316→   316→          select: { id: true, isActive: true, stock: true, moq: true },
+   317→   317→        });
+   318→   318→        txStatements++;
+   319→   319→        const variantById = new Map(variantRows.map((v) => [v.id, v]));
+   320→   320→        for (const line of pricing.items) {
+   321→   321→          const v = variantById.get(line.variantId);
+   322→   322→          if (!v || !v.isActive || v.stock < line.qty) {
+   323→   323→            throw new ApiError(409, "OUT_OF_STOCK", `Insufficient stock for "${line.title}"${line.variantLabel ? ` (${line.variantLabel})` : ""}`);
+   324→   324→          }
+   325→   325→          if (line.qty < Math.max(1, v.moq)) {
+   326→   326→            throw new ApiError(409, "MOQ_NOT_MET", `Seller minimum for "${line.title}" is ${Math.max(1, v.moq)}`);
+   327→   327→          }
+   328→   328→        }
+   329→   329→
+   330→   330→        // Voucher rows for the redeemed selection (userVoucherId → voucherId/quota).
+   331→   331→        const redeemedIds = voucherOutcomes.map((o) => o.userVoucherId);
+   332→   332→        const uvRows =
+   333→   333→          redeemedIds.length > 0
+   334→   334→            ? await tx.userVoucher.findMany({
+   335→   335→                where: { id: { in: redeemedIds }, userId: me.id },
+   336→   336→                select: { id: true, voucherId: true, voucher: { select: { id: true, quota: true } } },
+   337→   337→              })
+   338→   338→            : [];
+   339→   339→        if (uvRows.length > 0) txStatements++;
+   340→   340→        const uvById = new Map(uvRows.map((r) => [r.id, r]));
+   341→   341→
+   342→   342→        const paymentGroup = await tx.paymentGroup.create({
+   343→   343→          data: {
+   344→   344→            ref: providerRef,
+   345→   345→            shopperId: me.id,
+   346→   346→            provider,
+   347→   347→            status: "requires_payment",
+   348→   348→            currency: "MYR",
+   349→   349→            subtotalMinor: adjustedTotals.subtotalMinor,
+   350→   350→            discountMinor: adjustedTotals.discountMinor,
+   351→   351→            shippingMinor: adjustedTotals.shippingMinor,
+   352→   352→            totalMinor: adjustedTotals.totalMinor,
+   353→   353→            idemKey,
+   354→   354→            redirectUrl: `/pay/${providerRef}`,
+   355→   355→            expiresAt,
+   356→   356→          },
+   357→   357→        });
+   358→   358→        txStatements++;
+   359→   359→
+   360→   360→        for (let gi = 0; gi < adjustedGroups.length; gi++) {
+   361→   361→          const g = adjustedGroups[gi];
+   362→   362→          const comm = groupCommissions[gi];
+   363→   363→          const orderNumber = orderNumbers[gi];
+   364→   364→          const voucherOutcome = outcomeByStore.get(g.storeId);
+   365→   365→          const uvRow = voucherOutcome ? uvById.get(voucherOutcome.userVoucherId) : undefined;
+   366→   366→
+   367→   367→          const order = await tx.order.create({
+   368→   368→            data: {
+   369→   369→              storeId: g.storeId,
+   370→   370→              orderNumber,
+   371→   371→              customerName,
+   372→   372→              customerEmail,
+   373→   373→              customerPhone,
+   374→   374→              shopperId: me.id,
+   375→   375→              status: "payment_pending",
+   376→   376→              channel: "storefront",
+   377→   377→              currency: g.currency,
+   378→   378→              subtotalMinor: g.subtotalMinor,
+   379→   379→              discountMinor: g.discountMinor,
+   380→   380→              shippingMinor: g.shippingMinor,
+   381→   381→              totalMinor: g.totalMinor,
+   382→   382→              couponCode: g.coupon.valid ? g.coupon.code : null,
+   383→   383→              voucherId: uvRow?.voucher.id ?? null,
+   384→   384→              shippingAddressJson,
+   385→   385→              // Seller Insights — destination-country snapshot. This route itself
+   386→   386→              // enforces the Malaysian 5-digit postcode + MY state rules above, so
+   387→   387→              // "MY" is recorded from the VERIFIED input at order time (frozen like
+   388→   388→              // shippingAddressJson; never derived from the customer's later profile).
+   389→   389→              shippingCountryCode: "MY",
+   390→   390→              shippingCountrySource: "checkout",
+   391→   391→              // Marketing Intelligence — attribution snapshot frozen at checkout
+   392→   392→              // creation from the shopper's validated attribution cookie
+   393→   393→              // (last-touch; null = untagged). Constant columns exactly like the
+   394→   394→              // country snapshot above — never recomputed, never backfilled.
+   395→   395→              attrCampaignId: attribution?.campaignId ?? null,
+   396→   396→              attrSource: attribution?.utmSource ?? null,
+   397→   397→              attrMedium: attribution?.utmMedium ?? null,
+   398→   398→              attrCampaign: attribution?.utmCampaign ?? null,
+   399→   399→              attrTerm: attribution?.utmTerm ?? null,
+   400→   400→              attrContent: attribution?.utmContent ?? null,
+   401→   401→              customerNote: body.customerNote != null ? String(body.customerNote) : null,
+   402→   402→              paymentProvider: provider,
+   403→   403→              cartToken,
+   404→   404→              idemKey: `${idemKey}:${g.storeId}`,
+   405→   405→              paymentGroupId: paymentGroup.id,
+   406→   406→            },
+   407→   407→          });
+   408→   408→          txStatements++;
+   409→   409→          orderSummaries.push({ id: order.id, orderNumber, storeId: g.storeId, storeSlug: g.storeSlug, storeName: g.storeName, totalMinor: g.totalMinor });
+   410→   410→
+   411→   411→          // Atomic voucher redemption — status-guarded so a concurrent checkout
+   412→   412→          // with the same voucher can never double-redeem; quota-guarded so the
+   413→   413→          // redeemable pool cannot be exceeded.
+   414→   414→          if (voucherOutcome && uvRow) {
+   415→   415→            const redeemed = await tx.userVoucher.updateMany({
+   416→   416→              where: { id: voucherOutcome.userVoucherId, userId: me.id, status: "AVAILABLE" },
+   417→   417→              data: { status: "USED", usedAt: now, usedOrderId: order.id },
+   418→   418→            });
+   419→   419→            txStatements++;
+   420→   420→            if (redeemed.count === 0) {
+   421→   421→              throw new ApiError(409, "VOUCHER_ALREADY_USED", "One of your selected vouchers has just been used — please review your voucher selection");
+   422→   422→            }
+   423→   423→            const quotaGuard = await tx.voucher.updateMany({
+   424→   424→              where: {
+   425→   425→                id: uvRow.voucher.id,
+   426→   426→                OR: [{ quota: null }, { claimedCount: { lt: uvRow.voucher.quota ?? Number.MAX_SAFE_INTEGER } }],
+   427→   427→              },
+   428→   428→              data: { claimedCount: { increment: 1 } },
+   429→   429→            });
+   430→   430→            txStatements++;
+   431→   431→            if (quotaGuard.count === 0) {
+   432→   432→              throw new ApiError(409, "QUOTA_EXHAUSTED", "One of your selected vouchers has just run out — please review your voucher selection");
+   433→   433→            }
+   434→   434→          }
+   435→   435→
+   436→   436→          await tx.orderItem.createMany({
+   437→   437→            data: g.lines.map((l, i) => {
+   438→   438→              const c = comm.items[i];
+   439→   439→              const aff = affiliateMap.get(l.variantId) ?? null;
+   440→   440→              return {
+   441→   441→                orderId: order.id,
+   442→   442→                productId: l.productId,
+   443→   443→                variantId: l.variantId,
+   444→   444→                title: l.title,
+   445→   445→                variantLabel: l.variantLabel,
+   446→   446→                unitPriceMinor: l.unitPriceMinor,
+   447→   447→                qty: l.qty,
+   448→   448→                lineSubtotalMinor: l.lineTotalMinor,
+   449→   449→                discountMinor: c.discountMinor,
+   450→   450→                shippingMinor: c.shippingMinor,
+   451→   451→                commissionPercent: c.percent,
+   452→   452→                commissionMinor: c.commissionMinor,
+   453→   453→                fixedFeeMinor: c.fixedFeeMinor,
+   454→   454→                sellerNetMinor: c.sellerNetMinor,
+   455→   455→                breakdownJson: toJson(c.breakdown),
+   456→   456→                // AFFILIATE snapshot — frozen here, never recomputed (identical
+   457→   457→                // contract to the commission columns above). Zero/nullable when
+   458→   458→                // the line has no valid affiliate attribution. Includes the
+   459→   459→                // sponsor-override POLICY freeze (P3) so posting is deterministic.
+   460→   460→                affiliateDirectId: aff?.affiliateId ?? null,
+   461→   461→                affiliateSponsorId: aff?.sponsorId ?? null,
+   462→   462→                affiliateLinkId: aff?.linkId ?? null,
+   463→   463→                affiliateRateBps: aff?.rateBps ?? null,
+   464→   464→                affiliatePoolMinor: c.affiliatePoolMinor,
+   465→   465→                affiliateSponsorEnabled: aff ? affiliateSettings.sponsorEnabled : null,
+   466→   466→              };
+   467→   467→            }),
+   468→   468→          });
+   469→   469→          txStatements++;
+   470→   470→
+   471→   471→          // Stock + sales move AT CHECKOUT (per contract) — never repeated in webhook.
+   472→   472→          // LAUNCH-RUSH OVERSELL GUARD: the decrement is CONDITIONAL (UPDATE …
+   473→   473→          // WHERE stock >= qty). Under concurrent checkouts — think an influencer
+   474→   474→          // drop where hundreds of buyers hit Pay at once — the read above cannot
+   475→   475→          // be trusted (two transactions both see 1 left); Postgres evaluates the
+   476→   476→          // row-locked condition atomically, so EXACTLY ONE of the racing
+   477→   477→          // transactions matches. The loser gets count=0 → 409 → the WHOLE
+   478→   478→          // transaction (orders, items, vouchers, ledger) rolls back and the buyer
+   479→   479→          // is asked to adjust, while the winner takes the goods. Stock can never
+   480→   480→          // go negative, no reservation tables, no extra services — one UPDATE per
+   481→   481→          // line, the cheapest possible correctness at any concurrency.
+   482→   482→          // (PHASE 2 / A2: still one conditional UPDATE PER LINE — this is the
+   483→   483→          // correctness core and is deliberately NOT batched. The inventory LOGS
+   484→   484→          // and the salesCount increments below are the parts that safely batch.)
+   485→   485→          for (const line of g.lines) {
+   486→   486→            const moved = await tx.productVariant.updateMany({
+   487→   487→              where: { id: line.variantId, isActive: true, stock: { gte: line.qty } },
+   488→   488→              data: { stock: { decrement: line.qty } },
+   489→   489→            });
+   490→   490→            txStatements++;
+   491→   491→            if (moved.count === 0) {
+   492→   492→              throw new ApiError(409, "OUT_OF_STOCK", `Insufficient stock for "${line.title}"${line.variantLabel ? ` (${line.variantLabel})` : ""}`);
+   493→   493→            }
+   494→   494→          }
+   495→   495→
+   496→   496→          // Inventory audit trail — one createMany per seller group (was one
+   497→   497→          // create per line). Same rows, same reason/refId shape.
+   498→   498→          await tx.inventoryLog.createMany({
+   499→   499→            data: g.lines.map((line) => ({
+   500→   500→              variantId: line.variantId,
+   501→   501→              delta: -line.qty,
+   502→   502→              reason: `order:${orderNumber}`,
+   503→   503→              refId: order.id,
+   504→   504→            })),
+   505→   505→          });
+   506→   506→          txStatements++;
+   507→   507→
+   508→   508→          // Sales counters — aggregated per DISTINCT product (two variants of
+   509→   509→          // one product now cost one UPDATE instead of two; the final value is
+   510→   510→          // identical because increment(a)+increment(b) === increment(a+b)).
+   511→   511→          const qtyByProduct = new Map<string, number>();
+   512→   512→          for (const line of g.lines) {
+   513→   513→            if (line.productId) qtyByProduct.set(line.productId, (qtyByProduct.get(line.productId) ?? 0) + line.qty);
+   514→   514→          }
+   515→   515→          for (const [productId, qty] of qtyByProduct) {
+   516→   516→            await tx.product.update({ where: { id: productId }, data: { salesCount: { increment: qty } } });
+   517→   517→            txStatements++;
+   518→   518→          }
+   519→   519→
+   520→   520→          await tx.orderStatusHistory.create({
+   521→   521→            data: { orderId: order.id, fromStatus: null, toStatus: "payment_pending", actor: "shopper", note: `Checkout via ${provider} (payment group ${providerRef})` },
+   522→   522→          });
+   523→   523→          txStatements++;
+   524→   524→
+   525→   525→          if (g.coupon.valid && g.coupon.couponId) {
+   526→   526→            await tx.couponRedemption.create({
+   527→   527→              data: {
+   528→   528→                couponId: g.coupon.couponId,
+   529→   529→                orderId: order.id,
+   530→   530→                customerEmail,
+   531→   531→                discountMinor: g.discountMinor,
+   532→   532→              },
+   533→   533→            });
+   534→   534→            txStatements++;
+   535→   535→            await tx.coupon.update({ where: { id: g.coupon.couponId }, data: { timesUsed: { increment: 1 } } });
+   536→   536→            txStatements++;
+   537→   537→          }
+   538→   538→        }
+   539→   539→
+   540→   540→        return paymentGroup;
+   541→   541→      }, { timeout: 15_000 }); // bounded >5s default: measured P2028 under rush (dev.log)
+   542→   542→
+   543→   543→      // Notifications + audit (one per seller order, plus admin roll-up).
+   544→   544→      // PHASE 2 / A2: independent writes fan out in parallel (were sequential
+   545→   545→      // per order); the data comes from the in-tx summary (no re-read).
+   546→   546→      await Promise.all(
+   547→   547→        orderSummaries.map((o) => {
+   548→   548→          const vo = outcomeByStore.get(o.storeId);
+   549→   549→          return Promise.all([
+   550→   550→            notify({
+   551→   551→              event: "order.created",
+   552→   552→              channel: "email",
+   553→   553→              recipient: "admin@nomofee.io",
+   554→   554→              subject: `New order ${o.orderNumber} — ${o.storeName}`,
+   555→   555→            }),
+   556→   556→            logActivity({
+   557→   557→              actorType: "shopper",
+   558→   558→              action: "order.created",
+   559→   559→              entityType: "order",
+   560→   560→              entityId: o.id,
+   561→   561→              meta: {
+   562→   562→                orderNumber: o.orderNumber,
+   563→   563→                storeSlug: o.storeSlug,
+   564→   564→                totalMinor: o.totalMinor,
+   565→   565→                paymentGroupRef: group.ref,
+   566→   566→                voucher: vo
+   567→   567→                  ? { code: vo.code, kind: vo.kind, discountMinor: vo.discountMinor, freeShipping: vo.freeShipping, fsPriceAdjustMinor: vo.fsPriceAdjustMinor }
+   568→   568→                  : undefined,
+   569→   569→              },
+   570→   570→            }),
+   571→   571→          ]);
+   572→   572→        })
+   573→   573→      );
+   574→   574→      timing.mark("postTx");
+   575→   575→
+   576→   576→      // PHASE 2.1 (§9-A): the transaction deducted stock (CAS per line) and
+   577→   577→      // bumped salesCount — cached public product/market data is now stale.
+   578→   578→      // Bust the products tag so the NEXT public read serves live stock (the
+   579→   579→      // 30–45 s TTL remains the safety net for any path that bypasses this).
+   580→   580→      // Checkout itself NEVER reads this cache — its authoritative checks are
+   581→   581→      // transactional and untouched.
+   582→   582→      bustPublicProductCache();
+   583→   583→
+   584→   584→      const response = ok(
+   585→   585→        {
+   586→   586→          orderNumber: orderSummaries[0]?.orderNumber ?? "",
+   587→   587→          orderNumbers: orderSummaries.map((o) => o.orderNumber),
+   588→   588→          orderPaymentRef: group.ref,
+   589→   589→          paymentRef: group.ref,
+   590→   590→          totalMinor: group.totalMinor,
+   591→   591→          redirectUrl: group.redirectUrl,
+   592→   592→          status: "payment_pending",
+   593→   593→          vouchersApplied: voucherOutcomes.map((o) => ({
+   594→   594→            storeId: o.storeId,
+   595→   595→            code: o.code,
+   596→   596→            title: o.title,
+   597→   597→            kind: o.kind,
+   598→   598→            discountMinor: o.discountMinor,
+   599→   599→            freeShipping: o.freeShipping,
+   600→   600→            fsPriceAdjustMinor: o.fsPriceAdjustMinor,
+   601→   601→          })),
+   602→   602→        },
+   603→   603→        { status: 201 }
+   604→   604→      );
+   605→   605→
+   606→   606→      // txExec = statements + commit (total minus the acquire window). The emit
+   607→   607→      // itself is deferred past the admission gate so the measured queue wait
+   608→   608→      // rides along (see pendingEmit consumption below).
+   609→   609→      const txTotalMs = performance.now() - txCallAt;
+   610→   610→      emitHolder.pending = {
+   611→   611→        status: 201,
+   612→   612→        extra: {
+   613→   613→          txAcquireMs: Math.round(txAcquireMs * 10) / 10,
+   614→   614→          txExecMs: Math.round((txTotalMs - txAcquireMs) * 10) / 10,
+   615→   615→          txStatements,
+   616→   616→        },
+   617→   617→      };
+   618→   618→      return response;
+   619→   619→    }; // end runCheckout (under admission control)
+   620→   620→
+   621→   621→    const { result, queueMs } = await withCheckoutAdmission(runCheckout);
+   622→   622→    const pendingEmit = emitHolder.pending;
+   623→   623→    if (pendingEmit) {
+   624→   624→      timing.emit(pendingEmit.status, { ...pendingEmit.extra, gateWaitMs: queueMs, ...gateStats() });
+   625→   625→    }
+   626→   626→    // Queue-time telemetry, separate from processing time (F2/C4).
+   627→   627→    try {
+   628→   628→      result.headers.set("X-Checkout-Queue-Ms", String(queueMs));
+   629→   629→    } catch {
+   630→   630→      /* header surface only */
+   631→   631→    }
+   632→   632→    return result;
+   633→   633→  } catch (e) {
+   634→   634→    // Error path anatomy (status 0 — the HTTP status is only known to handle()).
+   635→   635→    timing.emit(0, { gateWaitMs: 0, ...gateStats() });
+   636→   636→    throw e;
+   637→   637→  }
+   638→   638→});
+   639→   639→

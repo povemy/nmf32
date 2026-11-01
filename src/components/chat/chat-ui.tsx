@@ -46,6 +46,11 @@ export type ChatMsg = {
 
 export type ChatFilter = "all" | "active";
 
+/** Phase 2.4 (C2.x): bounded chat history — page size both chat portals use
+ *  when fetching a conversation (the server caps ?limit at 200). Older pages
+ *  are prepended under the "Load older messages" button via ?before=<id>. */
+export const CHAT_PAGE_SIZE = 50;
+
 /** Which side the signed-in user is on — drives bubble alignment + ticks. */
 export type ChatSide = "shopper" | "seller";
 

@@ -21,7 +21,9 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const payload = await readBody(req);
   const text = reqStr(payload, "body", "body");
 
-  const seller = await db.seller.findUnique({ where: { id } });
+  // PHASE 2.3 select hygiene (C2.7): existence check — id-only select keeps
+  // the un-migrated Seller.emailVerifiedAt out of the query.
+  const seller = await db.seller.findUnique({ where: { id }, select: { id: true } });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
   const note = await db.sellerNote.create({ data: { sellerId: id, author: admin.name, body: text } });

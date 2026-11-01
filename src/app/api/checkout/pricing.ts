@@ -265,7 +265,8 @@ export async function computeGroupPricing(input: {
         product: {
           select: {
             id: true, title: true, status: true, storeId: true, categoryId: true,
-            store: { select: { id: true, slug: true, name: true, status: true, sellerId: true, currency: true } },
+            // seller status rides along for the C1.3 eligibility check below.
+            store: { select: { id: true, slug: true, name: true, status: true, sellerId: true, currency: true, seller: { select: { status: true } } } },
           },
         },
       },
@@ -281,7 +282,15 @@ export async function computeGroupPricing(input: {
       throw new ApiError(400, "INVALID_QTY", "Quantity must be a positive integer");
     }
     const v = byId.get(String(item.variantId));
-    if (!v || !v.isActive || v.product.status !== "active" || v.product.store.status !== "live") {
+    // C1.3 (seller publication governance): money path — fail closed. A
+    // variant is purchasable only if its product is active AND the store is
+    // live AND the store's seller is admin-approved (status "active"); a
+    // null/unlinked seller can never pass. Storefront visibility filters use
+    // the same rule, but checkout must not trust them.
+    if (
+      !v || !v.isActive || v.product.status !== "active" ||
+      v.product.store.status !== "live" || v.product.store.seller?.status !== "active"
+    ) {
       throw new ApiError(400, "VARIANT_INVALID", "One of the items is no longer available — please update your cart");
     }
     // Seller's minimum order quantity rides on the line (moq) so the checkout

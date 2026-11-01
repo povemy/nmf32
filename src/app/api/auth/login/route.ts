@@ -46,7 +46,13 @@ export const POST = handle(async (req: NextRequest) => {
     return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
   }
 
-  const seller = await db.seller.findUnique({ where: { email } });
+  // PHASE 2.3 select hygiene (C2.7): explicit field list EXCLUDING the
+  // un-migrated Seller.emailVerifiedAt (migration 20261107000000) — a default
+  // select would raise P2022 and break seller login on the dev DB.
+  const seller = await db.seller.findUnique({
+    where: { email },
+    select: { id: true, email: true, passwordHash: true, fullName: true, displayName: true, status: true },
+  });
   const sellerPwOk = await verifyPasswordAsync(password, seller?.passwordHash ?? DUMMY_PASSWORD_HASH);
   if (!seller || !sellerPwOk) {
     return fail(401, "INVALID_CREDENTIALS", "Invalid seller credentials");

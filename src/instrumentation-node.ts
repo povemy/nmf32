@@ -95,44 +95,110 @@ export async function registerNodeEnvGuard(): Promise<void> {
 }
 
 /**
- * F-04/F-23 remediation: production startup validation for security secrets.
- * Each secret below is enforced FAIL-CLOSED at its protected endpoint when
- * missing (503 WEBHOOK_SECRET_UNSET / CRON_SECRET_UNSET / metrics disabled /
- * relay 401) — this check makes the misconfiguration LOUD at boot instead of
- * waiting for the first rejected request. Dev/sandbox: informational only
- * (documented public fallbacks keep the mock rails working).
+ * F-04/F-23 remediation → P2.3-7 (Phase 2.3 audit: "production boot should
+ * FAIL CLEARLY when mandatory secrets are missing", not just warn):
+ *
+ *  MANDATORY (boot-fatal in production — these guard money/security surfaces
+ *  and every one of them previously only WARNED while its endpoint failed
+ *  closed per-request): PSP_WEBHOOK_SECRET, CRON_SECRET, MFA_ENCRYPTION_KEY,
+ *  IMPORT_TOKEN_ENC_KEY, ORDER_ACCESS_SECRET, EMAIL_OTP_SECRET, plus the
+ *  EMAIL_PROVIDER block (guest checkout + claiming REQUIRE transactional
+ *  email — email is not a pre-launch optional). A missing entry THROWS from
+ *  register() → the Next.js server boot aborts with a clear, actionable
+ *  error listing every missing variable.
+ *
+ *  WARN-only (legitimately optional / degraded-mode surfaces): every one of
+ *  these fails closed at its own endpoint when unset, but a deploy may
+ *  deliberately run without them (read-only metrics disabled, chat relay
+ *  down, shipping webhooks pending integration, import caps dev-only …).
+ *
+ *  Dev/sandbox: completely permissive (documented fallbacks keep the mock
+ *  rails working — the running dev server never hits this branch).
  */
-const PRODUCTION_SECRETS = [
-  { key: "PSP_WEBHOOK_SECRET", endpoint: "POST /api/webhooks/payments/[provider] (money events)" },
-  { key: "CRON_SECRET", endpoint: "POST /api/cron/* (scheduler ticks)" },
-  { key: "SHIPPING_WEBHOOK_SECRET", endpoint: "POST /api/shipping/webhook/[provider] (AWB state transitions)" },
-  { key: "CHAT_RELAY_SECRET", endpoint: "chat relay :3103 /broadcast (room broadcasts)" },
-  { key: "METRICS_TOKEN", endpoint: "GET /api/metrics (read-only, disabled when unset)" },
-  // FINAL CLOSURE — guest-order OTP / email verification (fail-closed routes):
-  // without these, /api/orders/otp/* + /api/auth/shopper/email-verification/*
-  // answer 503 and order lookup/receipt accept only owning sessions.
-  { key: "EMAIL_OTP_SECRET", endpoint: "POST /api/orders/otp/* and /api/auth/shopper/email-verification/* (OTP challenges — 503 EMAIL_OTP_SECRET_UNSET)" },
-  { key: "ORDER_ACCESS_SECRET", endpoint: "order-access grant mint/verify on /api/orders/lookup + receipt (503 ORDER_ACCESS_SECRET_UNSET; grants unverifiable → fail closed)" },
+const PRODUCTION_MANDATORY_SECRETS = [
+  { key: "PSP_WEBHOOK_SECRET", why: "HMAC signing for POST /api/webhooks/payments/[provider] — money events" },
+  { key: "CRON_SECRET", why: "timing-safe auth for POST /api/cron/* (scheduler ticks) + GET /api/health/scheduler" },
+  { key: "MFA_ENCRYPTION_KEY", why: "AES-GCM at-rest key for admin TOTP secrets (503 MFA_NOT_CONFIGURED without it)" },
+  { key: "IMPORT_TOKEN_ENC_KEY", why: "AES-GCM key for marketplace OAuth token storage (503 SECRETBOX_NOT_CONFIGURED without it)" },
+  { key: "ORDER_ACCESS_SECRET", why: "HMAC key for guest order-access grants on lookup/receipt" },
+  { key: "EMAIL_OTP_SECRET", why: "HMAC key for email-OTP challenges (guest checkout + claiming)" },
 ] as const;
 
-// NOT fail-closed, but silently DOWNGRADES: without IMPORT_TOKEN_ENC_KEY the
-// secretbox derives a deterministic development key (F-23 residual surfaced at
-// boot so a production deploy cannot miss it).
-const PRODUCTION_DOWNGRADE_SECRETS = [
-  { key: "IMPORT_TOKEN_ENC_KEY", note: "import/claim tokens are being encrypted with a DERIVED development key (lib/secretbox.ts) — set a strong key before production" },
+/** Provider-block validation: transactional email is REQUIRED in production
+ *  (guest-order OTP + shopper email verification + claiming depend on it).
+ *  Returns the fatal problem description, or null when configured correctly. */
+function emailProviderProblem(env: NodeJS.ProcessEnv): string | null {
+  const provider = (env.EMAIL_PROVIDER ?? "").trim().toLowerCase();
+  if (!provider) {
+    return "EMAIL_PROVIDER is not set — transactional email is REQUIRED in production (guest-order OTP, shopper email verification, order claiming). Configure a provider (see .env.example).";
+  }
+  if (provider === "resend") {
+    if (!(env.RESEND_API_KEY ?? "").trim()) return "EMAIL_PROVIDER=resend requires RESEND_API_KEY (sending-access key from the Resend dashboard).";
+    if (!(env.EMAIL_FROM ?? "").trim()) return "EMAIL_PROVIDER=resend requires EMAIL_FROM (verified sender identity).";
+    return null;
+  }
+  if (provider === "mailpit") {
+    return "EMAIL_PROVIDER=mailpit is a DEV-ONLY catcher (ignored in production). Select a production provider: EMAIL_PROVIDER=resend.";
+  }
+  return `EMAIL_PROVIDER="${provider}" has no adapter compiled in (implemented: resend, mailpit-dev-only). Email delivery would fail closed.`;
+}
+
+// NOT boot-fatal, but each one silently DOWNGRADES or disables a surface —
+// surfaced loudly at boot so an operator cannot miss it.
+const PRODUCTION_WARN_SECRETS = [
+  { key: "SHIPPING_WEBHOOK_SECRET", note: "POST /api/shipping/webhook/[provider] (AWB state transitions) will FAIL CLOSED (503) until set" },
+  { key: "CHAT_RELAY_SECRET", note: "chat relay :3103 /broadcast (room broadcasts) rejects every call (401) until set" },
+  { key: "METRICS_TOKEN", note: "GET /api/metrics stays disabled (503) until set — monitoring honesty: no token, no metrics" },
+  { key: "IMPORT_CAP_SECRET", note: "import job-creation caps fail closed (503 IMPORT_CAP_SECRET_UNSET) until set" },
+  { key: "RESEND_WEBHOOK_SECRET", note: "POST /api/webhooks/email/resend (delivery events + suppression sync) fails closed (503) until set" },
 ] as const;
 
-export function warnProductionSecrets(): void {
+function isSet(v: string | undefined): boolean {
+  return typeof v === "string" && v.trim() !== "";
+}
+
+/** Production boot gate. THROWS on missing mandatory secrets (P2.3-7);
+ *  prints loud warnings for the degraded-mode ones. No-op outside production. */
+export function enforceProductionSecrets(): void {
   if (process.env.NODE_ENV !== "production") return;
-  const missing = PRODUCTION_SECRETS.filter((s) => !process.env[s.key]);
-  for (const s of missing) {
-    console.error(
-      `[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.endpoint} will FAIL CLOSED (503/401) until it is configured.`,
+
+  const fatal: string[] = [];
+  for (const s of PRODUCTION_MANDATORY_SECRETS) {
+    if (!isSet(process.env[s.key])) fatal.push(`${s.key} — ${s.why}`);
+  }
+  const providerProblem = emailProviderProblem(process.env);
+  if (providerProblem) fatal.push(providerProblem);
+  if (fatal.length > 0) {
+    throw new Error(
+      `[instrumentation] FATAL: production boot aborted — mandatory secrets missing:\n` +
+        fatal.map((f) => `  - ${f}`).join("\n") +
+        `\n  Set them in the deployment environment (see .env.example — every key is documented there). ` +
+        `Refusing to start with money/security surfaces unconfigured (Phase 2.3 audit: boot must fail clearly).`,
     );
   }
-  for (const s of PRODUCTION_DOWNGRADE_SECRETS) {
-    if (!process.env[s.key]) {
-      console.error(`[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.note}`);
+
+  for (const s of PRODUCTION_WARN_SECRETS) {
+    if (!isSet(process.env[s.key])) {
+      console.error(`[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.note}.`);
+    }
+  }
+}
+
+/** Kept for external symmetry/tests: the loud boot reporter (non-throwing
+ *  view of the same checks). Prefer enforceProductionSecrets() at boot. */
+export function warnProductionSecrets(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing = PRODUCTION_MANDATORY_SECRETS.filter((s) => !isSet(process.env[s.key]));
+  for (const s of missing) {
+    console.error(
+      `[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.why} — BOOT WILL FAIL (see enforceProductionSecrets).`,
+    );
+  }
+  const providerProblem = emailProviderProblem(process.env);
+  if (providerProblem) console.error(`[instrumentation] SECURITY: ${providerProblem} — BOOT WILL FAIL.`);
+  for (const s of PRODUCTION_WARN_SECRETS) {
+    if (!isSet(process.env[s.key])) {
+      console.error(`[instrumentation] SECURITY: ${s.key} is NOT SET — ${s.note}.`);
     }
   }
 }

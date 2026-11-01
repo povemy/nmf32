@@ -1,4 +1,4 @@
-// JSON helpers — SQLite stores JSON in TEXT columns.
+// JSON helpers — JSON payloads are stored as TEXT string columns (Postgres).
 export function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   if (raw == null || raw === "") return fallback;
   try {

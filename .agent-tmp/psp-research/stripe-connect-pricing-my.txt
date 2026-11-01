@@ -1,0 +1,846 @@
+[]
+
+-   Products [] []
+-   Solutions [] []
+-   Developers [] []
+-   Resources [] []
+-   Pricing
+
+Dashboard [] Sign in []
+
+Sign in []
+
+Contact sales []
+
+[]
+
+[]
+
+[] Back
+
+[]
+
+-   Products
+
+    []
+
+-   Solutions
+
+    []
+
+-   Developers
+
+    []
+
+-   Resources
+
+    []
+
+-   Pricing
+
+-   
+
+-   Dashboard
+
+-   Sign in
+
+-   Sign in
+
+See all products Explore our full product catalogue
+
+Payments
+
+-   
+    Payments  []
+    Online payments
+-   
+    Managed Payments  []
+    Merchant of record solution
+-   
+    Payment links  []
+    No-code payments
+-   
+    Checkout  []
+    Prebuilt payment UIs
+-   
+    Elements  []
+    Flexible UI components
+-   
+    Payment methods  []
+    Access to 125+
+-   
+    Terminal  []
+    In-person payments
+-   
+    Authorization Boost  []
+    Acceptance optimisations
+-   
+    Link  []
+    Accelerated checkout
+-   
+    Financial Connections  []
+    Linked financial account data
+
+Revenue
+
+-   
+    Billing  []
+    Recurring revenue
+-   
+    Metronome  []
+    Usage-based billing
+-   
+    Subscriptions  []
+    Subscription management
+-   
+    Invoicing  []
+    One-time or recurring
+-   
+    Tax  []
+    Sales tax & VAT automation
+-   
+    Revenue Recognition  []
+    Accounting automation
+-   
+    Stripe Sigma  []
+    Custom reports
+-   
+    Data Pipeline  []
+    Data sync
+
+Money management
+
+-   
+    Treasury  []
+    Business finances
+-   
+    Global Payouts  []
+    Payouts to third parties
+-   
+    Capital  []
+    Business financing
+-   
+    Crypto  []
+    Wallet, stablecoin issuing and card infrastructure
+-   
+    Crypto Onramp  []
+    Embeddable cryptocurrency purchases
+
+Embedded Finance
+
+-   
+    Connect  []
+    Payments for platforms
+-   
+    Capital for platforms  []
+    Customer financing
+-   
+    Treasury for platforms  []
+    Embedded financial services
+-   
+    Issuing  []
+    Physical and virtual cards
+
+More
+
+-   
+    Product roadmap  []
+    See what's ahead
+-   
+    Radar  []
+    Fraud prevention
+-   
+    Atlas  []
+    Start-up incorporation
+-   
+    Climate  []
+    Carbon removal
+-   
+    Identity  []
+    Online identity verification
+
+Stripe Sessions 2026 See how Stripe is building the economic infrastructure for AI.
+
+Watch now []
+
+[Sessions Background]
+
+By stage
+
+-   
+    Enterprises  []
+-   
+    Startups  []
+
+By use case
+
+-   
+    Agentic commerce  []
+-   
+    Crypto  []
+-   
+    E-commerce  []
+-   
+    Embedded finance  []
+-   
+    Finance automation  []
+-   
+    Global businesses  []
+-   
+    In-app payments  []
+-   
+    Marketplaces  []
+-   
+    Money management  []
+-   
+    Platforms  []
+-   
+    SaaS  []
+
+By industry
+
+-   
+    AI companies  []
+-   
+    Creator economy  []
+-   
+    Fintech  []
+-   
+    Gaming  []
+-   
+    Hospitality, travel and leisure  []
+-   
+    Insurance  []
+-   
+    Media and entertainment  []
+-   
+    Non-profits  []
+-   
+    Professional services  []
+-   
+    Retail  []
+
+Ecosystem
+
+-   
+    Partners  []
+-   
+    Stripe App Marketplace  []
+
+Documentation
+
+-   
+    Stripe docs  []
+-   
+    API reference  []
+-   
+    Libraries and SDKs  []
+-   
+    Stripe Apps  []
+
+Guides
+
+-   
+    Accept online payments  []
+-   
+    Implement a prebuilt checkout  []
+-   
+    Build a platform or marketplace  []
+-   
+    Manage subscriptions  []
+-   
+    Offer usage-based billing  []
+-   
+    Issue stablecoin-backed cards  []
+-   
+    Provision and manage services with agents  []
+
+Resources
+
+-   
+    App integrations  []
+-   
+    Code samples  []
+-   
+    Developers blog  []
+-   
+    API status  []
+
+Learn
+
+-   
+    Blog  []
+-   
+    Customer stories  []
+-   
+    Guides  []
+
+Support
+
+-   
+    Get support  []
+-   
+    Managed support plans  []
+-   
+    Professional services  []
+
+Company
+
+-   
+    Product roadmap  []
+-   
+    Sessions annual conference  []
+-   
+    Careers  []
+-   
+    Newsroom  []
+-   
+    Stripe Press  []
+-   
+    About  []
+
+Contact
+
+-   
+    Contact sales  []
+-   
+    Become a partner  []
+
+Start now [] Contact sales []
+
+Payments
+
+-   
+    Payments  []
+    Online payments
+-   
+    Managed Payments  []
+    Merchant of record solution
+-   
+    Payment links  []
+    No-code payments
+-   
+    Checkout  []
+    Prebuilt payment UIs
+-   
+    Elements  []
+    Flexible UI components
+-   
+    Payment methods  []
+    Access to 125+
+-   
+    Terminal  []
+    In-person payments
+-   
+    Authorization Boost  []
+    Acceptance optimisations
+-   
+    Link  []
+    Accelerated checkout
+-   
+    Financial Connections  []
+    Linked financial account data
+
+Revenue
+
+-   
+    Billing  []
+    Recurring revenue
+-   
+    Metronome  []
+    Usage-based billing
+-   
+    Subscriptions  []
+    Subscription management
+-   
+    Invoicing  []
+    One-time or recurring
+-   
+    Tax  []
+    Sales tax & VAT automation
+-   
+    Revenue Recognition  []
+    Accounting automation
+-   
+    Stripe Sigma  []
+    Custom reports
+-   
+    Data Pipeline  []
+    Data sync
+
+Money management
+
+-   
+    Treasury  []
+    Business finances
+-   
+    Global Payouts  []
+    Payouts to third parties
+-   
+    Capital  []
+    Business financing
+-   
+    Crypto  []
+    Wallet, stablecoin issuing and card infrastructure
+-   
+    Crypto Onramp  []
+    Embeddable cryptocurrency purchases
+
+Embedded Finance
+
+-   
+    Connect  []
+    Payments for platforms
+-   
+    Capital for platforms  []
+    Customer financing
+-   
+    Treasury for platforms  []
+    Embedded financial services
+-   
+    Issuing  []
+    Physical and virtual cards
+
+See all products  []
+
+More
+
+-   
+    Product roadmap  []
+    See what's ahead
+-   
+    Radar  []
+    Fraud prevention
+-   
+    Atlas  []
+    Start-up incorporation
+-   
+    Climate  []
+    Carbon removal
+-   
+    Identity  []
+    Online identity verification
+
+Stripe Sessions 2026 See how Stripe is building the economic infrastructure for AI.
+
+Watch now []
+
+[Sessions Background]
+
+By stage
+
+-   
+    Enterprises  []
+-   
+    Startups  []
+
+By use case
+
+-   
+    Agentic commerce  []
+-   
+    Crypto  []
+-   
+    E-commerce  []
+-   
+    Embedded finance  []
+-   
+    Finance automation  []
+-   
+    Global businesses  []
+-   
+    In-app payments  []
+-   
+    Marketplaces  []
+-   
+    Money management  []
+-   
+    Platforms  []
+-   
+    SaaS  []
+
+By industry
+
+-   
+    AI companies  []
+-   
+    Creator economy  []
+-   
+    Fintech  []
+-   
+    Gaming  []
+-   
+    Hospitality, travel and leisure  []
+-   
+    Insurance  []
+-   
+    Media and entertainment  []
+-   
+    Non-profits  []
+-   
+    Professional services  []
+-   
+    Public sector  []
+-   
+    Retail  []
+
+Ecosystem
+
+-   
+    Partners  []
+-   
+    Stripe App Marketplace  []
+
+Documentation
+
+-   
+    Stripe docs  []
+-   
+    API reference  []
+-   
+    Libraries and SDKs  []
+-   
+    Stripe Apps  []
+
+Guides
+
+-   
+    Accept online payments  []
+-   
+    Implement a prebuilt checkout  []
+-   
+    Build a platform or marketplace  []
+-   
+    Manage subscriptions  []
+-   
+    Offer usage-based billing  []
+-   
+    Issue stablecoin-backed cards  []
+-   
+    Provision and manage services with agents  []
+
+Resources
+
+-   
+    App integrations  []
+-   
+    Code samples  []
+-   
+    Developers blog  []
+-   
+    API status  []
+
+Learn
+
+-   
+    Blog  []
+-   
+    Customer stories  []
+-   
+    Guides  []
+
+Support
+
+-   
+    Get support  []
+-   
+    Managed support plans  []
+-   
+    Professional services  []
+
+Company
+
+-   
+    Product roadmap  []
+-   
+    Sessions annual conference  []
+-   
+    Careers  []
+-   
+    Newsroom  []
+-   
+    Stripe Press  []
+-   
+    About  []
+
+Contact
+
+-   
+    Contact sales  []
+-   
+    Become a partner  []
+
+Page not found
+
+We couldn't find that page. Visit our homepage, or try one of these.
+
+[]
+
+Pricing [] 
+
+See rates for all Stripe products, including payments and billing.
+
+[]
+
+Careers [] 
+
+Explore Stripe's mission and browse career opportunities.
+
+[]
+
+Documentation [] 
+
+Browse guides and examples for integrating Stripe.
+
+[]
+
+API Reference [] 
+
+Read documentation for the Stripe API.
+
+[]
+
+System status [] 
+
+Check the status of all Stripe services.
+
+[]
+
+Support [] 
+
+Find support articles or contact our team.
+
+[]
+
+[] United States (English)
+
+-   [AU] Australia
+    -   English
+-   [AT] Austria
+    -   Deutsch
+    -   English
+-   [BE] Belgium
+    -   Nederlands
+    -   Français
+    -   Deutsch
+    -   English
+-   [BR] Brazil
+    -   Português
+    -   English
+-   [BG] Bulgaria
+    -   English
+-   [CA] Canada
+    -   English
+    -   Français
+-   [HR] Croatia
+    -   English
+    -   Italiano
+-   [CY] Cyprus
+    -   English
+-   [CZ] Czech Republic
+    -   English
+-   [DK] Denmark
+    -   English
+-   [EE] Estonia
+    -   English
+-   [FI] Finland
+    -   English
+    -   Svenska
+
+-   [FR] France
+    -   Français
+    -   English
+-   [DE] Germany
+    -   Deutsch
+    -   English
+-   [GI] Gibraltar
+    -   English
+-   [GR] Greece
+    -   English
+-   [HK] Hong Kong SAR, China
+    -   English
+    -   简体中文
+-   [HU] Hungary
+    -   English
+-   [IN] India
+    -   English
+-   [IE] Ireland
+    -   English
+-   [IT] Italy
+    -   Italiano
+    -   English
+-   [JP] Japan
+    -   日本語
+    -   English
+-   [LV] Latvia
+    -   English
+-   [LI] Liechtenstein
+    -   Deutsch
+    -   English
+
+-   [LT] Lithuania
+    -   English
+-   [LU] Luxembourg
+    -   Français
+    -   Deutsch
+    -   English
+-   [CN] Mainland China
+    -   简体中文
+    -   English
+-   [MY] Malaysia
+    -   English
+    -   简体中文
+-   [MT] Malta
+    -   English
+-   [MX] Mexico
+    -   Español
+    -   English
+-   [NL] Netherlands
+    -   Nederlands
+    -   English
+-   [NZ] New Zealand
+    -   English
+-   [NO] Norway
+    -   English
+-   [PL] Poland
+    -   English
+-   [PT] Portugal
+    -   Português
+    -   English
+-   [RO] Romania
+    -   English
+
+-   [SG] Singapore
+    -   English
+    -   简体中文
+-   [SK] Slovakia
+    -   English
+-   [SI] Slovenia
+    -   English
+    -   Italiano
+-   [ES] Spain
+    -   Español
+    -   English
+-   [SE] Sweden
+    -   Svenska
+    -   English
+-   [CH] Switzerland
+    -   Deutsch
+    -   Français
+    -   Italiano
+    -   English
+-   [TH] Thailand
+    -   ไทย
+    -   English
+-   [AE] United Arab Emirates
+    -   English
+-   [GB] United Kingdom
+    -   English
+-   [] United States
+    -   English
+    -   Español
+    -   简体中文
+
+Products & pricing
+
+-   Pricing
+-   Atlas
+-   Authorization Boost
+-   Billing
+-   Capital
+-   Checkout
+-   Climate
+-   Connect
+-   Crypto
+-   Data Pipeline
+-   Elements
+-   Financial Connections
+-   Identity
+-   Invoicing
+-   Issuing
+-   Link
+-   Managed Payments
+-   Payment links
+-   Payments
+-   Payouts
+-   Radar
+-   Revenue Recognition
+-   Stripe Sigma
+-   Tax
+-   Terminal
+-   Treasury
+
+Solutions
+
+-   Enterprises
+-   Startups
+-   Agentic commerce
+-   Crypto
+-   E-Commerce
+-   Embedded finance
+-   Finance automation
+-   Global businesses
+-   In-app payments
+-   Marketplaces
+-   Money management
+-   Platforms
+-   SaaS
+-   AI companies
+-   Creator economy
+-   Fintech
+-   Gaming
+-   Hospitality, travel and leisure
+-   Insurance
+-   Media and entertainment
+-   Non-profits
+-   Professional services
+-   Public sector
+-   Retail
+
+Integrations & custom solutions
+
+-   Stripe App Marketplace
+-   Stripe Partner ecosystem
+-   Professional services
+
+Developers
+
+-   Documentation
+-   API reference
+-   API status
+-   API changelog
+-   Libraries and SDKs
+-   Stripe Projects
+-   Developer blog
+
+Resources
+
+-   Guides
+-   Customer stories
+-   Blog
+-   Community
+-   Sessions annual conference
+-   Privacy & terms
+-   Prohibited & restricted businesses
+-   Licences
+-   Sitemap
+-   Cookie settings
+-   Your privacy choices
+-   More resources
+
+Company
+
+-   About
+-   Product roadmap
+-   Careers
+-   Newsroom
+-   Stripe Press
+-   Contact sales
+
+Support
+
+-   Get support
+-   Managed support plans
+-   CA residents: +1 888 926 2289
+
+-   © 2026 Stripe, LLC

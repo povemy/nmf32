@@ -1,0 +1,2675 @@
+openapi: 3.1.0
+servers:
+  - description: Sandbox
+    url: https://staging-api.chip-in.asia/api
+  - description: Production
+    url: https://api.chip-in.asia/api
+info:
+  description: |
+
+    The CHIP Send API enables merchants to send funds programmatically via a REST API and to register recipient bank accounts for payouts.
+
+    All endpoints share a single base URL and a single authentication scheme. This page covers everything required to make a successful request.
+
+    ## Endpoints
+
+    The base URL must match the merchant's environment:
+
+    | Environment | Base URL                                      |
+    |-------------|-----------------------------------------------|
+    | Staging     | `https://staging-api.chip-in.asia/api`        |
+    | Production  | `https://api.chip-in.asia/api`                |
+
+    The operation path from the [API reference](#) (for example `/send/accounts` or `/send/send_instructions`) is appended to the base URL.
+
+    ## Prerequisites
+
+    Before integration begins, a CHIP Send account must be created for the merchant by the CHIP admin team. To obtain credentials, the merchant's CHIP Account Manager must be contacted with the following information:
+
+      1. A primary email address.
+      2. The email addresses of every required approver. If two approvals are required, both email addresses must be provided.
+
+    ## Credentials
+
+    Two pieces of information are issued to the merchant:
+
+    | Credential       | Where it goes                                          | What it does                                                                       |
+    |------------------|--------------------------------------------------------|------------------------------------------------------------------------------------|
+    | **API Key**      | `Authorization: Bearer <API Key>` header               | Identifies the merchant's account. Sent on every request.                          |
+    | **API Secret**   | Never sent over the network. Used only for signing.    | Used to compute the per-request checksum. Must be stored securely, like a password. |
+
+    The API Key and the `api_key` value used inside the checksum string are the **same value**.
+
+    The API Secret is **never** transmitted in any request. It only ever lives on the merchant's server and is used to compute the checksum described below.
+
+    Both the API Key and the API Secret are available to the merchant in the [CHIP Control → Settings → Applications](https://portal.chip-in.asia/control/settings/applications) page of the merchant portal.
+
+    ## How authentication works
+
+    Every request to the CHIP Send API must include three headers:
+
+    | Header          | Value                                                                                 |
+    |-----------------|---------------------------------------------------------------------------------------|
+    | `Authorization` | `Bearer <API Key>`                                                                    |
+    | `epoch`         | The current Unix timestamp in seconds (for example, `1689826456`)                     |
+    | `checksum`      | Hex-encoded HMAC-SHA512 of the signing string, computed with the API Secret           |
+
+    The `epoch` value must be within **30 seconds** of the server's clock. If it is too old or too far in the future, the request is rejected as `Unauthorized`. The merchant's server clock must therefore be synchronised (for example via NTP).
+
+    ## How to compute the checksum
+
+    The signing string is formed by **concatenating the `epoch` value and the API Key with no separator, in that order**:
+
+    ```
+    signing_string = <epoch> + <API Key>
+    ```
+
+    For example, with `epoch = 1689826456` and `API Key = e0645c9e-fcf2-4f29-a327-202f7ed3d969`:
+
+    ```
+    1689826456e0645c9e-fcf2-4f29-a327-202f7ed3d969
+    ```
+
+    The checksum is then computed as:
+
+    ```
+    checksum = HEX( HMAC_SHA512( key = API Secret, message = signing_string ) )
+    ```
+
+    Given `API Secret = a118729e-4243-4145-83b3-0b8cb213fe8e`, the checksum for the example signing string above is:
+
+    ```
+    45bee62dba8087ab1e7e767d92f8d6e26f8bd19ee5fd2fef6386bb9425976498a86ffdbddb7a49919998e993c20626196ea652320f438a9528d2b8c9d19ec266
+    ```
+
+    This expected value can be used to verify the implementation before any real request is sent.
+
+    ## A complete request
+
+    The following `curl` example computes the epoch and checksum, then sends a request end-to-end:
+
+    ```bash
+    # 1. Compute the epoch and checksum (must be recomputed for every request)
+    EPOCH=$(date +%s)
+    API_KEY="e0645c9e-fcf2-4f29-a327-202f7ed3d969"
+    API_SECRET="a118729e-4243-4145-83b3-0b8cb213fe8e"
+    CHECKSUM=$(printf '%s%s' "$EPOCH" "$API_KEY" | openssl dgst -sha512 -hmac "$API_SECRET" -hex | sed 's/^.*= //')
+
+    # 2. Send the request
+    curl -X POST "https://staging-api.chip-in.asia/api/send/bank_accounts" \
+      -H "Authorization: Bearer $API_KEY" \
+      -H "epoch: $EPOCH" \
+      -H "checksum: $CHECKSUM" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "account_number": "157380112229",
+        "bank_code": "MBBEMYKL",
+        "name": "Ahmad Razali",
+        "reference": "VENDOR-EMP-001"
+      }'
+    ```
+
+    A `200 OK` response confirms that authentication is working correctly. For other responses, see [Troubleshooting](#troubleshooting) below.
+
+    ## Language examples
+
+    The same computation in four common languages:
+
+    <CodeGroup>
+
+    ```javascript Node.js
+    const crypto = require('crypto');
+
+    const epoch = Math.floor(Date.now() / 1000).toString();
+    const apiKey = process.env.CHIP_API_KEY;
+    const apiSecret = process.env.CHIP_API_SECRET;
+
+    const signingString = epoch + apiKey;
+    const checksum = crypto
+      .createHmac('sha512', apiSecret)
+      .update(signingString)
+      .digest('hex');
+
+    // Then send the request with headers:
+    //   Authorization: Bearer <apiKey>
+    //   epoch: <epoch>
+    //   checksum: <checksum>
+    ```
+
+    ```ruby Ruby
+    require 'openssl'
+
+    epoch = Time.now.to_i.to_s
+    api_key = ENV['CHIP_API_KEY']
+    api_secret = ENV['CHIP_API_SECRET']
+
+    signing_string = "#{epoch}#{api_key}"
+    checksum = OpenSSL::HMAC.hexdigest('SHA512', api_secret, signing_string)
+
+    # Then send the request with headers:
+    #   Authorization: Bearer <api_key>
+    #   epoch: <epoch>
+    #   checksum: <checksum>
+    ```
+
+    ```python Python
+    import hashlib, hmac, time
+
+    epoch = str(int(time.time()))
+    api_key = "YOUR_API_KEY"
+    api_secret = "YOUR_API_SECRET"
+
+    signing_string = (epoch + api_key).encode()
+    checksum = hmac.new(api_secret.encode(), signing_string, hashlib.sha512).hexdigest()
+
+    # Then send the request with headers:
+    #   Authorization: Bearer <api_key>
+    #   epoch: <epoch>
+    #   checksum: <checksum>
+    ```
+
+    ```php PHP
+    <?php
+    $epoch = (string) time();
+    $apiKey = getenv('CHIP_API_KEY');
+    $apiSecret = getenv('CHIP_API_SECRET');
+
+    $signingString = $epoch . $apiKey;
+    $checksum = hash_hmac('sha512', $signingString, $apiSecret);
+
+    // Then send the request with headers:
+    //   Authorization: Bearer <apiKey>
+    //   epoch: <epoch>
+    //   checksum: <checksum>
+    ```
+
+    </CodeGroup>
+
+    ## Troubleshooting
+
+    | Symptom                                                | Most likely cause                                                                                                                                                                                                                |
+    |--------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+    | `401 Unauthorized` with no further detail              | The `epoch` value is more than 30 seconds off the server clock, or the merchant's server clock is incorrect. NTP synchronisation should be verified.                                                                              |
+    | `401 Unauthorized` with a checksum-related error       | The signing string is wrong. The following should be verified: (a) it is `<epoch> + <apiKey>` with **no separator**, (b) the message is the *string* (not a JSON object), (c) the output is **hex-encoded** (not base64), (d) SHA-512 is used (not SHA-256). |
+    | `401 Unauthorized` with an `Authorization`-related error | The `Authorization: Bearer <API Key>` header is missing, malformed, or the API Key is invalid.                                                                                                                                      |
+    | `400 Bad Request` on a syntactically valid payload     | The `epoch` or `checksum` header is missing, or one of the values contains an unexpected character.                                                                                                                              |
+    | A request works in Postman but fails from the merchant's code | The checksum is being computed once and reused across requests. The checksum must be **recomputed for every request** with a fresh `epoch`.                                                                              |
+
+    ## Rate limits
+
+    Requests under `/api/send` are rate limited **per API key**, in 5-minute (300 second) windows. The key is the bearer token in the `Authorization` header, so every caller that uses the same key shares the counters. A request counts toward exactly one limit.
+
+    | Requests | Limit per 5 minutes |
+    |----------|---------------------|
+    | `POST /api/send/send_instructions` | 100 |
+    | `POST /api/send/bank_accounts` | 60 |
+    | `POST /api/send/send_limits` | 60 |
+    | The shared resend operations (below) | 30 |
+    | Every other `/api/send` request | 300 |
+
+    These three resend operations share one limit of 30 requests per 5 minutes:
+
+    - `POST /api/send/bank_accounts/{id}/resend_webhook_event`
+    - `POST /api/send/send_instructions/{id}/resend_webhook_event`
+    - `POST /api/send/send_limits/{id}/resend_approval_requests`
+
+    The 100, 60, and 60 limits apply to `POST` on those exact paths. `GET`, `DELETE`, `PATCH`, and every other request under `/api/send` use the general limit of 300. Exhausting one limit leaves the others available.
+
+    A single trailing format suffix is removed before the limit is chosen, so `POST /api/send/send_instructions.json` shares the 100-request limit with the unsuffixed path.
+
+    `/api/webhooks` is served outside these limits.
+
+    Exceeding a limit returns `429 Too Many Requests` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers, which are sent on the `429` only. The full contract is in [Rate limits](/chip-send/api-reference/rate-limits).
+
+    ## Basic integration flow
+
+    A complete payout consists of four steps:
+
+      1. The [Accounts API](/chip-send/api-reference/accounts/list) is called to check the convertible balance.
+      2. The [Increase Send Limit API](/chip-send/api-reference/send-limits/create) is called to allocate balance for payouts.
+      3. The [Add Bank Account API](/chip-send/api-reference/bank-accounts/create) is called to register a recipient.
+      4. The [Create Send Instruction API](/chip-send/api-reference/send-instructions/create) is called to send funds.
+
+    A walkthrough is provided in [Test Integration](/chip-send/api-reference/test-integration).
+
+    ## Approving CHIP Send Budget Allocation requests
+
+    Every approver receives an email when a budget-allocation request requires approval. Approval is performed by clicking the **Approve** button in the email. Once all required approvers have approved, the new balance is reflected in the [Accounts API](/chip-send/api-reference/accounts/list) response.
+
+    The token used in the `Authorization` header is the **API Key** mentioned in the Credentials section above.
+
+  version: "1.0.1"
+  title: CHIP Send API
+  termsOfService: https://www.chip-in.asia/terms-of-service
+  contact:
+    name: CHIP
+    url: https://www.chip-in.asia
+tags:
+  - name: Accounts
+    description: Endpoint for retrieving CHIP Send account information. Depending on your account agreement, you may only have one account.
+  - name: Send Limits
+    description: |
+      Send Limit records incoming transactions (converted from collection — `transaction_type: in`) and outgoing transactions (sent to recipient — `transaction_type: out`) in CHIP Send.
+
+      To be able to send funds to third parties, you must have balance in your CHIP Send Account. Use the Increase CHIP Send Budget Allocation API to convert settlement (collection) amounts into the Send Limit.
+
+      Please note that in the Staging / UAT environment, your convertible collection amount is set to MYR 1,000.00. In production, it will reflect your actual upcoming settlement amount.
+
+      Creating a send limit is limited to 60 requests per API key per 5 minutes. See [Rate limits](/chip-send/api-reference/rate-limits).
+  - name: Bank Accounts
+    description: |
+      Endpoint for managing recipient bank account details.
+
+      Creating a bank account is limited to 60 requests per API key per 5 minutes. See [Rate limits](/chip-send/api-reference/rate-limits).
+  - name: Send Instructions
+    description: |
+      Endpoint for performing send instructions. This is the main API for sending funds with CHIP Send.
+
+      Creating a send instruction is limited to 100 requests per API key per 5 minutes. A trailing `.json` suffix counts toward the same limit. See [Rate limits](/chip-send/api-reference/rate-limits).
+  - name: Groups
+    description: Endpoints for managing groups of company bank accounts.
+  - name: Webhooks
+    description: Endpoints for managing webhook events used for server-to-server notifications.
+paths:
+  "/send/accounts":
+    get:
+      operationId: accounts_index
+      description: |-
+        Use this endpoint to know:
+        
+        - Your available settlement (collection) amount that can be converted to CHIP Send Limit;
+        - Current balance;
+        - Send Fee;
+        - Account Verification Fee;
+        - No. of approvals required to convert collection balance to CHIP Send Limit
+        
+        Please note that `convertible_balance_from_statement` will return different data depending on when you hit this endpoint. This adds flexibility and time for you to plan out your CHIP Send Budget Allocation requests, without having to send extra information.
+        
+        For example:
+        
+        - Trigger today at 11.59 PM MYT will return convertible balance from today's collection.
+        - Trigger tomorrow at 12.00 AM MYT will return convertible balance from today's collection.
+        - Trigger tomorrow at 11.59 AM MYT will return convertible balance from today's collection.
+        - Trigger tomorrow at 12.00 PM MYT will return convertible balance from tomorrow's collection.
+
+      summary: List all accounts
+      tags:
+        - Accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/MetaPagination'
+              example:
+                results:
+                  - id: 1
+                    status: active
+                    currency: MYR
+                    settlement_convert_approvals_count: 1
+                    send_fee: 1
+                    send_fee_type: flat
+                    account_verification_fee: 1
+                    account_verification_fee_type: flat
+                    convertible_balance_from_statement: 1000
+                    current_balance: 100
+                    created_at: '2023-07-20T08:35:25.389Z'
+                    updated_at: '2023-07-20T08:35:25.389Z'
+                meta:
+                  pagination:
+                    current_page: 1
+                    prev_page: null
+                    next_page: null
+                    total_pages: 1
+                    total_count: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_limits":
+    get:
+      operationId: send_limits_index
+      description: |
+        Returns list of send limits.
+      summary: List all send limits
+      tags:
+        - Send Limits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SendLimit'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/MetaPagination'
+              example:
+                results:
+                  - id: 1
+                    currency: MYR
+                    fee_type: flat
+                    transaction_type: out
+                    amount: 0
+                    fee: 1
+                    net_amount: -1
+                    from_settlement: '2023-07-21'
+                    status: success
+                    approvals_required: 0
+                    approvals_received: 0
+                    created_at: '2023-07-20T09:00:16.982Z'
+                    updated_at: '2023-07-20T09:00:16.982Z'
+                meta:
+                  pagination:
+                    current_page: 1
+                    prev_page: null
+                    next_page: null
+                    total_pages: 1
+                    total_count: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: send_limits_create
+      description: |
+        Use this API to increase your CHIP Send Budget Allocation by converting an upcoming settlement amount. Upon initiation, all approvers will receive an email prompting them to approve the budget allocation.
+
+        *Note: All CHIP Send Budget Allocation requests must be approved by 12 PM MYT the following day. Any requests still pending at 12 PM MYT on the next day will be marked as expired.*
+
+        In production, there is no per-request or per-day cap on the allocation amount — the amount is limited only by the available settlement balance returned as `convertible_balance_from_statement`. The RM 1,000 daily limit applies only to the staging environment.
+      summary: Increase Budget Allocation
+      tags:
+        - Send Limits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendLimitBody'
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendLimit'
+              example:
+                id: 2
+                currency: MYR
+                fee_type: flat
+                transaction_type: in
+                amount: 200
+                fee: 0
+                net_amount: 200
+                from_settlement: '2023-07-21'
+                status: pending
+                approvals_required: 0
+                approvals_received: 0
+                created_at: '2023-07-20T10:34:50.503Z'
+                updated_at: '2023-07-20T10:34:50.503Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_limits/{id}":
+    get:
+      operationId: send_limits_get
+      description: Retrieve the details of a previously created send limit / budget allocation.
+      summary: Retrieve send limit
+      tags:
+        - Send Limits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendLimit'
+              example:
+                id: 1
+                currency: MYR
+                fee_type: flat
+                transaction_type: out
+                amount: 0
+                fee: 1
+                net_amount: -1
+                from_settlement: '2023-07-21'
+                status: success
+                approvals_required: 0
+                approvals_received: 0
+                created_at: '2023-07-20T09:00:16.982Z'
+                updated_at: '2023-07-20T09:00:16.982Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_limits/{id}/resend_approval_requests":
+    post:
+      operationId: send_limits_resend_approval_requests
+      summary: Resend approval requests
+      tags:
+        - Send Limits
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+            format: int64
+      description: |
+        Resends pending approval emails to approvers.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  code:
+                    type: integer
+                    example: 200
+                  data:
+                    type: object
+                    example: {}
+              example:
+                success: true
+                code: 200
+                data: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/bank_accounts":
+    get:
+      operationId: bank_accounts_index
+      description: |
+        Returns list of recipient bank accounts.
+
+      summary: List all bank accounts
+      tags:
+        - Bank Accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: page
+          in: query
+          description: Page number to retrieve.
+          schema:
+            type: integer
+            format: int64
+            example: 1
+        - name: limit
+          in: query
+          description: Number of records per page. Defaults to 25.
+          schema:
+            type: integer
+            format: int64
+            default: 25
+        - name: status
+          in: query
+          description: Filter results by bank account status.
+          schema:
+            example: "verified"
+            allOf:
+            - $ref: '#/components/schemas/BankAccountStatus'
+        - name: reference
+          in: query
+          description: Filter results by your reference value.
+          schema:
+            type: string
+            example: "VENDOR-EMP-001"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BankAccount'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/MetaPagination'
+              example:
+                results:
+                  - id: 3
+                    status: rejected
+                    account_number: '157380111111'
+                    bank_code: MBBEMYKL
+                    group_id: null
+                    name: Ahmad Razali
+                    reference: null
+                    created_at: '2023-07-20T08:59:10.766Z'
+                    is_debiting_account: false
+                    is_crediting_account: false
+                    updated_at: '2023-07-20T08:59:10.766Z'
+                    deleted_at: null
+                    rejection_reason: Non-Active Status
+                  - id: 2
+                    status: verified
+                    account_number: '162263238637'
+                    bank_code: CIBBMYKL
+                    group_id: null
+                    name: Helmi Ismail
+                    reference: null
+                    created_at: '2023-07-20T08:54:53.427Z'
+                    is_debiting_account: false
+                    is_crediting_account: false
+                    updated_at: '2023-07-20T08:54:53.427Z'
+                    deleted_at: null
+                    rejection_reason: null
+                  - id: 1
+                    status: pending
+                    account_number: '157380112229'
+                    bank_code: CIBBMYKL
+                    group_id: null
+                    name: Wan Zulkarnain
+                    reference: null
+                    created_at: '2022-12-29T07:44:23.821Z'
+                    is_debiting_account: false
+                    is_crediting_account: false
+                    updated_at: '2022-12-29T07:44:23.821Z'
+                    deleted_at: null
+                    rejection_reason: null
+                meta:
+                  pagination:
+                    current_page: 1
+                    prev_page: null
+                    next_page: null
+                    total_pages: 1
+                    total_count: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: bank_accounts_create
+      description: |
+        Adds a bank account using the values provided in the request body. Store the ID returned in the response, as it will be required for subsequent operations.
+      summary: Add a bank account
+      tags:
+        - Bank Accounts
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankAccountBody'
+            example:
+              account_number: '157380112229'
+              bank_code: 'MBBEMYKL'
+              name: 'Ahmad Razali'
+              reference: 'VENDOR-EMP-001'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccount'
+              example:
+                id: 84
+                status: verified
+                account_number: '157380112229'
+                bank_code: MBBEMYKL
+                group_id: null
+                name: Ahmad Razali
+                reference: VENDOR-EMP-001
+                created_at: '2023-07-20T08:59:10.766Z'
+                is_debiting_account: false
+                is_crediting_account: false
+                updated_at: '2023-07-20T08:59:10.766Z'
+                deleted_at: null
+                rejection_reason: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/bank_accounts/{id}":
+    get:
+      operationId: bank_accounts_get
+      description: |
+        Retrieve details of a recipient bank account that was previously created.
+      summary: Retrieve a bank account
+      tags:
+        - Bank Accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccount'
+              example:
+                id: 1
+                status: verified
+                account_number: '157380112229'
+                bank_code: CIBBMYKL
+                group_id: null
+                name: Wan Zulkarnain
+                reference: VENDOR-EMP-001
+                created_at: '2022-12-19T15:20:42.285Z'
+                is_debiting_account: false
+                is_crediting_account: false
+                updated_at: '2022-12-19T15:20:42.285Z'
+                deleted_at: null
+                rejection_reason: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: bank_accounts_delete
+      description: |
+        Deletes a bank account record, preventing future payments via the Create Send Instruction endpoint.
+      summary: Delete a bank account
+      tags:
+        - Bank Accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 84
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccount'
+              example:
+                id: 84
+                status: verified
+                account_number: '157380112229'
+                bank_code: MBBEMYKL
+                group_id: null
+                name: Ahmad Razali
+                reference: VENDOR-EMP-001
+                created_at: '2023-07-20T08:59:10.766Z'
+                is_debiting_account: false
+                is_crediting_account: false
+                updated_at: '2023-07-20T10:34:00.541Z'
+                deleted_at: null
+                rejection_reason: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/bank_accounts/{id}/resend_webhook_event":
+    post:
+      operationId: bank_accounts_resend_webhook_event
+      description: |
+        Resends the webhook event for a bank account record.
+      summary: Resend bank account webhook event
+      tags:
+        - Bank Accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 84
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                message: success
+                data: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_instructions":
+    get:
+      operationId: send_instructions_index
+      description: |
+        Returns a list of previously created send instructions.
+
+        *Note: This request is cached and will only refresh every hour.*
+      summary: List all send instructions
+      tags:
+        - Send Instructions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/SendInstruction'
+                  meta:
+                    type: object
+                    properties:
+                      pagination:
+                        $ref: '#/components/schemas/MetaPagination'
+              example:
+                results:
+                  - id: 49
+                    bank_account_id: 39
+                    amount: '100.00'
+                    state: received
+                    email: finance@example.com
+                    description: Vendor payout for invoice INV-2024-0892
+                    reference: INV-2024-0892
+                    send_recipient_receipt: true
+                    created_at: '2023-03-20T02:04:40.692Z'
+                    updated_at: '2023-03-20T02:04:40.692Z'
+                  - id: 48
+                    bank_account_id: 39
+                    amount: '100.00'
+                    state: received
+                    email: payroll@example.com
+                    description: Salary disbursement - employee batch 12
+                    reference: PAYROLL-2024-03-12
+                    send_recipient_receipt: false
+                    created_at: '2023-03-20T02:04:37.218Z'
+                    updated_at: '2023-03-20T02:04:37.218Z'
+                  - id: 45
+                    bank_account_id: 39
+                    amount: '100.00'
+                    state: received
+                    email: supplier@example.com
+                    description: Supplier invoice settlement
+                    reference: SUP-INV-04521
+                    send_recipient_receipt: true
+                    created_at: '2023-03-17T08:08:09.283Z'
+                    updated_at: '2023-03-17T08:08:09.283Z'
+                  - id: 44
+                    bank_account_id: 39
+                    amount: '100.00'
+                    state: received
+                    email: refund@example.com
+                    description: Customer refund - order #88421
+                    reference: REFUND-88421
+                    send_recipient_receipt: false
+                    created_at: '2023-03-17T08:07:50.038Z'
+                    updated_at: '2023-03-17T08:07:50.038Z'
+                meta:
+                  pagination:
+                    current_page: 1
+                    prev_page: null
+                    next_page: null
+                    total_pages: 1
+                    total_count: 4
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: send_instructions_create
+      description: |
+        Creates a send instruction using the values provided in the request body. Calling this endpoint will reduce your available account balance and credit the amount to the recipient's bank account.
+      summary: Create a send instruction
+      tags:
+        - Send Instructions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendInstructionBody'
+            example:
+              bank_account_id: 1
+              amount: '100'
+              description: Vendor payout for invoice INV-2024-0892
+              email: recipient@example.com
+              reference: INV-2024-0892
+              send_recipient_receipt: true
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendInstruction'
+              example:
+                id: 50
+                bank_account_id: 1
+                amount: '100.00'
+                state: completed
+                email: recipient@example.com
+                description: Vendor payout for invoice INV-2024-0892
+                reference: INV-2024-0892
+                send_recipient_receipt: true
+                created_at: '2023-07-20T10:41:25.190Z'
+                updated_at: '2023-07-20T10:41:25.302Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_instructions/{id}":
+    get:
+      operationId: send_instructions_get
+      description: |
+        Retrieve details of a send instruction that was previously created.
+      summary: Retrieve a send instruction
+      tags:
+        - Send Instructions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendInstruction'
+              example:
+                id: 3
+                bank_account_id: 12
+                amount: '100.00'
+                state: received
+                email: recipient@example.com
+                description: Vendor payout for July batch
+                reference: INV-2024-0892
+                send_recipient_receipt: true
+                created_at: '2022-12-25T04:19:20.620Z'
+                updated_at: '2022-12-25T04:19:20.620Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: send_instructions_delete
+      description: |
+        Deletes a send instruction that was previously created.
+
+        *Note: Only unprocessed instructions can be deleted; any other attempts will fail.*
+      summary: Delete a send instruction
+      tags:
+        - Send Instructions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 8
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendInstruction'
+              example:
+                id: 50
+                bank_account_id: 1
+                amount: '100.00'
+                state: deleted
+                email: recipient@example.com
+                description: Vendor payout for invoice INV-2024-0892
+                reference: INV-2024-0892
+                send_recipient_receipt: true
+                created_at: '2023-07-20T10:41:25.190Z'
+                updated_at: '2023-07-20T10:43:06.047Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/send_instructions/{id}/resend_webhook_event":
+    post:
+      operationId: send_instructions_resend_webhook_event
+      description: |
+        Resends the webhook event for a send instruction record.
+      summary: Resend send instruction webhook event
+      tags:
+        - Send Instructions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 8
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                message: success
+                data: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/groups":
+    get:
+      operationId: groups_index
+      description: |
+        Returns a list of previously created group records.
+
+        *Please note that this request is cached and will only refresh every hour.*
+      summary: List all groups
+      tags:
+        - Groups
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number to retrieve.
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Group'
+              example:
+                results:
+                  - id: 1
+                    name: Vendor Payouts
+                    created_at: '2021-04-29T08:00:00.000Z'
+                    updated_at: '2021-04-29T08:00:00.000Z'
+                  - id: 2
+                    name: Employee Payroll
+                    created_at: '2021-05-12T03:21:40.000Z'
+                    updated_at: '2021-05-12T03:21:40.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: groups_create
+      description: |
+        Creates a group using the values provided in the request body. A group acts as a label for bank accounts — for example, `Vendor` or `Employee`.
+      summary: Create a group
+      tags:
+        - Groups
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupBody'
+            example:
+              name: Vendor Payouts
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+              example:
+                id: 1
+                name: Vendor Payouts
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/send/groups/{id}":
+    get:
+      operationId: groups_get
+      description: |
+        Retrieve details of a group that was previously created.
+      summary: Retrieve a group
+      tags:
+        - Groups
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+              example:
+                id: 1
+                name: Vendor Payouts
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: groups_delete
+      description: |
+        Permanently delete a group.
+      summary: Delete a group
+      tags:
+        - Groups
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+              example:
+                id: 1
+                name: Vendor Payouts
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T09:15:23.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    patch:
+      operationId: groups_patch
+      description: |
+        Updates the specified group using the values provided in the parameters.
+      summary: Update a group
+      tags:
+        - Groups
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            example: Vendor Payouts (Q3 2024)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+              example:
+                id: 1
+                name: Vendor Payouts (Q3 2024)
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-07-01T03:21:40.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  "/webhooks":
+    get:
+      operationId: webhooks_index
+      description: |
+        Returns a list of previously created webhooks.
+
+        *Please note that this request is cached and will refresh every hour.*
+      summary: List all webhooks
+      tags:
+        - Webhooks
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+              example:
+                results:
+                  - id: 1
+                    name: Send Instruction Notifications
+                    public_key: "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl\nhOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c\nbXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf\nHylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5\nTGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4\nM2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0\nS63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF\nmj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe\nIltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=\n-----END PUBLIC KEY-----"
+                    callback_url: "https://api.merchant.example/webhooks/chip-send"
+                    email: webhooks@example.com
+                    event_hooks:
+                      - bank_account_status
+                      - budget_allocation_status
+                      - send_instruction_status
+                    created_at: '2024-06-15T08:00:00.000Z'
+                    updated_at: '2024-06-15T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: webhooks_create
+      description: |
+        Creates a webhook using the values provided in the request body. When a selected event occurs, the system delivers a notification to the configured callback URL.
+      summary: Create a webhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookBody'
+            example:
+              name: Send Instruction Notifications
+              callback_url: "https://api.merchant.example/webhooks/chip-send"
+              email: webhooks@example.com
+              event_hooks:
+                - bank_account_status
+                - budget_allocation_status
+                - send_instruction_status
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 1
+                name: Send Instruction Notifications
+                public_key: "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl\nhOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c\nbXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf\nHylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5\nTGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4\nM2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0\nS63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF\nmj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe\nIltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=\n-----END PUBLIC KEY-----"
+                callback_url: "https://api.merchant.example/webhooks/chip-send"
+                email: webhooks@example.com
+                event_hooks:
+                  - bank_account_status
+                  - budget_allocation_status
+                  - send_instruction_status
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  "/webhooks/{id}":
+    get:
+      operationId: webhooks_get
+      description: |
+        Retrieve details of a webhook that was previously created.
+      summary: Retrieve a webhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 1
+                name: Send Instruction Notifications
+                public_key: "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl\nhOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c\nbXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf\nHylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5\nTGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4\nM2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0\nS63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF\nmj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe\nIltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=\n-----END PUBLIC KEY-----"
+                callback_url: "https://api.merchant.example/webhooks/chip-send"
+                email: webhooks@example.com
+                event_hooks:
+                  - bank_account_status
+                  - budget_allocation_status
+                  - send_instruction_status
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T08:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: webhooks_delete
+      description: |
+        Permanently delete a webhook.
+      summary: Delete a webhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 1
+                name: Send Instruction Notifications
+                public_key: "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl\nhOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c\nbXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf\nHylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5\nTGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4\nM2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0\nS63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF\nmj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe\nIltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=\n-----END PUBLIC KEY-----"
+                callback_url: "https://api.merchant.example/webhooks/chip-send"
+                email: webhooks@example.com
+                event_hooks:
+                  - bank_account_status
+                  - budget_allocation_status
+                  - send_instruction_status
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-15T09:30:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: webhooks_patch
+      description: |
+        Updates the specified webhook using the values provided in the parameters.
+      summary: Update a webhook
+      tags:
+        - Webhooks
+      parameters:
+        - name: epoch
+          in: header
+          description: Unix epoch timestamp
+          required: true
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/UnixTimestamp'
+        - name: checksum
+          in: header
+          description: Refer to checksum calculation
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            example: Send Instruction Notifications (Updated)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 1
+                name: Send Instruction Notifications (Updated)
+                public_key: "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl\nhOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c\nbXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf\nHylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5\nTGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4\nM2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0\nS63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF\nmj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe\nIltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=\n-----END PUBLIC KEY-----"
+                callback_url: "https://api.merchant.example/webhooks/chip-send"
+                email: webhooks@example.com
+                event_hooks:
+                  - bank_account_status
+                  - budget_allocation_status
+                  - send_instruction_status
+                created_at: '2024-06-15T08:00:00.000Z'
+                updated_at: '2024-06-20T11:42:15.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/UnauthorizedAction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    MetaPagination:
+      type: object
+      description: Pagination metadata.
+      properties:
+        current_page:
+          type: integer
+          format: int64
+          example: 1
+          description: Current page number.
+        prev_page:
+          type: integer
+          format: int64
+          nullable: true
+          example: null
+          description: Previous page number, or `null` if on the first page.
+        next_page:
+          type: integer
+          format: int64
+          nullable: true
+          example: null
+          description: Next page number, or `null` if on the last page.
+        total_pages:
+          type: integer
+          format: int64
+          example: 1
+          description: Total number of pages.
+        total_count:
+          type: integer
+          format: int64
+          example: 1
+          description: Total number of records.
+    Account:
+      type: object
+      description: CHIP Send account information.
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        status:
+          example: "active"
+          allOf:
+            - $ref: '#/components/schemas/SendAccountStatus'
+        currency:
+          type: string
+          example: "MYR"
+          allOf:
+            - $ref: '#/components/schemas/SendAccountCurrency'
+        settlement_convert_approvals_count:
+          type: integer
+          example: 1
+        send_fee:
+          type: number
+          example: 1
+          description: 1 for RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+        send_fee_type:
+          type: string
+          example: "flat"
+          allOf:
+            - $ref: '#/components/schemas/FeeType'
+        account_verification_fee:
+          type: number
+          example: 1
+          description: 1 for RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+        account_verification_fee_type:
+          type: string
+          example: "flat"
+          allOf:
+            - $ref: '#/components/schemas/FeeType'
+        convertible_balance_from_statement:
+          type: number
+          example: 1000
+          description: |
+            - 1000 represents RM 1,000.
+            - In the staging environment, this value is reset daily to a virtual RM 1,000. The RM 1,000 cap applies only to staging.
+            - In the production environment, there is no fixed cap; this value reflects the real-time available settlement balance.
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+        current_balance:
+          type: number
+          example: 100
+          description: |
+            - 100 represents RM 100.
+            - Available balance for performing send instructions.
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC
+          type: string
+          format: date-time
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC
+          type: string
+          format: date-time
+    SendLimit:
+      type: object
+      description: A Send Limit entry that records a balance change on your CHIP Send account.
+      required:
+        - amount
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+          readOnly: true
+        currency:
+          type: string
+          example: "MYR"
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/SendAccountCurrency'
+        fee_type:
+          type: string
+          example: "flat"
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/FeeType'
+        transaction_type:
+          type: string
+          example: "out"
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/TransactionType'
+        amount:
+          type: number
+          example: 0
+          description: 1 for RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+        fee:
+          type: number
+          example: 1
+          description: 1 for RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+          readOnly: true
+        net_amount:
+          type: number
+          example: -1
+          description: -1 for -RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+          readOnly: true
+        from_settlement:
+          type: string
+          format: date
+          example: "2023-07-21"
+          readOnly: true
+        status:
+          type: string
+          example: "success"
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/SendLimitStatus'
+        approvals_required:
+          type: integer
+          example: 0
+          description: Number of approvals required before processing.
+          readOnly: true
+        approvals_received:
+          type: integer
+          example: 0
+          description: Number of approvals received so far.
+          readOnly: true
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC
+          type: string
+          format: date-time
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC
+          type: string
+          format: date-time
+    SendLimitBody:
+      type: object
+      description: Request body for increasing the Send Limit.
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+          example: 0
+          description: 1 for RM 1
+          pattern: ^[0-9]*\.*[0-9]{0,2}$
+    SendInstruction:
+      type: object
+      description: A send instruction that initiates a payout to a recipient bank account.
+      required:
+        - description
+        - reference
+        - bank_account_id
+        - amount
+        - email
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+          description: This ID must be stored for future reference.
+          readOnly: true
+        bank_account_id:
+          type: integer
+          format: int64
+          example: 1
+          description: The ID returned by the [Add Bank Account](#/Bank%20Accounts/bank_accounts_create) endpoint.
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/PaymentAmount'
+        state:
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/SendInstructionState'
+        email:
+          type: string
+          format: email
+          example: recipient@example.com
+        description:
+          type: string
+          example: Vendor payout for invoice INV-2024-0892
+          maximum: 140
+          minimum: 1
+          nullable: false
+        reference:
+          type: string
+          maximum: 40
+          minimum: 1
+          nullable: false
+          description: Can be any value.
+          example: INV-2024-0892
+        receipt_url:
+          readOnly: true
+          description: Generated receipt URL.
+          type: string
+          example: https://www.chip-in.asia/receipts/send/95712b0c
+        slug:
+          readOnly: true
+          description: Generated receipt slug.
+          type: string
+          example: 95712b0c
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC.
+          type: string
+          format: date-time
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC.
+          type: string
+          format: date-time
+        send_recipient_receipt:
+          type: boolean
+          example: true
+          description: |
+            When `true`, a receipt is delivered to the recipient's email.
+            When `false`, no receipt is emailed to the recipient.
+    SendInstructionBody:
+      type: object
+      description: Request body for creating a send instruction.
+      required:
+        - description
+        - reference
+        - bank_account_id
+        - amount
+        - email
+      properties:
+        bank_account_id:
+          type: integer
+          format: int64
+          example: 1
+          description: The ID returned by the [Add Bank Account](#/Bank%20Accounts/bank_accounts_create) endpoint.
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/PaymentAmount'
+        email:
+          type: string
+          format: email
+          example: recipient@example.com
+        description:
+          type: string
+          example: Vendor payout for invoice INV-2024-0892
+          maximum: 140
+          minimum: 1
+          nullable: false
+        reference:
+          type: string
+          maximum: 40
+          minimum: 1
+          nullable: false
+          description: Can be any value.
+          example: INV-2024-0892
+        send_recipient_receipt:
+          type: boolean
+          default: false
+          example: true
+          description: |
+            When `true`, a receipt is delivered to the recipient's email.
+            When `false` (default), no receipt is emailed to the recipient.
+    BankAccount:
+      type: object
+      description: A recipient bank account registered for payouts.
+      required:
+        - account_number
+        - bank_code
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+          description: The ID returned in the response must be stored, as it will be required for subsequent operations.
+          readOnly: true
+        status:
+          example: "verified"
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/BankAccountStatus'
+        account_number:
+          allOf:
+            - $ref: '#/components/schemas/BankAccountNumber'
+        bank_code:
+          allOf:
+            - $ref: '#/components/schemas/BankCode'
+        group_id:
+          type: integer
+          format: int64
+          nullable: true
+          example: null
+        name:
+          type: string
+          minLength: 1
+          maxLength: 65535
+          example: Ahmad Razali
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 65535
+          nullable: false
+          example: VENDOR-EMP-001
+          description: Unique value used to prevent duplicate submissions.
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC.
+          type: string
+          format: date-time
+        is_debiting_account:
+          type: boolean
+          example: false
+          readOnly: true
+        is_crediting_account:
+          type: boolean
+          example: false
+          readOnly: true
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC.
+          type: string
+          format: date-time
+        deleted_at:
+          readOnly: true
+          description: Object deletion time in UTC.
+          type: string
+          format: date-time
+        rejection_reason:
+          type: string
+          nullable: true
+          maxLength: 65535
+          example: null
+          readOnly: true
+    BankAccountBody:
+      type: object
+      description: Request body for registering a recipient bank account.
+      required:
+        - account_number
+        - bank_code
+        - name
+      properties:
+        account_number:
+          allOf:
+            - $ref: '#/components/schemas/BankAccountNumber'
+        bank_code:
+          allOf:
+            - $ref: '#/components/schemas/BankCode'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 65535
+          example: Ahmad Razali
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 65535
+          nullable: false
+          example: VENDOR-EMP-001
+          description: Unique value used to prevent duplicate submissions.
+    Group:
+      type: object
+      description: A group that labels a set of bank accounts (for example, `Vendor Payouts` or `Employee Payroll`).
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          minimum: 1
+          maximum: 256
+          example: Vendor Payouts
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC.
+          type: string
+          format: date-time
+          example: '2024-06-15T08:00:00.000Z'
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC.
+          type: string
+          format: date-time
+          example: '2024-06-15T08:00:00.000Z'
+    GroupBody:
+      type: object
+      description: Request body for creating a group.
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minimum: 1
+          maximum: 256
+          example: Vendor Payouts
+    Webhook:
+      type: object
+      description: A webhook subscription that delivers event notifications to your server.
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          minimum: 1
+          maximum: 256
+        public_key:
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/PublicKey'
+        callback_url:
+          allOf:
+            - $ref: '#/components/schemas/URL'
+        email:
+          type: string
+          format: email
+        event_hooks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: List of events to trigger webhook callbacks for.
+          items:
+            $ref: '#/components/schemas/Event'
+        created_at:
+          readOnly: true
+          description: Object creation time in UTC.
+          type: string
+          format: date-time
+        updated_at:
+          readOnly: true
+          description: Object updated time in UTC.
+          type: string
+          format: date-time
+    WebhookBody:
+      type: object
+      description: Request body for creating a webhook subscription.
+      required:
+        - name
+        - callback_url
+        - email
+        - event_hooks
+      properties:
+        name:
+          type: string
+          minimum: 1
+          maximum: 256
+          example: Send Instruction Notifications
+        callback_url:
+          allOf:
+            - $ref: '#/components/schemas/URL'
+        email:
+          type: string
+          format: email
+          example: webhooks@example.com
+          description: Email notifications are sent to this address when a callback fails to be delivered.
+        event_hooks:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: List of events to trigger webhook callbacks for.
+          items:
+            $ref: '#/components/schemas/Event'
+          example:
+            - budget_allocation_status
+            - bank_account_status
+            - send_instruction_status
+    UnixTimestamp:
+      type: integer
+      description: Unix timestamp (seconds).
+      format: int64
+      example: 1619740800
+    BankAccountNumber:
+      type: string
+      minimum: 10
+      maximum: 17
+      example: 157380112222
+      description: The length depends on recipient bank
+    BankCode:
+      type: string
+      example: MBBEMYKL
+      description: |
+        - `ACDBMYK2`: AEON Bank (M) Berhad
+        - `PHBMMYKL`: Affin Bank Berhad
+        - `AGOBMYKL`: Agrobank
+        - `RJHIMYKL`: Al-Rajhi
+        - `MFBBMYKL`: Alliance Bank Malaysia Berhad
+        - `ARBKMYKL`: Ambank Malaysia Berhad
+        - `BIMBMYKL`: Bank Islam Malaysia Berhad
+        - `BKRMMYKL`: Bank Kerjasama Rakyat Malaysia Berhad
+        - `BMMBMYKL`: Bank Muamalat Malaysia Bhd
+        - `BOFAMY2X`: Bank of America (M) Berhad
+        - `BKCHMYKL`: Bank of China (M) Berhad
+        - `BOTKMYKX`: Bank of Tokyo-Mitsubishi UFJ (M) Berhad
+        - `BSNAMYK1`: Bank Simpanan Nasional Berhad
+        - `BNPAMYKL`: BNP Paribas Malaysia Berhad
+        - `PCBCMYKL`: China Construction Bank (M) Berhad
+        - `CIBBMYKL`: CIMB Bank Berhad
+        - `DEUTMYKL`: Deutsche Bank (Malaysia) Berhad
+        - `FNXSMYNB`: Finexus Cards Sdn. Bhd.
+        - `GXSPMYKL`: GX Bank Berhad
+        - `HLBBMYKL`: Hong Leong Bank Berhad
+        - `HBMBMYKL`: HSBC Bank Malaysia Berhad
+        - `ICBKMYKL`: Industrial and Commercial Bank of China (M) Berhad
+        - `CHASMYKX`: JP Morgan Chase Bank Berhad
+        - `KFHOMYKL`: Kuwait Finance House
+        - `MBBEMYKL`: Maybank Berhad
+        - `AFBQMYKL`: MBSB BANK BERHAD
+        - `MHCBMYKA`: Mizuho Bank (Malaysia) Berhad
+        - `OCBCMYKL`: OCBC Bank Berhad
+        - `PBBEMYKL`: Public Bank Berhad
+        - `RHBBMYKL`: RHB Bank Berhad
+        - `SCBLMYKX`: Standard Chartered Bank Malaysia Berhad
+        - `SMBCMYKL`: Sumitomo Mitsui Banking Corporation (M) Berhad
+        - `TNGDMYNB`: Touch 'n Go eWallet
+        - `UOVBMYKL`: United Overseas Bank Berhad (UOB)
+      enum: [PHBMMYKL, AIBBMYKL, BPMBMYKL, MFBBMYKL, ALSRMYK1, RJHIMYKL, ARBKMYKL, AISLMYKL, BIMBMYKL, BKRMMYKL, BMMBMYKL, BSNAMYK1, CIBBMYKL, CTBBMYKL, HLBBMYKL, HLIBMYKL, HBMBMYKL, HMABMYKL, KFHOMYKL, MBBEMYKL, MBISMYKL, OCBCMYKL, OABBMYKL, PBBEMYKL, PIBEMYK1, RHBBMYKL, RHBAMYKL, SCBLMYKX, UOVBMYKL, AFBQMYKL, CHASMYKX]
+    PublicKey:
+      type: string
+      description: PEM-encoded RSA public key for authenticating webhook or callback payloads
+      readOnly: true
+      example: |-
+        -----BEGIN PUBLIC KEY-----
+        MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6gLlBKxCB5dxPJbinCzl
+        hOfKSgQtOWQQBxmnWIkEVUbqhpnqr3xNYiAvDyMUxYUwuzN44eHO+mR9MZWcSx3c
+        bXmKa3gsOzR6GdcOxMGaVxvfje+fujCAlCtO1BP+A9/FS3KcPgCYG1wtAPwA5IAf
+        HylL3TsUVIJQFBgiBr6N4Bgapr9eloaFfeYIBRsXmxPKAMJivqxYpLh0V3N4ZFd5
+        TGqSEAa4b1ULDr6p0sB2L3QikTdsF0zp03zNceKA6fXDOzD0xWtg9buXvyKwePK4
+        M2kcnWBNfsWghrdg0fG3O9bmkaS1oEXydrmJfuiI8h6a64J/1nzooi2yLC9D6Ta0
+        S63bbuAHymnQtiNuV7Ixp6IoTGFaS88aTiHaP8rdyWV8JTDFx0qeDzyaGWiYGwEF
+        mj/buHCEcRhoajbGkPhYA4YEdn4jy1wZhEr2OMdBPM7mPPI0Hy3hcNJVMVVlrpHe
+        IltQATpjlNaJMlRPjbcaiW7dsO3BuF9ZOMGksSOnyYm/AgMBAAE=
+        -----END PUBLIC KEY-----
+    URL:
+      type: string
+      format: url
+      example: https://api.merchant.example/webhooks/chip-send
+      maxLength: 500
+    Event:
+      type: string
+      description: |-
+        Available event types and when they are emitted:
+
+        `bank_account_status`: Emitted when a company bank account's status changes. This occurs when CHIP processes the bank account for verification.
+
+        ---
+
+        `budget_allocation_status`: Emitted when a budget allocation's status changes. This occurs when an approver approves the increment.
+
+        ---
+
+        `send_instruction_status`: Emitted when a company send instruction's status changes. This occurs when CHIP processes the instruction with the bank.
+
+        ---
+      enum: [bank_account_status, budget_allocation_status, send_instruction_status]
+    SendInstructionState:
+      type: string
+      enum: [received, enquiring, executing, reviewing, accepted, completed, rejected, deleted]
+      description: |
+        - `received`: The instruction has been received, but processing has not started.
+        - `enquiring`: The instruction is pending verification.
+        - `executing`: The instruction is pending execution.
+        - `reviewing`: The instruction requires further attention. Contact your account manager for troubleshooting.
+        - `accepted`: The instruction has been accepted by the service provider but not yet completed. This is commonly related to a beneficiary bank system outage during the request. Successful instructions will be set to `completed` within 24 hours, while unsuccessful instructions will be reviewed before being marked as `rejected`.
+        - `completed`: The instruction has completed execution and the recipient should have received the payment.
+        - `rejected`: The instruction has been rejected.
+        - `deleted`: The instruction has been deleted.
+    FeeType:
+      type: string
+      enum: [flat, percentage]
+    TransactionType:
+      type: string
+      enum: [in, out]
+    SendAccountStatus:
+      type: string
+      enum: [active, pending]
+    SendAccountCurrency:
+      type: string
+      enum: [MYR]
+      description: |
+        - `MYR`: Ringgit Malaysia (RM)
+    SendLimitStatus:
+      type: string
+      enum: [pending, approved, expired]
+      description: Status will remain `pending` until all approvers have approved the send limit increase request.
+    PaymentAmount:
+      type: string
+      pattern: ^[0-9]{1,}\.{0,1}[0-9]{0,2}$
+      description: Amount in floating point with maximum of 2 decimal places.
+      example: 12.44
+    BadRequestResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Bad request"
+        code:
+          type: number
+          example: 400
+        data:
+          type: object
+          example: {}
+    UnauthorizedResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Unauthorized"
+        code:
+          type: number
+          example: 401
+        data:
+          type: object
+          example: {}
+    UnauthorizedActionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "You are not authorized to perform this action"
+        code:
+          type: number
+          example: 403
+        data:
+          type: object
+          example: {}
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "success"
+        code:
+          type: number
+          example: 200
+        data:
+          type: object
+          example: {}
+    NotFoundResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Record not found"
+        code:
+          type: number
+          example: 404
+        data:
+          type: object
+          example: {}
+    TooManyRequestsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Too many requests. Please try again later."
+        code:
+          type: number
+          example: 429
+        data:
+          type: object
+          properties:
+            retry_after:
+              type: number
+              example: 300
+    BankAccountStatus:
+      type: string
+      enum: [pending, verified, rejected]
+      description: |
+        - `pending`: The bank account is awaiting verification.
+        - `verified`: The bank account has been verified as valid.
+        - `rejected`: The bank account is invalid.
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BadRequestResponse'
+    Unauthorized:
+      description: Unauthorized request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnauthorizedResponse'
+    UnauthorizedAction:
+      description: Unauthorized action request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnauthorizedActionResponse'
+    NotFound:
+      description: Record not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotFoundResponse'
+    TooManyRequests:
+      description: |
+        Rate limit exceeded for this API key. Retry after the number of seconds in `Retry-After`.
+
+        `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` are sent on this response only.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying. The same value as `data.retry_after`.
+          schema:
+            type: integer
+            example: 300
+        X-RateLimit-Limit:
+          description: Size of the limit that was exceeded. One of `100`, `60`, `30`, or `300` for the request that was rejected.
+          schema:
+            type: integer
+            example: 100
+        X-RateLimit-Remaining:
+          description: Requests remaining in the current window. `0` on a `429`.
+          schema:
+            type: integer
+            example: 0
+        X-RateLimit-Reset:
+          description: Unix timestamp, in seconds, when the window resets. The time of this response plus `Retry-After`.
+          schema:
+            type: integer
+            example: 1792984500
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TooManyRequestsResponse'
+          example:
+            message: Too many requests. Please try again later.
+            code: 429
+            data:
+              retry_after: 300
+security:
+  - bearerAuth: []

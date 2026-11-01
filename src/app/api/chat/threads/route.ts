@@ -20,7 +20,11 @@ export const GET = handle(async (req: Request) => {
   const { page, size, skip, take } = getPagination(url, 100);
 
   // Search across store name, subject/order reference AND the latest message
-  // body: SQLite `contains` is ASCII-case-insensitive, good enough for lookup.
+  // body. NOTE (Phase 2.4 cleanup): on the CURRENT Postgres backend `contains`
+  // maps to case-sensitive LIKE — this was written when the DB was SQLite
+  // (ASCII-case-insensitive). Search here is therefore exact-case substring;
+  // folding to ILIKE/mode:"insensitive" is a deliberate future tweak, not an
+  // accident.
   const baseWhere = {
     shopperId: me.id,
     ...(q

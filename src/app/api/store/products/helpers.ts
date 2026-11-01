@@ -3,13 +3,9 @@ import { db } from "@/lib/db";
 import { ApiError, slugify } from "@/lib/api";
 import { parseJson } from "@/lib/json";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
+import { BANNED_KEYWORDS, matchFlags } from "@/lib/product-moderation";
 
-export const BANNED_KEYWORDS = ["replica", "fake", "gun", "drug"];
-
-export function matchFlags(text: string): string[] {
-  const t = text.toLowerCase();
-  return BANNED_KEYWORDS.filter((k) => t.includes(k));
-}
+export { BANNED_KEYWORDS, matchFlags };
 
 /** First N products of a store go to moderation (setting moderation.first_n, default 5). */
 export async function moderationStatus(storeId: string): Promise<"pending_review" | "active"> {

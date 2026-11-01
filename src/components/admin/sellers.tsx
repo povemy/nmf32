@@ -342,7 +342,7 @@ export function KycQueueView({ nav }: { nav: AdminNav }) {
     <div className="space-y-4">
       <PageHeader
         title="KYC Queue"
-        description="Sellers waiting for identity verification review."
+        description="Sellers waiting for onboarding review (identity metadata, bank, catalog)."
         actions={
           <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0" onClick={() => void refetch()} disabled={loading}>
             <UserCheck className="h-3.5 w-3.5" /> Refresh
@@ -389,7 +389,10 @@ export function KycQueueView({ nav }: { nav: AdminNav }) {
 
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {docs.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">No documents uploaded</span>
+                    // PHASE 2.3 KYC honesty: there is no document upload
+                    // pipeline — these are metadata records, so the empty
+                    // state must not imply uploads exist.
+                    <span className="text-xs text-muted-foreground">No document records</span>
                   ) : (
                     docs.map((d) => (
                       <Badge key={d.id} variant="outline" className={cn("capitalize", d.status === "approved" ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300" : d.status === "rejected" ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300" : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300")}>

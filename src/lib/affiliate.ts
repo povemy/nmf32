@@ -29,6 +29,7 @@ import { randomToken } from "@/lib/password";
 import { getSession } from "@/lib/auth";
 import { parseJson, toJson } from "@/lib/json";
 import type { Prisma } from "@prisma/client";
+import { withSerializableTxRetry } from "@/lib/tx-retry";
 
 // ---------------------------------------------------------------------------
 // Settings (Setting rows, registry-rendered in admin System → Settings).
@@ -579,8 +580,12 @@ export type AffiliateBalances = {
   requestableMinor: number; // available − recovery, floored at 0
 };
 
-export async function affiliateBalances(affiliateId: string): Promise<AffiliateBalances> {
-  const entries = await db.affiliateCommissionEntry.findMany({
+export async function affiliateBalances(affiliateId: string, tx?: Prisma.TransactionClient): Promise<AffiliateBalances> {
+  // C1.2 (Phase 2.2): optional tx client — callers inside a transaction now
+  // read balance truth from the SAME snapshot (requestAffiliatePayout
+  // previously read balances on the GLOBAL client, outside its transaction).
+  const client = tx ?? db;
+  const entries = await client.affiliateCommissionEntry.findMany({
     where: { beneficiaryAffiliateId: affiliateId },
     select: { status: true, amountMinor: true, reversedMinor: true, availableAt: true, payoutId: true },
   });
@@ -627,6 +632,9 @@ export async function affiliateBalances(affiliateId: string): Promise<AffiliateB
 // become recovery entries: reversedMinor accumulates on the PAID entry and
 // offsets future earnings — the original payout history is never rewritten.
 // ---------------------------------------------------------------------------
+function fullyReversedFn(newReversed: number, amountMinor: number): boolean {
+  return newReversed >= amountMinor;
+}
 export async function reverseAffiliateForRefund(
   tx: Tx,
   input: {
@@ -638,9 +646,35 @@ export async function reverseAffiliateForRefund(
     /** Σ affiliateReversalMinor of prior PROCESSED refunds on this order. */
     priorAffiliateReversalMinor: number;
   }
-): Promise<{ affiliateReversalMinor: number; rule: string }> {
+): Promise<{ affiliateReversalMinor: number; affiliateClearingMinor: number; rule: string }> {
   const attributed = input.items.filter((i) => i.affiliatePoolMinor > 0);
-  if (attributed.length === 0) return { affiliateReversalMinor: 0, rule: "no_affiliate" };
+  if (attributed.length === 0) return { affiliateReversalMinor: 0, affiliateClearingMinor: 0, rule: "no_affiliate" };
+
+  // ---- C1.2 (Phase 2.2) pre-pass: load commissions + entries, then LOCK the
+  // open AffiliatePayout rows BEFORE any entry write. Lock order is
+  // payout → entries on every flow that touches both (this function and the
+  // admin approve / mark-paid / fail claims, which take the payout row lock
+  // first via their conditional updateMany) — no AB-BA deadlock window.
+  const commissions = (
+    await Promise.all(
+      attributed.map((it) => tx.affiliateCommission.findUnique({ where: { orderItemId: it.id }, include: { entries: true } })),
+    )
+  ).filter((c): c is NonNullable<typeof c> => c !== null);
+  const openPayoutIds = [
+    ...new Set(commissions.flatMap((c) => c.entries.map((e) => e.payoutId).filter((p): p is string => p !== null))),
+  ];
+  const openPayouts = openPayoutIds.length
+    ? await tx.affiliatePayout.findMany({
+        where: { id: { in: openPayoutIds }, status: { in: ["requested", "processing"] } },
+        select: { id: true, status: true, amountMinor: true },
+      })
+    : [];
+  // Deterministic lock order (sorted ids) — multiple payouts can be affected
+  // when one order's commissions span several payout requests.
+  for (const p of [...openPayouts].sort((a, b) => a.id.localeCompare(b.id))) {
+    await tx.$queryRaw`SELECT id FROM "AffiliatePayout" WHERE id = ${p.id} FOR UPDATE`;
+  }
+  const payoutById = new Map(openPayouts.map((p) => [p.id, p]));
 
   // Customer-paid gross per item (breakdown-proportional, mirroring
   // deriveCommissionReversal's allocation family).
@@ -687,16 +721,29 @@ export async function reverseAffiliateForRefund(
   }
   total = Math.min(Math.max(0, total), input.refundAmountMinor, remainingReversible);
 
+  // C1.2: cumulative per-payout adjustments for THIS refund.
+  //   requested  → liability-side: T5 keeps debiting AFFILIATE_LIABILITY and
+  //                the payout's frozen amount shrinks (no ledger posted for a
+  //                requested payout yet — fully consistent).
+  //   processing → clearing-side: T-A3 already moved the frozen amount from
+  //                AFFILIATE_LIABILITY into PAYOUT_CLEARING, so the reversal
+  //                must debit PAYOUT_CLEARING (returned as
+  //                affiliateClearingMinor for the T5 split) and the payout
+  //                amount shrinks so T-A4 pays the reduced figure — the
+  //                clearing account nets to exactly zero across T-A3, T5's
+  //                split line and T-A4/T-A4f at the adjusted amount.
+  const adjByPayout = new Map<string, { liability: number; clearing: number }>();
+  let clearingTotal = 0;
+
   // Apply to the commission + entries (proportional split within each pool).
   if (total > 0) {
     // Scale per-item reversals down proportionally if the clamp reduced total.
     const rawTotal = perItem.reduce((s, p) => s + p.reversal, 0);
     const scale = rawTotal > 0 ? total / rawTotal : 0;
-    let applied = 0;
     for (const p of perItem) {
       const itemReversal = p.reversal === 0 ? 0 : Math.min(p.reversal, Math.floor(p.reversal * scale));
       if (itemReversal <= 0) continue;
-      const commission = await tx.affiliateCommission.findUnique({ where: { orderItemId: p.item.id }, include: { entries: true } });
+      const commission = commissions.find((c) => c.orderItemId === p.item.id);
       if (!commission) continue; // pre-affiliate legacy rows: nothing to reverse
       const direct = commission.entries.find((e) => e.role === "direct");
       const sponsor = commission.entries.find((e) => e.role === "sponsor");
@@ -711,7 +758,7 @@ export async function reverseAffiliateForRefund(
       for (const [entry, share] of [[direct, directShare], [sponsor, sponsorShare]] as const) {
         if (!entry || share <= 0) continue;
         const newReversed = Math.min(entry.amountMinor, entry.reversedMinor + share);
-        const fullyReversed = newReversed >= entry.amountMinor;
+        const actualApplied = newReversed - entry.reversedMinor;
         await tx.affiliateCommissionEntry.update({
           where: { id: entry.id },
           data: {
@@ -719,9 +766,22 @@ export async function reverseAffiliateForRefund(
             // PAID entries stay paid — the reversal is a recovery entry that
             // offsets future earnings (spec §11 late refunds); pending/
             // approved/available entries flip to reversed.
-            ...(entry.status !== "paid" && fullyReversed ? { status: "reversed" as const } : {}),
+            ...(entry.status !== "paid" && fullyReversedFn(newReversed, entry.amountMinor) ? { status: "reversed" as const } : {}),
           },
         });
+        // ---- C1.2 payout coordination: shrink the frozen amount of the open
+        // payout that claimed this entry, by exactly the share applied. A
+        // refund and a payout can no longer both consume the same commission
+        // liability.
+        if (actualApplied > 0 && entry.payoutId) {
+          const payout = payoutById.get(entry.payoutId);
+          if (payout && (payout.status === "requested" || payout.status === "processing")) {
+            const adj = adjByPayout.get(payout.id) ?? { liability: 0, clearing: 0 };
+            if (payout.status === "processing") { adj.clearing += actualApplied; clearingTotal += actualApplied; }
+            else adj.liability += actualApplied;
+            adjByPayout.set(payout.id, adj);
+          }
+        }
       }
       const anyLive = commission.entries.some((e) => e.status !== "reversed");
       if (!anyLive) {
@@ -730,27 +790,73 @@ export async function reverseAffiliateForRefund(
           data: { status: "reversed", reversedAt: new Date() },
         });
       }
-      applied += itemReversal;
     }
-    void applied;
   }
 
-  return { affiliateReversalMinor: total, rule: "breakdown_snapshot_proportional" };
+  // ---- C1.2: apply the per-payout amount reductions (the payout rows are
+  // already locked). A REQUESTED payout whose frozen amount is fully consumed
+  // is auto-released (rejected + entries unclaimed) — no ledger was posted
+  // for it, so this is clean; the affiliate simply re-requests later.
+  for (const [payoutId, adj] of adjByPayout) {
+    const payout = payoutById.get(payoutId);
+    if (!payout) continue;
+    const reduce = adj.liability + adj.clearing;
+    if (reduce <= 0) continue;
+    const newAmount = Math.max(0, payout.amountMinor - reduce);
+    if (payout.status === "requested" && newAmount <= 0) {
+      await tx.affiliatePayout.update({
+        where: { id: payoutId, status: "requested" },
+        data: {
+          status: "rejected",
+          amountMinor: 0,
+          failReason: "Auto-released: commissions fully reversed by refunds before approval",
+          processedAt: new Date(),
+        },
+      });
+      // Release the still-live claimed entries back to the available pool.
+      await tx.affiliateCommissionEntry.updateMany({
+        where: { payoutId, status: { in: ["available", "approved"] } },
+        data: { payoutId: null },
+      });
+    } else if (newAmount !== payout.amountMinor) {
+      await tx.affiliatePayout.update({
+        where: { id: payoutId, status: { in: ["requested", "processing"] } },
+        data: { amountMinor: newAmount },
+      });
+    }
+  }
+
+  return { affiliateReversalMinor: total, affiliateClearingMinor: clearingTotal, rule: "breakdown_snapshot_proportional" };
 }
 export async function requestAffiliatePayout(affiliateId: string): Promise<{ payoutId: string; amountMinor: number }> {
   const settings = await getAffiliateSettings();
   if (!settings.enabled) throw new ApiError(403, "AFFILIATE_DISABLED", "The affiliate programme is currently paused");
 
-  return db.$transaction(async (tx) => {
-    // One open request per affiliate — re-checked INSIDE the transaction so a
-    // concurrent double-submit cannot create two claims.
+  // C1.2 (Phase 2.2) — brought to the SAME standard as the seller payout
+  // system (store/payouts route): SERIALIZABLE isolation + bounded P2034
+  // retry of the whole transaction, balance truth read via the transaction
+  // client, and a CONDITIONAL entry claim that re-asserts `payoutId: null`.
+  //
+  // The previous implementation ran at READ COMMITTED with a check-then-act
+  // one-open-request guard and a NON-conditional `updateMany({ id IN ... })`
+  // claim: two concurrent requests both read the same `payoutId: null`
+  // entries, both froze the FULL requestable amount into two AffiliatePayout
+  // rows, and the second write overwrote the first's claim (last-write-wins)
+  // — a double-payment with per-row dedupKeys that the ledger could NOT
+  // catch. Serializable + conditional claims + the partial unique index
+  // (migration 20261105000000) close every layer of that window.
+  return withSerializableTxRetry(async (tx) => {
+    // One open request per affiliate — re-checked INSIDE the Serializable
+    // transaction (a concurrent duplicate submit now aborts one of the two
+    // transactions instead of both passing the check).
     const open = await tx.affiliatePayout.findFirst({
       where: { affiliateId, status: { in: ["requested", "processing"] } },
       select: { id: true },
     });
     if (open) throw new ApiError(409, "PAYOUT_OPEN", "You already have a payout request in progress");
 
-    const balances = await affiliateBalances(affiliateId);
+    // Balance truth from THIS transaction's snapshot (was the global client).
+    const balances = await affiliateBalances(affiliateId, tx);
     if (balances.requestableMinor < settings.minPayoutMinor) {
       throw new ApiError(400, "BELOW_MIN_PAYOUT", `Minimum payout is RM ${(settings.minPayoutMinor / 100).toFixed(2)}`);
     }
@@ -771,10 +877,18 @@ export async function requestAffiliatePayout(affiliateId: string): Promise<{ pay
       data: { affiliateId, amountMinor, status: "requested", method: "manual_bank" },
     });
     if (toClaim.length > 0) {
-      await tx.affiliateCommissionEntry.updateMany({
-        where: { id: { in: toClaim.map((e) => e.id) } },
+      // CONDITIONAL claim — `payoutId: null` re-asserted in the WHERE so a
+      // concurrent claimant's binding can never be silently overwritten.
+      // (Under Serializable any concurrent writer of these rows aborts this
+      // transaction first; the conditional guard is belt-and-braces against
+      // non-transactional writers and keeps the count assertion honest.)
+      const claim = await tx.affiliateCommissionEntry.updateMany({
+        where: { id: { in: toClaim.map((e) => e.id) }, payoutId: null },
         data: { payoutId: payout.id },
       });
+      if (claim.count !== toClaim.length) {
+        throw new ApiError(409, "PAYOUT_CLAIM_CONFLICT", "Commission entries changed concurrently — please retry the payout request");
+      }
     }
     // Ledger-derived statement (schema contract: built from entries at
     // request time, never hand-edited) — order references + balance snapshot.

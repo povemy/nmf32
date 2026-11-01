@@ -44,6 +44,11 @@ export type StoreMe = {
     marketplaceOptIn: boolean;
     submittedAt: string | null;
     rejectReason: string | null;
+    // PHASE 2.3 (C2.7) — honest email-verification state from
+    // /api/store/me. Absent/null timestamp → emailVerified false (the
+    // dashboard then offers the verification card).
+    emailVerified: boolean;
+    emailVerifiedAt: string | null;
   };
   store: {
     id: string;

@@ -78,7 +78,19 @@ type ProductDetail = {
 };
 
 async function getConnection(connectionId: string) {
-  const conn = await db.marketplaceConnection.findUnique({ where: { id: connectionId } });
+  // PHASE 2.2 (C3): explicit select — every column EXCEPT sellerId (the dev DB
+  // does not have the column until migration 20261105000000 is applied; a
+  // default full-row select would fail at runtime pre-migration).
+  const conn = await db.marketplaceConnection.findUnique({
+    where: { id: connectionId },
+    select: {
+      id: true, storeId: true, platform: true, status: true, envConfigured: true,
+      shopId: true, shopName: true, shopCipher: true, region: true,
+      accessTokenEnc: true, refreshTokenEnc: true, scopesJson: true,
+      expiresAt: true, lastRefreshAt: true, lastError: true,
+      createdAt: true, updatedAt: true,
+    },
+  });
   if (!conn || conn.platform !== "tiktok") throw new ApiError(404, "CONNECTION_NOT_FOUND", "TikTok Shop connection not found.");
   return conn;
 }
@@ -134,7 +146,7 @@ export const tiktokConnector: MarketplaceConnector = {
     return { authorizeUrl: u.toString() };
   },
 
-  async exchangeCode({ code }) {
+  async exchangeCode({ code, sellerId }) {
     const { appKey, appSecret, present } = creds();
     if (!present || !appKey || !appSecret) throw new ApiError(503, "CONNECTOR_NOT_CONFIGURED", "TikTok Shop credentials are not configured.");
     const body = new URLSearchParams({ app_key: appKey, app_secret: appSecret, auth_code: code, grant_type: "authorized_code" });
@@ -155,19 +167,30 @@ export const tiktokConnector: MarketplaceConnector = {
     if (!shop) throw new ApiError(502, "AUTH_FAILED", "No authorised TikTok Shop found for this authorisation.");
     const expiresAt = new Date((t.access_token_expire_at ?? Math.floor(Date.now() / 1000) + 7 * 86400) * 1000);
     const normalized: NormalizedShop = { sourceShopId: shop.id, name: shop.name ?? `TikTok Shop ${shop.id}`, region: shop.region ?? "MY" };
-    await db.marketplaceConnection.upsert({
+    // PHASE 2.2 (C3 — OAuth ownership): attribute the connection to the seller
+    // whose OAuth flow created it (sellerId comes from the validated signed
+    // `state`). On create it is persisted directly; on update (existing shop
+    // re-authorised) a guarded follow-up attributes ONLY rows still unattributed
+    // — an attributed connection is never stolen by another seller's flow.
+    // select: { id } avoids the full-row return (sellerId is not applied on the
+    // update branch, so the row stays runtime-safe to read here).
+    const conn = await db.marketplaceConnection.upsert({
       where: { platform_shopId: { platform: "tiktok", shopId: shop.id } },
       create: {
         platform: "tiktok", shopId: shop.id, shopName: normalized.name, region: normalized.region ?? "MY",
         shopCipher: shop.cipher ?? null, status: "connected", envConfigured: true,
         accessTokenEnc: sealSecret(t.access_token), refreshTokenEnc: sealSecret(t.refresh_token),
-        expiresAt, scopesJson: JSON.stringify(["seller.product.basic"]),
+        expiresAt, scopesJson: JSON.stringify(["seller.product.basic"]), sellerId: sellerId ?? null,
       },
       update: {
         status: "connected", shopCipher: shop.cipher ?? null, accessTokenEnc: sealSecret(t.access_token),
         refreshTokenEnc: sealSecret(t.refresh_token), expiresAt, lastError: null, shopName: normalized.name,
       },
+      select: { id: true },
     });
+    if (sellerId) {
+      await db.marketplaceConnection.updateMany({ where: { id: conn.id, sellerId: null }, data: { sellerId } });
+    }
     return { shop: normalized, expiresAt, scopes: ["seller.product.basic"] };
   },
 
@@ -187,7 +210,7 @@ export const tiktokConnector: MarketplaceConnector = {
     });
     const json = (await res.json().catch(() => null)) as { code?: number; data?: TokenResp } | null;
     if (!json || json.code !== 0 || !json.data) {
-      await db.marketplaceConnection.update({ where: { id: conn.id }, data: { status: "expired", lastError: "refresh failed" } });
+      await db.marketplaceConnection.update({ where: { id: conn.id }, data: { status: "expired", lastError: "refresh failed" }, select: { id: true } });
       throw new ApiError(502, "TOKEN_REFRESH_FAILED", "TikTok Shop token refresh failed — reconnect the shop.");
     }
     await db.marketplaceConnection.update({
@@ -199,6 +222,7 @@ export const tiktokConnector: MarketplaceConnector = {
         lastRefreshAt: new Date(),
         status: "connected",
       },
+      select: { id: true },
     });
   },
 

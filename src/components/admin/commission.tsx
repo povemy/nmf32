@@ -242,7 +242,9 @@ export function CommissionSettingsView() {
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">Grace days after delivered</Label>
                   {/* F-10: honest labelling — this field is stored but NOT enforced
-                      (auto-complete uses a fixed 14-day window; see order-completion.ts). */}
+                      (auto-complete uses a fixed 14-day window; see
+                      /api/cron/order-maintenance — the old lib/order-completion.ts
+                      sweep was removed in Phase 2.4 as dead code). */}
                   <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">Not enforced</Badge>
                 </div>
                 <Input inputMode="numeric" value={form.graceDays} onChange={(e) => setForm({ ...form, graceDays: e.target.value })} className="min-h-[44px]" />

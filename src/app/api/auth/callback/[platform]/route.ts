@@ -1,8 +1,11 @@
 // GET /api/auth/callback/[platform] — OAuth redirect target for Shopee / TikTok Shop.
 // Exchanges the one-time code, then redirects back to the app. The connection
-// row written by exchangeCode is platform-global (no store binding here);
-// binding to a seller's store is deferred to /api/claim/bind, which requires
-// the single-use 192-bit claim token.
+// row written by exchangeCode carries no store binding (that is deferred to
+// /api/claim/bind, which requires the single-use 192-bit claim token), but since
+// PHASE 2.2 (C3 — OAuth ownership) it IS attributed to the initiating seller: the
+// sellerId travels begin → signed `state` → this validation → exchangeCode, so
+// the runner and claim/bind can scope by ownership instead of trusting the
+// globally most-recent connection.
 //
 // F-22 (Phase 3): state validation now FAILS CLOSED. The CSRF nonce minted by
 // GET /api/store/connections/[platform]/begin is REQUIRED, single-use
@@ -86,7 +89,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ platform: s
 
   try {
     const connector = getConnector(platform);
-    const result = await connector.exchangeCode({ code, redirectUri: `${origin}/api/auth/callback/${platform}`, shopIdParam });
+    // PHASE 2.2 (C3): `meta.sellerId` was validated above (F-22 cross-seller
+    // CSRF guard — it either matches the completing seller session or the flow
+    // is session-less), so it is the trustworthy attribution for the connection
+    // persisted by exchangeCode.
+    const result = await connector.exchangeCode({
+      code,
+      redirectUri: `${origin}/api/auth/callback/${platform}`,
+      shopIdParam,
+      sellerId: meta.sellerId ?? null,
+    });
     await logActivity({
       actorType: "seller",
       actorId: meta.sellerId ?? undefined,
@@ -97,6 +109,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ platform: s
     }).catch(() => undefined);
     return NextResponse.redirect(`${origin}/?oauth=connected&platform=${platform}`);
   } catch (err) {
+    // Phase 2.3 (P2.3-6): production sanitization — connector exceptions can
+    // embed upstream API payloads / internal request details; the redirect
+    // reason (rendered by the front page) becomes a fixed code + ref id, and
+    // the full error is logged server-side. Dev keeps the real message.
+    if (process.env.NODE_ENV === "production") {
+      const refId = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+      console.error(`[oauth/callback:${platform}] ref=${refId} exchange failed:`, err);
+      return NextResponse.redirect(`${origin}/?oauth=failed&reason=${encodeURIComponent(`exchange_failed (ref ${refId})`)}`);
+    }
     const msg = err instanceof Error ? err.message : "exchange_failed";
     return NextResponse.redirect(`${origin}/?oauth=failed&reason=${encodeURIComponent(msg.slice(0, 120))}`);
   }

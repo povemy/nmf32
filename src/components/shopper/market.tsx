@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { setMeta } from "@/lib/seo";
 // Type-only import (zero runtime) — the campaign module is client-safe by
 // design (RECOVERY.md 10-e): presets/theme types carry no Prisma import.
 import type { ActiveCampaign } from "@/lib/campaigns";
@@ -466,6 +467,10 @@ function CampaignStrip({ campaign, ctx }: { campaign: ActiveCampaign; ctx: Shopp
 // ---------------------------------------------------------------------------
 
 const SORTS = [
+  // C2.2: "Best match" = server-side relevance ranking (tokenized score from
+  // the shared search engine). Offered ONLY in search mode (meaningless for
+  // plain category browsing) and the DEFAULT sort for a submitted search.
+  { value: "relevance", label: "Best match" },
   { value: "newest", label: "Newest" },
   { value: "price_asc", label: "Price: low to high" },
   { value: "price_desc", label: "Price: high to low" },
@@ -483,7 +488,10 @@ export function ResultsView({
   ctx: ShopperCtx;
   mode: { kind: "search"; q: string } | { kind: "category"; categorySlug: string; label?: string };
 }) {
-  const [sort, setSort] = useState<SortValue>("newest");
+  // C2.2: a submitted search defaults to Best match (relevance); category
+  // browsing keeps Newest. The shell remounts ResultsView per submitted
+  // query/category (key includes q/slug), so each new search re-seeds this.
+  const [sort, setSort] = useState<SortValue>(mode.kind === "search" ? "relevance" : "newest");
   const [page, setPage] = useState(1);
   // completed-fetch state — loading is DERIVED (no sync setState in effects)
   const [done, setDone] = useState<{ key: string; items: ProductCardT[]; total: number }>({ key: "", items: [], total: 0 });
@@ -496,6 +504,16 @@ export function ResultsView({
   const reqKey = `${queryKey}#${page}`;
   const loadingFirst = done.key === "" || done.key.split("#")[0] !== queryKey;
   const fetchingMore = !loadingFirst && done.key !== reqKey;
+
+  // Phase 2.4 SEO: search/category results are client-rendered query state —
+  // the URL stays "/", so one URL would serve endless content variants. Mark
+  // them noindex for JS-executing crawlers (server-side, robots.ts disallows
+  // /api/ and the sitemap lists only canonical storefront/product URLs) and
+  // reset the default market meta on unmount.
+  useEffect(() => {
+    setMeta(mode.kind === "search" ? `NOMOFEE — search results` : `NOMOFEE — category`, null, undefined, true);
+    return () => setMeta("NOMOFEE — Multi-vendor Marketplace");
+  }, [mode.kind, search, category]);
 
   useEffect(() => {
     let alive = true;
@@ -557,12 +575,17 @@ export function ResultsView({
         </div>
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-          <Select value={sort} onValueChange={(v) => setSort(v as SortValue)}>
+          <Select value={sort} onValueChange={(v) => {
+            // C2.2: a new ordering must restart pagination — otherwise page N of
+            // the new sort gets APPENDED to the old sort's items.
+            setSort(v as SortValue);
+            setPage(1);
+          }}>
             <SelectTrigger className="w-[190px] min-h-[44px]" aria-label="Sort products">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
-              {SORTS.map((s) => (
+              {SORTS.filter((s) => s.value !== "relevance" || mode.kind === "search").map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
                 </SelectItem>

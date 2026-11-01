@@ -1,12 +1,11 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { requireShopper } from "@/lib/auth";
-import { findCartForShopper, shapeCart } from "../../cart";
+import { findCartForCaller, resolveCartCaller, shapeCart } from "../../cart";
 import { trackRemoveFromCart } from "@/lib/analytics/track";
 
 export const dynamic = "force-dynamic";
 
-async function requireShopperCartItem(cartId: string | null, itemId: string) {
+async function requireCallerCartItem(cartId: string | null, itemId: string) {
   if (!cartId) throw new ApiError(404, "NOT_FOUND", "Cart is empty");
   const item = await db.cartItem.findUnique({ where: { id: itemId }, include: { variant: { include: { product: true } } } });
   if (!item || item.cartId !== cartId) throw new ApiError(404, "NOT_FOUND", "Cart item not found");
@@ -15,12 +14,13 @@ async function requireShopperCartItem(cartId: string | null, itemId: string) {
 
 // PATCH /api/cart/items/[id] {qty?, selected?} — qty 0 removes the item;
 // selected toggles the buyer's checkout selection (unchecked = kept in cart).
-// Sign-in required; the cart is resolved from the SESSION, so a shopper can
-// never touch another account's items (no ids in the wild beyond the session's
-// own cart).
+// PHASE 2.2 GUEST CHECKOUT RESTORATION: works for guests too — the cart is
+// resolved from the SESSION (shoppers) or the device cart TOKEN (guests), so a
+// caller can still never touch another cart's items (no ids in the wild beyond
+// the caller's own cart).
 export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  const me = await requireShopper();
+  const { shopperId: meId } = await resolveCartCaller();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   const hasQty = body.qty !== undefined;
@@ -35,8 +35,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     if (qty > 99) throw new ApiError(400, "VALIDATION", "qty cannot exceed 99");
   }
 
-  const cart = await findCartForShopper(me.id);
-  const item = await requireShopperCartItem(cart?.id ?? null, id);
+  const cart = await findCartForCaller(meId);
+  const item = await requireCallerCartItem(cart?.id ?? null, id);
 
   if (hasQty && qty === 0) {
     await db.cartItem.delete({ where: { id: item.id } });
@@ -47,7 +47,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
       variantId: item.variantId,
       cartItemId: item.id,
       qty: item.qty,
-      shopperId: me.id,
+      shopperId: meId,
     });
   } else {
     if (hasQty && qty > item.variant.stock) {
@@ -64,16 +64,16 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     });
   }
 
-  const fresh = await findCartForShopper(me.id);
+  const fresh = await findCartForCaller(meId);
   return ok({ cart: shapeCart(fresh) });
 });
 
-// DELETE /api/cart/items/[id]
+// DELETE /api/cart/items/[id] — same caller resolution (session or device token).
 export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  const me = await requireShopper();
-  const cart = await findCartForShopper(me.id);
-  const item = await requireShopperCartItem(cart?.id ?? null, id);
+  const { shopperId: meId } = await resolveCartCaller();
+  const cart = await findCartForCaller(meId);
+  const item = await requireCallerCartItem(cart?.id ?? null, id);
 
   await db.cartItem.delete({ where: { id: item.id } });
   // Seller Insights — remove_from_cart (explicit line removal).
@@ -83,9 +83,9 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
     variantId: item.variantId,
     cartItemId: item.id,
     qty: item.qty,
-    shopperId: me.id,
+    shopperId: meId,
   });
 
-  const fresh = await findCartForShopper(me.id);
+  const fresh = await findCartForCaller(meId);
   return ok({ cart: shapeCart(fresh) });
 });

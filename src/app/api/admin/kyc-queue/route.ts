@@ -11,17 +11,33 @@ import { db } from "@/lib/db";
 // could read every pending seller's documents and accounts).
 export const GET = handle(async (req: NextRequest) => {
   await requireCap("sellers.approve");
+  // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+  // un-migrated Seller.emailVerifiedAt (default/include select → P2022
+  // pre-migration 20261107000000). Bank accounts are narrowed to
+  // masked-display fields — the ciphertext (accountNumberEnc) is NEVER
+  // returned by a read surface (C2.5).
   const sellers = await db.seller.findMany({
     where: { status: "pending_review" },
-    include: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      displayName: true,
+      phone: true,
+      status: true,
+      kycStatus: true,
+      riskTier: true,
+      submittedAt: true,
+      createdAt: true,
       kycDocuments: { orderBy: { createdAt: "asc" } },
-      bankAccounts: true,
-      store: { include: { _count: { select: { products: true } } } },
+      bankAccounts: {
+        select: { id: true, bankName: true, holderName: true, accountNumberMasked: true, verified: true },
+      },
+      store: { select: { id: true, name: true, slug: true, _count: { select: { products: true } } } },
       wallet: true,
     },
     orderBy: { submittedAt: "asc" },
   });
-
   const cards = sellers.map((s) => ({
     id: s.id,
     email: s.email,

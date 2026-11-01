@@ -1,0 +1,189 @@
+Skip to content
+
+[]
+
+Disputes
+
+Create account or Sign in
+
+[]
+
+[]Search/Ask AI[]
+
+Create accountSign in
+
+-   Get started
+-   Payments
+-   Revenue
+-   Risk
+-   Data
+-   Money management
+-   Stablecoins
+-   Embedded finance
+-   Developer resources
+
+More[]
+
+APIs & SDKs[]Help[]
+
+OverviewAccept a payment
+
+Online payments
+
+OverviewFind your use case
+
+[]Use Payment Links
+
+[]Build a payments page
+
+[]Build a custom integration with Elements
+
+[]Build an in-app integration
+
+[]Use Managed Payments
+
+Recurring paymentsMigrate legacy integrations
+
+In-person payments
+
+OverviewHow Terminal worksAvailability
+
+[]Readers
+
+[]Ready-made apps
+
+[]Custom integration
+
+Payment methods
+
+[]Add payment methods
+
+[]Manage payment methods
+
+[]Faster checkout with Link
+
+Payment operations
+
+[]Analytics
+
+Balances and settlement time
+
+[]Compliance and security
+
+[]Currencies
+
+[]Declines
+
+[]Disputes
+
+[]Payouts
+
+ReceiptsRefunds and cancellations
+
+Advanced integrations
+
+[]Custom payment flows
+
+[]Flexible acquiring
+
+[]Off-Session Payments
+
+[]Multiprocessor orchestration
+
+Beyond payments
+
+[]Incorporate your company
+
+[]Agentic commerce
+
+[]Financial Connections
+
+[]Climate
+
+[]
+
+Hong Kong
+
+[]
+
+English (United States)
+
+[]
+
+1.  Home/
+2.  Payments
+
+Disputes
+
+Learn about disputes, how they work, and what you can do to prevent them.
+
+[]Ask about this page
+
+[]Copy for LLM
+
+[]
+
+View as Markdown
+
+[]
+
+[]
+
+[]
+
+Set up agent
+
+A dispute (also known as a chargeback) occurs when a cardholder questions your payment with their card issuer.
+
+To process a chargeback, the issuer creates a formal dispute on the card network, which immediately reverses the payment. This pulls the money for the payment—as well as one or more network dispute fees—from Stripe. After that, Stripe debits your balance for the payment amount and dispute fee.
+
+To help you submit the best possible response for each dispute, Stripe guides you through the process in the Dashboard, where you can provide the appropriate text and images for the dispute reason, and your counterargument. If you need help with a dispute, contact support.
+
+Handle disputes []
+
+Respond to disputes
+
+Learn how to challenge or accept a dispute.
+
+Network categories
+
+Learn about reason code categories and broad evidence guidelines.
+
+Reason codes
+
+Refer to common Visa, Mastercard, and American Express reason codes.
+
+Disputes API
+
+Retrieve and update disputes, submit evidence, and handle dispute events.
+
+Analyze disputes []
+
+Measure disputes
+
+Learn about the issues that can occur from excessive disputes, and how to avoid them.
+
+Monitoring programs
+
+Learn about the monitoring programs operated by the card networks.
+
+Automate dispute management []
+
+Prevent disputes with Verifi and Ethoca programs
+
+Automatically prevent disputes and lower your dispute rate.
+
+Smart Disputes
+
+Use Smart Disputes to automate evidence collection and submission for eligible disputes.
+
+-   []Need help? Contact Support.
+-   []Chat with Stripe developers on Discord.
+-   []Check out our changelog.
+-   []Questions? Contact Sales.
+-   []LLM? Read llms.txt.
+-   Powered by Markdoc
+
+[]
+
+[]

@@ -1,7 +1,10 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
 import { bustPublicProductCache } from "@/lib/public-cache";
-import { requireShopper } from "@/lib/auth";
+import { getSession, type ShopperUserDTO } from "@/lib/auth";
+import { verifyGuestCheckoutToken } from "@/lib/guest-otp";
+import { getCartToken } from "@/app/api/cart/cart";
+import { rateLimit } from "@/lib/rate-limit";
 import { computeGroupPricing, assertShippingAvailable } from "../pricing";
 import { computeOrderCommissions, loadRateContext } from "@/lib/commission";
 import { randomToken } from "@/lib/password";
@@ -27,6 +30,26 @@ export const dynamic = "force-dynamic";
 // per-seller Orders in a single transaction. Stock + salesCount move here (NOT
 // in the webhook). Each order carries its own commission lines → ledger →
 // seller wallet payout hold.
+//
+// PHASE 2.2 GUEST CHECKOUT RESTORATION — purchase WITHOUT registering:
+//   • Signed-in shoppers: the account path is BYTE-IDENTICAL to the previous
+//     requireShopper() behaviour (same session gate, same 401s, same fields).
+//   • Guests (no shopper session): the buyer MUST first verify the checkout
+//     email with a one-time code (POST /api/checkout/guest-verify/*) — the
+//     short-lived "gcv:v1:" token from that flow is REQUIRED here
+//     (fail-closed without it) and body.customer.email must EQUAL the token's
+//     verified email. Orders are created with shopperId NULL + customerEmail =
+//     the verified guest email (+ customerName from the body — no account
+//     fallback); the guest cart TOKEN (sm_cart cookie) is recorded on every
+//     order (Order.cartToken) so the payment webhook clears the purchased
+//     items from the guest cart.
+//   • Guests get NO wallet vouchers (entries are ignored — the account-bound
+//     UserVoucher machinery is skipped entirely), NO saved addresses (the
+//     inline shippingAddress body is the only destination), NO shopper
+//     notifications (webhook no-ops for guest groups). Affiliate attribution
+//     runs with shopperId null (self-purchase exclusion simply doesn't apply).
+//   • Restored guest orders become claimable into an account later through the
+//     EXISTING email-ownership-gated claim path (shopper-merge.ts) — unchanged.
 // Task 10-b claimable vouchers: body.vouchers = [{storeId, userVoucherId}] per
 // payment group. Verdicts run per seller group (lib/vouchers); a valid discount
 // voucher adds to the group discount (capped at the subtotal), freeshipping
@@ -76,8 +99,20 @@ export const POST = handle(async (req: Request) => {
   };
 
   try {
-    // Checkout is account-only: orders are tied to the signed-in shopper.
-    const me = await requireShopper();
+    // PHASE 2.2 GUEST CHECKOUT RESTORATION — account OR verified guest.
+    // A shopper session keeps EXACTLY the requireShopper() contract (same
+    // lookups, same 401 for missing/suspended accounts — byte-identical account
+    // path); NO session (or a non-shopper session) means the GUEST path, which
+    // is gated below on the "gcv:v1:" verified-email token.
+    const sess = await getSession();
+    let me: ShopperUserDTO | null = null;
+    if (sess?.userType === "shopper") {
+      const shopper = await db.shopperUser.findUnique({ where: { id: sess.userId } });
+      if (!shopper || shopper.status !== "active") {
+        throw new ApiError(401, "UNAUTHORIZED", "Shopper account unavailable");
+      }
+      me = { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone };
+    }
     timing.mark("auth");
 
     // Idempotent replays — both unique-key lookups, fetched in ONE parallel
@@ -95,7 +130,10 @@ export const POST = handle(async (req: Request) => {
     timing.mark("idem");
 
     if (existingGroup) {
-      if (existingGroup.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
+      // PHASE 2.2: guest groups carry shopperId NULL — a guest replay matches
+      // on the SAME null binding (the idemKey is a client-minted UUID, exactly
+      // as on the account path).
+      if (existingGroup.shopperId !== (me?.id ?? null)) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
       timing.emit(200, { gateWaitMs: 0, ...gateStats() });
       return ok({
         orderNumber: existingGroup.orders[0]?.orderNumber ?? "",
@@ -110,7 +148,7 @@ export const POST = handle(async (req: Request) => {
 
     // Idempotent replay #2 — legacy single-order checkout with this key.
     if (existing) {
-      if (existing.shopperId !== me.id) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
+      if (existing.shopperId !== (me?.id ?? null)) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
       timing.emit(200, { gateWaitMs: 0, ...gateStats() });
       return ok({
         orderNumber: existing.orderNumber,
@@ -122,6 +160,12 @@ export const POST = handle(async (req: Request) => {
         duplicate: true,
       });
     }
+
+    // PHASE 2.2: guest checkout create is UNAUTHENTICATED — apply a guest-only
+    // IP throttle (the account path keeps its exact prior posture: no IP
+    // throttle, admission gate + idempotency only). Placed AFTER the replay
+    // checks so a busy-retry replay never burns the limiter.
+    if (!me) rateLimit(req, "checkout-guest-create", 10);
 
     // F2 REMEDIATION — bounded admission control. Everything below (pricing
     // reads + the create transaction) runs under a process-level semaphore:
@@ -136,12 +180,41 @@ export const POST = handle(async (req: Request) => {
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-      // Contact details prefill from the account; a shopper may still override
-      // them per-order (e.g. sending a gift), but blanks fall back to the account.
-      const customer = (body.customer ?? {}) as Record<string, unknown>;
-      const customerName = String(customer.name ?? "").trim() || me.fullName;
-      const customerEmail = (String(customer.email ?? "").trim() || me.email).toLowerCase();
-      const customerPhone = customer.phone != null ? String(customer.phone).trim() || null : me.phone;
+      // Contact details — PHASE 2.2 branches here:
+      // • ACCOUNT path (byte-identical to before): prefill from the account; a
+      //   shopper may still override per-order (e.g. sending a gift), blanks
+      //   fall back to the account.
+      // • GUEST path: the email must have been VERIFIED through the OTP flow —
+      //   body.guestVerification carries the short-lived "gcv:v1:" token, which
+      //   is verified constant-time and MUST bind the exact checkout email.
+      //   customerName comes from the body (no account fallback). FAIL-CLOSED
+      //   without a valid, unexpired token.
+      let customerName: string;
+      let customerEmail: string;
+      let customerPhone: string | null;
+      if (me) {
+        const customer = (body.customer ?? {}) as Record<string, unknown>;
+        customerName = String(customer.name ?? "").trim() || me.fullName;
+        customerEmail = (String(customer.email ?? "").trim() || me.email).toLowerCase();
+        customerPhone = customer.phone != null ? String(customer.phone).trim() || null : me.phone;
+      } else {
+        const guestVerification = body.guestVerification != null ? String(body.guestVerification) : null;
+        const gcv = verifyGuestCheckoutToken(guestVerification); // constant-time MAC + absolute expiry
+        if (!gcv) {
+          throw new ApiError(
+            401,
+            "GUEST_VERIFICATION_REQUIRED",
+            "Verify your email address with the one-time code before placing this order"
+          );
+        }
+        const customer = (body.customer ?? {}) as Record<string, unknown>;
+        customerEmail = String(customer.email ?? "").trim().toLowerCase();
+        if (!customerEmail || customerEmail !== gcv.email) {
+          throw new ApiError(400, "VALIDATION", "customer.email must match the email you verified");
+        }
+        customerName = String(customer.name ?? "").trim(); // required from the body — no account fallback for guests
+        customerPhone = customer.phone != null ? String(customer.phone).trim() || null : null;
+      }
       if (!customerName) throw new ApiError(400, "VALIDATION", "customer.name is required");
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new ApiError(400, "VALIDATION", "customer.email is invalid");
       if (customerPhone && !/^[+()\d\s-]{6,20}$/.test(customerPhone)) throw new ApiError(400, "VALIDATION", "customer.phone is invalid");
@@ -188,9 +261,15 @@ export const POST = handle(async (req: Request) => {
       // Claimable vouchers per seller group — hard mode: any unusable selection
       // fails the checkout with 409 so the buyer can re-quote (never silently
       // drop a voucher). One voucher per seller group (first entry wins).
-      const voucherEntriesRaw = Array.isArray(body.vouchers)
-        ? (body.vouchers as VoucherEntryInput[]).filter((e) => e && typeof e === "object")
-        : [];
+      // PHASE 2.2: wallet vouchers are ACCOUNT-bound (UserVoucher.userId) —
+      // guests have no wallet, so guest submissions are dropped here and the
+      // whole voucher-outcome path runs empty (applyVoucherOutcomesToGroups is
+      // a no-op with zero outcomes; redemption below never fires).
+      const voucherEntriesRaw = !me
+        ? []
+        : Array.isArray(body.vouchers)
+          ? (body.vouchers as VoucherEntryInput[]).filter((e) => e && typeof e === "object")
+          : [];
       const seenStores = new Set<string>();
       const voucherEntries = voucherEntriesRaw.filter((e) => {
         const k = String(e?.storeId ?? "");
@@ -202,7 +281,7 @@ export const POST = handle(async (req: Request) => {
         voucherEntries.length > 0
           ? await buildVoucherOutcomes({
               entries: voucherEntries,
-              shopperId: me.id,
+              shopperId: me?.id ?? null, // guests never reach here (entries dropped above)
               groups: pricing.groups.map((g) => ({ storeId: g.storeId, subtotalMinor: g.subtotalMinor })),
               addressState: addr.state,
               hard: true,
@@ -230,7 +309,7 @@ export const POST = handle(async (req: Request) => {
       // re-read them internally — a duplicate setting.findMany per checkout).
       const affiliateSettings = await getAffiliateSettings();
       const affiliateMap = await resolveAffiliateAttributionForCart({
-        shopperId: me.id,
+        shopperId: me?.id ?? null, // PHASE 2.2: guests — self-purchase exclusion not applicable
         lines: pricing.groups.flatMap((g) => g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, storeId: g.storeId }))),
         preloadedSettings: affiliateSettings,
       }).catch(() => new Map<string, { affiliateId: string; sponsorId: string | null; linkId: string; rateBps: number; poolBaseMinor: number }>());
@@ -281,8 +360,13 @@ export const POST = handle(async (req: Request) => {
       // purchased items from the account cart once payment is verified.
       // PHASE 2 / A2: token-only read (the previous deep include dragged every
       // cart line's variant→product→store graph over the wire for one string).
-      const shopperCart = await db.cart.findUnique({ where: { shopperId: me.id }, select: { token: true } });
-      const cartToken = shopperCart?.token ?? null;
+      // PHASE 2.2 GUEST CHECKOUT: guests have no account cart — the cart is
+      // token-keyed (sm_cart cookie), and the token read HERE is what gets
+      // recorded on the orders (Order.cartToken) so the payment webhook's guest
+      // path can clear the purchased items from that guest cart.
+      const cartToken = me
+        ? (await db.cart.findUnique({ where: { shopperId: me.id }, select: { token: true } }))?.token ?? null
+        : await getCartToken();
       timing.mark("cart");
 
       // Marketing Intelligence — resolve the shopper's validated attribution
@@ -328,11 +412,14 @@ export const POST = handle(async (req: Request) => {
         }
 
         // Voucher rows for the redeemed selection (userVoucherId → voucherId/quota).
+        // PHASE 2.2: guests never reach here (redeemedIds is always empty — voucher
+        // entries are dropped for guests above); `me?.id ?? ""` keeps the type
+        // honest without weakening the account path's ownership scoping.
         const redeemedIds = voucherOutcomes.map((o) => o.userVoucherId);
         const uvRows =
           redeemedIds.length > 0
             ? await tx.userVoucher.findMany({
-                where: { id: { in: redeemedIds }, userId: me.id },
+                where: { id: { in: redeemedIds }, userId: me?.id ?? "" },
                 select: { id: true, voucherId: true, voucher: { select: { id: true, quota: true } } },
               })
             : [];
@@ -342,7 +429,10 @@ export const POST = handle(async (req: Request) => {
         const paymentGroup = await tx.paymentGroup.create({
           data: {
             ref: providerRef,
-            shopperId: me.id,
+            // PHASE 2.2: nullable — guest checkouts carry NO shopper account; the
+            // webhook's guest path branches on this null (receipt → customerEmail,
+            // shopper notification no-ops, cart clearing via Order.cartToken).
+            shopperId: me?.id ?? null,
             provider,
             status: "requires_payment",
             currency: "MYR",
@@ -371,7 +461,10 @@ export const POST = handle(async (req: Request) => {
               customerName,
               customerEmail,
               customerPhone,
-              shopperId: me.id,
+              // PHASE 2.2: guest orders carry shopperId NULL + the VERIFIED
+              // customerEmail — they become claimable into an account later via
+              // the existing email-ownership-gated claim (shopper-merge.ts).
+              shopperId: me?.id ?? null,
               status: "payment_pending",
               channel: "storefront",
               currency: g.currency,
@@ -413,7 +506,7 @@ export const POST = handle(async (req: Request) => {
           // redeemable pool cannot be exceeded.
           if (voucherOutcome && uvRow) {
             const redeemed = await tx.userVoucher.updateMany({
-              where: { id: voucherOutcome.userVoucherId, userId: me.id, status: "AVAILABLE" },
+              where: { id: voucherOutcome.userVoucherId, userId: me?.id ?? "", status: "AVAILABLE" },
               data: { status: "USED", usedAt: now, usedOrderId: order.id },
             });
             txStatements++;
@@ -543,6 +636,9 @@ export const POST = handle(async (req: Request) => {
       // Notifications + audit (one per seller order, plus admin roll-up).
       // PHASE 2 / A2: independent writes fan out in parallel (were sequential
       // per order); the data comes from the in-tx summary (no re-read).
+      // PHASE 2.2: guest orders get the same admin roll-up + audit row (with a
+      // "guest-checkout" actor label so audits distinguish them); the SHOPPER
+      // notification stays a webhook concern and no-ops for guest groups there.
       await Promise.all(
         orderSummaries.map((o) => {
           const vo = outcomeByStore.get(o.storeId);
@@ -555,6 +651,7 @@ export const POST = handle(async (req: Request) => {
             }),
             logActivity({
               actorType: "shopper",
+              ...(me ? {} : { actorLabel: "guest-checkout" }),
               action: "order.created",
               entityType: "order",
               entityId: o.id,
@@ -636,3 +733,5 @@ export const POST = handle(async (req: Request) => {
     throw e;
   }
 });
+
+// dev-cache-buster: force turbopack recompile of this route (Phase 2.2)

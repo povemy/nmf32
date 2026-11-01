@@ -317,9 +317,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     });
 
     // ---- T5 — ledger refund (balanced): DR seller payable + DR commission
-    // revenue [+ DR affiliate liability] | CR gateway. dedupKey
-    // `refund:refund:{refundId}` (FIN-1) makes replays converge on the
+    // revenue [+ DR affiliate liability / payout clearing] | CR gateway.
+    // dedupKey `refund:refund:{refundId}` (FIN-1) makes replays converge on the
     // original posting instead of double-posting.
+    // C1.2 (Phase 2.2): `affiliateClearingMinor` is the portion of the
+    // affiliate reversal whose liability already sits in PAYOUT_CLEARING
+    // (in-flight APPROVED affiliate payouts that claimed these entries) —
+    // postRefund debits the clearing account for it so AFFILIATE_LIABILITY
+    // never goes negative.
     const txn = await postRefund({
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -328,6 +333,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       amountMinor: refund.amountMinor,
       commissionReversalMinor,
       affiliateReversalMinor: affiliateReversal.affiliateReversalMinor,
+      affiliateClearingMinor: affiliateReversal.affiliateClearingMinor,
       refundId: refund.id, // FIN-1: T5 dedup key is per Refund row
       tx,
     });
@@ -354,25 +360,109 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       tx,
     });
 
-    // item refund bookkeeping + optional restock (fresh refundedMinor under
-    // the lock — a sibling process's allocation is never overwritten)
-    const item = fresh.items.find((it) => it.lineSubtotalMinor - it.refundedMinor > 0) ?? fresh.items[0];
-    if (!item) throw new ApiError(400, "NO_ITEMS", "Order has no items");
-    const remaining = item.lineSubtotalMinor - item.refundedMinor;
-    const applied = Math.min(refund.amountMinor, Math.max(0, remaining));
-    await tx.orderItem.update({ where: { id: item.id }, data: { refundedMinor: item.refundedMinor + applied } });
-    if (refund.restock && item.variantId) {
-      await tx.productVariant.update({ where: { id: item.variantId }, data: { stock: { increment: item.qty } } });
-      await tx.inventoryLog.create({
-        data: { variantId: item.variantId, delta: item.qty, reason: "refund_restock", refId: refund.id },
-      });
+    // ---- C3 (Phase 2.2): PARTIAL-REFUND MONEY ALLOCATION + RESTOCK
+    // CORRECTNESS. Previously the ENTIRE line quantity was restocked (a)
+    // regardless of the refunded amount and (b) AGAIN for every additional
+    // partial refund on the same line — a RM10 partial refund on a 5-unit
+    // line restocked +5 units, twice. Now:
+    //   1. The refund money is allocated across refundable items,
+    //      proportional to each line's remaining refundable value
+    //      (largest-remainder — the same allocation family as
+    //      deriveCommissionReversal) and each line's refundedMinor advances
+    //      by exactly its allocation.
+    //   2. Restocked UNITS per line = the buyer-paid value allocated to that
+    //      line divided by its per-unit paid price (discount-adjusted),
+    //      HARD-CAPPED by the order's not-yet-restocked units for the
+    //      variant. Cumulative restock tracking reuses the existing
+    //      InventoryLog audit rows (reason "refund_restock", refId = prior
+    //      PROCESSED refund ids of this order) — no schema change, and the
+    //      cap makes repeated partial refunds exactly-once safe: total
+    //      restock for an order line can never exceed its qty.
+    //   Financial refund amount, restock quantity, refund reason and the
+    //   inventory audit records are all preserved independently below.
+    const refundable = fresh.items
+      .map((it) => ({ it, remainingMinor: Math.max(0, it.lineSubtotalMinor - it.refundedMinor) }))
+      .filter((r) => r.remainingMinor > 0);
+    if (refundable.length === 0) throw new ApiError(400, "NO_ITEMS", "Order has no refundable items");
+    const totalRefundable = refundable.reduce((s, r) => s + r.remainingMinor, 0);
+    const refundToAllocate = Math.min(refund.amountMinor, totalRefundable);
+    const moneyByItem = new Map<string, number>();
+    {
+      let allocated = 0;
+      for (const r of refundable) {
+        const a = Math.floor((refundToAllocate * r.remainingMinor) / totalRefundable);
+        moneyByItem.set(r.it.id, a);
+        allocated += a;
+      }
+      let rem = refundToAllocate - allocated;
+      while (rem > 0) {
+        // Remainder to the line with the most allocation headroom.
+        let bestIdx = -1;
+        let bestHeadroom = 0;
+        for (let i = 0; i < refundable.length; i++) {
+          const headroom = refundable[i].remainingMinor - (moneyByItem.get(refundable[i].it.id) ?? 0);
+          if (headroom > bestHeadroom) { bestHeadroom = headroom; bestIdx = i; }
+        }
+        if (bestIdx < 0) break; // every cap hit — drop the sub-sen remainder
+        moneyByItem.set(refundable[bestIdx].it.id, (moneyByItem.get(refundable[bestIdx].it.id) ?? 0) + 1);
+        rem -= 1;
+      }
+    }
+    for (const r of refundable) {
+      const applied = moneyByItem.get(r.it.id) ?? 0;
+      if (applied <= 0) continue;
+      await tx.orderItem.update({ where: { id: r.it.id }, data: { refundedMinor: r.it.refundedMinor + applied } });
     }
 
-    // gateway intent reflects refund
-    await tx.paymentIntent.updateMany({
-      where: { orderId: order.id, status: "succeeded" },
-      data: { status: "refunded" },
-    });
+    if (refund.restock) {
+      // Per-variant cumulative restock cap: Σ line qty for the variant in
+      // this order, minus units already restocked by prior PROCESSED refunds
+      // (the InventoryLog rows ARE the restock ledger).
+      const restockCap = new Map<string, number>();
+      for (const it of fresh.items) {
+        if (!it.variantId) continue;
+        restockCap.set(it.variantId, (restockCap.get(it.variantId) ?? 0) + it.qty);
+      }
+      const processedRefundIds = fresh.refunds
+        .filter((r) => r.id !== refund.id && r.status === "processed")
+        .map((r) => r.id);
+      if (processedRefundIds.length > 0) {
+        const priorLogs = await tx.inventoryLog.findMany({
+          where: { reason: "refund_restock", refId: { in: processedRefundIds } },
+          select: { variantId: true, delta: true },
+        });
+        for (const l of priorLogs) {
+          if (!l.variantId) continue;
+          restockCap.set(l.variantId, (restockCap.get(l.variantId) ?? 0) - l.delta);
+        }
+      }
+      for (const r of refundable) {
+        const it = r.it;
+        if (!it.variantId) continue;
+        const applied = moneyByItem.get(it.id) ?? 0;
+        if (applied <= 0) continue;
+        const bd = parseStoredBreakdown(it.breakdownJson);
+        const discountAlloc = Math.max(0, Number(bd?.discount_allocated ?? 0) || 0);
+        const perUnit = it.qty > 0 ? Math.max(1, Math.round((it.lineSubtotalMinor - discountAlloc) / it.qty)) : 0;
+        const units = Math.min(Math.floor(applied / perUnit), restockCap.get(it.variantId) ?? 0);
+        if (units <= 0) continue; // partial money refund below one paid unit — no restock
+        await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: units } } });
+        await tx.inventoryLog.create({
+          data: { variantId: it.variantId, delta: units, reason: "refund_restock", refId: refund.id },
+        });
+        restockCap.set(it.variantId, (restockCap.get(it.variantId) ?? 0) - units);
+      }
+    }
+
+    // Gateway intent reflects the refund — but only a FULLY refunded order
+    // marks its intents "refunded" (a partial refund leaves the payment
+    // partially live; flipping it was a state mislabel).
+    if (fullyRefunded) {
+      await tx.paymentIntent.updateMany({
+        where: { orderId: order.id, status: "succeeded" },
+        data: { status: "refunded" },
+      });
+    }
 
     return { txnId: txn.id, totalRefunded, fullyRefunded, commissionReversalMinor, reversalRule: reversal.rule };
   });

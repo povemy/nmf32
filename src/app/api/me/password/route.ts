@@ -50,13 +50,21 @@ export const POST = handle(async (req: Request) => {
   }
 
   if (sess.userType === "seller") {
-    const seller = await db.seller.findUnique({ where: { id: sess.userId } });
+    // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (default select → P2022 pre-
+    // migration 20261107000000).
+    const seller = await db.seller.findUnique({
+      where: { id: sess.userId },
+      select: { id: true, email: true, fullName: true, displayName: true, passwordHash: true, status: true },
+    });
     if (!seller) return fail(401, "UNAUTHORIZED", "Seller not found");
     if (seller.status === "terminated") return fail(403, "ACCOUNT_TERMINATED", "This account has been terminated");
     if (!await verifyPasswordAsync(currentPassword, seller.passwordHash)) {
       return fail(400, "INVALID_CURRENT_PASSWORD", "Current password is incorrect");
     }
-    await db.seller.update({ where: { id: seller.id }, data: { passwordHash } });
+    // Same hygiene for the write: update() would RETURN all scalars — select
+    // only what the (unused) result needs.
+    await db.seller.update({ where: { id: seller.id }, data: { passwordHash }, select: { id: true } });
     const token = await rotateSession();
     if (!token) return fail(401, "UNAUTHORIZED", "Session expired — sign in again");
     await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.password_changed" });

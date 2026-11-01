@@ -36,9 +36,17 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   // Readable fast-fail (stale read) — the updateMany claim below is the real guard.
   assertTransition(payout.status, "processing");
 
+  // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+  // un-migrated Seller.emailVerifiedAt (default/include select → P2022
+  // pre-migration 20261107000000). store.id + store.name are BOTH required
+  // (see the DEFECT FIX note below).
   const seller = await db.seller.findUnique({
     where: { id: payout.sellerId },
-    include: { store: { select: { id: true, name: true } } },
+    select: {
+      email: true,
+      displayName: true,
+      store: { select: { id: true, name: true } },
+    },
   });
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 

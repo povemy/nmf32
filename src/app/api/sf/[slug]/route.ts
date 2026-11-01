@@ -14,8 +14,12 @@ export const dynamic = "force-dynamic";
 // is cacheable.
 const loadStorefront = publicCache(
   async (slug: string) => {
-    const store = await db.store.findUnique({ where: { slug } });
-    if (!store || store.status !== "live") return { notFound: "store" as const };
+    // C1.3 (seller publication governance): store.status "live" alone is not
+    // proof of eligibility — the store's seller must be admin-approved. An
+    // inactive seller's storefront 404s (fail closed), exactly like a non-live
+    // store. slug stays the key; the extra terms only narrow the match.
+    const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+    if (!store) return { notFound: "store" as const };
 
     let home = await db.cmsPage.findFirst({ where: { storeId: store.id, slug: "home" } });
     if (!home) home = await db.cmsPage.findFirst({ where: { storeId: store.id, pageType: "home" } });

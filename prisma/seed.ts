@@ -206,6 +206,9 @@ async function seedSeller(opts: {
     });
   }
 
+  // PHASE 2.3 KYC honesty (C2.7): these KycDocument rows are METADATA ONLY
+  // (docType / fileName / status) — seeded out-of-band, no document bytes are
+  // ingested or stored anywhere (see docs/phase23/seller-verification.md).
   if (opts.kyc === "approved") {
     for (const docType of ["ic_front", "ic_selfie", "business_reg"]) {
       await db.kycDocument.create({
@@ -223,6 +226,13 @@ async function seedSeller(opts: {
     }
   }
   if (opts.bank) {
+    // PHASE 2.3 (C2.5) — demo rows keep the LEGACY STUB shape
+    // (accountNumberEnc = "enc:<last4>", a masked tail, NOT a secretbox
+    // ciphertext): a seed has no real account number to seal. These rows are
+    // exactly the "legacy rows" documented in
+    // src/app/api/store/bank-accounts/route.ts and
+    // docs/phase23/seller-verification.md — unrecoverable by openSecret,
+    // display masked-only; sellers must re-enter a real number.
     await db.bankAccount.create({
       data: {
         sellerId: seller.id,

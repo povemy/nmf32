@@ -69,9 +69,15 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   // ---------------------------------------------------------- statement rebuild (the only allowed write)
   let statementRebuilt = false;
   if ((status === "processing" || status === "paid") && !statementLooksValid(payout.statementJson)) {
+    // PHASE 2.3 select hygiene (C2.7): explicit fields EXCLUDING the
+    // un-migrated Seller.emailVerifiedAt (default/include select → P2022
+    // pre-migration 20261107000000).
     const seller = await db.seller.findUnique({
       where: { id: payout.sellerId },
-      include: { store: { select: { id: true, name: true } } },
+      select: {
+        displayName: true,
+        store: { select: { id: true, name: true } },
+      },
     });
     if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 

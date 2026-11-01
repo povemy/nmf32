@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import { rateLimitKey } from "@/lib/rate-limit";
 import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
 import { maybeAutoReply } from "@/lib/chat-quick-replies";
 
@@ -9,9 +10,12 @@ export const dynamic = "force-dynamic";
 // POST /api/chat/threads/[id]/messages { body } — shopper sends a message.
 // Bumps the seller's unread badge; the (dormant) auto-reply scaffold runs
 // after the broadcast so flipping AUTO_REPLY_CONFIG.enabled activates it.
+// Phase 2.4 (C2.x): per-user send throttle — 20 msgs/min/shopper (identity-
+// keyed, so a spammer rotating IPs still hits the wall).
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const me = await requireShopper();
+  rateLimitKey(me.id, "chat-send-shopper", 20, 60_000);
   const { body: text } = (await req.json().catch(() => ({}))) as { body?: string };
   const trimmed = (text ?? "").trim();
   if (!trimmed) throw new ApiError(400, "VALIDATION", "Message cannot be empty");

@@ -1,0 +1,828 @@
+[]
+
+Home
+
+Our Products
+
+[]
+
+Developers
+
+[]
+
+Resources
+
+[]
+
+Pricing
+
+Contact Us
+
+Sign in
+
+Start Now
+
+[]
+
+[CHIP Collect icon]
+
+Collect
+
+Payments
+
+[]
+
+Payments via website or app
+
+Payment Links
+
+[]
+
+No-code payments
+
+CHIP mini
+
+New
+
+[]
+
+In-person payments via mobile phone
+
+[CHIP Control icon]
+
+Control
+
+Send
+
+[]
+
+Payouts in real-time
+
+Expense
+
+[]
+
+Cash management for team
+
+[CHIP Capital icon]
+
+Capital
+
+Advance
+
+[]
+
+Pay-As-You-Sell Advance
+
+Developers
+
+Resources
+
+[]
+
+API Documentation
+
+[]
+
+Plugin & Sales Platform
+
+[]
+
+Libraries & SDKs
+
+[]
+
+GitHub Repo
+
+[]
+
+DEV Community
+
+Collect API
+
+Online purchase
+
+Subscriptions
+
+Pre-authorization
+
+Integrate with AI agent
+
+Collect webhook
+
+Send API
+
+Budget allocation
+
+Payout instruction
+
+Add bank account
+
+Create payout group
+
+Send webhook
+
+Resources
+
+Learn
+
+Blog
+
+FAQs
+
+Company
+
+Join our team
+
+Referral Partner
+
+Brand Guidelines
+
+Support
+
+Contact form
+
+WhatsApp us
+
+[]
+
+Status
+
+Services Status
+
+FPX Bank Status
+
+Sign in
+
+Start Now
+
+[]
+
+[]
+
+Back
+
+[]
+
+Pricing
+
+No setup and monthly fees. Tailored for businesses of all sizes.
+
+[][]
+
+Collect
+
+Online payments
+
+In-person payments
+
+Control
+
+Payouts
+
+Expense
+
+Capital
+
+Sales Advance
+
+FAQs
+
+Collect
+
+Payments
+
+Online, in-person and recurring payments modules engineered for growth.
+
+Included in CHIP Collect:
+
+[]
+
+All-in-one merchant portal
+
+[]
+
+Payments from local & global customers
+
+[]
+
+In-person payments with CHIP mini app
+
+[]
+
+Shareable payment links
+
+[]
+
+Manage multiple brands under one account
+
+[]
+
+Switch between staging & live environment
+
+[]
+
+Recurring payments
+
+[]
+
+20+ sales platforms & 30+ plugins
+
+[]
+
+Built-in refund and payment tracking
+
+[]
+
+Flexible RESTful APIs
+
+Online payments
+
+Secure payments via e-commerce website, SaaS platform, payment links.
+
+FPX Online Banking
+
+Collect payments from individual and business customers through Malaysia's most popular online banking network.
+
+[FPX logo]
+
+RM 1.00
+
+per paid transaction for B2C
+
+RM 2.00
+
+per paid transaction for B2B1
+
+Every next day settlement
+
+Credit and Debit Cards
+
+Collect payments from customers in Malaysia and around the world using credit, debit and prepaid cards.
+
+[]
+
+Fast checkout with
+
+[GooglePay logo][ApplePay logo]
+
+[]
+
+Auto-recurring payments available
+
+[Visa logo][Mastercard logo][Maestro logo]
+
+Local Cards
+
+2.0%
+
+per paid transaction for credit card
+
+1.0%
+
+per paid transaction for debit card
+
+Every 2 business days settlement
+
+Foreign Cards
+
+3.0%
+
+per paid transaction for credit & debit card
+
+Every 2 business days settlement
+
+DuitNow QR (Online)
+
+Display a QR code in checkout page for customers to scan using their banking or e-wallet app.
+
+[DuitNow QR Singapore Thailand Indonesia flags]
+
+Cross-border QR payments from Indonesia, Thailand and Singapore are also supported. Learn more
+
+[DuitNow QR logo]
+
+[TNG logo][GrabPay logo][ShopeePay logo][WeChat Pay logo][Alipay logo][UnionPay logo]
+
+1.0%
+
+per paid transaction
+
+Every next day settlement
+
+E-wallets
+
+Let customers pay using their preferred e-wallet app.
+
+[TNG logo][GrabPay logo][ShopeePay logo]
+
+1.4%
+
+per paid transaction
+
+Every 2 business days settlement
+
+Buy Now, Pay Later
+
+Give customer flexibility to make purchases today and pay them at future dates.
+
+[Atome logo]
+
+[SPayLater logo]
+
+Atome
+
+5.3%
+
+per paid transaction
+
+Every Thursday of following week settlement
+
+Transaction fees are subject to 8% SST.
+
+SPayLater by Shopee
+
+1.4%
+
+per paid transaction
+
+Every 2 business days settlement
+
+Stablecoin
+
+Collect in BTC, ETH, PYUSD, USDC & USDT and receive settlements in MYR.
+
+[]
+
+Available on Ethereum, Arbitrum One, Polygon, Solana, Ton and Tron networks.
+
+[Bitcoin][Ethereum][Paypal USD][USDC stablecoin][USDT stablecoin]
+
+1.5%
+
+per paid transaction
+
+Refund fee:
+
+1.5%
+
+per transaction
+
+Every 1 business day settlement
+
+Fees exclude gas fee and network fee.
+
+In-person payments New
+
+Turn your phone into a payment terminal by simply downloading CHIP mini app.
+
+DuitNow QR (Dynamic)
+
+Display a QR code on your phone for customers to scan using their banking or e-wallet app.
+
+[DuitNow QR Singapore Thailand Indonesia flags]
+
+Cross-border QR payments from Indonesia, Thailand and Singapore are also supported. Learn more
+
+[DuitNow QR logo]
+
+[TNG logo][GrabPay logo][ShopeePay logo][WeChat Pay logo][Alipay logo][UnionPay logo]
+
+1.0%
+
+per paid transaction
+
+Every next day settlement
+
+Coming Soon
+
+[Visa logo][Mastercard logo]
+
+[ShopeePay logo][TNG logo]
+
+[SPayLater logo]
+
+POS Terminal (Cards)
+
+Accept payments at your physical store using a point of sale terminal.
+
+[Visa logo][Mastercard logo][Maestro logo][GooglePay logo]
+
+Local credit card:
+
+1.35%
+
+per paid transaction
+
+Local debit card:
+
+1.00%
+
+per paid transaction
+
+Foreign card:
+
+4.40%
+
+per paid transaction
+
+Every 2 business days settlement
+
+POS Terminal (E-wallets)
+
+Collect payment from customers who prefer to pay using e-wallets.
+
+[TNG logo][GrabPay logo][Boost logo][ShopeePay logo][Maybank QR Pay logo][Alipay logo][UnionPay logo][WeChat Pay logo]
+
+Touch 'n Go:
+
+0.95%
+
+per paid transaction
+
+GrabPay:
+
+1.05%
+
+per paid transaction
+
+Boost:
+
+1.00%
+
+per paid transaction
+
+ShopeePay:
+
+1.15%
+
+per paid transaction
+
+Maybank QRPay:
+
+0.95%
+
+per paid transaction
+
+Alipay:
+
+1.00%
+
+per paid transaction
+
+UnionPay QR:
+
+1.80%
+
+per paid transaction
+
+Every 2 business days settlement
+
+* Fees are subject to final approval
+
+** The time required for funds to reach a bank account depends on the bank's operating hours & system uptime.
+
+Control
+
+Payouts
+
+Fast, reliable payouts for your agents, affliates, partners and vendors.
+
+Included in CHIP Send:
+
+[]
+
+Real-time payouts to organisations and individuals
+
+[]
+
+Real-time bank verification to reduce failed transfers
+
+[]
+
+Real-time payout tracking
+
+[]
+
+Payouts using API or via no-code portal
+
+[]
+
+⁠⁠Customizable approver rules for security
+
+[]
+
+Built for operational & automated workflows
+
+[CHIP Send icon]
+
+CHIP Send
+
+Fast and reliable payouts.
+
+Transfer fee:
+
+RM 1.00
+
+per successful transfer
+
+Verification fee:
+
+RM 1.00
+
+per successful bank account verification
+(one-time)
+
+Verification and Settlement:
+
+Real-time
+
+Budget Allocation Fee
+
+Allocate CHIP Send budget.
+
+Free
+
+Allocate Send budget via CHIP Collect (Collections)
+
+Control
+
+Expense Management
+
+Manage company spending, claims, and budgets with better visibility.
+
+Included in CHIP Expense:
+
+For Employer
+
+For Employee
+
+[]
+
+Team-based budget management
+
+[]
+
+Simply launch app and scan QR to pay
+
+[]
+
+Allocate funds for team spending
+
+[]
+
+Utilize allocated company funds to pay
+
+[]
+
+Real-time spending insights and monitoring
+
+[]
+
+⁠⁠Submit claims directly from Expense app
+
+[CHIP Expense icon]
+
+CHIP Expense
+
+Effortless expense tracking for your team.
+
+Transaction fee:
+
+Waived
+
+per successful transfer via Expense App
+
+Capital
+
+Sales Advance
+
+Shariah-based financing solution designed around your sales and cashflow.
+
+Included in CHIP Advance:
+
+[]
+
+Up to RM500,000 sales advance available
+
+[]
+
+No interest or late payment fees
+
+[]
+
+Funding based on your sales performance
+
+[]
+
+Automatic repayments from your sales
+
+[]
+
+⁠⁠Repayment only upon confirmed sales
+
+[]
+
+Receive funds within 48 hours
+
+[CHIP Advance icon]
+
+CHIP Advance
+
+Shariah-based financing solution offering a frictionless line of credit that's accessible at all times.
+
+One-time fee:
+
+From 6%
+
+per Advance request
+
+Stamping fee:
+
+0.5%
+
+per Advance request
+
+Pricing
+
+Frequently Asked Questions
+
+How are payment fees calculated?
+
+[]
+
+CHIP charges a per-transaction fee for every successful payment, based on the payment method selected by the customer. Transaction fees are deducted before CHIP settles the net amount to your business bank account.
+
+Do you charge setup or up-front fees?
+
+[]
+
+CHIP does not charge setup, monthly or annual fees.
+
+Are refund fees charged separately?
+
+[]
+
+Refund fees are only applicable for FPX B2C (RM 1.00) and FPX B2B (RM 2.00) payment methods. No additional charge for other payment methods.
+
+Can I accept in-person payments?
+
+[]
+
+Yes. Use CHIP mini to accept in-person payments using DuitNow QR directly from your phone, with no additional hardware required. Simply download the app, sign in to your account and start collecting payments in minutes.
+
+Are there any contracts or long-term commitments?
+
+[]
+
+No. CHIP does not require long-term contracts or commitments to get started.
+
+Ready when you are.
+
+No setup fees, annual fees or long-term commitments.
+
+Create CHIP account
+
+[]
+
+[Dedicated local support]
+
+Still deciding? Get answers from our team before you get started.
+
+Contact us
+
+[]
+
+Collect payments online, in-person or through payment links.
+
+CHIP Collect
+
+[CHIP logo]
+
+Collect
+
+Payments
+
+Payment Links
+
+CHIP mini
+
+Control
+
+Send (Payouts)
+
+Expense Management
+
+Capital
+
+Advance
+
+Products
+
+Pricing
+
+Developers
+
+API Docs
+
+Plugins & Sales Platform
+
+DEV Community
+
+Learn
+
+Blog
+
+FAQs
+
+Company
+
+Join our team
+
+Become Referral Partner
+
+Brand Guidelines
+
+Investor Relations
+
+Support
+
+Contact form
+
+WhatsApp us
+
+[]
+
+Status
+
+Services Status
+
+FPX Bank Status
+
+Account
+
+Sign in
+
+[]
+
+Create CHIP account
+
+[]
+
+Referral Portal
+
+[]
+
+[]
+
+Facebook
+
+[]
+
+LinkedIn
+
+[]
+
+Instagram
+
+[]
+
+X (Twitter)
+
+[]
+
+Threads
+
+© CHIP 2026 All rights reserved
+
+Terms of Service
+
+Privacy Policy
+
+Referral Partner Terms
+
+CHIP IN Sdn. Bhd., a company incorporated under the laws of Malaysia with company registration number 202201010914 (1456611-H), is a Registered Merchant Acquirer (Non-bank) listed by Bank Negara Malaysia and is also listed by PayNet (Payments Network Malaysia) as FPX Third-Party Acquirer. The registered address is Lot 1.02, Level 1, Glo Damansara Shopping Mall, 699 Jalan Damansara, Taman Tun Dr Ismail, 60000 Kuala Lumpur, Malaysia.
+
+You can verify our Registration for Merchant Acquiring (BNM) and FPX Third-Party acquiring (PayNet).
+
+[]
+
+All services are online
+
+[]
+
+Malaysia
+
+[]
+
+[]
+
+Malaysia
+
+[]
+
+Singapore
+
+[]
+
+[WhatsApp logo]

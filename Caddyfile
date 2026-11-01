@@ -1,4 +1,23 @@
 :81 {
+        # ----------------------------------------------------------------------------
+        # Phase 2.3 (P2.3-6) — security response headers live in the APP
+        # (next.config.ts headers()), NOT here. This site block is PLAIN HTTP
+        # (:81) — it is not the TLS terminator, so HSTS emitted here would be
+        # ignored by browsers, and duplicating nosniff/CSP here would create a
+        # second authority that can drift from the app's policy. The sandbox's
+        # TLS is terminated upstream at the platform edge; a self-hosted TLS
+        # deployment would move termination INTO Caddy like this (uncomment and
+        # give the site a domain):
+        #
+        #   example.com {
+        #       encode zstd gzip
+        #       header Strict-Transport-Security "max-age=31536000"
+        #       reverse_proxy localhost:3000 { ...same header_up block... }
+        #   }
+        #
+        # (If that block is ever enabled, remove Strict-Transport-Security from
+        # next.config.ts so the value is set in exactly one place.)
+        # ----------------------------------------------------------------------------
         # F-06 remediation — the XTransformPort proxy is RESTRICTED to the two
         # intended PUBLIC services:
         #   :3000 — the Next.js webapp (also the default route below)

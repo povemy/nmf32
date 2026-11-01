@@ -87,7 +87,14 @@ export const PATCH = handle(async (req: Request) => {
 
   let updatedSellerOptIn: boolean | undefined;
   if (Object.keys(sellerData).length > 0) {
-    const updatedSeller = await db.seller.update({ where: { id: me.id }, data: sellerData });
+    // PHASE 2.3 select hygiene (C2.7): update() would RETURN all Seller
+    // scalars (incl. the un-migrated emailVerifiedAt — P2022 pre-migration
+    // 20261107000000); only marketplaceOptIn is used.
+    const updatedSeller = await db.seller.update({
+      where: { id: me.id },
+      data: sellerData,
+      select: { marketplaceOptIn: true },
+    });
     updatedSellerOptIn = updatedSeller.marketplaceOptIn;
   }
   const updated = Object.keys(data).length > 0

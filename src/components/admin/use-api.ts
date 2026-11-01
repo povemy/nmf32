@@ -116,7 +116,7 @@ export function useDebounced<T>(value: T, delayMs = 400): T {
   return debounced;
 }
 
-/** Safe JSON parse with fallback (schema JSON columns are strings in SQLite). */
+/** Safe JSON parse with fallback (schema JSON columns are stored as TEXT strings). */
 export function parseJsonSafe<T>(raw: string | null | undefined, fallback: T): T {
   if (raw === null || raw === undefined || raw === "") return fallback;
   try {

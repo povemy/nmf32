@@ -1,0 +1,141 @@
+[]
+
+Products[]
+
+Pricing
+
+Developers[]
+
+Resources[]
+
+Support
+
+Log inSign up
+
+[]
+
+Products[]Payments
+
+CollectionPayment OrderPricing
+
+Products[]E-commerce
+
+Catalog Link[]Catalog Store[]
+
+Products[]More
+
+Payment methodsPlugins
+
+Developers
+
+IntegrationsPluginsAPI documentation[]Sandbox[]Github[]Dev Community[]
+
+Resources
+
+System status[]Transaction status[]Bank status[]Customers
+
+Support
+
+Help centerContactGuide[]
+
+Company
+
+AboutSecurityReferralTermsPrivacyBlog
+
+Log inSign up
+
+SINCE 2012
+
+The payment gateway behind 60,000+ Malaysian organizations
+
+We've processed more than MYR 30 billion for Malaysian organizations since 2012. A team of around 30 in Selangor keeps it running.
+
+What is Billplz?
+
+Billplz Sdn Bhd is a Malaysian payment gateway that helps organizations collect payments through FPX, Wallet, Card, and Instalments. Since 2012, more than 60,000 Malaysian organizations have used Billplz to get paid. Together they have processed more than MYR 30 billion, including over MYR 5.4 billion in 2025 alone.
+
+We build for one market. A team of around 30 in Selangor runs the platform, staying close to the organizations we serve: businesses, NGOs, schools, zakat bodies, and government agencies. Billplz is a certified PayNet system integrator, and independent audits back the platform. The full list is on our security page.
+
+Organizations use Billplz Collection to accept payments and Billplz Payment Order to send them, through the dashboard, API, or plugins. Billplz is part of Qapital, the operating system for Malaysian SMEs and MSMEs. Two products are live under it today: Billplz for payments and Catalog for commerce, from online stores to payment forms.
+
+Payment preferences in Malaysia keep shifting, from FPX to DuitNow QR to Wallet payments. We keep adapting the infrastructure to match. Thirteen years in, there is still more to build.
+
+Integrated with Malaysia's financial infrastructure
+
+We connect directly to the payment networks or through other gateways, depending on what a business needs.
+
+4
+
+3
+
+2
+
+1
+
+LAYER 1
+
+Local Payment Network / System
+
+[Layer Image][Layer Image][Layer Image]
+
+LAYER 2
+
+Global Payment Network
+
+[Layer Image][Layer Image][Layer Image]
+
+LAYER 3
+
+Payment Gateway / Registered TPA
+
+[Layer Image][Layer Image][Layer Image]
+
+LAYER 4
+
+Payment Gateway / Registered PSA
+
+[Layer Image]
+
+Behind every transaction is a story. Today, we'll process more than 50,000 of them.
+
+We're a team of 30 building for millions. Ready to build?
+
+Join our team
+
+Start accepting payments today
+
+Get started for free[]Contact sales
+
+[]
+
+Fastest.
+
+Lowest.
+
+Possible.
+
+Products
+
+CollectionPayment OrderCatalog LinkCatalog StoreZakatPricing
+
+Developers
+
+IntegrationsAPI docsPluginsSandboxCommunity
+
+Company
+
+AboutSecurityTermsBrandCustomersReferralBlog
+
+Support
+
+Help centerGuideTutorials
+
+Resources
+
+System statusTransaction statusBank status
+
+© 2026 Billplz Sdn Bhd
+
+[][][][][]
+
+[][]

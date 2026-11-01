@@ -145,7 +145,9 @@ export async function trackViewCart(
   } catch { /* never break the host request */ }
 }
 
-/** Applied add-to-cart transition (post > pre). qty = post − pre (capped real delta). */
+/** Applied add-to-cart transition (post > pre). qty = post − pre (capped real delta).
+ *  PHASE 2.2 guest checkout restoration: `shopperId` is nullable — guest
+ *  cart events carry the pseudonymous visitor identity instead. */
 export async function trackAddToCart(input: {
   storeId: string;
   productId: string;
@@ -153,7 +155,7 @@ export async function trackAddToCart(input: {
   cartItemId: string;
   preQty: number;
   postQty: number;
-  shopperId: string;
+  shopperId: string | null;
 }): Promise<void> {
   try {
     const delta = input.postQty - input.preQty;
@@ -177,14 +179,15 @@ export async function trackAddToCart(input: {
   } catch { /* never break the host request */ }
 }
 
-/** Cart line removed (DELETE or PATCH qty→0). qty = units removed. */
+/** Cart line removed (DELETE or PATCH qty→0). qty = units removed. Guest-safe
+ *  (nullable shopperId — see trackAddToCart). */
 export async function trackRemoveFromCart(input: {
   storeId: string;
   productId: string;
   variantId: string;
   cartItemId: string;
   qty: number;
-  shopperId: string;
+  shopperId: string | null;
 }): Promise<void> {
   try {
     const attr = await resolveAttribution().catch(() => null);

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { verifyPasswordAsync, DUMMY_PASSWORD_HASH } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
-import { claimGuestStateForShopper } from "@/lib/shopper-merge";
+import { claimGuestStateForShopper, mergeGuestCartForShopper } from "@/lib/shopper-merge";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 // POST /api/auth/shopper/login { email, password } — buyer account sign-in.
@@ -10,10 +10,11 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 // before it was removed) are claimed INTO the account — FINAL CLOSURE §2:
 // only once the account has PROVED ownership of its email address
 // (verified EmailOtpChallenge row; the gate lives inside
-// claimGuestStateForShopper, so no call site can bypass it). Carts and the
-// address book are strictly account-scoped — there is nothing device-owned
-// any more. `emailVerified` in the response lets the client point the
-// shopper at the verification flow (Me → Profile) when claiming is gated.
+// claimGuestStateForShopper, so no call site can bypass it). PHASE 2.2 GUEST
+// CHECKOUT RESTORATION: the device's guest cart ("sm_cart" cookie) is merged
+// into the account cart here — best-effort, never fails login. `emailVerified`
+// in the response lets the client point the shopper at the verification flow
+// (Me → Profile) when claiming is gated.
 export const POST = handle(async (req: Request) => {
   // F-12 remediation: bounded brute-force throttle — shared "auth-login"
   // bucket (10/min/IP) with the admin/seller login route; uniform 429.
@@ -40,12 +41,16 @@ export const POST = handle(async (req: Request) => {
   const token = await createSession("shopper", shopper.id);
   const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
   const emailVerified = claimed.skipped !== "email-unverified";
-  await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login" });
+  // PHASE 2.2 guest checkout restoration — fold the guest cart into the
+  // account cart (best-effort; never fails login).
+  const guestCartMerged = await mergeGuestCartForShopper(shopper.id);
+  await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login", meta: { guestCartMerged: guestCartMerged.itemsMerged } });
   return ok({
     userType: "shopper",
     shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
     token,
     claimed,
     emailVerified,
+    guestCartMerged: guestCartMerged.itemsMerged,
   });
 });

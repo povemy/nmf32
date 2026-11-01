@@ -35,7 +35,20 @@ export async function slugifyStoreName(name: string): Promise<string> {
   return `${base}-${Date.now()}`;
 }
 
-/** Match an existing global Category by name (case-insensitive) or create it. */
+/** Match an existing global Category by name (case-insensitive).
+ *
+ *  Phase 2.4 (P2.4 cleanup §5.4) — CATEGORY-POLLUTION GUARD: this function
+ *  used to CREATE a global Category for any unknown hint, so anonymous
+ *  imports (Shopee/TikTok category ids, fixture labels, marketplace chain
+ *  names) could mint unlimited junk categories that show up in PUBLIC
+ *  filters. Now the whitelist is exactly the EXISTING categories: unknown
+ *  hints map to null (uncategorized) instead of creating rows. The unmatched
+ *  hint is logged server-side once per unique value (bulk imports repeat the
+ *  same hint across hundreds of items) so operators can promote genuinely
+ *  useful categories deliberately; the raw hint also stays re-derivable from
+ *  the marketplace source payload the import job processed. */
+const seenUnknownCategoryHints = new Set<string>();
+
 export async function mapCategory(hint: string | null | undefined): Promise<string | null> {
   if (!hint || !hint.trim()) return null;
   const name = hint.trim().slice(0, 60);
@@ -45,20 +58,12 @@ export async function mapCategory(hint: string | null | undefined): Promise<stri
   const all = await db.category.findMany({ select: { id: true, name: true } });
   const ci = all.find((c) => c.name.toLowerCase() === name.toLowerCase());
   if (ci) return ci.id;
-  const created = await db.category.create({
-    data: { name, slug: `${slugBase(name)}-${(Math.abs(hashStr(name)) % 46656).toString(36)}` },
-    select: { id: true },
-  });
-  return created.id;
-}
-
-function hashStr(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+  // Unknown → uncategorized (NO creation). Log each distinct hint once.
+  if (!seenUnknownCategoryHints.has(name)) {
+    seenUnknownCategoryHints.add(name);
+    console.info(`[import] unmapped marketplace category hint "${name}" — product left uncategorized (create the category deliberately to map future imports)`);
   }
-  return h | 0;
+  return null;
 }
 
 /** Conservative HTML sanitiser: strips scripts/styles/iframes/event handlers. */

@@ -3,15 +3,18 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { getSession, requireShopper } from "@/lib/auth";
 import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
 import { broadcastToThread } from "@/lib/chat";
+import { loadChatMessagePage } from "@/lib/chat-pagination";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/chat/threads/[id] — full conversation. Access: the thread's shopper
-// owner or the seller who owns the store.
+// GET /api/chat/threads/[id] — one BOUNDED page of the conversation (Phase 2.4
+// C2.x keyset pagination: latest ?limit=50 messages; ?before=<messageId>
+// returns the next older page — the UI prepends under "Load older messages").
+// Access: the thread's shopper owner or the seller who owns the store.
 // Also returns the conversation "context card" (what the chat is about — a
 // product or an order) used to render the clickable bubble in the chat UI,
 // and clears the reader-side unread badge (opening a conversation = read).
-export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const sess = await getSession();
   if (!sess) throw new ApiError(401, "UNAUTHORIZED", "Login required");
@@ -21,7 +24,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     include: {
       store: { select: { id: true, name: true, slug: true } },
       shopper: { select: { id: true, fullName: true, email: true } },
-      messages: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!thread) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
@@ -66,6 +68,10 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     storeSlug: thread.store.slug,
   });
 
+  // bounded history page — AFTER access control so cursor errors never leak
+  // the existence of someone else's thread
+  const { messages, hasMore } = await loadChatMessagePage(thread.id, req);
+
   return ok({
     thread: {
       id: thread.id,
@@ -80,7 +86,8 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       lastMessageAt: thread.lastMessageAt,
     },
     context,
-    messages: thread.messages.map((m) => ({
+    hasMore,
+    messages: messages.map((m) => ({
       id: m.id,
       senderType: m.senderType,
       senderName: m.senderName,

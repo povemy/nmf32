@@ -12,7 +12,12 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { registerNodeEnvGuard, warnProductionSecrets } = await import("./instrumentation-node");
+  const { registerNodeEnvGuard, enforceProductionSecrets } = await import("./instrumentation-node");
   await registerNodeEnvGuard();
-  warnProductionSecrets(); // F-04/F-23: loud boot-time validation (production only)
+  // P2.3-7 (Phase 2.3 audit): production boot now FAILS CLOSED when mandatory
+  // secrets are missing (money/security surfaces: PSP webhook signing, cron
+  // auth, MFA + token encryption keys, OTP/order-access HMAC keys, email
+  // provider). Dev/sandbox stays fully permissive — this call is a no-op
+  // outside NODE_ENV=production, so the running dev server is unaffected.
+  enforceProductionSecrets();
 }

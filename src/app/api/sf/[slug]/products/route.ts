@@ -12,8 +12,11 @@ export const dynamic = "force-dynamic";
 // Advisory listing data only — checkout revalidates transactionally.
 const loadSfProducts = publicCache(
   async (slug: string, search: string, collectionSlug: string, source: string, limit: number) => {
-    const store = await db.store.findUnique({ where: { slug } });
-    if (!store || store.status !== "live") return { notFound: true as const };
+    // C1.3 (seller publication governance): store.status "live" alone is not
+    // proof of eligibility — the store's seller must be admin-approved, so an
+    // inactive seller's storefront listing 404s (fail closed).
+    const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+    if (!store) return { notFound: true as const };
 
     const where: Record<string, unknown> = { storeId: store.id, status: "active" };
     if (search) where.title = { contains: search };

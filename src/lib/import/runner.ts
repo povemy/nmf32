@@ -15,6 +15,7 @@ import { safeFetchExternalImage } from "@/lib/safe-fetch";
 import { getConnector, resolveForConnector } from "@/lib/marketplaces";
 import type { NormalizedProduct, NormalizedShop, Platform } from "@/lib/marketplaces/types";
 import { deriveProductSeo, htmlToText, mapCategory, sanitiseDescriptionHtml, slugifyProductTitle, slugifyStoreName } from "./normalise";
+import { matchFlags } from "@/lib/product-moderation";
 
 type Progress = { discovered?: number; processed?: number; succeeded?: number; skipped?: number; failed?: number; imagesCopied?: number };
 type JobSummary = {
@@ -141,6 +142,17 @@ async function upsertProduct(job: { id: string; platform: string; isFixture: boo
   if (!existing) {
     const slug = await slugifyProductTitle(storeId, np.title);
     const categoryId = await mapCategory(np.categoryHint);
+    // C1.4 (Phase 2.2) — IMPORTED PRODUCTS ENTER MODERATION. Previously the
+    // create branch assigned `active` merely because the import succeeded /
+    // the source item was available, bypassing the keyword flagging and
+    // review applied to manually created products — a "Replica Gun" title
+    // imported straight to public. Now EVERY imported product is born
+    // `pending_review` (admin moderation queue approves to `active`, which
+    // also sets publishedAt); unavailable source items stay `archived`.
+    // Keyword flags run over the same text fields as the manual path and are
+    // persisted to flagsJson for the moderation queue.
+    const descriptionText = htmlToText(description);
+    const flags = matchFlags(`${np.title} ${descriptionText}`);
     const created = await db.product.create({
       data: {
         storeId,
@@ -148,7 +160,8 @@ async function upsertProduct(job: { id: string; platform: string; isFixture: boo
         title: np.title.slice(0, 160),
         slug,
         description,
-        status: np.isAvailable ? "active" : "archived",
+        status: np.isAvailable ? "pending_review" : "archived",
+        flagsJson: JSON.stringify(flags),
         priceMinor: minPrice,
         sourcePlatform: job.platform,
         sourceShopId,
@@ -181,6 +194,17 @@ async function upsertProduct(job: { id: string; platform: string; isFixture: boo
     productId = created.id;
   } else {
     productId = existing.id;
+    // C1.4 (Phase 2.2) — re-import no longer resurrects archived products to
+    // `active` and never overwrites an admin verdict (banned / rejected /
+    // pending_review survive). Available at source keeps the CURRENT status
+    // (a seller deliberately re-submits an archived product via the product
+    // routes → pending_review → admin approval); unavailable archives it.
+    // Keyword flags re-run on the incoming content: a newly-flagged previously
+    // active product is demoted to pending_review with the flags recorded.
+    const descriptionText = htmlToText(description);
+    const flags = matchFlags(`${np.title.slice(0, 160)} ${descriptionText}`);
+    const incomingStatus = np.isAvailable ? existing.status : "archived";
+    const demoteForFlags = flags.length > 0 && existing.status === "active";
     await db.product.update({
       where: { id: productId },
       data: {
@@ -193,7 +217,8 @@ async function upsertProduct(job: { id: string; platform: string; isFixture: boo
         sourceUrl: np.sourceUrl ?? existing.sourceUrl,
         lastSyncedAt: new Date(),
         // disappeared at source → archive (never delete: order history preserved)
-        status: np.isAvailable ? (existing.status === "archived" ? "active" : existing.status) : "archived",
+        status: demoteForFlags ? "pending_review" : incomingStatus,
+        ...(flags.length > 0 || existing.flagsJson !== "[]" ? { flagsJson: JSON.stringify(flags) } : {}),
         ...(overrides.description ? {} : seoFields(np, storeName)),
       },
       select: { id: true },
@@ -329,7 +354,32 @@ export async function runJob(jobId: string): Promise<{ status: string }> {
         });
         connectionId = conn.id;
       } else {
-        const conn = await db.marketplaceConnection.findFirst({ where: { platform: job.platform, status: "connected" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+        // PHASE 2.2 (C3 — marketplace OAuth connection ownership): NEVER fall
+        // back to the globally most-recent connected connection — that let
+        // seller B's import run on seller A's tokens. Resolve the job's owning
+        // seller (claimedById → that seller's store via the Seller relation)
+        // and scope the lookup to connections that seller owns: attributed to
+        // them by the OAuth callback (sellerId) or bound to their store
+        // (storeId). No claiming seller and no pinned connectionId → fail
+        // closed with the existing 409 NO_CONNECTION. (Fixture jobs are
+        // unaffected — they upsert their own pseudo-connection above.)
+        const sellerId = job.claimedById;
+        if (!sellerId) {
+          throw new ApiError(409, "NO_CONNECTION", `No authorised ${platformLabel(job.platform)} connection. Connect the marketplace first.`);
+        }
+        const owning = await db.seller.findUnique({ where: { id: sellerId }, select: { store: { select: { id: true } } } });
+        const storeId = owning?.store?.id ?? null;
+        const conn = await db.marketplaceConnection.findFirst({
+          where: {
+            platform: job.platform,
+            status: "connected",
+            // storeId clause only when the seller actually has a store — a
+            // literal `storeId: null` would match ANY unbound connection.
+            OR: storeId ? [{ sellerId }, { storeId }] : [{ sellerId }],
+          },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        });
         if (!conn) throw new ApiError(409, "NO_CONNECTION", `No authorised ${platformLabel(job.platform)} connection. Connect the marketplace first.`);
         connectionId = conn.id;
       }

@@ -1,0 +1,37 @@
+-- ============================================================================
+-- PHASE 2.3 (C2.7) — SELLER EMAIL VERIFICATION
+-- Created 2026-11-07 by the consolidated remediation programme.
+--
+-- STATUS: NOT APPLIED (same authorization rule as 20261105000000 /
+-- 20261106000000 — authored only; applying to the shared development Supabase
+-- requires explicit owner approval).
+--
+-- CONTENTS (one additive, nullable column — no default, no backfill):
+--   Seller.emailVerifiedAt TIMESTAMP(3) NULL
+--
+-- SEMANTICS:
+--   • Set ONLY by POST /api/auth/seller/email-verification/verify, inside the
+--     SAME $transaction as the purpose-"seller-email" EmailOtpChallenge CAS
+--     consume (verifiedAt: null → now), via updateMany WHERE emailVerifiedAt
+--     IS NULL — exactly-once, no code path can write it without a delivered
+--     6-digit OTP round-trip through the seller's mailbox.
+--   • NULL = NOT verified. Displays must treat null as unverified (KYC
+--     honesty: never claim verification that did not occur).
+--   • The EmailOtpChallenge table itself came from migration 20261104000000;
+--     no change to it is needed — "seller-email" is just a new purpose value
+--     in the existing (purpose, subjectId) unique key.
+--
+-- WHY A COLUMN ON A HOT MODEL IS SAFE PRE-MIGRATION: every Prisma query that
+--   default-selects Seller scalars was audited and narrowed to explicit
+--   `select` lists EXCLUDING emailVerifiedAt (they don't need it), so the
+--   un-migrated dev server keeps serving. The routes that DO read the column
+--   use a P2021/P2022-tolerant read that returns null (unverified, fail
+--   closed) until this migration lands. See docs/phase23/seller-verification.md.
+--
+-- ROLLBACK:
+--   ALTER TABLE "Seller" DROP COLUMN "emailVerifiedAt";
+--   (No data is lost beyond the verification timestamps themselves; the
+--   durable proof rows in EmailOtpChallenge are untouched.)
+-- ============================================================================
+
+ALTER TABLE "Seller" ADD COLUMN "emailVerifiedAt" TIMESTAMP(3);

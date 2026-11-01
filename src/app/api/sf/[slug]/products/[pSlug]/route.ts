@@ -13,8 +13,11 @@ export const dynamic = "force-dynamic";
 // ADVISORY — checkout revalidates stock transactionally (CAS decrement).
 const loadPdp = publicCache(
   async (slug: string, pSlug: string) => {
-    const store = await db.store.findUnique({ where: { slug } });
-    if (!store || store.status !== "live") return { ok: false as const, reason: "store" as const };
+    // C1.3 (seller publication governance): store.status "live" alone is not
+    // proof of eligibility — the store's seller must be admin-approved, so an
+    // inactive seller's PDP 404s (fail closed).
+    const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+    if (!store) return { ok: false as const, reason: "store" as const };
 
     // Phase 1 (B1): EXPLICIT review projection — the previous bare include
     // selected every Review scalar, which after the schema change includes the

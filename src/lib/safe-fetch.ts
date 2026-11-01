@@ -91,6 +91,10 @@ type MinimalFetchInit = {
   headers?: Record<string, string>;
   signal?: AbortSignal | null;
   dispatcher?: unknown;
+  // Present on the guarded-fetch path (safePostJson): the method and body
+  // ride the same minimal init — declared so the object literal type-checks.
+  method?: string;
+  body?: string;
 };
 
 type MinimalFetch = (url: string, init: MinimalFetchInit) => Promise<MinimalResponse>;
@@ -525,6 +529,135 @@ export async function safeFetchInternal(url: string, opts: SafeFetchOpts = {}): 
     if (buf.length > maxBytes) return { ok: false, reason: "TOO_LARGE" };
     if (!sniffMatchesType(contentType, buf)) return { ok: false, reason: "CONTENT_TYPE" };
     return { ok: true, buffer: buf, contentType };
+  }
+  return { ok: false, reason: "MAX_HOPS" };
+}
+
+// ---------------------------------------------------------------- JSON requests
+
+/** C2.8 (Phase 2.3 — real seller webhook delivery): outbound JSON POST with
+ *  the SAME SSRF guard stack as the image fetcher above, applied to the
+ *  ORIGINAL URL and EVERY redirect hop:
+ *    1. validateHop — http/https scheme only, no embedded userinfo, IP
+ *       literals must be public (full private/reserved/metadata list, v4+v6);
+ *    2. per-hop preResolveGuard — hostname must resolve with EVERY returned
+ *       address public (re-checked per hop);
+ *    3. undici pinned dispatcher when no guard overrides are injected
+ *       (connect-time guarded lookup under Node; inert but harmless under
+ *       Bun, where layer 2 is the authoritative defence);
+ *    4. redirects followed MANUALLY (never auto), hard-capped, and each hop
+ *       is FULLY re-validated — the POST (method + headers + body) is
+ *       re-issued to the redirect target, which is what webhook receivers
+ *       behind 301/308 hops expect;
+ *    5. per-hop AbortSignal timeout (default 10 s).
+ *
+ *  Unlike safeFetchExternalImage there is NO content-type whitelist or magic
+ *  byte sniffing: a webhook receiver answers with whatever it likes (usually
+ *  JSON/empty), and the REAL HTTP status code is the delivery outcome the
+ *  caller records. `ok: true` therefore means "an HTTP response was
+ *  received" — 2xx-ness is the CALLER's decision, not this guard's.
+ *
+ *  Response body capture is diagnostic-only and size-capped: the body is read
+ *  ONLY when the receiver declares a content-length within `captureBytes`
+ *  (default 2 KB); larger or chunked (undeclared) bodies are drained, not
+ *  read, so a hostile receiver cannot stall the delivery worker on an
+ *  unbounded stream. */
+export type SafeJsonRequestOpts = {
+  method?: "POST" | "PUT" | "PATCH";
+  headers?: Record<string, string>;
+  body?: string;
+  /** Per-hop overall timeout in ms (default 10s). */
+  timeoutMs?: number;
+  /** Redirect cap (default 3). */
+  maxHops?: number;
+  /** Maximum response body bytes to capture (default 2048). */
+  captureBytes?: number;
+  /** Test seams — identical to SafeFetchOpts. */
+  isPublic?: (ip: string) => boolean;
+  lookup?: DnsLookupFn;
+  fetchImpl?: MinimalFetch;
+};
+
+export type SafeJsonRequestResult =
+  | { ok: true; status: number; contentType: string | null; body: string | null; hops: number }
+  | { ok: false; reason: string };
+
+const JSON_CAPTURE_BYTES = 2048;
+
+export async function safeRequestJson(url: string, opts: SafeJsonRequestOpts = {}): Promise<SafeJsonRequestResult> {
+  const isPublic = opts.isPublic ?? isPublicIp;
+  const lookup = opts.lookup ?? realDnsLookup;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxHops = opts.maxHops ?? MAX_REDIRECT_HOPS;
+  const captureBytes = opts.captureBytes ?? JSON_CAPTURE_BYTES;
+  const method = opts.method ?? "POST";
+  const fetchImpl = opts.fetchImpl ?? defaultFetch();
+  const usePinnedDispatcher = opts.isPublic === undefined && opts.lookup === undefined && opts.fetchImpl === undefined;
+
+  let current: string = url;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    // 1) static per-hop validation (scheme / credentials / IP literals)
+    const check = validateHop(current, isPublic);
+    if (!check.ok) return { ok: false, reason: check.reason };
+    const hopUrl = check.url;
+
+    // 2) per-hop DNS guard for hostnames (IP literals were range-checked above)
+    if (net.isIP(hopUrl.hostname) === 0) {
+      const pre = await preResolveGuard(hopUrl.hostname, lookup, isPublic);
+      if (!pre.ok) return { ok: false, reason: pre.reason ?? "PRIVATE_HOST" };
+    }
+
+    // 3) guarded single-hop request — redirects are NEVER auto-followed
+    let res: MinimalResponse;
+    try {
+      const init: MinimalFetchInit = {
+        method,
+        redirect: "manual",
+        headers: { "User-Agent": DEFAULT_USER_AGENT, ...(opts.headers ?? {}) },
+        signal: AbortSignal.timeout(timeoutMs),
+      };
+      if (opts.body !== undefined) init.body = opts.body;
+      if (usePinnedDispatcher) {
+        const dispatcher = pinnedDispatcher();
+        if (dispatcher) init.dispatcher = dispatcher;
+      }
+      res = await fetchImpl(hopUrl.toString(), init);
+    } catch (err) {
+      return { ok: false, reason: `NETWORK: ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    // 4) manual redirect handling — target fully re-validated next iteration
+    if (res.status >= 300 && res.status < 400) {
+      drainlessCancel(res);
+      const loc = res.headers.get("location");
+      if (!loc) return { ok: false, reason: "REDIRECT_MISSING_LOCATION" };
+      if (hop === maxHops) return { ok: false, reason: "MAX_HOPS" };
+      let next: URL;
+      try {
+        next = new URL(loc, hopUrl);
+      } catch {
+        return { ok: false, reason: "INVALID_REDIRECT" };
+      }
+      current = next.toString();
+      continue;
+    }
+
+    // 5) real response — capture status + (bounded) diagnostic body
+    const contentType = res.headers.get("content-type");
+    let bodyText: string | null = null;
+    const clHeader = res.headers.get("content-length");
+    const declared = clHeader != null ? Number(clHeader) : NaN;
+    if (clHeader != null && Number.isFinite(declared) && declared >= 0 && declared <= captureBytes) {
+      try {
+        const buf = Buffer.from(await res.arrayBuffer());
+        bodyText = buf.length <= captureBytes ? buf.toString("utf8") : null;
+      } catch {
+        bodyText = null; // aborted mid-body: the STATUS is still the outcome
+      }
+    } else {
+      drainlessCancel(res);
+    }
+    return { ok: true, status: res.status, contentType: contentType ? contentType.split(";")[0].trim().toLowerCase() : null, body: bodyText, hops: hop };
   }
   return { ok: false, reason: "MAX_HOPS" };
 }

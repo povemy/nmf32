@@ -1,15 +1,20 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import { rateLimitKey } from "@/lib/rate-limit";
 import { broadcastToThread, notifyUserInbox } from "@/lib/chat";
 import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
+import { loadChatMessagePage } from "@/lib/chat-pagination";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/store/chat/threads/[id]/messages — seller reads a conversation.
+// GET /api/store/chat/threads/[id]/messages — one BOUNDED page of the
+// conversation (Phase 2.4 C2.x keyset pagination: latest ?limit=50 messages;
+// ?before=<messageId> returns the next older page — the UI prepends under
+// "Load older messages").
 // Returns the context card (product/order bubble) and clears the seller-side
 // unread badge (opening a conversation = read).
-export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { store } = await requireActiveSellerStore();
   const thread = await db.chatThread.findUnique({
@@ -17,7 +22,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     include: {
       store: { select: { slug: true } },
       shopper: { select: { fullName: true, email: true } },
-      messages: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
@@ -43,6 +47,9 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     storeSlug: thread.store.slug,
   });
 
+  // bounded history page — AFTER the store ownership check
+  const { messages, hasMore } = await loadChatMessagePage(thread.id, req);
+
   return ok({
     thread: {
       id: thread.id,
@@ -54,7 +61,8 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       lastMessageAt: thread.lastMessageAt,
     },
     context,
-    messages: thread.messages.map((m) => ({
+    hasMore,
+    messages: messages.map((m) => ({
       id: m.id,
       senderType: m.senderType,
       senderName: m.senderName,
@@ -66,10 +74,12 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
 });
 
 // POST /api/store/chat/threads/[id]/messages { body } — seller replies.
-// Bumps the shopper's unread badge.
+// Bumps the shopper's unread badge. Phase 2.4 (C2.x): per-user send throttle
+// — 20 msgs/min/seller (identity-keyed).
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { me, store } = await requireActiveSellerStore();
+  rateLimitKey(me.id, "chat-send-seller", 20, 60_000);
   const { body: text } = (await req.json().catch(() => ({}))) as { body?: string };
   const trimmed = (text ?? "").trim();
   if (!trimmed) throw new ApiError(400, "VALIDATION", "Message cannot be empty");

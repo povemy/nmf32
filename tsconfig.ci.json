@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "next.config.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "skills",
+    "scripts",
+    "tool-results",
+    "examples",
+    "mini-services",
+    "performance",
+    "download",
+    "public",
+    "docs",
+    "upload"
+  ]
+}

@@ -1,22 +1,27 @@
 "use client";
 // Task 2-d — SD-01 seller dashboard: period cards, low stock with inline restock,
 // latest orders, pending actions with jump links.
+import { useState } from "react";
+import { toast } from "sonner";
 import { apiGet, apiSend, CardsSkeleton, RowsSkeleton, StatCard, StatusChip, ageOf, formatMinor, runMutation, useApi, useSellerTerms, fmtCommissionPercent, holdAfterPayment, type SellerNav, type StoreMe } from "./ui-bits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowRight,
   ArrowUpRight,
+  BadgeCheck,
   BadgeDollarSign,
   Boxes,
   ClipboardCheck,
   ClipboardList,
   Package,
   ReceiptText,
+  ShieldCheck,
   Timer,
   TrendingUp,
   Undo2,
@@ -50,7 +55,7 @@ type DashboardData = {
 
 export default function SellerDashboard({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
   const { data, loading, error, refetch } = useApi<DashboardData>("/api/store/dashboard");
-  const { data: me } = useApi<StoreMe>("/api/store/me");
+  const { data: me, refetch: refetchMe } = useApi<StoreMe>("/api/store/me");
   // ADDENDUM #8 — live platform terms (commission %, hold) from the admin
   // settings via /api/store/terms; shared module cache means one fetch / 60 s.
   const { terms } = useSellerTerms();
@@ -169,6 +174,11 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
 
   return (
     <div className="space-y-6">
+      {/* PHASE 2.3 (C2.7) — honest email-verification card: shown ONLY while
+          me.seller.emailVerified is false (server-derived from
+          Seller.emailVerifiedAt; null/unmigrated storage = NOT verified). */}
+      <SellerEmailVerificationCard verified={me?.seller.emailVerified ?? false} onVerified={() => void refetchMe()} />
+
       {/* period cards */}
       <section aria-label="Performance">
         <div className="grid gap-4 md:grid-cols-3">
@@ -422,5 +432,123 @@ export default function SellerDashboard({ onNavigate }: { onNavigate: (n: Seller
         />
       </section>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- email verification
+// PHASE 2.3 (C2.7) — "Verify your email" card for the seller console.
+// Mirrors the shopper me-hub card: request a 6-digit code to the session's
+// OWN seller email, then verify it. The server does the gating
+// (seller-email OTP, exactly-once consume, Seller.emailVerifiedAt); this
+// card simply disappears once me.seller.emailVerified is true — it never
+// renders a "verified" claim on its own.
+function SellerEmailVerificationCard({ verified, onVerified }: { verified: boolean; onVerified: () => void }) {
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (verified) return null;
+
+  const sendCode = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await apiSend<{ sent: boolean; alreadyVerified?: boolean; message?: string }>(
+        "POST",
+        "/api/auth/seller/email-verification/request",
+        {}
+      );
+      if (res.alreadyVerified) {
+        onVerified();
+        return;
+      }
+      setSent(true);
+      setCode("");
+      toast.success("Verification code sent", { description: "Check your inbox — the code expires in 10 minutes." });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send the code");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async () => {
+    const digits = code.replace(/[^0-9]/g, "");
+    if (digits.length !== 6) {
+      toast.error("Enter the 6-digit code from your email.");
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await apiSend<{ verified: boolean; alreadyVerified?: boolean }>(
+        "POST",
+        "/api/auth/seller/email-verification/verify",
+        { code: digits }
+      );
+      if (res.verified) {
+        toast.success(res.alreadyVerified ? "Email already verified" : "Email verified", {
+          description: "Your email ownership is confirmed — it shows as verified to the review team.",
+        });
+        setCode("");
+        onVerified();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Verification failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section
+      className="flex flex-col gap-3 rounded-xl border border-teal-200 bg-teal-50/60 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-teal-900 dark:bg-teal-950/40"
+      aria-labelledby="seller-email-verify-title"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300">
+          <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <p id="seller-email-verify-title" className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-slate-100">
+            Verify your email address
+            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+              Not verified yet
+            </Badge>
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Confirming you control your email helps our team review your store faster. It takes one 6-digit code.
+          </p>
+        </div>
+      </div>
+      {sent ? (
+        <div className="flex w-full max-w-sm items-center gap-2">
+          <label htmlFor="seller-email-code" className="sr-only">
+            6-digit verification code
+          </label>
+          <Input
+            id="seller-email-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="6-digit code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+            className="min-h-[44px] tracking-widest"
+          />
+          <Button onClick={() => void submitCode()} disabled={busy || code.length !== 6} className="min-h-[44px] gap-2">
+            {busy ? "Verifying…" : <BadgeCheck className="h-4 w-4" aria-hidden="true" />}
+            Verify
+          </Button>
+          <Button variant="ghost" onClick={() => void sendCode()} disabled={busy} className="min-h-[44px] text-xs">
+            Resend
+          </Button>
+        </div>
+      ) : (
+        <Button onClick={() => void sendCode()} disabled={busy} className="min-h-[44px] gap-2">
+          {busy ? "Sending…" : <ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+          Send code
+        </Button>
+      )}
+    </section>
   );
 }

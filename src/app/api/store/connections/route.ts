@@ -16,7 +16,13 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async function (_req: NextRequest) {
     const session = await getSession();
     if (!session || session.userType !== "seller") return fail(401, "UNAUTHENTICATED", "Seller session required.");
-    const seller = await db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+    // PHASE 2.3 select hygiene (C2.7): only the store id is used — selecting
+    // the relation explicitly keeps the un-migrated Seller.emailVerifiedAt
+    // column out of the query (default/include select → P2022 pre-migration).
+    const seller = await db.seller.findUnique({
+      where: { id: session.userId },
+      select: { store: { select: { id: true } } },
+    });
     const connections = await db.marketplaceConnection.findMany({
       where: { storeId: seller?.store?.id ?? "__none__" },
       orderBy: { createdAt: "desc" },

@@ -1,0 +1,501 @@
+[]
+
+Products[]
+
+Pricing
+
+Developers[]
+
+Resources[]
+
+Support
+
+Log inSign up
+
+[]
+
+Products[]Payments
+
+CollectionPayment OrderPricing
+
+Products[]E-commerce
+
+Catalog Link[]Catalog Store[]
+
+Products[]More
+
+Payment methodsPlugins
+
+Developers
+
+IntegrationsPluginsAPI documentation[]Sandbox[]Github[]Dev Community[]
+
+Resources
+
+System status[]Transaction status[]Bank status[]Customers
+
+Support
+
+Help centerContactGuide[]
+
+Company
+
+AboutSecurityReferralTermsPrivacyBlog
+
+Log inSign up
+
+Pricing
+
+Start with our free Basic plan. No hidden fees, no trial, no contract.
+
+Basic
+
+Standard
+
+Enterprise
+
+ANNUAL MEMBERSHIP PLAN (MYR)
+
+Basic
+
+Standard
+
+Enterprise
+
+ANNUAL MEMBERSHIP PLAN (MYR)
+
+Free
+
+999.00
+
+Start your customized solution with us today.
+
+COLLECTION
+
+Online Banking
+
+ 
+
+ 
+
+ 
+
+[FPX]
+
+ 
+
+ 
+
+ 
+
+B2C Transaction fee
+
+1.25
+
+0.75
+
+ 
+
+B2B Transaction fee
+
+3.00
+
+2.00
+
+ 
+
+Payout
+
+Next business day
+
+Next business day
+
+ 
+
+Card
+
+ 
+
+ 
+
+ 
+
+[Visa][Mastercard]
+
+MYR Transaction fee
+
+1.8%
+
+1.5%
+
+ 
+
+Non-MYR Transaction fee
+
+3.8% (optional)
+
+3.5% (optional)
+
+ 
+
+Payout
+
+T+2 business days
+
+T+2 business days
+
+ 
+
+Auto-Deduct
+
+MYR Transaction fee
+
+2.3% + 1.25
+
+2% + 0.75
+
+ 
+
+Non-MYR Transaction fee
+
+4.2% + 1.25 (optional)
+
+4% + 0.75 (optional)
+
+ 
+
+Payout
+
+T+2 business days
+
+T+2 business days
+
+ 
+
+[]Requires separate application. Approval timelines vary.
+
+Wallet
+
+ 
+
+ 
+
+ 
+
+[DuitNow QR][Touch n Go][Boost][Grab Pay]
+
+Transaction fee
+
+1.5%
+
+1.5%
+
+ 
+
+Payout
+
+Next day
+
+Next day
+
+ 
+
+[]Requires separate application. Approval timelines vary.
+
+Instalment
+
+ 
+
+ 
+
+ 
+
+[Atome]Atome
+
+Transaction fee
+
+6%
+
+6%
+
+ 
+
+Monthly instalments
+
+3-month
+
+3-month
+
+ 
+
+Payout
+
+Wednesday & Friday
+
+Wednesday & Friday
+
+ 
+
+[]Requires separate application. Approval timelines vary.
+
+PAYMENT ORDER
+
+[DuitNow]DuitNow Transfer
+
+Transaction fee
+
+1.25
+
+0.75
+
+ 
+
+Payout
+
+Real-time
+
+Real-time
+
+ 
+
+E-COMMERCE
+
+Catalog Link
+
+Subscription Fee
+
+Free
+
+Free
+
+ 
+
+Transaction Fee
+
+Billplz
+
+Billplz
+
+ 
+
+Catalog Store
+
+Subscription Fee
+
+Free
+
+Free
+
+ 
+
+Transaction Fee
+
+Billplz
+
+Billplz
+
+ 
+
+Catalog Billing
+
+Subscription Fee
+
+Free
+
+Free
+
+ 
+
+Transaction Fee
+
+Billplz
+
+Billplz
+
+ 
+
+Shopify
+
+Subscription Fee
+
+Refer to Shopify
+
+Refer to Shopify
+
+ 
+
+Transaction fee
+
+Billplz + 0.3%
+
+Billplz + 0.3%
+
+ 
+
+Get started
+
+Get started
+
+Contact us
+
+Get started
+
+Get started
+
+Contact us
+
+FEATURES
+
+Every plan includes
+
+Flat rate pricing
+
+Enjoy FPX B2C at a flat rate from as low as MYR 0.75
+
+Fast payouts
+
+Next business day FPX payouts fully guaranteed
+
+All-in-one dashboard
+
+Track, manage, and analyze all your transactions in one place
+
+Account statements
+
+Download statements up to 2 years back for easy reconciliation
+
+Split payments
+
+Automatically distribute funds to multiple accounts instantly
+
+Integrations
+
+Full API access and 30+ plugins to power your business needs
+
+Bank-level security
+
+Enterprise-grade security with advanced encryption
+
+PCI DSS compliance
+
+Fully certified payment security for your peace of mind
+
+Team
+
+Add or remove team members with secure SSO access
+
+ENTERPRISE
+
+Running a large business?
+
+Billplz offers dedicated support, direct bank integrations, and managed services. Talk to our team about what your operation needs.
+
+Contact sales
+
+Reconciliation
+
+Speed up your reconciliation process with our automation tools
+
+Real-time payout
+
+Get your money instantly in your bank account, 24/7
+
+Custom pricing
+
+Rates tailored to your transaction volume and payment mix
+
+Account Manager
+
+Get personalized support from your dedicated specialist
+
+FPX CCA
+
+Accept credit card payments with lower fees and instant payout
+
+Branded transactions
+
+Display your company name in bank transactions for better recognition
+
+Receivables BPO
+
+Direct integration to Banks and Paynet for real-time FPX payout
+
+Payables BPO
+
+Third party disbursement (refund or payout) management
+
+Reconciliation BPO
+
+Auto-matching of transaction records against bank account statement
+
+TRUSTED BY THOUSANDS OF MALAYSIAN ORGANIZATIONS
+
+[PDRM]
+
+[Perodua]
+
+[Boost]
+
+[Wahed]
+
+[Lembaga Zakat Selangor]
+
+[Pandora]
+
+[Farm Fresh]
+
+[PTPTN]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+[]
+
+Start accepting payments today
+
+Get started for free[]Contact sales
+
+[]
+
+Fastest.
+
+Lowest.
+
+Possible.
+
+Products
+
+CollectionPayment OrderCatalog LinkCatalog StoreZakatPricing
+
+Developers
+
+IntegrationsAPI docsPluginsSandboxCommunity
+
+Company
+
+AboutSecurityTermsBrandCustomersReferralBlog
+
+Support
+
+Help centerGuideTutorials
+
+Resources
+
+System statusTransaction statusBank status
+
+© 2026 Billplz Sdn Bhd
+
+[][][][][]
+
+[][]

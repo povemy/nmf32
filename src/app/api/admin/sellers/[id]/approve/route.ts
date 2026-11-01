@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, notify, logActivity } from "@/lib/api
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { stripSeller } from "@/app/api/admin/_helpers";
+import { planAdminStorePath, transitionStoreToward, TransitionError } from "@/lib/store-lifecycle";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,12 +16,28 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
   if (seller.status === "terminated") throw new ApiError(409, "CONFLICT", "Terminated seller cannot be approved");
 
+  // C1.3 (seller publication governance): the store status change goes through
+  // the guarded state machine (transitionStore) instead of a raw db.store.update,
+  // so admin approval can no longer bypass the machine's validity rules.
+  // "live" is only legal from draft/maintenance (claimed/suspended pass through
+  // draft first); a pre-claim or archived store cannot legally reach "live" —
+  // 409 BEFORE the seller row is mutated so the action fails without partial state.
+  if (seller.store && !planAdminStorePath(seller.store.status, "live")) {
+    throw new ApiError(409, "CONFLICT", `Store in status "${seller.store.status}" cannot go live — it must complete its own lifecycle (claim/configuration) first`);
+  }
+
   const updated = await db.seller.update({
     where: { id },
     data: { status: "active", kycStatus: "approved", approvedAt: new Date(), rejectReason: null },
   });
   if (seller.store) {
-    await db.store.update({ where: { id: seller.store.id }, data: { status: "live" } });
+    try {
+      await transitionStoreToward({ storeId: seller.store.id, to: "live", actorId: admin.id, note: "seller approved" });
+    } catch (err) {
+      // illegal/concurrent transition ⇒ conflict; anything else is a real error
+      if (err instanceof TransitionError) throw new ApiError(409, "CONFLICT", err.message);
+      throw err;
+    }
   }
 
   await notify({

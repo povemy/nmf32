@@ -1,12 +1,14 @@
 // ============================================================================
-// EXPIRY-SCHEDULER — the ACTUAL recurring invocation for the F3 expiry sweep
-// and the late-payment refund-reconcile ticks (mission: final operational
-// gaps, Phase 1 req 1: "documenting a cron command is not sufficient").
+// EXPIRY-SCHEDULER — the ACTUAL recurring invocation for the F3 expiry sweep,
+// the late-payment refund-reconcile ticks and the C2.8 webhook-delivery
+// retry sweep (mission: final operational gaps, Phase 1 req 1 + Phase 2.3
+// C2.8: "documenting a cron command is not sufficient").
 // ----------------------------------------------------------------------------
 // This deployment (the sandbox) has no cron daemon, so the recurring
 // invocation is THIS always-on scheduler service: every INTERVAL_MS it POSTs
 //   • http://APP_BASE/api/cron/expiry-sweep      (release expired reservations)
 //   • http://APP_BASE/api/cron/refund-reconcile  (process late-payment refund cases)
+//   • http://APP_BASE/api/cron/webhook-delivery  (retry pending seller webhook deliveries — C2.8)
 // In a platform deployment the same contract is satisfied by the platform
 // scheduler / external cron — this service is the running proof for THIS
 // environment and the reference implementation for that swap.
@@ -43,7 +45,7 @@ const ALERT_RING = 50;
 const STATE_FILE = `${import.meta.dir}/state.json`;
 const PROJECT_ENV = "/home/z/my-project/.env";
 
-type Kind = "expiry" | "refund" | "analytics" | "affiliate" | "sessions" | "orders";
+type Kind = "expiry" | "refund" | "analytics" | "affiliate" | "sessions" | "orders" | "webhook";
 type EndpointState = {
   lastTickAt: string | null;
   lastSuccessAt: string | null;
@@ -91,7 +93,7 @@ function freshState(): State {
     service: "expiry-scheduler",
     startedAt: new Date().toISOString(),
     intervalMs: INTERVAL_MS,
-    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint(), sessions: freshEndpoint(), orders: freshEndpoint() },
+    endpoints: { expiry: freshEndpoint(), refund: freshEndpoint(), analytics: freshEndpoint(), affiliate: freshEndpoint(), sessions: freshEndpoint(), orders: freshEndpoint(), webhook: freshEndpoint() },
     alerts: [],
   };
 }
@@ -108,7 +110,7 @@ try {
       startedAt: new Date().toISOString(),
       intervalMs: INTERVAL_MS,
       alerts: raw.alerts ?? [],
-      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint(), sessions: raw.endpoints.sessions ?? freshEndpoint(), orders: raw.endpoints.orders ?? freshEndpoint() },
+      endpoints: { ...raw.endpoints, analytics: raw.endpoints.analytics ?? freshEndpoint(), affiliate: raw.endpoints.affiliate ?? freshEndpoint(), sessions: raw.endpoints.sessions ?? freshEndpoint(), orders: raw.endpoints.orders ?? freshEndpoint(), webhook: raw.endpoints.webhook ?? freshEndpoint() },
     };
   }
 } catch {
@@ -144,6 +146,10 @@ const ROUTES: Record<Kind, string> = {
   // Phase 2 (A5): order maintenance (auto-complete sweep + mock tracking
   // tick) — moved OFF the shopper request path (/api/me/orders) onto this rail.
   orders: `${APP_BASE}/api/cron/order-maintenance`,
+  // Phase 2.3 (C2.8): real seller webhook delivery — retry rail for pending
+  // WebhookDelivery rows (the first attempt fires inline on the order paths;
+  // this sweep owns the backoff schedule 1m→5m→15m→1h→4h→12h→24h, 8 attempts).
+  webhook: `${APP_BASE}/api/cron/webhook-delivery`,
 };
 
 async function tick(kind: Kind) {
@@ -178,6 +184,11 @@ async function tick(kind: Kind) {
         if (failed + unknown >= REFUND_STUCK_ALERT_THRESHOLD) {
           alert("REFUND_STUCK", `refund cases failed=${failed} unknown=${unknown} — operator review (docs/late-payment-refund-runbook.md)`);
         }
+      } else if (kind === "webhook") {
+        // C2.8: a persistently large pending backlog means seller endpoints
+        // are not accepting deliveries — surface it for operator review.
+        const backlog = Number(st.lastOutcome?.remainingBacklog ?? 0);
+        if (backlog > BACKLOG_ALERT_THRESHOLD) alert("WEBHOOK_BACKLOG_HIGH", `webhook delivery backlog ${backlog} > ${BACKLOG_ALERT_THRESHOLD} (failing seller endpoints?)`);
       }
       // analytics tick: no special alerting — outcome (purged/remaining/queue)
       // is visible in lastOutcome + the tick records cron.analytics.last.
@@ -192,7 +203,7 @@ async function tick(kind: Kind) {
 
 function monitor() {
   const now = Date.now();
-  for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions", "orders"] as Kind[]) {
+  for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions", "orders", "webhook"] as Kind[]) {
     const st = state.endpoints[kind];
     if (st.lastSuccessAt) {
       const age = now - Date.parse(st.lastSuccessAt);
@@ -219,6 +230,7 @@ function monitor() {
       await tick("sessions");
       await tick("affiliate");
       await tick("orders");
+      await tick("webhook");
     }
   } else {
     // First boot ever — establish the recurring invocation immediately.
@@ -228,6 +240,7 @@ function monitor() {
     await tick("sessions");
     await tick("affiliate");
     await tick("orders");
+    await tick("webhook");
   }
   setInterval(() => {
     tick("expiry");
@@ -236,6 +249,7 @@ function monitor() {
     tick("affiliate");
     tick("sessions");
     tick("orders");
+    tick("webhook");
     monitor();
     saveState();
   }, INTERVAL_MS);
@@ -253,7 +267,7 @@ Bun.serve({
           // persisted state copies (TS2783: duplicate-key overwrite warning)
           ...state,
           service: "expiry-scheduler",
-          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile + /api/cron/analytics-tick + /api/cron/affiliate-tick + /api/cron/order-maintenance",
+          role: "recurring invocation for /api/cron/expiry-sweep + /api/cron/refund-reconcile + /api/cron/analytics-tick + /api/cron/affiliate-tick + /api/cron/order-maintenance + /api/cron/webhook-delivery",
           appBase: APP_BASE,
           intervalMs: INTERVAL_MS,
           secretConfigured: Boolean(CRON_SECRET), // the secret itself is never exposed

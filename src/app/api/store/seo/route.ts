@@ -11,7 +11,14 @@ export const dynamic = "force-dynamic";
 async function sellerStore() {
   const session = await getSession();
   if (!session || session.userType !== "seller") return null;
-  return db.seller.findUnique({ where: { id: session.userId }, include: { store: true } });
+  // PHASE 2.3 select hygiene (C2.7): only these store fields are used (GET
+  // response defaults) — selecting the relation explicitly keeps the
+  // un-migrated Seller.emailVerifiedAt column out of the query
+  // (default/include select → P2022 pre-migration 20261107000000).
+  return db.seller.findUnique({
+    where: { id: session.userId },
+    select: { store: { select: { id: true, name: true, tagline: true, bannerUrl: true } } },
+  });
 }
 
 export const GET = handle(async function (_req: NextRequest) {

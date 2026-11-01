@@ -62,7 +62,12 @@ export interface MarketplaceConnector {
   resolve(url: URL): Promise<ResolvedUrl>;
   authStatus(): Promise<AuthStatus>;
   beginAuthorisation(opts: { redirectUri: string; state: string }): Promise<{ authorizeUrl: string } | null>;
-  exchangeCode(opts: { code: string; redirectUri: string; shopIdParam?: string | null }): Promise<{
+  // PHASE 2.2 (C3 — OAuth ownership): `sellerId` is the initiating seller from
+  // the validated OAuth `state` (begin route signs it, callback validates it).
+  // Connectors persist it on the connection so runner selection and claim/bind
+  // can scope by ownership. Optional/nullable: session-less completions and
+  // legacy flows may not carry one.
+  exchangeCode(opts: { code: string; redirectUri: string; shopIdParam?: string | null; sellerId?: string | null }): Promise<{
     shop: NormalizedShop;
     expiresAt: Date;
     scopes: string[];

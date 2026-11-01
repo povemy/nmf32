@@ -20,6 +20,7 @@ import { SELLER_QUICK_REPLIES } from "@/lib/chat-quick-replies";
 import { formatMinor } from "@/lib/money";
 import { fmtDateTime } from "@/components/shopper/ui-bits";
 import {
+  CHAT_PAGE_SIZE,
   ChatHeader,
   ChatListItem,
   ChatListSkeleton,
@@ -48,6 +49,12 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
   const [thread, setThread] = useState<{ shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
+  // Phase 2.4 (C2.x): bounded history — the GET returns the latest
+  // CHAT_PAGE_SIZE messages + hasMore; "Load older messages" prepends the
+  // next keyset page (?before=<oldest id>) without losing the scroll anchor.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const prependRestoreRef = useRef<number | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -75,16 +82,40 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
       const d = await apiGet<{
         thread: { shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null };
         context: ThreadContextCard | null;
+        hasMore: boolean;
         messages: ChatMsg[];
-      }>(`/api/store/chat/threads/${threadId}/messages`);
+      }>(`/api/store/chat/threads/${threadId}/messages?limit=${CHAT_PAGE_SIZE}`);
       setThread(d.thread);
       setContext(d.context ?? null);
       setMessages(d.messages);
+      setHasOlder(d.hasMore === true);
     } catch {
       setMessages([]);
+      setHasOlder(false);
       setContext(null);
     }
   }, []);
+
+  /** Prepend the next older keyset page, pinning the viewport to the same
+   *  content (scrollTop = newHeight − prevHeight) so loading history never
+   *  jumps the seller to the bottom. */
+  const loadOlder = useCallback(async () => {
+    if (!activeId || !messages?.length || loadingOlder) return;
+    setLoadingOlder(true);
+    const prevHeight = scrollRef.current?.scrollHeight ?? 0;
+    try {
+      const d = await apiGet<{ hasMore: boolean; messages: ChatMsg[] }>(
+        `/api/store/chat/threads/${activeId}/messages?limit=${CHAT_PAGE_SIZE}&before=${encodeURIComponent(messages[0].id)}`
+      );
+      prependRestoreRef.current = prevHeight;
+      setMessages((prev) => (prev ? [...d.messages.filter((n) => !prev.some((m) => m.id === n.id)), ...prev] : prev));
+      setHasOlder(d.hasMore === true);
+    } catch {
+      toast.error("Could not load older messages");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [activeId, messages, loadingOlder]);
 
   /** Debounced background list refresh — new threads + authoritative state. */
   const reloadThreadsSoon = useCallback(() => {
@@ -188,8 +219,16 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
   });
 
   useEffect(() => {
+    // auto-scroll to latest — unless this render is an older-page PREPEND,
+    // in which case the viewport is pinned to the same content instead
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (prependRestoreRef.current != null) {
+      el.scrollTop = el.scrollHeight - prependRestoreRef.current;
+      prependRestoreRef.current = null;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
 
   const reply = async () => {
@@ -324,6 +363,21 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
                   <ChatMessagesSkeleton />
                 ) : (
                   <>
+                    {hasOlder ? (
+                      <div className="pb-1 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void loadOlder()}
+                          disabled={loadingOlder}
+                          className="min-h-[36px] rounded-full text-xs"
+                          aria-label="Load older messages"
+                        >
+                          {loadingOlder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          Load older messages
+                        </Button>
+                      </div>
+                    ) : null}
                     {!context ? (
                       <p className="mx-auto w-fit rounded-full bg-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
                         💬 Direct message from this shopper

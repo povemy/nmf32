@@ -1,0 +1,719 @@
+Skip to content
+
+[]
+
+Destination charges
+
+Create account or Sign in
+
+[]
+
+[]Search/Ask AI[]
+
+Create accountSign in
+
+-   Get started
+-   Payments
+-   Revenue
+-   Risk
+-   Data
+-   Money management
+-   Stablecoins
+-   Embedded finance
+-   Developer resources
+
+More[]
+
+APIs & SDKs[]Help[]
+
+Overview
+
+Stripe Connect
+
+How Connect works
+
+[]Get started with Connect
+
+[]Design your integration
+
+[]Integration fundamentals
+
+[]Capabilities and information requirements
+
+[]Configure account Dashboards
+
+[]Onboard connected accounts
+
+[]Manage your Connect platform
+
+Payment processing
+
+[]Accept payments
+
+[]Charges in a Connect integration
+
+Set statement descriptors
+
+Set MCCs
+
+[]Handle multiple currencies
+
+Create payment links with Connect
+
+Use Radar with Connect
+
+Disputes on Connect
+
+Create subscriptions
+
+Create invoices
+
+[]Manage payment methods
+
+[]Account balance
+
+[]Pay out to accounts
+
+Embedded financial products
+
+[]Treasury for platforms
+
+[]Issuing
+
+[]Capital for platforms
+
+Managed support
+
+[]
+
+Hong Kong
+
+[]
+
+English (United States)
+
+[]
+
+1.  Home/
+2.  Embedded finance/
+3.  Accept payments/
+4.  Charges in a Connect integration
+
+Create destination charges
+
+Create charges on your platform account, collect fees, and immediately transfer the remaining funds to your connected accounts.
+
+[]Ask about this page
+
+[]Copy for LLM
+
+[]
+
+View as Markdown
+
+[]
+
+[]
+
+[]
+
+Set up agent
+
+Create destination charges when customers transact with your platform for products or services provided by your connected accounts and you immediately transfer funds to your connected accounts. With this charge type:
+
+-   You create a charge on your platform’s account.
+-   You determine whether some or all of those funds are transferred to the connected account.
+-   Your account balance is debited for the cost of the Stripe fees, refunds, and chargebacks.
+
+This charge type works best for marketplaces such as Airbnb, a home rental marketplace or Lyft, a ridesharing app.
+
+With certain exceptions, if your platform and a connected account aren’t in the same region, you must specify the connected account as the settlement merchant using the on_behalf_of parameter on the Payment Intent  or payment_intent_data.on_behalf_of on the Checkout Session.
+
+We recommend using destination charges for connected accounts that don’t have access to the full Stripe Dashboard.
+
+Web
+
+iOS
+
+Android
+
+React Native
+
+Stripe-hosted page
+
+Full embedded page
+
+Custom flow
+
+Redirect to a Stripe-hosted payment page using Stripe Checkout. See how this integration compares to Stripe’s other integration types.
+
+[Checkout preview]
+
+Integration effort
+
+Low code
+
+[][][][]
+
+Integration type
+
+Redirect to Stripe-hosted payment page
+
+UI customization
+
+Limited customization
+
+Try it out[]
+
+First, register for a Stripe account.
+
+Use our official libraries to access the Stripe API from your application:
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    # Available as a gem
+    sudo gem install stripe
+
+[]
+
+Gemfile
+
+Select a language
+
+[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    # If you use bundler, you can add this line to your Gemfile
+    gem 'stripe'
+
+Create a Checkout Session
+
+Client-sideServer-side
+
+[]
+
+[]
+
+A Checkout Session controls what your customer sees in the payment form such as line items, the order amount and currency, and acceptable payment methods. Add a checkout button to your website that calls a server-side endpoint to create a Checkout Session.
+
+[]
+
+checkout.html
+
+[]
+
+[]
+
+[]
+
+    <html>
+      <head>
+        <title>Checkout</title>
+      </head>
+      <body>
+        <form action="/create-checkout-session" method="POST">
+          <button type="submit">Checkout</button>
+        </form>
+      </body>
+    </html>
+
+Destination
+
+On behalf of
+
+On your server, create a Checkout Session and redirect your customer to the URL returned in the response.
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+cURL[]
+
+Stripe CLI[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    curl https://api.stripe.com/v1/checkout/sessions \
+      -u "sk_test_...:" \
+      -d "line_items[0][price_data][currency]=usd" \
+      -d "line_items[0][price_data][product_data][name]=T-shirt" \
+      -d "line_items[0][price_data][unit_amount]=1000" \
+      -d "line_items[0][quantity]=1" \
+      -d "payment_intent_data[application_fee_amount]=123" \
+      -d "payment_intent_data[transfer_data][destination]={{CONNECTED_ACCOUNT_ID}}" \
+      -d mode=payment \
+      --data-urlencode "success_url=https://example.com/success?session_id={CHECKOUT_SESSION_ID}"
+
+  Parameter                                         Description
+  ------------------------------------------------- ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  payment_intent_data[transfer_data][destination]   Indicates that this is a destination charge. A destination charge means the charge is processed on the platform and then the funds are immediately and automatically transferred to the connected account’s pending balance.
+  line_items                                        The items the customer is purchasing. The items are displayed in the embedded payment form.
+  success_url                                       The URL where the customer is redirected after they complete a payment. Use the value of {CHECKOUT_SESSION_ID} to retrieve the Checkout Session and inspect its status to decide what to show your customer. You can also append custom query parameters, which persist through the redirect process.
+  payment_intent_data[application_fee_amount]       The amount your platform plans to take from the transaction. The full charge amount is immediately transferred from the platform to the connected account that’s specified by transfer_data[destination] after the charge is captured. The application_fee_amount is then transferred back to the platform, and the Stripe fee is deducted from the platform’s amount.
+
+When processing destination charges, Checkout uses the brand settings of your platform account. See customize branding for more information.
+
+Handle post-payment events
+
+Server-side
+
+[]
+
+[]
+
+Stripe sends a checkout.session.completed event when the payment completes. Use a webhook to receive these events and run actions, like sending an order confirmation email to your customer, logging the sale in a database, or starting a shipping workflow.
+
+Listen for these events rather than waiting on a callback from the client. On the client, the customer could close the browser window or quit the app before the callback executes. Some payment methods also take 2-14 days for payment confirmation. Setting up your integration to listen for asynchronous events enables you to accept multiple payment methods with a single integration.
+
+Stripe recommends handling all of the following events when collecting payments with Checkout:
+
+  Event                                      Description                                                                             Next steps
+  ------------------------------------------ --------------------------------------------------------------------------------------- -----------------------------------------------------------------------------
+  checkout.session.completed                 The customer has successfully authorized the payment by submitting the Checkout form.   Wait for the payment to succeed or fail.
+  checkout.session.async_payment_succeeded   The customer’s payment succeeded.                                                       Fulfill the purchased goods or services.
+  checkout.session.async_payment_failed      The payment was declined, or failed for some other reason.                              Contact the customer through email and request that they place a new order.
+
+These events all include the Checkout Session object. After the payment succeeds, the underlying PaymentIntent status changes from processing to succeeded or a failure status.
+
+Test the integration
+
+[]
+
+[]
+
+Cards
+
+Wallets
+
+Bank redirects
+
+Bank debits
+
+Vouchers
+
++-----------------------+-------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
+| Card number           | Scenario                                                          | How to test                                                                                           |
++=======================+===================================================================+=======================================================================================================+
+| 4242424242424242      | The card payment succeeds and doesn’t require authentication.     | Fill out the credit card form using the credit card number with any expiration, CVC, and postal code. |
+|                       |                                                                   |                                                                                                       |
+| []                    |                                                                   |                                                                                                       |
++-----------------------+-------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
+| 4000002500003155      | The card payment requires authentication.                         | Fill out the credit card form using the credit card number with any expiration, CVC, and postal code. |
+|                       |                                                                   |                                                                                                       |
+| []                    |                                                                   |                                                                                                       |
++-----------------------+-------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
+| 4000000000009995      | The card is declined with a decline code like insufficient_funds. | Fill out the credit card form using the credit card number with any expiration, CVC, and postal code. |
+|                       |                                                                   |                                                                                                       |
+| []                    |                                                                   |                                                                                                       |
++-----------------------+-------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
+| 6205500000000000004   | The UnionPay card has a variable length of 13-19 digits.          | Fill out the credit card form using the credit card number with any expiration, CVC, and postal code. |
+|                       |                                                                   |                                                                                                       |
+| []                    |                                                                   |                                                                                                       |
++-----------------------+-------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
+
+See Testing for additional information to test your integration.
+
+Collect fees[]
+
+When a payment is processed, rather than transfer the full amount of the transaction to a connected account, your platform can decide to take a portion of the transaction amount in the form of fees. You can set fee pricing in two different ways:
+
+-   Use the Platform Pricing Tool to set and test application fee pricing rules. This no-code feature in the Stripe Dashboard is currently only available for platforms responsible for paying Stripe fees.
+
+-   Set your pricing rules in-house, specifying fees directly in a PaymentIntent using either the application_fee_amount or transfer_data[amount] parameter. Fees set with this method override the pricing logic specified in the Platform Pricing Tool.
+
+application_fee_amount
+
+transfer_data[amount]
+
+When creating charges with an application_fee_amount, the full charge amount is immediately transferred from the platform to the transfer_data[destination] account after the charge is captured. The application_fee_amount (capped at the full amount of the charge) is then transferred back to the platform.
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+cURL[]
+
+Stripe CLI[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    curl https://api.stripe.com/v1/checkout/sessions \
+      -u "sk_test_...:" \
+      -d "line_items[0][price_data][currency]=usd" \
+      -d "line_items[0][price_data][product_data][name]=T-shirt" \
+      -d "line_items[0][price_data][unit_amount]=1000" \
+      -d "line_items[0][quantity]=1" \
+      -d "payment_intent_data[application_fee_amount]=123" \
+      -d "payment_intent_data[transfer_data][destination]={{CONNECTED_ACCOUNT_ID}}" \
+      -d mode=payment \
+      --data-urlencode "success_url=https://example.com/success"
+
+After the application fee is collected, an Application Fee object is created. You can view a list of application fees in the Dashboard, with the application fees, or in Sigma. You can also use the amount property on the application fee object for itemized fee reporting.
+
+When using an application_fee_amount, know that:
+
+-   The application_fee_amount is capped at the total transaction amount.
+-   The application_fee_amount is always computed in the same currency as the transaction.
+-   The application fee settles in the same currency as the connected account’s settlement currency. For cross-border destination charges, this might differ from your platform’s settlement currency.
+-   Your platform pays the Stripe fee after the application_fee_amount is transferred to your account.
+-   No additional Stripe fees are applied to the amount.
+-   Your platform can use built-in application fee reporting to reconcile fees collected.
+-   In Stripe-hosted dashboards or components such as the Payment details component, your connected account can view both the total amount and the application fee amount.
+
+Flow of funds with destination charges []
+
+With the above code, the full charge amount (10.00 USD) is added to the connected account’s pending balance. The application_fee_amount (1.23 USD) is subtracted from the charge amount and is transferred to your platform. Stripe fees (0.59 USD) are subtracted from your platform account’s balance. The application fee amount minus the Stripe fees (1.23 USD - 0.59 USD = 0.64 USD) remains in your platform account’s balance.
+
+[Flow of funds for destination charges]
+
+The application_fee_amount becomes available on the platform account’s normal transfer schedule, just like funds from regular Stripe charges.
+
+Customize branding []
+
+Your platform and connected accounts can use the Branding settings in the Dashboard to customize branding on the payments page. For direct charges, Checkout uses the brand settings of the connected account.
+
+You can also use the API to update branding settings:
+
+-   icon - Displayed next to the business name in the header of the Checkout page.
+-   logo - Used in place of the icon and business name in the header of the Checkout page.
+-   primary_color - Used as the background color on the Checkout page.
+-   secondary_color - Used as the button color on the Checkout page.
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+cURL[]
+
+Stripe CLI[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    curl https://api.stripe.com/v1/accounts/{{CONNECTED_ACCOUNT_ID}} \
+      -u "sk_test_...:" \
+      -d "settings[branding][icon]={{FILE_ID}}" \
+      -d "settings[branding][logo]={{FILE_ID}}" \
+      --data-urlencode "settings[branding][primary_color]=#663399" \
+      --data-urlencode "settings[branding][secondary_color]=#4BB543"
+
+Specify the settlement merchant []
+
+The settlement merchant is dependent on the capabilities set on an account and how a charge is created. The settlement merchant determines whose information is used to make the charge. This includes the statement descriptor (either the platform’s or the connected account’s) that’s displayed on the customer’s credit card or bank statement for that charge.
+
+Specifying the settlement merchant allows you to be more explicit about who to create charges for. For example, some platforms prefer to be the settlement merchant because the end customer interacts directly with their platform (such as on-demand platforms). However, some platforms have connected accounts that interact directly with end customers instead (such as a storefront on an e-commerce platform). In these scenarios, it might make more sense for the connected account to be the settlement merchant.
+
+You can set the on_behalf_of parameter to the ID of a connected account to make that account the settlement merchant for the payment. When using on_behalf_of:
+
+-   Charges settle in the connected account’s country and settlement currency.
+-   The fee structure for the connected account’s country is used.
+-   The connected account’s statement descriptor is displayed on the customer’s credit card statement.
+-   If the connected account is in a different country than the platform, the connected account’s address and phone number are displayed on the customer’s credit card statement.
+-   The number of days that a pending balance is held before being paid out depends on the delay_days setting on the connected account.
+
+Accounts v2 API
+
+You can’t use the Accounts v2 API to manage payout settings. Use the Accounts v1 API.
+
+If on_behalf_of is omitted, the platform is the business of record for the payment.
+
+Caution
+
+The on_behalf_of parameter is supported only for connected accounts with a payments capability such as card_payments. Accounts under the recipient service agreement can’t request card_payments or other payments capabilities.
+
+Issue refunds []
+
+If you’re using the Payment Intents API, refunds should be issued against the most recent charge that is created.
+
+Charges created on the platform account can be refunded using the platform account’s secret key. When refunding a charge that has a transfer_data[destination], by default the destination account keeps the funds that were transferred to it, leaving the platform account to cover the negative balance from the refund. To pull back the funds from the connected account to cover the refund, set the reverse_transfer parameter to true when creating the refund:
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+cURL[]
+
+Stripe CLI[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    curl https://api.stripe.com/v1/refunds \
+      -u "sk_test_...:" \
+      -d "charge={{CHARGE_ID}}" \
+      -d reverse_transfer=true
+
+By default, the entire charge is refunded, but you can create a partial refund by setting an amount value as a positive integer.
+
+If the refund results in the entire charge being refunded, the entire transfer is reversed. Otherwise, a proportional amount of the transfer is reversed.
+
+Refund application fees []
+
+When refunding a charge with an application fee, by default the platform account keeps the funds from the application fee. To push the application fee funds back to the connected account, set the refund_application_fee parameter to true when creating the refund:
+
+[]
+
+Command Line
+
+Select a language
+
+[]
+
+cURL[]
+
+Stripe CLI[]
+
+Ruby[]
+
+Python[]
+
+PHP[]
+
+Java[]
+
+Node.js[]
+
+Go[]
+
+.NET[]
+
+[] No results
+
+[]
+
+[]
+
+[]
+
+    curl https://api.stripe.com/v1/refunds \
+      -u "sk_test_...:" \
+      -d "charge={{CHARGE_ID}}" \
+      -d reverse_transfer=true \
+      -d refund_application_fee=true
+
+If you refund the application fee for a destination charge, you must also reverse the transfer. If the refund results in the entire charge being refunded, the refund also includes the entire application fee. Otherwise, you refund a proportional amount of the application fee.
+
+Alternatively, you can provide a refund_application_fee value of false and refund the application fee separately through the API.
+
+Failed refunds[]
+
+If a refund fails, or you cancel it, the amount of the failed refund returns to your platform account’s Stripe balance. Create a Transfer to move the funds to the connected account, as needed.
+
+Handle disputes []
+
+For destination charges, with or without on_behalf_of, Stripe debits dispute amounts and fees from your platform account.
+
+Set up a webhook to listen for dispute created events.
+
+You can reverse the transfer to your connected account through the Dashboard or by creating a transfer reversal to recover the dispute chargeback funds. If the connected account has a negative balance, Stripe attempts to debit its external account if debit_negative_balances is set to true.
+
+Time your reversal according to how you choose to handle the dispute:
+
+-   If you accept the dispute, you can reverse the transfer immediately.
+-   If you challenge the dispute, wait for the dispute outcome before reversing the transfer.
+    -   If you win, don’t reverse the transfer.
+    -   If you lose, reverse the transfer.
+
+If you reverse the transfer for a disputed payment that you challenge and win, transfering those funds back to a connected account can have unexpected results:
+
+-   If your platform has an insufficient balance, the transfer fails. Prevent insufficient balance errors by adding funds to your Stripe balance.
+-   Cross-border transfer restrictions might prevent you from repaying your connected account.
+
+Asynchronous payment failures []
+
+For destination charges using asynchronous payment methods (such as ACH Debit or SEPA Debit), there’s a delay between when the payment is initiated and when the funds are confirmed. During this time, both the charge and the transfer to the connected account’s pending balance are in a pending state.
+
+If the async payment fails, Stripe automatically reverses the transfer. No funds are permanently moved to the connected account.
+
+Skipped transfers due to account status []
+
+For payments using asynchronous payment methods (such as ACH or SEPA Debit), there is a delay between when the payment is authorized and when the funds become available. During this time, if the destination account loses the required transfer capability or is closed, Stripe can’t complete the transfer as originally requested.
+
+When Stripe attempts to create a transfer but can’t do so because of capability loss or account deletion, we skip the transfer and the funds remain in your platform’s balance.
+
+To detect skipped transfers, listen for the charge.updated webhook event. If the value of transfer_data on the Charge object is null, this indicates a skipped transfer.
+
+When you detect a skipped transfer, you can create a transfer after resolving the problem.
+
+Connect embedded components[]
+
+Destination charges are supported by Connect embedded components. By using the payments embedded component, you can enable your connected accounts to view payment information from within your site. For destination charges with on_behalf_of, you can use the destination_on_behalf_of_charge_management feature to allow your connected accounts to view additional details, manage refunds, disputes, and allow capturing payments.
+
+[]
+
+The following components display information for destination charges:
+
+-   Payments component: Displays all of an account’s payments and disputes.
+
+-   Payments details: Displays all of an account’s payments and disputes.
+
+-   Disputes list component: Displays all of an account’s disputes.
+
+-   Disputes for a payment component: Displays the disputes for a single specified payment. You can use it to include dispute management functionality on a page with your payments UI.
+
+See also[]
+
+-   []Working with multiple currencies
+-   []Statement descriptors with Connect
+
+Was this page helpful?
+
+[]Yes[]No
+
+-   []Need help? Contact Support.
+-   []Chat with Stripe developers on Discord.
+-   []Check out our changelog.
+-   []Questions? Contact Sales.
+-   []LLM? Read llms.txt.
+-   Powered by Markdoc
+
+[]
+
+[]
+
+On this page
+
+[]

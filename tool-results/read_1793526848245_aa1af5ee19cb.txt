@@ -1,0 +1,771 @@
+     1→// ============================================================================
+     2→// TASK 10 — Smart shipping & fulfilment layer (lib engine)
+     3→// ============================================================================
+     4→// Provider abstraction `ShippingProvider` with a deterministic MOCK Malaysian
+     5→// courier network (providerId "mock"). No external network calls anywhere —
+     6→// AWB numbers, labels, tracking milestones and proof-of-delivery photos are
+     7→// all derived locally (lib/placeholder pipeline), so demos work fully offline.
+     8→//
+     9→// State machine (Shipment.status):
+    10→//   PENDING_BOOKING → BOOKED → PICKED_UP → IN_TRANSIT → OUT_FOR_DELIVERY
+    11→//                   → DELIVERED   (or EXCEPTION / RETURNED — not simulated v1)
+    12→//
+    13→// The demo advances without a cron: POST /api/shipping/tick advances every
+    14→// active mock shipment one step, and buyer-facing GET endpoints call
+    15→// maybeSyncTracking() lazily (45s per-shipment guard).
+    16→// ============================================================================
+    17→import { db } from "./db";
+    18→import { ApiError, dispatchStoreWebhooks, notify, transitionOrder } from "./api";
+    19→import { createNotification } from "./notify-shopper";
+    20→import { hashStr, placeholderDataUrl, svgDataUrl } from "./placeholder";
+    21→
+    22→// ---------------------------------------------------------------------------
+    23→// Types
+    24→// ---------------------------------------------------------------------------
+    25→
+    26→export type ShippingParcel = {
+    27→  weightGrams: number;
+    28→  itemCount: number;
+    29→};
+    30→
+    31→export type ShippingDestination = {
+    32→  state: string;
+    33→  postcode?: string | null;
+    34→};
+    35→
+    36→export type ShippingQuote = {
+    37→  /** Stable key the ship route re-derives + validates on booking. */
+    38→  rateId: string;
+    39→  providerId: string;
+    40→  courierName: string;
+    41→  serviceLevel: string;
+    42→  priceMinor: number;
+    43→  etaFromDays: number;
+    44→  etaToDays: number;
+    45→};
+    46→
+    47→export type ShippingZone = "peninsular" | "east";
+    48→
+    49→export type ShipmentSnapshot = {
+    50→  id: string;
+    51→  orderId: string;
+    52→  status: string;
+    53→  providerId: string;
+    54→  awbNumber: string | null;
+    55→  courierName: string | null;
+    56→  labelUrl: string | null;
+    57→  bookedAt: Date | null;
+    58→  pickedUpAt: Date | null;
+    59→  etaFrom: Date | null;
+    60→  etaTo: Date | null;
+    61→  deliveredAt: Date | null;
+    62→  lastSyncedAt: Date | null;
+    63→};
+    64→
+    65→export const MOCK_PROVIDER_ID = "mock";
+    66→
+    67→/**_statuses the mock network actively advances. */
+    68→export const ACTIVE_SHIPMENT_STATUSES = ["BOOKED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"] as const;
+    69→
+    70→const TRACK_FLOW: Record<string, string> = {
+    71→  BOOKED: "PICKED_UP",
+    72→  PICKED_UP: "IN_TRANSIT",
+    73→  IN_TRANSIT: "OUT_FOR_DELIVERY",
+    74→  OUT_FOR_DELIVERY: "DELIVERED",
+    75→};
+    76→
+    77→// ---------------------------------------------------------------------------
+    78→// Zones + geography (deterministic, offline)
+    79→// ---------------------------------------------------------------------------
+    80→
+    81→const EAST_MALAYSIA_STATES = new Set(["sabah", "sarawak", "labuan", "wp labuan"]);
+    82→
+    83→export function zoneOf(dest: string | null | undefined): ShippingZone {
+    84→  const s = (dest ?? "").trim().toLowerCase();
+    85→  return EAST_MALAYSIA_STATES.has(s) ? "east" : "peninsular";
+    86→}
+    87→
+    88→const STATE_CITY: Record<string, string> = {
+    89→  "kuala lumpur": "Kuala Lumpur",
+    90→  "selangor": "Shah Alam",
+    91→  "putrajaya": "Putrajaya",
+    92→  "cyberjaya": "Cyberjaya",
+    93→  "johor": "Johor Bahru",
+    94→  "kedah": "Alor Setar",
+    95→  "kelantan": "Kota Bharu",
+    96→  "melaka": "Melaka City",
+    97→  "malacca": "Melaka City",
+    98→  "negeri sembilan": "Seremban",
+    99→  "pahang": "Kuantan",
+   100→  "penang": "George Town",
+   101→  "pulau pinang": "George Town",
+   102→  "perak": "Ipoh",
+   103→  "perlis": "Kangar",
+   104→  "terengganu": "Kuala Terengganu",
+   105→  "sabah": "Kota Kinabalu",
+   106→  "sarawak": "Kuching",
+   107→  "labuan": "Labuan",
+   108→};
+   109→
+   110→export function cityForState(dest: string | null | undefined): string {
+   111→  const s = (dest ?? "").trim().toLowerCase();
+   112→  return STATE_CITY[s] ?? "Kuala Lumpur";
+   113→}
+   114→
+   115→const HUBS_PENINSULAR = [
+   116→  "Petaling Jaya Collection Centre",
+   117→  "Kuala Lumpur Hub (KL)",
+   118→  "Shah Alam Sortation Centre",
+   119→  "Johor Bahru Hub",
+   120→  "Penang Hub (Bayan Lepas)",
+   121→];
+   122→const HUBS_TRANSIT = [
+   123→  "KLIA Cargo Terminal, Sepang",
+   124→  "Shah Alam Regional Sortation",
+   125→  "Ipoh Transit Facility",
+   126→  "Melaka Cross-Dock",
+   127→];
+   128→const HUBS_EAST = ["Kuching Hub, Sarawak", "Kota Kinabalu Hub, Sabah", "Labuan Collection Centre"];
+   129→
+   130→function pick<T>(pool: T[], seedStr: string): T {
+   131→  return pool[hashStr(seedStr) % pool.length];
+   132→}
+   133→
+   134→// ---------------------------------------------------------------------------
+   135→// Rate card — fixed table so quote → book re-derivation always matches.
+   136→// ---------------------------------------------------------------------------
+   137→
+   138→type CourierSpec = {
+   139→  code: string;
+   140→  name: string;
+   141→  serviceLevel: string;
+   142→  etaFromDays: number;
+   143→  etaToDays: number;
+   144→  /** base price by weight-band ceiling (grams) → minor, peninsular */
+   145→  bandsPen: Array<[number, number]>;
+   146→  /** east-malaysia multiplier applied on top of the peninsular band price */
+   147→  eastSurcharge: number;
+   148→  /** per-kg surcharge beyond the last band */
+   149→  perKgBeyondPen: number;
+   150→};
+   151→
+   152→const COURIERS: CourierSpec[] = [
+   153→  {
+   154→    code: "jt",
+   155→    name: "J&T Express",
+   156→    serviceLevel: "economy",
+   157→    etaFromDays: 2,
+   158→    etaToDays: 4,
+   159→    bandsPen: [[500, 550], [1000, 690], [2000, 950], [3000, 1350], [5000, 1900], [10000, 3200]],
+   160→    eastSurcharge: 1.9,
+   161→    perKgBeyondPen: 260,
+   162→  },
+   163→  {
+   164→    code: "poslaju",
+   165→    name: "Pos Laju",
+   166→    serviceLevel: "standard",
+   167→    etaFromDays: 1,
+   168→    etaToDays: 3,
+   169→    bandsPen: [[500, 700], [1000, 900], [2000, 1250], [3000, 1700], [5000, 2400], [10000, 3900]],
+   170→    eastSurcharge: 2.0,
+   171→    perKgBeyondPen: 320,
+   172→  },
+   173→  {
+   174→    code: "citylink",
+   175→    name: "City-Link Express",
+   176→    serviceLevel: "standard_plus",
+   177→    etaFromDays: 1,
+   178→    etaToDays: 2,
+   179→    bandsPen: [[500, 850], [1000, 1100], [2000, 1500], [3000, 2000], [5000, 2800], [10000, 4500]],
+   180→    eastSurcharge: 2.1,
+   181→    perKgBeyondPen: 360,
+   182→  },
+   183→];
+   184→
+   185→/** Deterministic parcel estimate: 150g packaging + 120g per ordered unit. */
+   186→export function parcelWeightForItems(items: { qty: number }[]): number {
+   187→  const units = items.reduce((s, i) => s + Math.max(0, Math.floor(i.qty)), 0);
+   188→  return 150 + units * 120;
+   189→}
+   190→
+   191→function bandPriceMinor(spec: CourierSpec, weightGrams: number, zone: ShippingZone): number {
+   192→  let base = spec.bandsPen[spec.bandsPen.length - 1][1];
+   193→  for (const [ceiling, price] of spec.bandsPen) {
+   194→    if (weightGrams <= ceiling) {
+   195→      base = price;
+   196→      break;
+   197→    }
+   198→  }
+   199→  const lastCeiling = spec.bandsPen[spec.bandsPen.length - 1][0];
+   200→  if (weightGrams > lastCeiling) {
+   201→    const extraKg = Math.ceil((weightGrams - lastCeiling) / 1000);
+   202→    base += extraKg * spec.perKgBeyondPen;
+   203→  }
+   204→  return Math.round(base * (zone === "east" ? spec.eastSurcharge : 1));
+   205→}
+   206→
+   207→/** Quote 3 Malaysian courier options — deterministic by (courier, weight, zone). */
+   208→export function quoteRates(parcel: ShippingParcel, dest: ShippingDestination): ShippingQuote[] {
+   209→  const zone = zoneOf(dest.state);
+   210→  return COURIERS.map((spec) => ({
+   211→    rateId: `${MOCK_PROVIDER_ID}:${spec.code}:${spec.serviceLevel}`,
+   212→    providerId: MOCK_PROVIDER_ID,
+   213→    courierName: spec.name,
+   214→    serviceLevel: spec.serviceLevel,
+   215→    priceMinor: bandPriceMinor(spec, Math.max(1, Math.round(parcel.weightGrams)), zone),
+   216→    etaFromDays: spec.etaFromDays + (zone === "east" ? 1 : 0),
+   217→    etaToDays: spec.etaToDays + (zone === "east" ? 3 : 0),
+   218→  }));
+   219→}
+   220→
+   221→export function findQuote(rateId: string, parcel: ShippingParcel, dest: ShippingDestination): ShippingQuote | null {
+   222→  return quoteRates(parcel, dest).find((q) => q.rateId === rateId) ?? null;
+   223→}
+   224→
+   225→// ---------------------------------------------------------------------------
+   226→// AWB + label + POD (all deterministic, offline-safe)
+   227→// ---------------------------------------------------------------------------
+   228→
+   229→const AWB_DIGITS = 10;
+   230→
+   231→/** `PLJ` + 10 digits — per-courier prefix (Pos Laju style) + hashed digits. */
+   232→export function awbFor(orderNumber: string, courierCode: string): string {
+   233→  const prefix =
+   234→    {
+   235→      poslaju: "PLJ",
+   236→      jt: "JTE",
+   237→      citylink: "CLX",
+   238→    }[courierCode] ?? "MYX";
+   239→  const h = hashStr(`${orderNumber}:${courierCode}:${Math.floor(Date.now() / 1000)}`);
+   240→  const digits = String(h % 10_000_000_000).padStart(AWB_DIGITS, "0");
+   241→  return `${prefix}${digits}`;
+   242→}
+   243→
+   244→/** Barcode-ish deterministic vertical bars for an AWB number. */
+   245→function barcodeBars(awb: string, x0: number, y0: number, h: number): string {
+   246→  const rects: string[] = [];
+   247→  let x = x0;
+   248→  for (let i = 0; i < 44; i++) {
+   249→    const bit = hashStr(`${awb}:${i}`) % 3; // 0 thin, 1 mid, 2 thick
+   250→    const w = 2 + bit * 2;
+   251→    if (i % 2 === 0) rects.push(`<rect x="${x}" y="${y0}" width="${w}" height="${h}" fill="#111111"/>`);
+   252→    x += w + 2;
+   253→  }
+   254→  return rects.join("");
+   255→}
+   256→
+   257→export type LabelInput = {
+   258→  awbNumber: string;
+   259→  courierName: string;
+   260→  orderNumber: string;
+   261→  storeName: string;
+   262→  destCity: string;
+   263→  destState: string;
+   264→  recipient: string;
+   265→  etaText: string;
+   266→};
+   267→
+   268→/** AWB shipping label as an inline SVG (640×880) — printable, no fonts needed. */
+   269→export function labelSvgFor(input: LabelInput): string {
+   270→  const W = 640;
+   271→  const H = 880;
+   272→  const esc = (s: string) => s.replace(/[<>&]/g, "");
+   273→  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+   274→  <rect width="${W}" height="${H}" fill="#ffffff"/>
+   275→  <rect x="0" y="0" width="${W}" height="110" fill="#0f766e"/>
+   276→  <text x="32" y="48" font-family="system-ui,Segoe UI,sans-serif" font-weight="700" font-size="34" fill="#ffffff">${esc(input.courierName)}</text>
+   277→  <text x="32" y="82" font-family="system-ui,Segoe UI,sans-serif" font-size="18" fill="#ccfbf1">Air Waybill · NOMOFEE mock network (sandbox)</text>
+   278→  <text x="${W - 32}" y="66" text-anchor="end" font-family="monospace" font-size="26" font-weight="700" fill="#ffffff">${esc(input.awbNumber)}</text>
+   279→  <rect x="32" y="140" width="${W - 64}" height="120" fill="none" stroke="#0f766e" stroke-width="3"/>
+   280→  ${barcodeBars(input.awbNumber, 52, 165, 70)}
+   281→  <text x="52" y="250" font-family="monospace" font-size="26" letter-spacing="6" fill="#111111">${esc(input.awbNumber)}</text>
+   282→  <text x="32" y="310" font-family="system-ui,Segoe UI,sans-serif" font-size="15" fill="#6b7280">FROM (SELLER)</text>
+   283→  <text x="32" y="338" font-family="system-ui,Segoe UI,sans-serif" font-weight="600" font-size="22" fill="#111111">${esc(input.storeName)}</text>
+   284→  <text x="32" y="392" font-family="system-ui,Segoe UI,sans-serif" font-size="15" fill="#6b7280">TO (RECIPIENT)</text>
+   285→  <text x="32" y="422" font-family="system-ui,Segoe UI,sans-serif" font-weight="700" font-size="26" fill="#111111">${esc(input.recipient)}</text>
+   286→  <text x="32" y="456" font-family="system-ui,Segoe UI,sans-serif" font-size="22" fill="#111111">${esc(input.destCity)}, ${esc(input.destState)}, Malaysia</text>
+   287→  <rect x="32" y="496" width="${W - 64}" height="96" fill="#f0fdfa"/>
+   288→  <text x="48" y="532" font-family="system-ui,Segoe UI,sans-serif" font-size="16" fill="#6b7280">ORDER REF</text>
+   289→  <text x="48" y="566" font-family="monospace" font-size="24" font-weight="700" fill="#0f766e">${esc(input.orderNumber)}</text>
+   290→  <text x="${W - 48}" y="532" text-anchor="end" font-family="system-ui,Segoe UI,sans-serif" font-size="16" fill="#6b7280">ETA</text>
+   291→  <text x="${W - 48}" y="566" text-anchor="end" font-family="system-ui,Segoe UI,sans-serif" font-size="20" font-weight="600" fill="#111111">${esc(input.etaText)}</text>
+   292→  <rect x="32" y="632" width="${W - 64}" height="150" fill="none" stroke="#9ca3af" stroke-dasharray="6 6"/>
+   293→  <text x="52" y="662" font-family="system-ui,Segoe UI,sans-serif" font-size="15" fill="#6b7280">COURIER SIGNATURE</text>
+   294→  <text x="52" y="756" font-family="system-ui,Segoe UI,sans-serif" font-size="14" fill="#9ca3af">Handled by NOMOFEE Fulfilment (demo). Not a valid postal document.</text>
+   295→  <text x="32" y="842" font-family="system-ui,Segoe UI,sans-serif" font-weight="700" font-size="18" fill="#dc2626">MOCK LABEL — DEMO USE ONLY</text>
+   296→</svg>`;
+   297→}
+   298→
+   299→/** Deterministic mock proof-of-delivery "photo" (inline SVG data-URL). */
+   300→export function mockPodUrl(awb: string): string {
+   301→  return placeholderDataUrl({
+   302→    seed: `pod:${awb}`,
+   303→    w: 640,
+   304→    h: 480,
+   305→    label: "Proof of delivery",
+   306→  });
+   307→}
+   308→
+   309→// ---------------------------------------------------------------------------
+   310→// Notification plumbing — delegates to the shared Task 10-d helper
+   311→// (src/lib/notify-shopper.ts) so buyer nudges behave identically across the
+   312→// payment / ship / deliver paths. Best-effort: never throws into the flow.
+   313→// ---------------------------------------------------------------------------
+   314→
+   315→/** Buyer "Parcel on the way" nudge — called by both ship modes. */
+   316→export async function pushBuyerNotificationForShipped(input: {
+   317→  shopperId: string | null;
+   318→  orderNumber: string;
+   319→  storeId: string;
+   320→  storeName: string;
+   321→  storeSlug: string | null;
+   322→  courierName: string;
+   323→  awbNumber: string | null;
+   324→}): Promise<void> {
+   325→  await createNotification(
+   326→    input.shopperId,
+   327→    "order.shipped",
+   328→    "Parcel on the way",
+   329→    `Your order ${input.orderNumber} from ${input.storeName} is on the way via ${input.courierName}${input.awbNumber ? ` · AWB ${input.awbNumber}` : ""}`,
+   330→    { orderNumber: input.orderNumber, slug: input.storeSlug ?? undefined }
+   331→  );
+   332→}
+   333→
+   334→// ---------------------------------------------------------------------------
+   335→// Booking
+   336→// ---------------------------------------------------------------------------
+   337→
+   338→export type BookingOrder = {
+   339→  id: string;
+   340→  orderNumber: string;
+   341→  storeId: string;
+   342→  storeName: string;
+   343→  customerName: string;
+   344→  shippingAddressJson: string;
+   345→  items: { qty: number }[];
+   346→};
+   347→
+   348→function parseAddress(json: string): { line1?: string; city?: string; state?: string; postcode?: string } {
+   349→  try {
+   350→    const v = JSON.parse(json || "{}") as Record<string, unknown>;
+   351→    return {
+   352→      line1: typeof v.line1 === "string" ? v.line1 : undefined,
+   353→      city: typeof v.city === "string" ? v.city : undefined,
+   354→      state: typeof v.state === "string" ? v.state : undefined,
+   355→      postcode: typeof v.postcode === "string" ? v.postcode : undefined,
+   356→    };
+   357→  } catch {
+   358→    return {};
+   359→  }
+   360→}
+   361→
+   362→export function etaTextFor(quote: ShippingQuote): string {
+   363→  return quote.etaFromDays === quote.etaToDays
+   364→    ? `${quote.etaFromDays} day${quote.etaFromDays === 1 ? "" : "s"}`
+   365→    : `${quote.etaFromDays}-${quote.etaToDays} working days`;
+   366→}
+   367→
+   368→/**
+   369→ * Book the chosen quote for an order: creates/refreshes the Shipment (BOOKED),
+   370→ * stamps the AWB, generates the SVG label (inline data-URL) and writes the
+   371→ * first BOOKED ShipmentEvent. Deterministic + offline.
+   372→ */
+   373→export async function bookShipment(
+   374→  order: BookingOrder,
+   375→  quote: ShippingQuote
+   376→): Promise<ShipmentSnapshot> {
+   377→  const dest = parseAddress(order.shippingAddressJson);
+   378→  const now = new Date();
+   379→  const awb = awbFor(order.orderNumber, quote.rateId.split(":")[1] ?? "myx");
+   380→  const labelSvg = labelSvgFor({
+   381→    awbNumber: awb,
+   382→    courierName: quote.courierName,
+   383→    orderNumber: order.orderNumber,
+   384→    storeName: order.storeName,
+   385→    destCity: cityForState(dest.state),
+   386→    destState: dest.state || "Malaysia",
+   387→    recipient: order.customerName,
+   388→    etaText: etaTextFor(quote),
+   389→  });
+   390→
+   391→  const data = {
+   392→    storeId: order.storeId,
+   393→    providerId: MOCK_PROVIDER_ID,
+   394→    providerRef: awb,
+   395→    status: "BOOKED",
+   396→    awbNumber: awb,
+   397→    courierName: quote.courierName,
+   398→    trackingUrl: null,
+   399→    labelUrl: svgDataUrl(labelSvg),
+   400→    bookedAt: now,
+   401→    pickedUpAt: null,
+   402→    etaFrom: new Date(now.getTime() + quote.etaFromDays * 24 * 3600 * 1000),
+   403→    etaTo: new Date(now.getTime() + quote.etaToDays * 24 * 3600 * 1000),
+   404→    deliveredAt: null,
+   405→    lastSyncedAt: now,
+   406→  };
+   407→
+   408→  const shipment = await db.shipment.upsert({
+   409→    where: { orderId: order.id },
+   410→    create: { orderId: order.id, ...data },
+   411→    update: { ...data },
+   412→    include: { order: { select: { shopperId: true } } },
+   413→  });
+   414→
+   415→  // Fresh tracking history for a new booking (upsert replaces stale rows).
+   416→  await db.shipmentEvent.deleteMany({ where: { shipmentId: shipment.id } });
+   417→  await db.shipmentEvent.create({
+   418→    data: {
+   419→      shipmentId: shipment.id,
+   420→      status: "BOOKED",
+   421→      description: `Shipping label created — parcel registered by ${quote.courierName} for ${order.storeName}`,
+   422→      location: `${order.storeName}, ${cityForState(dest.state)}`,
+   423→      occurredAt: now,
+   424→    },
+   425→  });
+   426→
+   427→  return shapeShipment(shipment);
+   428→}
+   429→
+   430→type ShipmentWithRelations = NonNullable<Awaited<ReturnType<typeof db.shipment.findFirst>>>;
+   431→
+   432→function shapeShipment(s: ShipmentWithRelations): ShipmentSnapshot {
+   433→  return {
+   434→    id: s.id,
+   435→    orderId: s.orderId,
+   436→    status: s.status,
+   437→    providerId: s.providerId,
+   438→    awbNumber: s.awbNumber,
+   439→    courierName: s.courierName,
+   440→    labelUrl: s.labelUrl,
+   441→    bookedAt: s.bookedAt,
+   442→    pickedUpAt: s.pickedUpAt,
+   443→    etaFrom: s.etaFrom,
+   444→    etaTo: s.etaTo,
+   445→    deliveredAt: s.deliveredAt,
+   446→    lastSyncedAt: s.lastSyncedAt,
+   447→  };
+   448→}
+   449→
+   450→// ---------------------------------------------------------------------------
+   451→// Delivery side-effects (shared by courier sync + manual seller deliver)
+   452→// ---------------------------------------------------------------------------
+   453→
+   454→export async function deliverySideEffects(input: {
+   455→  order: { id: string; orderNumber: string; customerEmail: string; shopperId: string | null; storeId: string };
+   456→  storeSlug: string | null;
+   457→  courierName: string | null;
+   458→  awbNumber: string | null;
+   459→  note: string;
+   460→  deliveredAt: Date;
+   461→}): Promise<void> {
+   462→  await dispatchStoreWebhooks({
+   463→    storeId: input.order.storeId,
+   464→    event: "order.delivered",
+   465→    payload: {
+   466→      orderNumber: input.order.orderNumber,
+   467→      awb: input.awbNumber,
+   468→      courier: input.courierName,
+   469→      deliveredAt: input.deliveredAt.toISOString(),
+   470→    },
+   471→  });
+   472→  await notify({
+   473→    event: "order.delivered",
+   474→    channel: "email",
+   475→    recipient: input.order.customerEmail,
+   476→    subject: `Your order ${input.order.orderNumber} was delivered`,
+   477→  });
+   478→  await createNotification(
+   479→    input.order.shopperId,
+   480→    "order.delivered",
+   481→    "Parcel delivered — confirm receipt",
+   482→    `${input.note} (${input.order.orderNumber})`,
+   483→    { orderNumber: input.order.orderNumber, slug: input.storeSlug ?? undefined }
+   484→  );
+   485→}
+   486→
+   487→// ---------------------------------------------------------------------------
+   488→// Tracking sync — one realistic step per call
+   489→// ---------------------------------------------------------------------------
+   490→
+   491→/**
+   492→ * Advance a mock shipment exactly one step down the state machine, writing a
+   493→ * ShipmentEvent with a plausible Malaysian location. On DELIVERED it attaches
+   494→ * the mock POD photo and flips the order to "delivered" (history via
+   495→ * transitionOrder). Idempotent-safe: non-active shipments are returned as-is.
+   496→ */
+   497→export async function syncTracking(shipmentId: string): Promise<ShipmentSnapshot | null> {
+   498→  const shipment = await db.shipment.findUnique({
+   499→    where: { id: shipmentId },
+   500→    include: { order: { select: { id: true, orderNumber: true, status: true, customerEmail: true, shopperId: true, storeId: true, shippingAddressJson: true, store: { select: { slug: true } } } } },
+   501→  });
+   502→  if (!shipment) return null;
+   503→  if (!ACTIVE_SHIPMENT_STATUSES.includes(shipment.status as (typeof ACTIVE_SHIPMENT_STATUSES)[number])) {
+   504→    return shapeShipment(shipment);
+   505→  }
+   506→
+   507→  const next = TRACK_FLOW[shipment.status];
+   508→  const now = new Date();
+   509→  const awb = shipment.awbNumber ?? "UNKNOWN";
+   510→  const destState = parseAddress(shipment.order.shippingAddressJson ?? "{}").state ?? "";
+   511→  const destCity = cityForState(destState);
+   512→
+   513→  const steps: Record<string, { description: string; location: string; patch: Record<string, unknown> }> = {
+   514→    PICKED_UP: {
+   515→      description: `Parcel collected by ${shipment.courierName ?? "courier"} from the seller`,
+   516→      location: pick(zoneOf(destState) === "east" ? HUBS_EAST : HUBS_PENINSULAR, `${awb}:pickup`),
+   517→      patch: { pickedUpAt: now },
+   518→    },
+   519→    IN_TRANSIT: {
+   520→      description: "Arrived at transit facility — departing on the next scheduled trailer",
+   521→      location: pick(HUBS_TRANSIT, `${awb}:transit`),
+   522→      patch: {},
+   523→    },
+   524→    OUT_FOR_DELIVERY: {
+   525→      description: "Out for delivery — your courier is on the way",
+   526→      location: `${destCity} Delivery Base`,
+   527→      patch: {},
+   528→    },
+   529→    DELIVERED: {
+   530→      description: "Delivered — signed by recipient at the delivery address",
+   531→      location: destCity,
+   532→      patch: { deliveredAt: now },
+   533→    },
+   534→  };
+   535→  const step = steps[next];
+   536→
+   537→  await db.shipmentEvent.create({
+   538→    data: {
+   539→      shipmentId: shipment.id,
+   540→      status: next,
+   541→      description: step.description,
+   542→      location: step.location,
+   543→      occurredAt: now,
+   544→      ...(next === "DELIVERED" ? { proofImageUrl: mockPodUrl(awb) } : {}),
+   545→    },
+   546→  });
+   547→
+   548→  const updated = await db.shipment.update({
+   549→    where: { id: shipment.id },
+   550→    data: { status: next, lastSyncedAt: now, ...step.patch },
+   551→    include: { order: { select: { id: true, orderNumber: true, status: true, customerEmail: true, shopperId: true, storeId: true, store: { select: { slug: true } } } } },
+   552→  });
+   553→
+   554→  if (next === "DELIVERED") {
+   555→    if (["shipped", "processing"].includes(updated.order.status)) {
+   556→      await transitionOrder({
+   557→        orderId: updated.order.id,
+   558→        toStatus: "delivered",
+   559→        actor: "courier",
+   560→        note: `Delivered by ${updated.courierName ?? "courier"} (mock network) · AWB ${awb}`,
+   561→        timestamps: { deliveredAt: now },
+   562→      });
+   563→    }
+   564→    await deliverySideEffects({
+   565→      order: updated.order,
+   566→      storeSlug: updated.order.store?.slug ?? null,
+   567→      courierName: updated.courierName,
+   568→      awbNumber: awb,
+   569→      note: `Delivered by ${updated.courierName ?? "courier"}`,
+   570→      deliveredAt: now,
+   571→    });
+   572→  }
+   573→
+   574→  return shapeShipment(updated);
+   575→}
+   576→
+   577→/**
+   578→ * Lazy sync for read endpoints: only advances when the shipment has been idle
+   579→ * for longer than `minIntervalMs` (default 45s — the dev demo cadence).
+   580→ * Never throws: lazy side-roads must not break the primary read.
+   581→ */
+   582→export async function maybeSyncTracking(
+   583→  shipmentId: string,
+   584→  minIntervalMs = 45_000
+   585→): Promise<ShipmentSnapshot | null> {
+   586→  try {
+   587→    const s = await db.shipment.findUnique({
+   588→      where: { id: shipmentId },
+   589→      select: { id: true, status: true, lastSyncedAt: true },
+   590→    });
+   591→    if (!s || !ACTIVE_SHIPMENT_STATUSES.includes(s.status as (typeof ACTIVE_SHIPMENT_STATUSES)[number])) return null;
+   592→    if (s.lastSyncedAt && Date.now() - s.lastSyncedAt.getTime() < minIntervalMs) return null;
+   593→    return await syncTracking(shipmentId);
+   594→  } catch (e) {
+   595→    console.error("[shipping] lazy sync failed", e);
+   596→    return null;
+   597→  }
+   598→}
+   599→
+   600→// ---------------------------------------------------------------------------
+   601→// Tick — advance ALL active mock shipments one step (cron-ish sweep)
+   602→// ---------------------------------------------------------------------------
+   603→
+   604→export async function tickShipments(limit = 100): Promise<{ advanced: number; results: { shipmentId: string; orderId: string; awbNumber: string | null; status: string }[] }> {
+   605→  const rows = await db.shipment.findMany({
+   606→    where: { providerId: MOCK_PROVIDER_ID, status: { in: [...ACTIVE_SHIPMENT_STATUSES] } },
+   607→    select: { id: true },
+   608→    orderBy: { createdAt: "asc" },
+   609→    take: limit,
+   610→  });
+   611→  const results: { shipmentId: string; orderId: string; awbNumber: string | null; status: string }[] = [];
+   612→  for (const r of rows) {
+   613→    const s = await syncTracking(r.id);
+   614→    if (s) results.push({ shipmentId: s.id, orderId: s.orderId, awbNumber: s.awbNumber, status: s.status });
+   615→  }
+   616→  return { advanced: results.length, results };
+   617→}
+   618→
+   619→// ---------------------------------------------------------------------------
+   620→// Fast-forward — manual "mark delivered" backfill
+   621→// ---------------------------------------------------------------------------
+   622→
+   623→/**
+   624→ * Seller marks delivered manually while a platform shipment exists: backfill
+   625→ * the skipped milestone events between bookedAt and deliveredAt (strictly
+   626→ * increasing, never OUT_FOR_DELIVERY after DELIVERED), append the DELIVERED
+   627→ * event with the proof photo, flip shipment + order states.
+   628→ */
+   629→export async function fastForwardDelivery(
+   630→  orderId: string,
+   631→  deliveredAt: Date,
+   632→  proofUrl?: string | null
+   633→): Promise<ShipmentSnapshot | null> {
+   634→  const shipment = await db.shipment.findUnique({
+   635→    where: { orderId },
+   636→    include: {
+   637→      order: {
+   638→        select: {
+   639→          id: true, orderNumber: true, status: true, customerEmail: true, shopperId: true, storeId: true,
+   640→          shippingAddressJson: true,
+   641→          store: { select: { slug: true } },
+   642→        },
+   643→      },
+   644→    },
+   645→  });
+   646→  if (!shipment) return null;
+   647→
+   648→  const awb = shipment.awbNumber ?? "UNKNOWN";
+   649→  const destState = parseAddress(shipment.order.shippingAddressJson ?? "{}").state ?? "";
+   650→  const destCity = cityForState(destState);
+   651→  const booked = shipment.bookedAt ?? shipment.createdAt;
+   652→  const span = Math.max(60_000, deliveredAt.getTime() - booked.getTime());
+   653→  const at = (frac: number) => new Date(booked.getTime() + Math.round(span * frac));
+   654→
+   655→  const existing = await db.shipmentEvent.findMany({
+   656→    where: { shipmentId: shipment.id },
+   657→    select: { status: true },
+   658→  });
+   659→  const have = new Set(existing.map((e) => e.status));
+   660→
+   661→  // Backfill plan, ordered, timestamps clamped to [booked, deliveredAt].
+   662→  const plan: { status: string; frac: number; description: string; location: string; proof?: boolean }[] = [];
+   663→  if (!have.has("BOOKED"))
+   664→    plan.push({
+   665→      status: "BOOKED",
+   666→      frac: 0,
+   667→      description: `Shipping label created — parcel registered by ${shipment.courierName ?? "courier"}`,
+   668→      location: `Seller warehouse, ${destCity}`,
+   669→    });
+   670→  if (!have.has("PICKED_UP"))
+   671→    plan.push({
+   672→      status: "PICKED_UP",
+   673→      frac: 0.12,
+   674→      description: `Parcel collected by ${shipment.courierName ?? "courier"} from the seller`,
+   675→      location: pick(zoneOf(destState) === "east" ? HUBS_EAST : HUBS_PENINSULAR, `${awb}:pickup`),
+   676→    });
+   677→  if (!have.has("IN_TRANSIT"))
+   678→    plan.push({
+   679→      status: "IN_TRANSIT",
+   680→      frac: 0.4,
+   681→      description: "Arrived at transit facility — line-haul departed on time",
+   682→      location: pick(HUBS_TRANSIT, `${awb}:transit`),
+   683→    });
+   684→  if (!have.has("OUT_FOR_DELIVERY"))
+   685→    plan.push({
+   686→      status: "OUT_FOR_DELIVERY",
+   687→      frac: 0.9,
+   688→      description: "Out for delivery — courier completing the neighbourhood route",
+   689→      location: `${destCity} Delivery Base`,
+   690→    });
+   691→  plan.push({
+   692→    status: "DELIVERED",
+   693→    frac: 1,
+   694→    description: "Delivered — signed by recipient at the delivery address",
+   695→    location: destCity,
+   696→    proof: true,
+   697→  });
+   698→
+   699→  let prev = booked.getTime() - 1;
+   700→  for (const p of plan) {
+   701→    let ts = Math.min(Math.max(at(p.frac).getTime(), prev + 1), deliveredAt.getTime());
+   702→    if (p.status === "DELIVERED") ts = deliveredAt.getTime();
+   703→    await db.shipmentEvent.create({
+   704→      data: {
+   705→        shipmentId: shipment.id,
+   706→        status: p.status,
+   707→        description: p.description,
+   708→        location: p.location,
+   709→        occurredAt: new Date(ts),
+   710→        ...(p.proof ? { proofImageUrl: proofUrl ?? mockPodUrl(awb) } : {}),
+   711→      },
+   712→    });
+   713→    prev = ts;
+   714→  }
+   715→
+   716→  const updated = await db.shipment.update({
+   717→    where: { id: shipment.id },
+   718→    data: {
+   719→      status: "DELIVERED",
+   720→      deliveredAt,
+   721→      lastSyncedAt: new Date(),
+   722→      pickedUpAt: shipment.pickedUpAt ?? at(0.12),
+   723→    },
+   724→    include: { order: { select: { id: true, orderNumber: true, status: true, customerEmail: true, shopperId: true, storeId: true, store: { select: { slug: true } } } } },
+   725→  });
+   726→
+   727→  if (["shipped", "processing"].includes(updated.order.status)) {
+   728→    await transitionOrder({
+   729→      orderId: updated.order.id,
+   730→      toStatus: "delivered",
+   731→      actor: "seller",
+   732→      note: "Seller marked the parcel delivered",
+   733→      timestamps: { deliveredAt },
+   734→    });
+   735→  }
+   736→  await deliverySideEffects({
+   737→    order: updated.order,
+   738→    storeSlug: updated.order.store?.slug ?? null,
+   739→    courierName: updated.courierName,
+   740→    awbNumber: awb,
+   741→    note: `Delivered by ${updated.courierName ?? "the seller"}`,
+   742→    deliveredAt,
+   743→  });
+   744→
+   745→  return shapeShipment(updated);
+   746→}
+   747→
+   748→// ---------------------------------------------------------------------------
+   749→// Shared helpers for routes
+   750→// ---------------------------------------------------------------------------
+   751→
+   752→/** Ship-guard parity helper: throws ApiError when the order cannot be shipped. */
+   753→export function assertShippable(order: { status: string; orderNumber: string }): void {
+   754→  if (!["paid", "processing"].includes(order.status)) {
+   755→    throw new ApiError(409, "INVALID_STATUS", `Cannot ship order ${order.orderNumber} in status '${order.status}'`);
+   756→  }
+   757→}
+   758→
+   759→/** Validate a seller-uploaded proof-of-delivery data-URL (≤1.2MB). */
+   760→export function validateProofDataUrl(proof: unknown): string | null {
+   761→  if (proof == null) return null;
+   762→  const s = String(proof);
+   763→  if (!s.startsWith("data:image/")) {
+   764→    throw new ApiError(400, "VALIDATION", "proof must be a data:image/* URL");
+   765→  }
+   766→  if (s.length > 1_200_000) {
+   767→    throw new ApiError(413, "PROOF_TOO_LARGE", "proof image must be 1.2MB or smaller");
+   768→  }
+   769→  return s;
+   770→}
+   771→

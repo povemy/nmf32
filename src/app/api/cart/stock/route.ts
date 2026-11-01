@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { requireShopper } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +18,11 @@ export const dynamic = "force-dynamic";
 // Client clamping + this probe + the conditional UPDATE at checkout = a
 // three-layer guard against over-ordering during an influencer drop, with no
 // reservation tables or extra services to pay for.
+//
+// PHASE 2.2 GUEST CHECKOUT RESTORATION: the probe no longer requires sign-in —
+// it is a pure public-data read (stock is already exposed on product pages)
+// and the guest cart drawer needs it exactly like the account one.
 export const GET = handle(async (req: Request) => {
-  await requireShopper();
-
   const url = new URL(req.url);
   const ids = (url.searchParams.get("ids") ?? "")
     .split(",")
@@ -38,7 +39,8 @@ export const GET = handle(async (req: Request) => {
       stock: true,
       moq: true,
       isActive: true,
-      product: { select: { status: true, store: { select: { status: true } } } },
+      // seller status rides along for the C1.3 purchasability check below.
+      product: { select: { status: true, store: { select: { status: true, seller: { select: { status: true } } } } } },
     },
   });
 
@@ -47,7 +49,14 @@ export const GET = handle(async (req: Request) => {
     stocks[v.id] = {
       stock: v.stock,
       moq: Math.max(1, v.moq),
-      purchasable: v.isActive && v.product.status === "active" && v.product.store.status === "live",
+      // C1.3 (seller publication governance): this probe must agree with
+      // checkout pricing — only an active product in a live store of an
+      // admin-approved seller is purchasable (a null/unlinked seller never is).
+      purchasable:
+        v.isActive &&
+        v.product.status === "active" &&
+        v.product.store.status === "live" &&
+        v.product.store.seller?.status === "active",
     };
   }
 
