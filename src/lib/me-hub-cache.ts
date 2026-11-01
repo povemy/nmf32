@@ -30,6 +30,10 @@ export type MeTier = "SILVER" | "GOLD" | "PLATINUM";
 export type MeProfile = {
   id: string;
   email: string;
+  /** FINAL CLOSURE §2 — false until the shopper proves ownership of their
+   *  email (drives the Me-hub verification card; guest-order claiming is
+   *  gated on the server by the same proof). */
+  emailVerified: boolean;
   fullName: string;
   username: string | null;
   avatarUrl: string | null;

@@ -4,6 +4,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
 import { PAID_ORDER_STATUSES, tierForSpend, nextTier, TIER_THRESHOLDS_MINOR, MEMBERSHIP_TIERS, type MembershipTier } from "@/lib/membership";
+import { getShopperEmailVerified } from "@/lib/guest-otp";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +45,14 @@ export const GET = handle(async () => {
   const tierSinceMinor = TIER_THRESHOLDS_MINOR[tier];
   const nextAtMinor = upcoming ? TIER_THRESHOLDS_MINOR[upcoming] : null;
 
+  // FINAL CLOSURE §2: email-ownership state drives the Me-hub verification
+  // card (fail-closed read: missing table → false → card shows, claiming gated).
+  const emailVerified = await getShopperEmailVerified(me.id);
+
   return ok({
     id: shopper.id,
     email: shopper.email,
+    emailVerified,
     fullName: shopper.fullName,
     username: shopper.username,
     avatarUrl: shopper.avatarUrl,

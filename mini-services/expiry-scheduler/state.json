@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.304Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.283Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 170,
-        "at": "2026-11-01T07:28:26.259Z",
+        "durationMs": 123,
+        "at": "2026-11-01T08:59:56.240Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 4176
+      "ticks": 4359
     },
     "refund": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.318Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.256Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-11-01T07:28:26.226Z",
-        "durationMs": 134,
+        "at": "2026-11-01T08:59:56.209Z",
+        "durationMs": 87,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,47 +48,47 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 4176
+      "ticks": 4359
     },
     "analytics": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.540Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.830Z",
       "lastOutcome": {
-        "ranAt": "2026-11-01T07:28:26.457Z",
-        "durationMs": 362,
+        "ranAt": "2026-11-01T08:59:56.740Z",
+        "durationMs": 613,
         "retentionDays": 180,
-        "cutoff": "2026-05-05T07:28:26.215Z",
+        "cutoff": "2026-05-05T08:59:56.479Z",
         "purged": 0,
         "flush": {
-          "flushed": 0,
+          "flushed": 1,
           "pending": 0
         },
-        "remaining": 74,
+        "remaining": 77,
         "oldestEventAt": "2026-10-28T14:16:18.540Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 3226
+      "ticks": 3409
     },
     "affiliate": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.488Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.509Z",
       "lastOutcome": {
         "approved": 0,
         "matured": 0,
         "remainingPending": 8,
-        "durationMs": 344,
-        "at": "2026-11-01T07:28:26.442Z",
+        "durationMs": 335,
+        "at": "2026-11-01T08:59:56.465Z",
         "authMode": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 118
+      "ticks": 301
     },
     "sessions": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.101Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.134Z",
       "lastOutcome": {
         "throttled": true,
         "purged": 0,
@@ -96,18 +96,18 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 245
+      "ticks": 428
     },
     "orders": {
-      "lastTickAt": "2026-11-01T07:28:25.840Z",
-      "lastSuccessAt": "2026-11-01T07:28:26.379Z",
+      "lastTickAt": "2026-11-01T08:59:55.897Z",
+      "lastSuccessAt": "2026-11-01T08:59:56.315Z",
       "lastOutcome": {
-        "ranAt": "2026-11-01T07:28:26.333Z",
-        "durationMs": 225,
+        "ranAt": "2026-11-01T08:59:56.269Z",
+        "durationMs": 132,
         "autoComplete": {
           "candidates": 0,
           "completed": 0,
-          "cutoff": "2026-10-18T07:28:26.109Z"
+          "cutoff": "2026-10-18T08:59:56.138Z"
         },
         "tracking": {
           "scanned": 0,
@@ -118,7 +118,7 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 118
+      "ticks": 301
     }
   },
   "alerts": [

@@ -1060,13 +1060,23 @@ function ShopperAuthDialog() {
     const f = new FormData(e.currentTarget);
     setBusy(true);
     try {
-      const res = await postJson<{ token?: string }>("/api/auth/shopper/register", {
+      const res = await postJson<{
+        token?: string;
+        emailVerificationSent?: boolean;
+        emailVerified?: boolean;
+      }>("/api/auth/shopper/register", {
         fullName: f.get("fullName"),
         email: f.get("email"),
         password: f.get("password"),
       });
       setSessionToken(res?.token); // localStorage bridge for cookie-less contexts
-      toast.success("Account created!", { description: "You can now chat with sellers and track orders." });
+      if (res?.emailVerificationSent) {
+        toast.success("Account created!", {
+          description: "A verification code was sent to your email — verify it (Me → Profile) to see orders placed as a guest with that address.",
+        });
+      } else {
+        toast.success("Account created!", { description: "You can now chat with sellers and track orders." });
+      }
       await finish();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Registration failed");

@@ -482,6 +482,141 @@ function DashboardSidebar({
 // Dashboard (mobile stack / desktop bento)
 // =============================================================================================
 
+// FINAL CLOSURE §2 — email-ownership verification card. Shown while the
+// signed-in shopper's email is unverified: a code round-trip through their
+// own mailbox is the ONLY way guest orders placed with that address are
+// claimed into the account (the server gate lives in
+// claimGuestStateForShopper). No order counts are displayed — an unverified
+// account holder must not learn how many unclaimed guest orders exist for
+// the address.
+function EmailVerificationCard({ profile, onVerified }: { profile: ProfileT | null; onVerified: () => void }) {
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (!profile || profile.emailVerified) return null;
+
+  const sendCode = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await postJson<{ sent: boolean; message?: string }>("/api/auth/shopper/email-verification/request", {});
+      setSent(true);
+      setCode("");
+      toast.success("Verification code sent", { description: "Check your inbox — the code expires in 10 minutes." });
+    } catch (e) {
+      if (e instanceof ApiFail && e.status === 503) {
+        toast.error("Email delivery isn't configured yet", {
+          description: "Verification will be available once a provider is set up. Your account works normally in the meantime.",
+        });
+      } else {
+        toast.error(e instanceof Error ? e.message : "Could not send the code");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async () => {
+    const digits = code.replace(/[^0-9]/g, "");
+    if (digits.length !== 6) {
+      toast.error("Enter the 6-digit code from your email.");
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await postJson<{ verified: boolean; alreadyVerified?: boolean; ordersClaimed: number }>(
+        "/api/auth/shopper/email-verification/verify",
+        { code: digits }
+      );
+      if (res.verified) {
+        toast.success(res.alreadyVerified ? "Email already verified" : "Email verified", {
+          description: res.alreadyVerified
+            ? "Your email ownership is confirmed."
+            : res.ordersClaimed > 0
+              ? `${res.ordersClaimed} guest order${res.ordersClaimed === 1 ? "" : "s"} placed with this email ${res.ordersClaimed === 1 ? "was" : "were"} added to your account.`
+              : "Any orders placed as a guest with this email will appear in your account.",
+        });
+        setCode("");
+        onVerified();
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof ApiFail && e.code === "INVALID"
+          ? "That code isn't right — check the latest email and try again."
+          : e instanceof Error
+            ? e.message
+            : "Verification failed"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-teal-200 bg-teal-50/60 p-4" aria-labelledby="me-email-verify">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+          <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 id="me-email-verify" className="text-sm font-extrabold text-slate-900">
+            Verify your email
+          </h2>
+          <p className="pt-0.5 text-xs leading-relaxed text-slate-600">
+            Confirm <span className="font-semibold">{profile.email}</span> to add any orders placed as a guest with that address to this account.
+          </p>
+          {sent ? (
+            <form
+              className="flex flex-wrap items-end gap-2 pt-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitCode();
+              }}
+            >
+              <div className="space-y-1">
+                <Label htmlFor="me-ev-code" className="text-[11px] font-semibold text-slate-500">6-digit code</Label>
+                <Input
+                  id="me-ev-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                  placeholder="••••••"
+                  className="h-11 min-h-[44px] w-36 text-center font-mono text-base tracking-[0.3em]"
+                />
+              </div>
+              <Button type="submit" disabled={busy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Verify
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void sendCode()}
+                className="min-h-[44px]"
+                title="Request a fresh code (rate-limited)"
+              >
+                <RotateCcw className="h-4 w-4" /> New code
+              </Button>
+            </form>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => void sendCode()}
+              disabled={busy}
+              className="mt-3 min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Send verification code
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Dashboard({
   ctx,
   data,
@@ -527,6 +662,9 @@ function Dashboard({
               header now); the banner is a pure identity card with restructured
               follow stats and a progressive membership row. */}
           <ProfileHeader profile={data.profile} loading={data.loading} onMarket={() => ctx.nav({ name: "market" })} />
+
+          {/* FINAL CLOSURE §2 — email verification (gates guest-order claiming) */}
+          <EmailVerificationCard profile={data.profile} onVerified={data.refresh} />
 
           {/* notification prompt */}
           {notifOpen ? (

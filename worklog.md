@@ -1949,3 +1949,26 @@ EVIDENCE:
   Production build NOT RUNNABLE in sandbox (CI/staging action, unchanged).
 - Docs: implementation-plan.md (audit + execution record), metric-definitions.md §11 + §2/§5 updates,
   implementation-report.md (2026-10-30 section), ad-integration-design.md.
+
+## 2026-11-01 — FINAL SECURITY CLOSURE (guest-order ownership, email verification, DB safety)
+- Gate: Phase 2.1 complete; this mission closes the two identity/ownership gaps it left designed-not-built.
+- Shipped: corrected guest-order authorization model (knowledge pair = OTP-request ONLY; lookup/receipt
+  need a 15-min order-specific HMAC grant or an owning session — rejected the earlier "pair OR grant"
+  draft as insufficient); guest-OTP core (keyed-hash challenges, day-bucket midnight rollover, CAS
+  consume, attempt carry-over, uniform responses, 4-axis throttles); shopper email verification with
+  exactly-once claiming (gate inside claimGuestStateForShopper — registration claims nothing);
+  email-provider seam (interface only, fail-closed 503, no simulated delivery); migration
+  20261104000000 EmailOtpChallenge (created NOT applied — six now outstanding); Me-hub verification
+  card + two-step LookupView + grant-aware status/orders/receipt UX (grants in memory only);
+  session-purge sweeps expired challenges; stale-Prisma-client fail-closed guard (found via live probe).
+- Tests: 180/180 unit (16 new, incl. UTC-midnight rollover + grant tamper matrix); tsc src 0; lint 44
+  pre-existing only; live read-only route matrix all green (pair→401 uniform, forged grant→401, valid
+  grant→200+PDF, owning session→200, OTP routes→uniform 503 pre-provider/pre-migration, login gated).
+  Staging E2E prepared (guest-order-otp-e2e.ts — attack scenario + exactly-once claiming; NOT run).
+  Browser control experiment: SPA boot hang reproduces on PRISTINE tree → documented sandbox
+  limitation, not a regression.
+- DB: NO connections opened for investigation, NO migrations/cleanup applied, NO financial records
+  touched. Provenance: sandbox's single Supabase project's production-sharing remains UNVERIFIABLE —
+  separate-staging recommendation stands; balanced-ledger-is-test-data warning recorded.
+- Docs: guest-order-otp-design.md REWRITTEN (corrected model), final-closure-report.md NEW,
+  deployment runbook (six migrations + rollback hard rule + provider prerequisites), staging pack §7.

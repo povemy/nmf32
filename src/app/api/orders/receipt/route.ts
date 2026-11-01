@@ -2,38 +2,66 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handle, ApiError } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { getSession } from "@/lib/auth";
+import { verifyOrderAccessGrant } from "@/lib/guest-otp";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/orders/receipt?email=&orderNumber= — structured PDF payment receipt.
-// Authorised the same way as guest order tracking: the email + orderNumber pair.
-// Phase 1 (SEC-05 / B2 / B4): same three-axis throttle as the lookup route
-// (10/min/IP, 10/hour/email, 30/hour/order) — the PII-rich PDF is the more
-// sensitive of the two surfaces. The PSP providerRef is deliberately NOT
-// rendered (B2: minimize exposed information — the payment method NAME is
-// kept for buyer recognition, the internal reference is not the buyer's).
+// GET /api/orders/receipt?orderNumber=NM-… — structured PDF payment receipt.
+//
+// FINAL CLOSURE §1 — CORRECTED AUTHORIZATION MODEL (mirrors /api/orders/
+// lookup). The knowledge pair (email + order number) NO LONGER AUTHORZES the
+// receipt — the PDF carries customer NAME, EMAIL and PHONE, so it is the MOST
+// sensitive guest-order surface. It is released ONLY to:
+//   (a) a short-lived order-access grant ("Authorization: Bearer v1.…"),
+//       minted only after a successful OTP verification to the email ON the
+//       order; or
+//   (b) an authenticated shopper session that OWNS the order.
+// Everyone else gets the uniform 401 ORDER_VERIFICATION_REQUIRED — no
+// order-existence oracle, no PII.
+//
+// The payment gate is INDEPENDENT and unchanged: 409 NOT_PAID while the order
+// is payment_pending, for grant-holders and owners alike. The PSP providerRef
+// stays stripped (B2 — payment method NAME only).
+//
+// Throttles: 10/min per IP, 300/hour per order number (polling-friendly;
+// anti-enumeration now lives on the OTP request route where the knowledge
+// pair is accepted).
 export const GET = handle(async (req: Request) => {
   rateLimit(req, "orders-receipt", 10);
   const url = new URL(req.url);
-  const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
   const orderNumber = (url.searchParams.get("orderNumber") ?? "").trim();
-  if (!email || !orderNumber) throw new ApiError(400, "VALIDATION", "email and orderNumber are required");
-  if (email.length > 254 || orderNumber.length > 32) throw new ApiError(400, "VALIDATION", "email and orderNumber are required");
-  rateLimitKey(email, "orders-receipt-email", 10, 3_600_000);
-  rateLimitKey(orderNumber, "orders-receipt-order", 30, 3_600_000);
+  if (!orderNumber) throw new ApiError(400, "VALIDATION", "orderNumber is required");
+  if (orderNumber.length > 32) throw new ApiError(400, "VALIDATION", "orderNumber is required");
+  rateLimitKey(orderNumber, "orders-receipt-order", 300, 3_600_000);
 
-  const order = await db.order.findUnique({
-    where: { orderNumber },
-    include: {
-      items: true,
-      store: { select: { name: true, slug: true, supportEmail: true } },
-      paymentIntents: { orderBy: { createdAt: "desc" }, take: 1 },
-      refunds: { orderBy: { createdAt: "desc" } },
-    },
-  });
-  if (!order || order.customerEmail.toLowerCase() !== email) {
-    throw new ApiError(404, "NOT_FOUND", "No order found for that email and order number");
+  // ---- Authorization: (a) order-access grant, then (b) owning session ----
+  let order: Awaited<ReturnType<typeof loadReceiptOrder>> | null = null;
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+    const grant = verifyOrderAccessGrant(authHeader.slice(7).trim());
+    if (grant) {
+      order = await loadReceiptOrder({ id: grant.orderId });
+      if (order && order.orderNumber !== orderNumber) order = null;
+    }
+  }
+
+  if (!order) {
+    const session = await getSession();
+    if (session?.userType === "shopper") {
+      order = await loadReceiptOrder({ orderNumber });
+      if (order && order.shopperId !== session.userId) order = null;
+    }
+  }
+
+  if (!order) {
+    throw new ApiError(
+      401,
+      "ORDER_VERIFICATION_REQUIRED",
+      "Verify access to this order with the code sent to its email address, or sign in to the account that owns it"
+    );
   }
   if (order.status === "payment_pending") {
     throw new ApiError(409, "NOT_PAID", "Receipts are available once payment is confirmed");
@@ -51,6 +79,20 @@ export const GET = handle(async (req: Request) => {
     },
   });
 });
+
+// ---------------------------------------------------------------- loader
+
+function loadReceiptOrder(where: { id: string } | { orderNumber: string }) {
+  return db.order.findUnique({
+    where,
+    include: {
+      items: true,
+      store: { select: { name: true, slug: true, supportEmail: true } },
+      paymentIntents: { orderBy: { createdAt: "desc" }, take: 1 },
+      refunds: { orderBy: { createdAt: "desc" } },
+    },
+  });
+}
 
 // ---------------------------------------------------------------- pdf builder
 

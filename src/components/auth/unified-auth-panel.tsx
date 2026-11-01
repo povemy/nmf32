@@ -57,6 +57,9 @@ export type UnifiedLoginResponse = {
   shopper?: { id: string; email: string; fullName: string; phone: string | null } | null;
   isAffiliate?: boolean;
   claimed?: { addressesClaimed: number; ordersClaimed: number };
+  /** FINAL CLOSURE §2 — false until email ownership is verified; guest-order
+   *  claiming is gated server-side on the same proof. */
+  emailVerified?: boolean;
 };
 
 type LoginFail = {

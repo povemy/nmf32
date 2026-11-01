@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/lib/app-store";
+import { forgetOrderGrant, orderGrantHeaders, rememberOrderGrant } from "@/components/shopper/guest-order-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1911,9 +1912,9 @@ type ReorderResultT = { added: { title: string; qty: number }[]; skipped: { titl
 
 export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
   const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
-  const [receiptEmail, setReceiptEmail] = useState(email);
   const [data, setData] = useState<OrderDetailT | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [verificationRequired, setVerificationRequired] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiveBusy, setReceiveBusy] = useState(false);
   const [reorderBusy, setReorderBusy] = useState(false);
@@ -1921,32 +1922,44 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
   const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
-    // 1) Guest path — email + order number lookup (unchanged).
-    const guestLookup = email
-      ? fetchJson<OrderDetailT>(`/api/orders/lookup?email=${encodeURIComponent(email)}&orderNumber=${encodeURIComponent(orderNumber)}`)
-      : Promise.reject(new Error("no-guest-email"));
-    try {
-      const d = await guestLookup;
-      setData(d);
-      loadedRef.current = true;
-      trackOrderRef(d.orderNumber, email);
-      return;
-    } catch {
-      /* fall through to the account path */
+    // 1) Grant path (FINAL CLOSURE) — an in-memory order-access grant from
+    //    the verified lookup flow. The knowledge pair (email + order number)
+    //    no longer authorizes order data on the server; only this grant or
+    //    account ownership does. Grants live in module memory only — a page
+    //    reload drops them and the shopper simply re-verifies.
+    const grantHeaders = orderGrantHeaders(orderNumber);
+    if (grantHeaders) {
+      try {
+        const d = await fetchJson<OrderDetailT>(
+          `/api/orders/lookup?orderNumber=${encodeURIComponent(orderNumber)}`,
+          { headers: grantHeaders }
+        );
+        setData(d);
+        setVerificationRequired(false);
+        loadedRef.current = true;
+        trackOrderRef(d.orderNumber, email);
+        return;
+      } catch {
+        // Grant expired or revoked (secret rotation) — drop it and fall
+        // through to the account path.
+        forgetOrderGrant(orderNumber);
+      }
     }
     // 2) Account path — signed-in buyer deep-linking from the Me hub;
     //    ownership enforced server-side by the session's shopperId.
     try {
       const d = await fetchJson<OrderDetailT>(`/api/me/orders/${encodeURIComponent(orderNumber)}`);
       setData(d);
+      setVerificationRequired(false);
       loadedRef.current = true;
       if (d.customerEmail) {
-        setReceiptEmail(d.customerEmail);
         trackOrderRef(d.orderNumber, d.customerEmail);
       }
     } catch (e) {
       // polling blips must never blank an already-loaded view
       if (!loadedRef.current) {
+        const needsVerification = e instanceof ApiFail && e.code === "ORDER_VERIFICATION_REQUIRED";
+        setVerificationRequired(needsVerification);
         setFailed(e instanceof Error && e.message !== "no-guest-email" ? e.message : "");
       }
     }
@@ -1976,10 +1989,17 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
   }, [load]);
 
   const downloadReceipt = async () => {
-    if (receiptBusy || !receiptEmail || !data) return;
+    // FINAL CLOSURE: authorized server-side by the order-access grant (guest
+    // path) or the owning session (account path) — the email + order number
+    // pair alone no longer unlocks it, and no locally stored email is needed.
+    if (receiptBusy || !data) return;
     setReceiptBusy(true);
     try {
-      const res = await fetch(`/api/orders/receipt?email=${encodeURIComponent(receiptEmail)}&orderNumber=${encodeURIComponent(data.orderNumber)}`);
+      const headers = orderGrantHeaders(data.orderNumber);
+      const res = await fetch(
+        `/api/orders/receipt?orderNumber=${encodeURIComponent(data.orderNumber)}`,
+        headers ? { headers } : undefined
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error?.message ?? "Could not generate the receipt");
@@ -2062,16 +2082,21 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     }
   }
 
-  if (failed) {
+  if (failed || verificationRequired) {
     return (
       <div className="flex-1">
         <EmptyState
-          title={failed ? "Couldn't load this order" : "No checkout email found"}
-          hint={failed || "We couldn't find a recent checkout on this device, and this order isn't on your account. Use order lookup instead."}
+          icon={verificationRequired ? ShieldCheck : undefined}
+          title={verificationRequired ? "Verify access to this order" : failed ? "Couldn't load this order" : "No checkout email found"}
+          hint={
+            verificationRequired
+              ? "For your privacy, order details now need a one-time code sent to the email address on the order — or sign in to the account that owns it."
+              : failed || "We couldn't find a recent checkout on this device, and this order isn't on your account. Use order lookup instead."
+          }
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => ctx.nav({ name: "lookup" })} className="min-h-[44px]">
-                Order lookup
+                {verificationRequired ? "Verify by email code" : "Order lookup"}
               </Button>
               <Button onClick={() => ctx.nav({ name: "market" })} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
                 Continue shopping
@@ -2460,19 +2485,39 @@ function BackBar({ onBack, label = "Back" }: { onBack: () => void; label?: strin
 
 export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
   const [refs] = useState(() => readOrderRefs().slice(0, 10));
-  const [orders, setOrders] = useState<LookupResultT[]>([]);
+  const [orders, setOrders] = useState<(LookupResultT | null)[]>([]);
   const [loading, setLoading] = useState(() => refs.length > 0);
 
   useEffect(() => {
     if (refs.length === 0) return;
     let alive = true;
+    // FINAL CLOSURE: each stored ref resolves through the strongest
+    // authorization this device can present — (1) an in-memory order-access
+    // grant from the verified lookup flow, (2) the signed-in account's own
+    // orders. A ref satisfying neither renders as a compact "verify to
+    // view" card (the knowledge pair no longer authorizes data).
     Promise.allSettled(
-      refs.map((r) =>
-        fetchJson<LookupResultT>(`/api/orders/lookup?email=${encodeURIComponent(r.email)}&orderNumber=${encodeURIComponent(r.orderNumber)}`)
-      )
+      refs.map(async (r) => {
+        const headers = orderGrantHeaders(r.orderNumber);
+        if (headers) {
+          try {
+            return await fetchJson<LookupResultT>(
+              `/api/orders/lookup?orderNumber=${encodeURIComponent(r.orderNumber)}`,
+              { headers }
+            );
+          } catch {
+            forgetOrderGrant(r.orderNumber);
+          }
+        }
+        try {
+          return await fetchJson<LookupResultT>(`/api/me/orders/${encodeURIComponent(r.orderNumber)}`);
+        } catch {
+          return null;
+        }
+      })
     ).then((results) => {
       if (!alive) return;
-      setOrders(results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : [])));
+      setOrders(results.map((r) => (r.status === "fulfilled" ? r.value : null)));
       setLoading(false);
     });
     return () => {
@@ -2514,27 +2559,54 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
         />
       ) : (
         <ul className="space-y-3">
-          {orders.map((o) => (
-            <li key={o.orderNumber}>
-              <button
-                type="button"
-                onClick={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
-                className="flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                aria-label={`View order ${o.orderNumber}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono text-sm font-extrabold">{o.orderNumber}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {o.storeName} · {dateShort(o.createdAt)} · {o.items.length} item{o.items.length === 1 ? "" : "s"}
-                  </p>
-                  <div className="pt-1.5">
-                    <StatusBadge status={o.status} />
+          {orders.map((o, i) => {
+            if (!o) {
+              // Stored ref without live authorization — number only, no data.
+              const r = refs[i];
+              return (
+                <li key={r.orderNumber}>
+                  <button
+                    type="button"
+                    onClick={() => ctx.nav({ name: "order-status", orderNumber: r.orderNumber })}
+                    className="flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    aria-label={`Verify access to order ${r.orderNumber}`}
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+                      <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-sm font-extrabold">{r.orderNumber}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        Placed as a guest — verify with the email code to view its details.
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold text-teal-700">Verify</span>
+                  </button>
+                </li>
+              );
+            }
+            return (
+              <li key={o.orderNumber}>
+                <button
+                  type="button"
+                  onClick={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
+                  className="flex w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                  aria-label={`View order ${o.orderNumber}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-sm font-extrabold">{o.orderNumber}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {o.storeName} · {dateShort(o.createdAt)} · {o.items.length} item{o.items.length === 1 ? "" : "s"}
+                    </p>
+                    <div className="pt-1.5">
+                      <StatusBadge status={o.status} />
+                    </div>
                   </div>
-                </div>
-                <span className="text-base font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</span>
-              </button>
-            </li>
-          ))}
+                  <span className="text-base font-extrabold text-teal-700">{formatMinor(o.totalMinor)}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -2549,32 +2621,91 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
 
 // ---------------------------------------------------------------- lookup
 
+type OtpRequestResponseT = { sent: boolean; message: string };
+type OtpVerifyResponseT = { accessGrant: string; grantExpiresInMs: number };
+
+// FINAL CLOSURE §1 — the lookup view is a TWO-STEP verification flow now:
+//   Step 1  email + order number → POST /api/orders/otp/request (uniform 200 —
+//           the pair can only REQUEST a code, never authorize data);
+//   Step 2  the 6-digit code from the shopper's mailbox → POST
+//           /api/orders/otp/verify → a 15-minute, order-specific access grant
+//           held STRICTLY in module memory (guest-order-access.ts) → the
+//           lookup itself is fetched with that grant.
+// The knowledge pair alone can no longer display any order data — matching
+// the corrected server-side authorization model exactly.
 export function LookupView({ ctx }: { ctx: ShopperCtx }) {
   const [email, setEmail] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
   const [orderNumber, setOrderNumber] = useState("");
   const [result, setResult] = useState<LookupResultT | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "form" → collecting the pair; "code" → a request was accepted and we are
+  // collecting the 6-digit code.
+  const [step, setStep] = useState<"form" | "code">("form");
+  const [code, setCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
 
-  async function search() {
+  async function requestCode() {
     if (!email.trim() || !orderNumber.trim()) {
       setError("Both email and order number are required.");
       return;
     }
     setBusy(true);
     setError(null);
-    setResult(null);
     try {
+      await postJson<OtpRequestResponseT>("/api/orders/otp/request", {
+        email: email.trim(),
+        orderNumber: orderNumber.trim(),
+      });
+      window.localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+      setStep("code");
+      setCode("");
+    } catch (e) {
+      if (e instanceof ApiFail && e.status === 503) {
+        setError(
+          "Email delivery isn't configured on this deployment yet, so order verification is unavailable. Sign in to the account that owns the order to view it."
+        );
+      } else {
+        setError(e instanceof Error ? e.message : "Could not send the verification code");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCode() {
+    const digits = code.replace(/[^0-9]/g, "");
+    if (digits.length !== 6) {
+      setError("Enter the 6-digit code from the email.");
+      return;
+    }
+    setCodeBusy(true);
+    setError(null);
+    try {
+      const verified = await postJson<OtpVerifyResponseT>("/api/orders/otp/verify", {
+        email: email.trim(),
+        orderNumber: orderNumber.trim(),
+        code: digits,
+      });
+      // In-memory only — never persisted to localStorage/sessionStorage.
+      rememberOrderGrant(orderNumber.trim(), verified.accessGrant, Date.now() + verified.grantExpiresInMs);
       const data = await fetchJson<LookupResultT>(
-        `/api/orders/lookup?email=${encodeURIComponent(email.trim())}&orderNumber=${encodeURIComponent(orderNumber.trim())}`
+        `/api/orders/lookup?orderNumber=${encodeURIComponent(orderNumber.trim())}`,
+        { headers: { Authorization: `Bearer ${verified.accessGrant}` } }
       );
       setResult(data);
       trackOrderRef(data.orderNumber, email.trim());
-      window.localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+      toast.success("Order verified", { description: "Access granted for 15 minutes." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Lookup failed");
+      setError(
+        e instanceof ApiFail && e.code === "INVALID"
+          ? "That code isn't valid for this order. Check the latest email and try again."
+          : e instanceof Error
+            ? e.message
+            : "Verification failed"
+      );
     } finally {
-      setBusy(false);
+      setCodeBusy(false);
     }
   }
 
@@ -2584,34 +2715,92 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
       <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-soft sm:p-6">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
-            <PackageSearch className="h-5 w-5 text-teal-700" /> Track your order
+            <ShieldCheck className="h-5 w-5 text-teal-700" /> Track your order
           </h1>
-          <p className="text-sm text-muted-foreground">Enter the email you checked out with and your order number (e.g. SM-100017).</p>
+          <p className="text-sm text-muted-foreground">
+            Enter the email you checked out with and your order number (e.g. SM-100017) — we&apos;ll send a one-time code to that address to confirm it&apos;s you.
+          </p>
         </div>
-        <form
-          className="grid gap-3 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            search();
-          }}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="lk-email" className="text-xs font-semibold text-muted-foreground">Email</Label>
-            <Input id="lk-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="min-h-[44px]" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="lk-num" className="text-xs font-semibold text-muted-foreground">Order number</Label>
-            <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="SM-100017" className="min-h-[44px] font-mono" />
-          </div>
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={busy} className="min-h-[44px] w-full bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageSearch className="h-4 w-4" />} Find my order
-            </Button>
-          </div>
-        </form>
+
+        {step === "form" ? (
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              requestCode();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="lk-email" className="text-xs font-semibold text-muted-foreground">Email</Label>
+              <Input id="lk-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="min-h-[44px]" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lk-num" className="text-xs font-semibold text-muted-foreground">Order number</Label>
+              <Input id="lk-num" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="SM-100017" className="min-h-[44px] font-mono" />
+            </div>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={busy} className="min-h-[44px] w-full bg-brand-gradient-deep text-white hover:brightness-110 sm:w-auto">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageSearch className="h-4 w-4" />} Send my code
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              verifyCode();
+            }}
+          >
+            <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+              If an order matches those details, a 6-digit code was sent to the email address on file. It expires in 10 minutes.
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lk-code" className="text-xs font-semibold text-muted-foreground">Verification code</Label>
+              <Input
+                id="lk-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                placeholder="••••••"
+                className="min-h-[44px] text-center font-mono text-lg tracking-[0.4em]"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" disabled={codeBusy} className="min-h-[44px] bg-brand-gradient-deep text-white hover:brightness-110">
+                {codeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify and view my order
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || codeBusy}
+                onClick={() => void requestCode()}
+                className="min-h-[44px]"
+                title="Request a fresh code (rate-limited)"
+              >
+                <RotateCcw className="h-4 w-4" /> Send another code
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setStep("form");
+                  setCode("");
+                  setError(null);
+                }}
+                className="min-h-[44px]"
+              >
+                Change details
+              </Button>
+            </div>
+          </form>
+        )}
+
         {error ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
-            {error.includes("No order") ? "We couldn't find an order with those details. Double-check the email and order number." : error}
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
+            {error}
           </p>
         ) : null}
       </div>

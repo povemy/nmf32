@@ -138,7 +138,10 @@ export const POST = handle(async (req: NextRequest) => {
     }
     await db.shopperUser.update({ where: { id: shopper.id }, data: { lastLoginAt: new Date() } });
     const token = await createSession("shopper", shopper.id);
+    // FINAL CLOSURE §2: claiming runs through the email-ownership gate inside
+    // claimGuestStateForShopper — unverified accounts claim nothing.
     const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
+    const emailVerified = claimed.skipped !== "email-unverified";
     const affiliateProfile = await db.affiliateProfile.findUnique({
       where: { userId: shopper.id },
       select: { status: true },
@@ -150,6 +153,7 @@ export const POST = handle(async (req: NextRequest) => {
       isAffiliate: affiliateProfile != null && affiliateProfile.status !== "terminated",
       token,
       claimed,
+      emailVerified,
     });
   }
 

@@ -17,6 +17,10 @@ export const dynamic = "force-dynamic";
 //   • throttles to at most one purge per 10 minutes per process (the scheduler
 //     ticks every 30 s — the route answers {throttled:true} in between).
 //   • records its outcome in Setting `cron.session_purge.last` for ops.
+// FINAL CLOSURE: the same tick now also sweeps EXPIRED EmailOtpChallenge rows
+// (purpose "guest-order" — TTL-bounded garbage after 10 minutes). Rows with
+// verifiedAt set are KEPT: they are the durable email-ownership proofs that
+// gate guest-order claiming. P2021-tolerant: a missing table sweeps 0.
 // AUTH: assertCronAuth — fail-closed in production without CRON_SECRET.
 // Scheduled by mini-services/expiry-scheduler ("sessions" job).
 // ============================================================================
@@ -35,8 +39,22 @@ export const POST = handle(async (req: Request) => {
   const t0 = performance.now();
   // Set-based delete of EXPIRED rows only — never an active session.
   const res = await db.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  // FINAL CLOSURE: expired guest-order OTP challenges are garbage after their
+  // 10-minute TTL (successful ones are already deleted at consume-time).
+  // Verified shopper-email rows survive — they are the claiming proofs.
+  let otpPurged = 0;
+  try {
+    const otp = await db.emailOtpChallenge.deleteMany({
+      where: { verifiedAt: null, expiresAt: { lt: new Date() } },
+    });
+    otpPurged = otp.count;
+  } catch {
+    // Migration 20261104000000 not applied yet — nothing to sweep.
+    otpPurged = 0;
+  }
   const outcome = {
     purged: res.count,
+    otpChallengesPurged: otpPurged,
     durationMs: Math.round(performance.now() - t0),
     at: new Date().toISOString(),
     auth: auth.mode,

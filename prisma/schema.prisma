@@ -174,6 +174,37 @@ model Session {
   createdAt DateTime @default(now())
 }
 
+// FINAL CLOSURE (guest-order OTP + shopper email verification) — ONE challenge
+// table serves both purposes (no column was added to ShopperUser/Order on
+// purpose: a missing column would break every existing query pre-migration,
+// while a missing TABLE is tolerated fail-closed via the P2021 guard, exactly
+// like AdminMfaEnrollment):
+//   purpose "guest-order"   → subjectId = Order.id. Successful verify DELETES
+//     the row (CAS) — the issued order-access grant is the artifact. The
+//     knowledge pair (email + NM- order number) can now only REQUEST this
+//     challenge; it no longer authorizes any order data.
+//   purpose "shopper-email" → subjectId = ShopperUser.id. Row PERSISTS with
+//     verifiedAt set — the durable proof of email ownership that gates
+//     guest-order claiming in claimGuestStateForShopper().
+// Codes are stored ONLY as HMAC-SHA256(EMAIL_OTP_SECRET, "otp:v1:" + purpose +
+// ":" + subjectId + ":" + utcDayBucket + ":" + code) — never plaintext, never
+// logged. `attempts` survives re-issuance while a row is unexpired (repeated
+// issuance cannot reset brute-force accounting); it resets only after expiry.
+// No FK on purpose/subjectId: the subject is polymorphic by design.
+model EmailOtpChallenge {
+  id         String    @id @default(cuid())
+  purpose    String
+  subjectId  String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([purpose, subjectId])
+}
+
 model ShopperUser {
   id              String         @id @default(cuid())
   email           String         @unique

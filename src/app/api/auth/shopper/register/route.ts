@@ -2,11 +2,24 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
-import { claimGuestStateForShopper } from "@/lib/shopper-merge";
 import { rateLimit } from "@/lib/rate-limit";
+import { getEmailChannel } from "@/lib/email-provider";
+import { getShopperEmailVerified, issueEmailOtp, assertEmailOtpStorage } from "@/lib/guest-otp";
 
 // POST /api/auth/shopper/register { fullName, email, password, phone? } — buyer signup.
-// Legacy guest orders placed with this email (pre-guest-checkout removal) are claimed into the new account.
+//
+// FINAL CLOSURE §2 — REGISTRATION NO LONGER CLAIMS GUEST ORDERS. Registration
+// performs no email verification, so a fresh account with someone else's
+// email address must not absorb that person's legacy guest orders (full PII)
+// just by existing. Instead, registration best-effort SENDS an email
+// verification code (when a provider is configured); the shopper completes
+// verification via /api/auth/shopper/email-verification/verify, which claims
+// the guest orders EXACTLY ONCE.
+//
+// Response contract: `claimed` stays in the shape callers already know
+// ({ addressesClaimed, ordersClaimed }) but is always zero here, plus
+// `emailVerified: false` and `emailVerificationSent` (best-effort — a
+// missing provider or delivery problem NEVER fails registration).
 export const POST = handle(async (req: Request) => {
   // F-12 remediation: account-creation throttle — shared "auth-register"
   // bucket (5/min/IP) with the seller register route.
@@ -36,12 +49,52 @@ export const POST = handle(async (req: Request) => {
   });
 
   const token = await createSession("shopper", shopper.id);
-  const claimed = await claimGuestStateForShopper(shopper.id, shopper.email);
-  await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.register" });
+
+  // Best-effort verification kickoff — never blocks registration.
+  let emailVerificationSent = false;
+  try {
+    const channel = getEmailChannel();
+    if (channel) {
+      await assertEmailOtpStorage();
+      const result = await issueEmailOtp({
+        purpose: "shopper-email",
+        subjectId: shopper.id,
+        deliver: (code) =>
+          channel.send({
+            to: shopper.email,
+            subject: "Verify your NOMOFEE email address",
+            textBody:
+              `Welcome to NOMOFEE! Your email verification code is ${code}.\n\n` +
+              `It expires in 10 minutes. Verifying your email lets orders placed as a guest with this address appear in your account.\n` +
+              `If you did not create this account, you can ignore this email.`,
+            meta: { purpose: "shopper-email", subjectId: shopper.id },
+          }),
+      });
+      emailVerificationSent = result.issued;
+    }
+  } catch {
+    // Provider/storage fail-closed states are expected pre-configuration —
+    // registration itself must never depend on email delivery.
+    emailVerificationSent = false;
+  }
+
+  // Defense in depth: a brand-new account can never be verified yet, but the
+  // documented claim result is derived from the ACTUAL gate state.
+  const emailVerified = await getShopperEmailVerified(shopper.id).catch(() => false);
+
+  await logActivity({
+    actorType: "shopper",
+    actorId: shopper.id,
+    actorLabel: shopper.email,
+    action: "shopper.register",
+    meta: { emailVerificationSent },
+  });
   return ok({
     userType: "shopper",
     shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
     token,
-    claimed,
+    claimed: { addressesClaimed: 0, ordersClaimed: 0 },
+    emailVerified,
+    emailVerificationSent,
   });
 });

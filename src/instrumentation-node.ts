@@ -108,6 +108,11 @@ const PRODUCTION_SECRETS = [
   { key: "SHIPPING_WEBHOOK_SECRET", endpoint: "POST /api/shipping/webhook/[provider] (AWB state transitions)" },
   { key: "CHAT_RELAY_SECRET", endpoint: "chat relay :3103 /broadcast (room broadcasts)" },
   { key: "METRICS_TOKEN", endpoint: "GET /api/metrics (read-only, disabled when unset)" },
+  // FINAL CLOSURE — guest-order OTP / email verification (fail-closed routes):
+  // without these, /api/orders/otp/* + /api/auth/shopper/email-verification/*
+  // answer 503 and order lookup/receipt accept only owning sessions.
+  { key: "EMAIL_OTP_SECRET", endpoint: "POST /api/orders/otp/* and /api/auth/shopper/email-verification/* (OTP challenges — 503 EMAIL_OTP_SECRET_UNSET)" },
+  { key: "ORDER_ACCESS_SECRET", endpoint: "order-access grant mint/verify on /api/orders/lookup + receipt (503 ORDER_ACCESS_SECRET_UNSET; grants unverifiable → fail closed)" },
 ] as const;
 
 // NOT fail-closed, but silently DOWNGRADES: without IMPORT_TOKEN_ENC_KEY the
