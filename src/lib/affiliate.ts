@@ -676,6 +676,58 @@ export async function reverseAffiliateForRefund(
   }
   const payoutById = new Map(openPayouts.map((p) => [p.id, p]));
 
+  // ---- C1.2 verification fix (Phase 2.2): the pre-pass snapshot above is
+  // stale by definition. Every writer that mutates an entry claimed by an
+  // open payout (approve / mark-paid / fail / reject) takes the payout row
+  // lock FIRST, and a concurrent requestAffiliatePayout can claim
+  // payoutId:null entries between our pre-pass read and the locks above.
+  // Re-reading AFTER the locks therefore yields the authoritative entry +
+  // payout state for the remainder of this tx (we hold the locks — writers
+  // serialize behind us):
+  //   • a stale entry.status/reversedMinor would misclassify paid entries
+  //     (recovery vs reversed flip) and could over-reverse past the true
+  //     remaining pool of a concurrently-refunded entry;
+  //   • a stale payout.status would book the reversal against the WRONG
+  //     ledger side (AFFILIATE_LIABILITY vs PAYOUT_CLEARING) — the T5 split
+  //     must match the payout's REAL state at approval/transfer time.
+  const commissionIds = commissions.map((c) => c.id);
+  const freshEntries = commissionIds.length
+    ? await tx.affiliateCommissionEntry.findMany({ where: { commissionId: { in: commissionIds } } })
+    : [];
+  for (const c of commissions) {
+    c.entries = freshEntries.filter((e) => e.commissionId === c.id);
+  }
+  // A payout claimed AFTER our pre-pass (its entries showed payoutId:null in
+  // the pre-pass read) must also be locked and coordinated — same open-set
+  // definition, same deterministic lock order.
+  const freshOpenIds = [
+    ...new Set(freshEntries.map((e) => e.payoutId).filter((p): p is string => p !== null)),
+  ].filter((id) => !payoutById.has(id));
+  if (freshOpenIds.length) {
+    const newlyOpen = (
+      await tx.affiliatePayout.findMany({
+        where: { id: { in: freshOpenIds }, status: { in: ["requested", "processing"] } },
+        select: { id: true, status: true, amountMinor: true },
+      })
+    ).sort((a, b) => a.id.localeCompare(b.id));
+    for (const p of newlyOpen) {
+      await tx.$queryRaw`SELECT id FROM "AffiliatePayout" WHERE id = ${p.id} FOR UPDATE`;
+    }
+    openPayouts.push(...newlyOpen);
+  }
+  // Authoritative payout state — the rows are locked, so this read is stable
+  // until commit. Rebuild the map from it (drops payouts that left the open
+  // set, e.g. mark-paid committed before our lock: their entries are recovery
+  // reversals only, no clearing-side coordination).
+  const lockedOpenPayouts = openPayouts.length
+    ? await tx.affiliatePayout.findMany({
+        where: { id: { in: openPayouts.map((p) => p.id) }, status: { in: ["requested", "processing"] } },
+        select: { id: true, status: true, amountMinor: true },
+      })
+    : [];
+  payoutById.clear();
+  for (const p of lockedOpenPayouts) payoutById.set(p.id, p);
+
   // Customer-paid gross per item (breakdown-proportional, mirroring
   // deriveCommissionReversal's allocation family).
   const grossArr = attributed.map((it) => {
@@ -819,10 +871,17 @@ export async function reverseAffiliateForRefund(
         data: { payoutId: null },
       });
     } else if (newAmount !== payout.amountMinor) {
-      await tx.affiliatePayout.update({
+      const shrunk = await tx.affiliatePayout.updateMany({
         where: { id: payoutId, status: { in: ["requested", "processing"] } },
         data: { amountMinor: newAmount },
       });
+      // Verification fix: we hold the row lock — a 0-count shrink means the
+      // open-set membership changed underneath us, which must be impossible.
+      // Fail the refund tx (rolled back atomically) rather than silently
+      // leaving the frozen payout amount overstated against consumed liability.
+      if (shrunk.count !== 1) {
+        throw new ApiError(409, "PAYOUT_STATE_CONFLICT", "Affiliate payout state changed during refund reconciliation — refund aborted, safe to retry");
+      }
     }
   }
 

@@ -41,7 +41,7 @@ import { restoreRedemptionsForOrder } from "./checkout-compensation";
 
 const SWEEP_BATCH = 50;
 
-export type SweepResult = {
+export type SweepResult = GroupExpiryStats & {
   scanned: number;
   released: number;
   skipped: number;
@@ -186,13 +186,18 @@ export async function expireUnpaidPaymentGroups(opts?: { batch?: number; actor?:
 
 /** Run one bounded sweep of eligible expired unpaid reservations.
  *  Phase A: PaymentGroup-coordinated expiry (shared with the cron rail).
- *  Phase B: legacy single-intent orders. */
+ *  Phase B: legacy single-intent orders.
+ *  C1.1 verification fix (G4, Phase 2.2): BOTH scheduler rails now execute
+ *  BOTH phases — the returned GroupExpiryStats fields flow through so the
+ *  cron rail's outcome record, cache-busting and health checks see the same
+ *  shape the tick rail produces (one authoritative set of state-transition
+ *  rules on every rail, as the C1.1 spec requires). */
 export async function runExpirySweep(): Promise<SweepResult> {
   // ---- Phase A: groups. ONE primitive with /api/cron/expiry-sweep. --------
   // Group orders transition payment_pending → payment_expired with the group
   // claimed atomically — they can no longer be released order-by-order while
   // leaving the group claimable (the C1.1 race).
-  await expireUnpaidPaymentGroups({ actor: "expiry-sweep" });
+  const groupStats = await expireUnpaidPaymentGroups({ actor: "expiry-sweep" });
 
   // ---- Phase B: LEGACY single-PaymentIntent orders (paymentGroupId null). --
   const eligible = await db.order.findMany({
@@ -221,7 +226,7 @@ export async function runExpirySweep(): Promise<SweepResult> {
       errors.push({ orderId: o.id, error: e instanceof Error ? e.message.slice(0, 160) : String(e).slice(0, 160) });
     }
   }
-  return { scanned: eligible.length, released, skipped, errors, throttled: false };
+  return { ...groupStats, scanned: eligible.length, released, skipped, errors, throttled: false };
 }
 
 // Phase 2.4 cleanup: `maybeRunExpirySweepLazy` (lazy in-process trigger) was

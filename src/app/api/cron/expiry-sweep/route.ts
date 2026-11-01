@@ -4,7 +4,7 @@ import { toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { recordEvent } from "@/lib/metrics";
 import { bustPublicProductCache } from "@/lib/public-cache";
-import { expireUnpaidPaymentGroups } from "@/lib/expiry-sweep";
+import { runExpirySweep } from "@/lib/expiry-sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -64,8 +64,11 @@ export const POST = handle(async (req: Request) => {
 
   const t0 = performance.now();
   // Shared core (C1.1): the SAME primitive the /api/orders/expiry/tick rail
-  // runs — one authoritative set of state-transition rules.
-  const stats = await expireUnpaidPaymentGroups({ actor: "expiry-sweep" });
+  // runs — one authoritative set of state-transition rules. C1.1 verification
+  // fix (G4): this rail now runs BOTH phases (groups + legacy single-intent
+  // orders) instead of Phase A only, so a deployment that wires only the
+  // mini-service scheduler still expires legacy reservations.
+  const stats = await runExpirySweep();
 
   const remaining = await db.paymentGroup.count({
     where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
@@ -74,9 +77,10 @@ export const POST = handle(async (req: Request) => {
 
   // PHASE 2.1 (§9-A): released reservations restored stock — cached public
   // product/market data is stale. Bust ONLY when something was actually
-  // restocked (the sweep ticks every 30 s with an overwhelmingly empty
-  // outcome; busting unconditionally would defeat the cache entirely).
-  if (stats.itemsRestocked > 0) bustPublicProductCache();
+  // restocked (group restocks AND legacy Phase B releases; the sweep ticks
+  // every 30 s with an overwhelmingly empty outcome; busting unconditionally
+  // would defeat the cache entirely).
+  if (stats.itemsRestocked > 0 || stats.released > 0) bustPublicProductCache();
 
   // Durable observability — survives restarts, queryable by ops/admin.
   await db.setting.upsert({

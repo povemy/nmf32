@@ -262,7 +262,16 @@ export async function processPaymentWebhook(input: {
           isGroup: true,
         };
       }
-      await db.paymentGroup.update({ where: { id: group.id }, data: { status: "failed" } });
+      // C1.1 verification fix (Phase 2.2): CONDITIONAL failed-write. The status
+      // snapshot above is stale by definition — if the expiry sweep claimed the
+      // group `expired` in between, an unconditional update would RE-OPEN it to
+      // `failed`, making it sweepable AND webhook-claimable again. Only a group
+      // still in requires_payment|failed may be marked failed; an expired group
+      // is never resurrected (the late-payment policy below owns that case).
+      await db.paymentGroup.updateMany({
+        where: { id: group.id, status: { in: ["requires_payment", "failed"] } },
+        data: { status: "failed" },
+      });
       await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
       return {
         ok: true,
@@ -475,10 +484,12 @@ export async function processPaymentWebhook(input: {
       // the money must not be captured for goods we already restocked.
       // (Late-payment recovery policy — see the expired check above.)
       const nowStatus = (await db.paymentGroup.findUnique({ where: { id: group.id }, select: { status: true } }))?.status;
-      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
       if (nowStatus === "expired") {
         // The sweep won the claim while this delivery was in flight — same
         // late-payment policy as above, including the durable refund obligation.
+        // G5 ordering fix: the obligation is recorded BEFORE the delivery is
+        // marked processed, so a failed upsert still leaves the row unprocessed
+        // for the ops recovery sweep (matches the pre-claim path's order).
         await recordLatePaymentObligation({
           provider: input.provider,
           providerRef,
@@ -487,8 +498,10 @@ export async function processPaymentWebhook(input: {
           groupTotalMinor: group.totalMinor,
           currency: group.currency,
         });
+        await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
         throw new ApiError(409, "GROUP_EXPIRED", `Payment group ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
       }
+      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
       return {
         ok: true,
         duplicate: true,
@@ -577,7 +590,15 @@ export async function processPaymentWebhook(input: {
         intentStatus: intent.status,
       };
     }
-    await db.paymentIntent.update({ where: { id: intent.id }, data: { status: "failed" } });
+    // C1.1 verification fix (Phase 2.2): CONDITIONAL failed-write — the stale
+    // read at the top of this branch must not be trusted. If a racing success
+    // tx committed after our snapshot, an unconditional update would flip a
+    // SUCCEEDED intent (money captured, order paid) to failed. Same guard as
+    // the success path's claim: only requires_payment|failed may become failed.
+    await db.paymentIntent.updateMany({
+      where: { id: intent.id, status: { in: ["requires_payment", "failed"] } },
+      data: { status: "failed" },
+    });
     const order = await db.order.findUnique({ where: { id: intent.orderId } });
     await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
     return {
@@ -630,6 +651,10 @@ export async function processPaymentWebhook(input: {
   // with the same F1 remediation (post-commit wallet refresh + bounded P2034
   // retry of the whole transaction).
   const walletIdsTouched = new Set<string>();
+  // C1.1 verification fix: set when the legacy success tx aborted because the
+  // order was already released (same semantics as the group path's
+  // ordersChanged) — converted into the late-payment obligation below.
+  let legacyOrdersChanged = false;
   // NOTE: array holder (same pattern as the group path's postedOrders) — a
   // `let x: T | null = null` assigned inside the $transaction callback gets
   // CFA-narrowed to `null` at post-commit use sites (TS never sees the callback
@@ -655,6 +680,19 @@ export async function processPaymentWebhook(input: {
         include: { items: true, store: { include: { seller: { include: { wallet: true } } } } },
       });
       if (!order) throw new ApiError(404, "ORDER_NOT_FOUND", "Order for payment intent not found");
+
+      // C1.1 verification fix (Phase 2.2): per-order state verification INSIDE
+      // the claim tx — mirrors the group path exactly (the pre-tx guard above
+      // is stale by construction: transitionOrder is unconditional, so a
+      // release committed between that read and this tx would otherwise be
+      // resurrected here, re-selling stock the sweep already returned).
+      // Deterministic abort → the intent claim ROLLS BACK → the late-payment
+      // obligation + 409 ORDER_EXPIRED below (never retried).
+      if (order.status === "payment_expired" || order.status === "cancelled") {
+        throw new OrderStateAbort(
+          `legacy order ${order.id} is ${order.status} — refusing payment ${providerRef} (late-payment policy)`
+        );
+      }
 
       await transitionOrder({ orderId: order.id, toStatus: "paid", actor: "system", note: `Payment ${providerRef} succeeded via ${intent.provider}`, timestamps: { paidAt }, tx });
 
@@ -715,6 +753,9 @@ export async function processPaymentWebhook(input: {
       );
       break;
     } catch (e) {
+      // C1.1 verification fix: order-state abort is deterministic — never
+      // retried; the intent claim has already rolled back (same as group path).
+      if (e instanceof OrderStateAbort) { legacyOrdersChanged = true; break; }
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" && attempt < 3) {
         await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
         continue;
@@ -723,9 +764,28 @@ export async function processPaymentWebhook(input: {
     }
   }
 
-  if (!outcome?.claimed) {
+  // C1.1 verification fix — legacy twin of the group path's ordersChanged
+  // handler: the order was already released by the sweep (or cancelled), so
+  // the payment is late for returned stock. Record the durable refund
+  // obligation FIRST (G5 ordering fix: never mark the delivery processed
+  // before the obligation exists — an ops sweep must still be able to re-feed
+  // this row), then refuse with 409. Never resurrect, never fulfill.
+  if (legacyOrdersChanged) {
+    await recordLatePaymentObligation({
+      provider: input.provider,
+      providerRef,
+      providerPaymentId: input.body.paymentId ?? null,
+      amountMinor,
+      groupTotalMinor: intent.amountMinor,
+      currency: guardOrder?.currency ?? "MYR",
+    });
     await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+    throw new ApiError(409, "ORDER_EXPIRED", `Order for payment ${providerRef} was already expired or cancelled before payment completed — no money was moved; the buyer will be refunded via reconciliation`);
+  }
+
+  if (!outcome?.claimed) {
     const order = await db.order.findUnique({ where: { id: intent.orderId } });
+    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
     return {
       ok: true,
       duplicate: true,
