@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.338Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.304Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -15,18 +15,18 @@
         "anomalies": 0,
         "failures": 0,
         "remainingBacklog": 0,
-        "durationMs": 144,
-        "at": "2026-11-01T06:30:26.266Z",
+        "durationMs": 170,
+        "at": "2026-11-01T07:28:26.259Z",
         "batchLimit": 50,
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 4060
+      "ticks": 4176
     },
     "refund": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.278Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.318Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -39,8 +39,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-11-01T06:30:26.203Z",
-        "durationMs": 70,
+        "at": "2026-11-01T07:28:26.226Z",
+        "durationMs": 134,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -48,16 +48,16 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 4060
+      "ticks": 4176
     },
     "analytics": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.606Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.540Z",
       "lastOutcome": {
-        "ranAt": "2026-11-01T06:30:26.523Z",
-        "durationMs": 379,
+        "ranAt": "2026-11-01T07:28:26.457Z",
+        "durationMs": 362,
         "retentionDays": 180,
-        "cutoff": "2026-05-05T06:30:26.225Z",
+        "cutoff": "2026-05-05T07:28:26.215Z",
         "purged": 0,
         "flush": {
           "flushed": 0,
@@ -69,26 +69,26 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 3110
+      "ticks": 3226
     },
     "affiliate": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.769Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.488Z",
       "lastOutcome": {
         "approved": 0,
         "matured": 0,
         "remainingPending": 8,
-        "durationMs": 528,
-        "at": "2026-11-01T06:30:26.686Z",
+        "durationMs": 344,
+        "at": "2026-11-01T07:28:26.442Z",
         "authMode": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2
+      "ticks": 118
     },
     "sessions": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.171Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.101Z",
       "lastOutcome": {
         "throttled": true,
         "purged": 0,
@@ -96,18 +96,18 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 129
+      "ticks": 245
     },
     "orders": {
-      "lastTickAt": "2026-11-01T06:30:25.758Z",
-      "lastSuccessAt": "2026-11-01T06:30:26.298Z",
+      "lastTickAt": "2026-11-01T07:28:25.840Z",
+      "lastSuccessAt": "2026-11-01T07:28:26.379Z",
       "lastOutcome": {
-        "ranAt": "2026-11-01T06:30:26.258Z",
-        "durationMs": 78,
+        "ranAt": "2026-11-01T07:28:26.333Z",
+        "durationMs": 225,
         "autoComplete": {
           "candidates": 0,
           "completed": 0,
-          "cutoff": "2026-10-18T06:30:26.180Z"
+          "cutoff": "2026-10-18T07:28:26.109Z"
         },
         "tracking": {
           "scanned": 0,
@@ -118,7 +118,7 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2
+      "ticks": 118
     }
   },
   "alerts": [

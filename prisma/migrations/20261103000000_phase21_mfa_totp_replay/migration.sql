@@ -1,0 +1,19 @@
+-- Phase 2.1 (MFA / §5-C): TOTP replay protection.
+--
+-- Adds AdminMfaEnrollment.lastUsedTotpCounter (INTEGER, nullable) — the TOTP
+-- time-step counter of the most recently accepted code. The application
+-- guards acceptance with a conditional (CAS) update:
+--
+--   UPDATE ... SET lastUsedTotpCounter = <c>
+--   WHERE adminId = ? AND (lastUsedTotpCounter IS NULL OR lastUsedTotpCounter < c)
+--
+-- so the same valid time step can never be accepted twice, and two concurrent
+-- verifications of the same code cannot both win (exactly one row update).
+--
+-- Column is NULL for all existing rows = "no code accepted yet" — the first
+-- verification of any live code succeeds. No data transformation, no default,
+-- additive only: safe to apply at any time. The application tolerates the
+-- column being absent (Prisma P2022 → replay protection skipped with a loud
+-- one-time warning) so a code-first deploy keeps working, exactly like the
+-- Phase 1 table-absence (P2021) guard.
+ALTER TABLE "AdminMfaEnrollment" ADD COLUMN "lastUsedTotpCounter" INTEGER;

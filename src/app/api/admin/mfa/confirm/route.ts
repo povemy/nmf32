@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
-import { requireAdmin, revokeUserSessions } from "@/lib/auth";
+import { requireAdminUngated, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
-import { generateRecoveryCodes, getMfaEnrollment, isPrismaMissingTableError, verifyAdminPassword, verifyTotpForSecretEnc } from "@/lib/mfa";
+import { generateRecoveryCodes, getMfaEnrollment, isPrismaMissingTableError, consumeTotpCounter, verifyAdminPassword, verifyTotpForSecretEncDetailed } from "@/lib/mfa";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 // this response are the ONLY time plaintext codes exist.
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
-  const admin = await requireAdmin();
+  const admin = await requireAdminUngated();
   const body = await readBody(req);
   const password = reqStr(body, "password", "Current password");
   const code = reqStr(body, "code", "Authenticator code");
@@ -37,7 +37,16 @@ export const POST = handle(async (req: NextRequest) => {
     throw new ApiError(409, "MFA_ALREADY_ENROLLED", "Two-factor authentication is already enabled");
   }
 
-  if (!verifyTotpForSecretEnc(enrollment.secretEnc, code)) {
+  const verdict = verifyTotpForSecretEncDetailed(enrollment.secretEnc, code);
+  if (!verdict.ok) {
+    throw new ApiError(401, "INVALID_CODE", "That code didn't match — check your authenticator app and try again");
+  }
+
+  // PHASE 2.1 (§5-C): burn the confirmation code's time step immediately — the
+  // SAME valid code must never be replayed at the login challenge (or anywhere
+  // else). CAS update; a concurrent duplicate confirm loses uniformly.
+  const burned = await consumeTotpCounter(admin.id, verdict.counter!);
+  if (!burned) {
     throw new ApiError(401, "INVALID_CODE", "That code didn't match — check your authenticator app and try again");
   }
 

@@ -7,6 +7,7 @@ import { createHash } from "crypto";
 import { db } from "./db";
 import { randomToken } from "./password";
 import { ApiError } from "./api";
+import { mfaEnrollmentGate } from "./mfa";
 
 export const SESSION_COOKIE = "sm_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -180,12 +181,39 @@ export async function getSession(): Promise<SessionContext | null> {
   return { userType, userId: s.userId };
 }
 
-export async function requireAdmin(): Promise<AdminUserDTO> {
+export type RequireAdminOpts = {
+  /** PHASE 2.1 (§5-B): when false, skip the mandatory-MFA-enrollment gate.
+   *  Reserved for the MFA bootstrap routes (enroll/confirm/status) and
+  *  /api/auth/me — a privileged admin who has not enrolled must still be able
+  *  to SEE their restricted state and complete enrollment. Default: gate ON. */
+  mfaGate?: boolean;
+};
+
+export async function requireAdmin(opts: RequireAdminOpts = {}): Promise<AdminUserDTO> {
   const sess = await getSession();
   if (!sess || sess.userType !== "admin") throw new ApiError(401, "UNAUTHORIZED", "Admin session required");
   const admin = await db.adminUser.findUnique({ where: { id: sess.userId } });
   if (!admin || !admin.isActive) throw new ApiError(401, "UNAUTHORIZED", "Admin not found");
+  if (opts.mfaGate !== false) {
+    // Mandatory enrollment for money-capability roles (superadmin / finance /
+    // ops). One indexed unique-lookup per admin request (admin traffic only).
+    const gate = await mfaEnrollmentGate(admin.role, admin.id);
+    if (gate.enrollmentRequired) {
+      throw new ApiError(
+        403,
+        "MFA_ENROLLMENT_REQUIRED",
+        "Two-factor authentication is required for this account. Complete enrollment (Settings → Security) to unlock administrative functions.",
+        { mfaEnrollmentRequired: true }
+      );
+    }
+  }
   return { id: admin.id, email: admin.email, name: admin.name, role: admin.role };
+}
+
+/** requireAdmin WITHOUT the MFA-enrollment gate — the bootstrap escape hatch.
+ *  Used ONLY by the admin MFA routes and /api/auth/me. */
+export async function requireAdminUngated(): Promise<AdminUserDTO> {
+  return requireAdmin({ mfaGate: false });
 }
 
 export async function requireAdminRole(roles: string[]): Promise<AdminUserDTO> {

@@ -277,6 +277,30 @@ export default function AdminShell() {
 
         {/* view switch */}
         <main className="flex-1 space-y-4 p-4 pb-28 sm:p-6 sm:pb-28">
+          {/* PHASE 2.1 (§5-B): mandatory-MFA restricted state — privileged
+              (superadmin/finance/ops) admins without a confirmed enrollment are
+              server-side blocked from every admin API except the MFA bootstrap.
+              This banner tells them exactly what to do; completing enrollment
+              (Settings → Security) + re-signing-in lifts the restriction. */}
+          {me.admin.mfaEnrollmentRequired ? (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" role="alert">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden />
+              <div className="min-w-0">
+                <p className="font-bold">Two-factor authentication is required for your role</p>
+                <p className="mt-1 text-amber-800">
+                  Administrative functions are locked until you enroll. Open{" "}
+                  <button
+                    type="button"
+                    className="font-bold underline underline-offset-2 hover:text-amber-950"
+                    onClick={() => navigate("settings")}
+                  >
+                    Settings → Security
+                  </button>{" "}
+                  and complete TOTP enrollment (you will need your account password). After confirming, sign in again with your authenticator.
+                </p>
+              </div>
+            </div>
+          ) : null}
           {view === "seller-detail" ? (
             params.sellerId ? (
               <SellerDetailView nav={nav} sellerId={params.sellerId} />

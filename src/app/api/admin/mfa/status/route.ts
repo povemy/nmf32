@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUngated } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { getMfaEnrollment } from "@/lib/mfa";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // enforcement. No secrets ever leave this route.
 export const GET = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
-  const admin = await requireAdmin();
+  const admin = await requireAdminUngated();
   const enrollment = await getMfaEnrollment(admin.id);
   return ok({ enrolled: enrollment != null, confirmed: enrollment?.confirmedAt != null });
 });

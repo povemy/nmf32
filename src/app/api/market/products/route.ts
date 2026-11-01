@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { productCardInclude, toProductCard, type ProductWithRelations } from "../../_shared/product-card";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import { normalizeSearchQuery } from "@/lib/search-normalize";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,9 @@ const loadProducts = publicCache(
 export const GET = handle(async (req: Request) => {
   const url = new URL(req.url);
   const { page, size } = getPagination(url);
-  const search = url.searchParams.get("search")?.trim() ?? "";
+  // PHASE 2.1 (§9-B): normalize BEFORE the value becomes a cache key — bounded
+  // cardinality, no entries for whitespace/control-char/over-length junk.
+  const search = normalizeSearchQuery(url.searchParams.get("search"));
   const categorySlug = url.searchParams.get("category")?.trim() ?? "";
   const sort = url.searchParams.get("sort") ?? "newest";
 

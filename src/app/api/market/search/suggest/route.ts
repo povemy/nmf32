@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
+import { rateLimit } from "@/lib/rate-limit";
+import { normalizeSearchQuery } from "@/lib/search-normalize";
 import type { Prisma } from "@prisma/client";
 import { productCardInclude, toProductCard, FALLBACK_IMG, type ProductWithRelations } from "../../../_shared/product-card";
 import { tokenize, buildTokenWhere, scoreProduct } from "../../_shared/search";
@@ -7,9 +9,17 @@ import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
-// PHASE 2 / C: header autocomplete — the highest-frequency public read (every
-// keystroke). Cached 30 s per raw query string; products+stores tags busted on
-// mutations. Per-prefix entries expire with the TTL, bounding cardinality.
+// PHASE 2 / C: header autocomplete — public read, cached 30 s. NOTE (Phase 2.1
+// §9-C): the shopper UI is now SUBMIT-ONLY — no client surface fires requests
+// per keystroke, and the storefront/market search boxes submit a complete
+// keyword. The route remains available for API consumers but is hardened as a
+// public, cache-keyed endpoint:
+//   • PHASE 2.1 §9-B: the query is NORMALIZED before it can touch a cache key
+//     (control chars stripped, ≤80 chars, whitespace collapsed/trimmed) — a
+//     scripted client can no longer mint unbounded cache cardinality via
+//     randomized raw strings.
+//   • 30/min/IP rate limit (public read, unauthenticated).
+//   • empty/junk queries short-circuit with ZERO cache interaction.
 const loadSuggest = publicCache(
   async (raw: string) => {
     const tokens = tokenize(raw);
@@ -51,10 +61,12 @@ const loadSuggest = publicCache(
 
 // GET /api/market/search/suggest?q= — header autocomplete (public market data).
 // Returns up to 6 product cards (relevance-ranked) + up to 3 live stores whose
-// name matches the raw query. Powers the top-bar suggestion dropdown.
+// name matches the normalized query.
 export const GET = handle(async (req: Request) => {
+  rateLimit(req, "market-suggest", 30);
   const url = new URL(req.url);
-  const raw = (url.searchParams.get("q") ?? "").trim();
+  const raw = normalizeSearchQuery(url.searchParams.get("q"));
+  if (raw === "") return ok({ products: [], stores: [] }); // junk/empty ⇒ no cache entry
   const { products, stores } = await loadSuggest(raw);
   return ok({ products, stores });
 });

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, nextOrderNumber, notify, logActivity } from "@/lib/api";
+import { bustPublicProductCache } from "@/lib/public-cache";
 import { requireShopper } from "@/lib/auth";
 import { computeGroupPricing, assertShippingAvailable } from "../pricing";
 import { computeOrderCommissions, loadRateContext } from "@/lib/commission";
@@ -571,6 +572,14 @@ export const POST = handle(async (req: Request) => {
         })
       );
       timing.mark("postTx");
+
+      // PHASE 2.1 (§9-A): the transaction deducted stock (CAS per line) and
+      // bumped salesCount — cached public product/market data is now stale.
+      // Bust the products tag so the NEXT public read serves live stock (the
+      // 30–45 s TTL remains the safety net for any path that bypasses this).
+      // Checkout itself NEVER reads this cache — its authoritative checks are
+      // transactional and untouched.
+      bustPublicProductCache();
 
       const response = ok(
         {

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUngated } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 //     secret exists. NEVER logged, never echoed again after this response.
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
-  const admin = await requireAdmin();
+  const admin = await requireAdminUngated();
   const body = await readBody(req);
   const password = reqStr(body, "password", "Current password");
 

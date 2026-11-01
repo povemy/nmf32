@@ -89,3 +89,17 @@ export function bustPublicCacheSafe(...tags: PublicCacheTag[]): void {
     /* TTL is the safety net — never fail a mutation over invalidation */
   }
 }
+
+/**
+ * PHASE 2.1 (§9-A): bust the products tag after STOCK-MUTATING paths that are
+ * not seller/admin mutations (those already bust via their own routes):
+ *   • checkout commit (CAS stock decrement + salesCount bump)
+ *   • expiry-sweep restock (failed/expired reservations released)
+ *   • refund-related restock, cancellation restock (TTL safety net covers the
+ *     rare paths; call this when a clean seam exists)
+ * Displayed stock on public pages stays appropriately current (seconds, not
+ * 45 s) while checkout keeps its authoritative transactional revalidation.
+ */
+export function bustPublicProductCache(): void {
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
+}

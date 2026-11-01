@@ -101,15 +101,20 @@ model AdminUser {
 /// hex digests - one-time-use recovery codes, never stored in plaintext.
 /// `confirmedAt` null = enrollment started but not yet verified by a valid
 /// TOTP code; login enforcement only applies once confirmed.
+/// Phase 2.1: `lastUsedTotpCounter` = the TOTP time-step counter of the most
+/// recently ACCEPTED code — CAS-guarded monotonic update rejects any code
+/// from an already-used time step (replay protection, RFC 6238 §5.2). Null
+/// until the first accepted code.
 model AdminMfaEnrollment {
-  id             String    @id @default(cuid())
-  adminId        String    @unique
-  secretEnc      String
-  recoveryHashes String
-  confirmedAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  admin          AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  adminId             String    @unique
+  secretEnc           String
+  recoveryHashes      String
+  confirmedAt         DateTime?
+  lastUsedTotpCounter Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  admin               AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
 }
 
 model Seller {

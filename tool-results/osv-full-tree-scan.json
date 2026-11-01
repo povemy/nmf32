@@ -1,0 +1,253 @@
+{
+ "resolved_count": 598,
+ "declared_prod": [
+  "@dnd-kit/core",
+  "@dnd-kit/sortable",
+  "@dnd-kit/utilities",
+  "@hookform/resolvers",
+  "@prisma/client",
+  "@radix-ui/react-accordion",
+  "@radix-ui/react-alert-dialog",
+  "@radix-ui/react-aspect-ratio",
+  "@radix-ui/react-avatar",
+  "@radix-ui/react-checkbox",
+  "@radix-ui/react-collapsible",
+  "@radix-ui/react-context-menu",
+  "@radix-ui/react-dialog",
+  "@radix-ui/react-dropdown-menu",
+  "@radix-ui/react-hover-card",
+  "@radix-ui/react-label",
+  "@radix-ui/react-menubar",
+  "@radix-ui/react-navigation-menu",
+  "@radix-ui/react-popover",
+  "@radix-ui/react-progress",
+  "@radix-ui/react-radio-group",
+  "@radix-ui/react-scroll-area",
+  "@radix-ui/react-select",
+  "@radix-ui/react-separator",
+  "@radix-ui/react-slider",
+  "@radix-ui/react-slot",
+  "@radix-ui/react-switch",
+  "@radix-ui/react-tabs",
+  "@radix-ui/react-toast",
+  "@radix-ui/react-toggle",
+  "@radix-ui/react-toggle-group",
+  "@radix-ui/react-tooltip",
+  "@tanstack/react-query",
+  "class-variance-authority",
+  "clsx",
+  "cmdk",
+  "date-fns",
+  "framer-motion",
+  "lucide-react",
+  "next",
+  "next-themes",
+  "pdf-lib",
+  "pg",
+  "prisma",
+  "react",
+  "react-dom",
+  "react-hook-form",
+  "recharts",
+  "sharp",
+  "socket.io-client",
+  "sonner",
+  "tailwind-merge",
+  "undici",
+  "vaul",
+  "z-ai-web-dev-sdk",
+  "zod",
+  "zustand"
+ ],
+ "declared_dev": [
+  "@tailwindcss/postcss",
+  "@types/bun",
+  "@types/node",
+  "@types/react",
+  "@types/react-dom",
+  "bun-types",
+  "eslint",
+  "eslint-config-next",
+  "tailwindcss",
+  "tw-animate-css",
+  "typescript"
+ ],
+ "vulns": [
+  {
+   "package": "@babel/core",
+   "version": "7.28.6",
+   "id": "GHSA-4x5r-pxfx-6jf8",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "@humanfs/node",
+   "version": "0.16.7",
+   "id": "GHSA-p498-v437-472g",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "ajv",
+   "version": "6.12.6",
+   "id": "GHSA-2g4f-4pwh-qvx6",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "baseline-browser-mapping",
+   "version": "2.9.15",
+   "id": "GHSA-w5vr-8v7q-w6rv",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "browserslist",
+   "version": "4.28.1",
+   "id": "GHSA-73wf-gq98-2v4g",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "browserslist",
+   "version": "4.28.1",
+   "id": "GHSA-c83g-rgw3-j3cx",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "deepmerge-ts",
+   "version": "7.1.5",
+   "id": "GHSA-ggr8-5vv4-36mx",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "defu",
+   "version": "6.1.4",
+   "id": "GHSA-737v-mqg7-c878",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "effect",
+   "version": "3.18.4",
+   "id": "GHSA-38f7-945m-qr2g",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "flatted",
+   "version": "3.3.3",
+   "id": "GHSA-25h7-pfq9-p65f",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "flatted",
+   "version": "3.3.3",
+   "id": "GHSA-rf6f-7fwh-wjgh",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "js-yaml",
+   "version": "4.1.1",
+   "id": "GHSA-2883-xcg3-v3hh",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "js-yaml",
+   "version": "4.1.1",
+   "id": "GHSA-52cp-r559-cp3m",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "js-yaml",
+   "version": "4.1.1",
+   "id": "GHSA-5p4m-2wfm-xmqj",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "js-yaml",
+   "version": "4.1.1",
+   "id": "GHSA-h67p-54hq-rp68",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "lodash",
+   "version": "4.17.21",
+   "id": "GHSA-f23m-r3pf-42rh",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "lodash",
+   "version": "4.17.21",
+   "id": "GHSA-r5fr-rjxr-66jc",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "lodash",
+   "version": "4.17.21",
+   "id": "GHSA-xxjr-mmjv-4gpg",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "minimatch",
+   "version": "10.2.6",
+   "id": "GHSA-g3hv-75wg-m249",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "picomatch",
+   "version": "2.3.1",
+   "id": "GHSA-3v7f-55p6-f55p",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "picomatch",
+   "version": "2.3.1",
+   "id": "GHSA-c2c7-rcm5-vvqj",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  },
+  {
+   "package": "source-map-js",
+   "version": "1.2.1",
+   "id": "GHSA-68fv-2mgg-jv7q",
+   "aliases": [],
+   "summary": "",
+   "severity": ""
+  }
+ ]
+}

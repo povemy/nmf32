@@ -109,27 +109,30 @@ export const POST = handle(async (req: Request) => {
   }
 
   // Order entry point (order success / order status "Contact seller"):
-  // quote that order — Phase 1 (B3 / F-1) with REAL ownership enforcement:
-  // the signed-in shopper must either OWN the order (Order.shopperId, the
-  // modern account-scoped checkout) or match its customerEmail exactly (the
-  // legacy guest-order rule, identical to /api/orders/lookup). The previous
-  // implementation scoped only by {orderNumber, storeId} — an IDOR that let
-  // any signed-in shopper enumerate other customers' order context. Uniform
-  // 404 for missing AND non-owned orders (no existence oracle).
+  // quote that order — Phase 1 (B3 / F-1) ownership enforcement, TIGHTENED in
+  // Phase 2.1: the signed-in shopper must OWN the order via Order.shopperId.
+  // The previous email-match fallback (`order.customerEmail === me.email`) has
+  // been REMOVED: shopper registration performs no email verification, so
+  // registering with a victim's email address would have granted chat access
+  // to that victim's guest orders knowing ONLY the order number — strictly
+  // weaker than the /api/orders/lookup knowledge pair. Legitimate buyers are
+  // unaffected: guest orders with the account's email are CLAIMED into the
+  // account at registration (claimGuestStateForShopper) and logged-in checkout
+  // sets shopperId directly, so `shopperId === me.id` covers every real owner.
+  // True guest buyers (no account, unclaimed order) contact the seller via the
+  // product context or a plain thread, exactly as before. Uniform 404 for
+  // missing AND non-owned orders (no existence oracle).
   let orderId: string | null = null;
   let orderNumber: string | null = null;
   if (body.orderNumber) {
     const order = await db.order.findFirst({
       where: { orderNumber: body.orderNumber, storeId: store.id },
-      select: { id: true, orderNumber: true, shopperId: true, customerEmail: true },
+      select: { id: true, orderNumber: true, shopperId: true },
     });
-    const owns =
-      !!order &&
-      (order.shopperId === me.id || order.customerEmail.toLowerCase() === me.email.toLowerCase());
-    if (!owns) throw new ApiError(404, "NOT_FOUND", "Order not found");
+    if (!order || order.shopperId !== me.id) throw new ApiError(404, "NOT_FOUND", "Order not found");
     contextType = "order";
-    orderId = order!.id;
-    orderNumber = order!.orderNumber;
+    orderId = order.id;
+    orderNumber = order.orderNumber;
   }
 
   // Default seed message reflects the entry point ("cute bubble" copy).

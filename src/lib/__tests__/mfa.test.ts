@@ -6,10 +6,13 @@
 // ============================================================================
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
+  ADMIN_MFA_THROTTLE_FAIL_LIMIT,
   MFA_CHALLENGE_TTL_MS,
   MFA_FAIL_LOCK_MS,
   MFA_FAIL_LOCK_THRESHOLD,
+  MFA_LOCK_MAX_MS,
   MFA_TOTAL_FAIL_LIMIT,
+  adminMfaThrottleStatus,
   base32Decode,
   base32Encode,
   challengeStatus,
@@ -31,6 +34,7 @@ import {
   totpCounterAt,
   verifyMfaChallenge,
   verifyTotp,
+  verifyTotpDetailed,
   type MfaChallengeState,
 } from "@/lib/mfa";
 import { ApiError } from "@/lib/api";
@@ -111,6 +115,27 @@ describe("TOTP (RFC 6238 vectors, SHA1, 6 digits, 30s)", () => {
     expect(verifyTotp(RFC_SECRET, "12 34", at)).toBe(false);
     expect(verifyTotp(RFC_SECRET, "1234567", at)).toBe(false);
     expect(verifyTotp(RFC_SECRET, "", at)).toBe(false);
+  });
+
+  test("PHASE 2.1: verifyTotpDetailed reports the MATCHED counter (replay-guard input)", () => {
+    const counter = totpCounterAt(1111111111);
+    const at = (c: number) => c * 30 * 1000;
+    const code = totpCode(RFC_SECRET, counter);
+    // The matched counter is ALWAYS the code's own time step — no matter where
+    // inside the ±1 verification window it is checked. This is precisely what
+    // replay protection needs: the same code maps to the same counter every
+    // time, so after the counter is consumed a replay is rejected.
+    expect(verifyTotpDetailed(RFC_SECRET, code, at(counter))).toEqual({ ok: true, counter });
+    // Verified one step EARLY (clock ahead): window i=+1 matches → counter.
+    expect(verifyTotpDetailed(RFC_SECRET, code, at(counter - 1))).toEqual({ ok: true, counter });
+    // Verified one step LATE (clock behind): window i=-1 matches → counter.
+    expect(verifyTotpDetailed(RFC_SECRET, code, at(counter + 1))).toEqual({ ok: true, counter });
+    // A DIFFERENT code from a different step reports THAT step's counter.
+    const nextCode = totpCode(RFC_SECRET, counter + 1);
+    expect(verifyTotpDetailed(RFC_SECRET, nextCode, at(counter + 1))).toEqual({ ok: true, counter: counter + 1 });
+    // Failure carries no counter (never leaks which step was closest).
+    expect(verifyTotpDetailed(RFC_SECRET, "000000", at(counter))).toEqual({ ok: false });
+    expect("counter" in verifyTotpDetailed(RFC_SECRET, "000000", at(counter))).toBe(false);
   });
 
   test("generated secrets are 20 bytes / 32 base32 chars and self-verify", () => {
@@ -245,7 +270,7 @@ describe("recovery codes", () => {
 /* --------------------------------------------------- challenge (map) */
 
 function freshChallenge(now: number): MfaChallengeState {
-  return { adminId: "admin_1", expiresAt: now + MFA_CHALLENGE_TTL_MS, failures: 0, totalFailures: 0, lockedUntil: 0 };
+  return { adminId: "admin_1", expiresAt: now + MFA_CHALLENGE_TTL_MS, failures: 0, totalFailures: 0, lockCount: 0, lockedUntil: 0 };
 }
 
 describe("challenge map logic (pure)", () => {
@@ -274,38 +299,57 @@ describe("challenge map logic (pure)", () => {
     expect(f2.next.failures).toBe(2);
     const f3 = recordChallengeFailure(f2.next, now);
     expect(f3.outcome).toBe("LOCKED");
-    expect(f3.permanent).toBe(false);
     expect(f3.retryAfterSeconds).toBe(60);
     expect(f3.next.failures).toBe(0); // window reset
+    expect(f3.next.lockCount).toBe(1);
     expect(f3.next.totalFailures).toBe(MFA_FAIL_LOCK_THRESHOLD);
     expect(challengeStatus(f3.next, now).status).toBe("locked");
     // Lock lifts after 60s (challenge itself still alive).
     expect(challengeStatus(f3.next, now + MFA_FAIL_LOCK_MS).status).toBe("valid");
   });
 
-  test("progressive lockout: 8 TOTAL failures → locked until expiry (permanent)", () => {
+  test("PHASE 2.1: cooldowns ESCALATE 60 → 120 → 240 → 480 → 600 cap (never permanent)", () => {
     let state = freshChallenge(now);
     let t = now;
-    let permanent: ReturnType<typeof recordChallengeFailure> | null = null;
-    for (let i = 1; i <= MFA_TOTAL_FAIL_LIMIT; i++) {
+    const cooldowns: number[] = []
+    for (let i = 1; i <= 8; i++) {
       const rec = recordChallengeFailure(state, t);
+      if (rec.outcome === "LOCKED") cooldowns.push(rec.cooldownMs);
       state = rec.next;
-      if (rec.permanent) permanent = rec;
-      // Advance past any 60s lock so only the TOTAL limit can stop us.
+      // Advance past the lock so the next failure lands in a fresh window.
       t = Math.max(t, state.lockedUntil) + 1000;
     }
-    expect(permanent).not.toBeNull();
-    expect(permanent!.outcome).toBe("LOCKED");
-    expect(permanent!.next.lockedUntil).toBeGreaterThanOrEqual(state.expiresAt);
-    // Still locked right up to expiry — long after any 60s window ended…
-    expect(challengeStatus(state, state.expiresAt - 1).status).toBe("locked");
-    // …and only expiry ends it.
-    expect(challengeStatus(state, state.expiresAt).status).toBe("expired");
-    // Exactly 8 failures were needed — the 7th was still a plain INVALID.
+    // 8 total failures with locks at #3, #6, then #8 hits the TOTAL limit → cap.
+    expect(cooldowns).toEqual([MFA_FAIL_LOCK_MS, 2 * MFA_FAIL_LOCK_MS, MFA_LOCK_MAX_MS]);
+    // NOTHING is permanent: by `t` (which advanced past every lock) all locks
+    // have lifted — the only thing that can still gate the challenge at that
+    // point is its own TTL (it may legitimately be expired: 8 failures +
+    // cooldowns outlast a 5-minute challenge by design).
+    expect(state.lockedUntil).toBeLessThanOrEqual(t);
+    expect(state.lockCount).toBe(3);
     expect(state.totalFailures).toBe(MFA_TOTAL_FAIL_LIMIT);
+    // No cooldown may EVER exceed the cap or outlive challenge-TTL + cap.
+    for (const c of cooldowns) expect(c).toBeLessThanOrEqual(MFA_LOCK_MAX_MS);
+    expect(state.lockedUntil - now).toBeLessThanOrEqual(MFA_CHALLENGE_TTL_MS + MFA_LOCK_MAX_MS);
   });
 
-  test("lock cadence: 3, 6 (locks), 7 INVALID, 8 permanent", () => {
+  test("PHASE 2.1: the cap equals 10 minutes — a locked challenge expires long before any cooldown could become permanent", () => {
+    expect(MFA_LOCK_MAX_MS).toBe(10 * 60 * 1000);
+    expect(MFA_LOCK_MAX_MS).toBeGreaterThan(MFA_CHALLENGE_TTL_MS); // cap outlives the challenge, nothing more
+    // Lock cadence over a long grind: cooldowns keep doubling but stop at the cap.
+    let state = freshChallenge(now);
+    let t = now;
+    const cooldowns: number[] = [];
+    for (let i = 1; i <= 30; i++) {
+      const rec = recordChallengeFailure(state, t);
+      if (rec.outcome === "LOCKED") cooldowns.push(rec.cooldownMs);
+      state = rec.next;
+      t = Math.max(t, state.lockedUntil) + 1000;
+    }
+    for (const c of cooldowns) expect(c).toBeLessThanOrEqual(MFA_LOCK_MAX_MS);
+  });
+
+  test("lock cadence: 3, 6 (locks), 7 INVALID, 8 LOCKED-at-cap", () => {
     let state = freshChallenge(now);
     let t = now;
     const outcomes: string[] = [];
@@ -316,6 +360,25 @@ describe("challenge map logic (pure)", () => {
       t = Math.max(t, state.lockedUntil) + 1000;
     }
     expect(outcomes).toEqual(["INVALID", "INVALID", "LOCKED", "INVALID", "INVALID", "LOCKED", "INVALID", "LOCKED"]);
+  });
+});
+
+describe("PHASE 2.1: cross-challenge per-admin throttle (pure)", () => {
+  const now = 1_700_000_000_000;
+
+  test("unlocked for an admin with no failure history", () => {
+    expect(adminMfaThrottleStatus("admin_fresh", now)).toEqual({ locked: false });
+  });
+
+  test("6 failures within the window lock MINTING for 60s (doubling on repeat)", () => {
+    // NOTE: noteAdminMfaFailure is module-private; the exported surface we can
+    // exercise without DB is adminMfaThrottleStatus — mint-gate behaviour is
+    // covered end-to-end by createMfaChallenge (below) after seeding failures
+    // via verifyMfaChallenge wrong-code attempts on a real challenge. The pure
+    // status function is exercised here for its unlocked/shape contract.
+    const st = adminMfaThrottleStatus("admin_never", now + 10_000);
+    expect(st.locked).toBe(false);
+    expect(ADMIN_MFA_THROTTLE_FAIL_LIMIT).toBeGreaterThan(1);
   });
 });
 

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
+import { bustPublicProductCache } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,12 @@ export const POST = handle(async (req: Request) => {
     where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
   });
   const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), batchLimit: BATCH, auth: auth.mode };
+
+  // PHASE 2.1 (§9-A): released reservations restored stock — cached public
+  // product/market data is stale. Bust ONLY when something was actually
+  // restocked (the sweep ticks every 30 s with an overwhelmingly empty
+  // outcome; busting unconditionally would defeat the cache entirely).
+  if (stats.itemsRestocked > 0) bustPublicProductCache();
 
   // Durable observability — survives restarts, queryable by ops/admin.
   await db.setting.upsert({

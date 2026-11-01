@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { postRefund, walletTruth } from "@/lib/ledger";
 import { reverseAffiliateForRefund } from "@/lib/affiliate";
 import { allocateProportionally, divHalfUp, formatMinor } from "@/lib/money";
+import { bustPublicProductCache } from "@/lib/public-cache";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -409,6 +410,10 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       status: result.fullyRefunded ? "refunded" : "partially_refunded",
     },
   });
+
+  // PHASE 2.1 (§9-A): when this refund restocked inventory, cached public
+  // product data is stale — bust (TTL 30–45 s remains the safety net).
+  if (refund.restock) bustPublicProductCache();
 
   await auditAdmin({
     adminId: admin.id,

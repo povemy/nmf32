@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { productCardInclude, toProductCard, type ProductWithRelations } from "../../../_shared/product-card";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import { normalizeSearchQuery } from "@/lib/search-normalize";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,10 @@ const loadSfProducts = publicCache(
 export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const { slug } = await ctx.params;
   const url = new URL(req.url);
-  const search = url.searchParams.get("search")?.trim() ?? "";
+  // PHASE 2.1 (§9-B): normalized BEFORE the cache key — bounded cardinality,
+  // no junk entries; the storefront search box is submit-only (see
+  // storefront.tsx SfHeader) so keys arrive one per completed keyword.
+  const search = normalizeSearchQuery(url.searchParams.get("search"));
   const collectionSlug = url.searchParams.get("collection")?.trim() ?? "";
   const source = url.searchParams.get("source") ?? "latest";
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") ?? "8", 10) || 8));

@@ -7,7 +7,7 @@ import { SHOPPER_VIEW_KEY, signalSignedOut } from "./session-events";
 
 export type Surface = "shopper" | "seller" | "admin";
 
-export type AdminMe = { id: string; email: string; name: string; role: string };
+export type AdminMe = { id: string; email: string; name: string; role: string; mfaEnrollmentRequired?: boolean };
 export type SellerMe = { id: string; email: string; fullName: string; displayName: string; status: string; storeId: string | null; storeSlug: string | null; storeName: string | null };
 export type ShopperMe = { id: string; email: string; fullName: string; phone: string | null };
 
@@ -78,7 +78,7 @@ export const useApp = create<AppState>((set, get) => ({
       const body = await res.json();
       const data = body?.data;
       if (data?.userType === "admin") {
-        set({ me: { loaded: true, admin: data.admin, seller: null, shopper: null } });
+        set({ me: { loaded: true, admin: { ...data.admin, mfaEnrollmentRequired: data.mfaEnrollmentRequired === true }, seller: null, shopper: null } });
       } else if (data?.userType === "seller") {
         set({ me: { loaded: true, admin: null, seller: data.seller, shopper: null } });
       } else if (data?.userType === "shopper") {

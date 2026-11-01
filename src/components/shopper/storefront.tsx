@@ -5,7 +5,7 @@
 // CSS variables from parseTheme(). Unknown types render a fallback box — never
 // crash, never 500. Missing props fall back to the registry defaultProps.
 // ============================================================================
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronRight,
@@ -409,16 +409,66 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
   const sticky = bool(props, "sticky", true);
   const showSearch = bool(props, "showSearch", true);
   const [local, setLocal] = useState(sfSearch);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
   useEffect(() => setLocal(sfSearch), [sfSearch]);
 
-  const onChange = (v: string) => {
-    setLocal(v);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => onSearch(v), 300);
+  // PHASE 2.1 (§9-C) — SUBMIT-ONLY search. Typing updates the LOCAL input
+  // state ONLY: no debounce, no onSearch call, ZERO network requests per
+  // keystroke. The search fires exactly when the shopper presses Enter or
+  // clicks the search button; the submitted keyword is normalized (trim +
+  // collapsed whitespace) and empty/whitespace-only submissions simply clear
+  // the active search (returning the grid to its default listing).
+  const submit = () => {
+    const q = local.trim().replace(/\s+/g, " ");
+    setLocal(q);
+    onSearch(q);
   };
+
+  const searchBox = (mobile: boolean) => (
+    <div className={cn("relative", mobile ? "w-full" : "w-40 lg:w-56")}>
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Search this store…"
+        className={cn("pl-8 min-h-[44px] rounded-[var(--sf-radius)]", !mobile && "pr-16")}
+        aria-label="Search products in this store — press Enter to search"
+        enterKeyHint="search"
+        autoCapitalize="off"
+        autoCorrect="off"
+      />
+      <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center">
+        {local ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLocal("");
+              onSearch("");
+            }}
+            aria-label="Clear search"
+            className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={submit}
+          aria-label="Search"
+          className="flex h-8 w-8 items-center justify-center rounded-[var(--sf-radius)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Search className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <header
@@ -456,23 +506,7 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
 
         <div className="ml-auto flex items-center gap-2">
           <FollowStoreButton store={store} />
-          {showSearch ? (
-            <div className="relative hidden sm:block">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={local}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder="Search this store…"
-                className="w-40 lg:w-56 pl-8 pr-8 min-h-[44px] rounded-[var(--sf-radius)]"
-                aria-label="Search products in this store"
-              />
-              {local ? (
-                <button type="button" onClick={() => onChange("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          {showSearch ? <div className="hidden sm:block">{searchBox(false)}</div> : null}
           <button
             type="button"
             onClick={() => openCart(store.slug)}
@@ -493,10 +527,7 @@ function SfHeader({ props, rctx }: { props: Record<string, unknown>; rctx: SfRen
       </div>
       {showSearch ? (
         <div className="border-t bg-muted/40 px-4 py-2 sm:hidden">
-          <div className="relative mx-auto max-w-7xl">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={local} onChange={(e) => onChange(e.target.value)} placeholder="Search this store…" className="pl-8 min-h-[44px] rounded-[var(--sf-radius)]" aria-label="Search products in this store" />
-          </div>
+          <div className="mx-auto max-w-7xl">{searchBox(true)}</div>
         </div>
       ) : null}
     </header>

@@ -53,3 +53,25 @@ export function roleHasCap(role: string, cap: AdminCap): boolean {
 export function roleHasAnyCap(role: string, ...caps: AdminCap[]): boolean {
   return caps.some((c) => roleHasCap(role, c));
 }
+
+/* ------------------------------------------------- Phase 2.1 (§5-B) */
+
+/** Capabilities whose holders move or expose MONEY. Any admin whose role
+ *  grants ONE of these must hold a CONFIRMED TOTP enrollment before exercising
+ *  privileged functionality (requireAdmin enforces; MFA bootstrap routes stay
+ *  reachable so a fresh privileged admin can always self-enroll). */
+export const MFA_REQUIRED_CAPS: AdminCap[] = [
+  "commission.manage",
+  "payouts.manage",
+  "refunds.manage",
+  "disputes.manage",
+  "affiliate.finance",
+  "reports.export",
+];
+
+/** True when `role` holds any money-moving capability → MFA enrollment is
+ *  mandatory for that role. Pure — derived from ADMIN_CAPS so the privileged
+ *  set tracks the matrix as it evolves (currently superadmin / finance / ops). */
+export function roleRequiresMfa(role: string): boolean {
+  return roleHasAnyCap(role, ...MFA_REQUIRED_CAPS);
+}

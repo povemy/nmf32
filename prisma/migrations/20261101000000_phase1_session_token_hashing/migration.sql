@@ -9,4 +9,25 @@
 -- MUST RUN EXACTLY ONCE (standard Prisma migration semantics): re-running the
 -- UPDATE would double-hash and invalidate all live sessions (users re-login).
 -- Operational impact: none at runtime; rows are 64-hex chars before and after.
-UPDATE "Session" SET "token" = encode(sha256("token"::bytea), 'hex');
+--
+-- PHASE 2.1 CORRECTION (migration was authored but never applied — caught in
+-- offline SQL review): PostgreSQL has NO text→bytea cast, so the originally
+-- authored `sha256("token"::bytea)` fails at apply time with
+-- "cannot cast type text to bytea". All three functions below are CORE
+-- PostgreSQL (pg_catalog, PG 11+ — no pgcrypto or any extension required,
+-- available on every Supabase Postgres 15/17 instance):
+--   convert_to(text, name) → bytea  — the text's bytes in the given encoding
+--   sha256(bytea)          → bytea  — core digest function (PG 11+)
+--   encode(bytea, 'hex')   → text   — lowercase hex
+-- convert_to(..., 'UTF8') reproduces EXACTLY what the application computes
+-- (Node: createHash("sha256").update(token).digest("hex") — UTF-8 default
+-- update + lowercase hex), for ASCII and non-ASCII alike. Tokens issued by
+-- this app are 64-hex (randomToken), i.e. pure ASCII.
+UPDATE "Session" SET "token" = encode(sha256(convert_to("token", 'UTF8')), 'hex');
+
+-- Idempotence guard is NOT added deliberately: Prisma's _prisma_migrations
+-- ledger already guarantees exactly-once execution, and a WHERE clause that
+-- detects "already hashed" rows cannot exist (a sha256 hex digest of a hex
+-- string is itself a valid 64-hex token — the states are indistinguishable).
+-- Deploy-order enforcement (migrate BEFORE new code) is documented in the
+-- Phase 2.1 deployment runbook.

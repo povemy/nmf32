@@ -1,0 +1,325 @@
+[
+ {
+  "id": "GHSA-4x5r-pxfx-6jf8",
+  "cve": [
+   "CVE-2026-49356"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:L/AC:H/PR:N/UI:N/S:C/C:L/I:N/A:N",
+  "summary": "@babel/core: Arbitrary File Read via sourceMappingURL Comment",
+  "packages": [
+   "@babel/core"
+  ],
+  "fixed": [
+   "7.29.6",
+   "8.0.0-rc.6"
+  ]
+ },
+ {
+  "id": "GHSA-p498-v437-472g",
+  "cve": [],
+  "severity": "CVSS_V4:CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:P/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+  "summary": "humanfs: Recursive copy follows symlinked files and copies data from outside the source tree",
+  "packages": [
+   "@humanfs/node"
+  ],
+  "fixed": [
+   "0.16.8"
+  ]
+ },
+ {
+  "id": "GHSA-2g4f-4pwh-qvx6",
+  "cve": [
+   "CVE-2025-69873"
+  ],
+  "severity": "CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N/E:P",
+  "summary": "ajv has ReDoS when using `$data` option",
+  "packages": [
+   "ajv"
+  ],
+  "fixed": [
+   "6.14.0",
+   "8.18.0"
+  ]
+ },
+ {
+  "id": "GHSA-w5vr-8v7q-w6rv",
+  "cve": [
+   "CVE-2026-45819"
+  ],
+  "severity": "CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N/E:U/S:N/AU:Y/R:U/V:D/RE:M/U:Amber",
+  "summary": "baseline-browser-mapping process termination on invalid input causes denial of service",
+  "packages": [
+   "baseline-browser-mapping"
+  ],
+  "fixed": [
+   "2.11.0"
+  ]
+ },
+ {
+  "id": "GHSA-73wf-gq98-2v4g",
+  "cve": [
+   "CVE-2026-73088"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "Browserslist: Uncaught crash / prototype write via untrusted browserslist-stats.json custom stats (normalizeStats)",
+  "packages": [
+   "browserslist"
+  ],
+  "fixed": [
+   "4.28.7"
+  ]
+ },
+ {
+  "id": "GHSA-c83g-rgw3-j3cx",
+  "cve": [
+   "CVE-2026-73089"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "Browserslist: Unbounded memory growth (no cache eviction) via distinct query results, leading to eventual OOM",
+  "packages": [
+   "browserslist"
+  ],
+  "fixed": [
+   "4.28.7"
+  ]
+ },
+ {
+  "id": "GHSA-ggr8-5vv4-36mx",
+  "cve": [
+   "CVE-2026-40345"
+  ],
+  "severity": "CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+  "summary": "DeepmergeTS has stack exhaustion when merging recursive object graphs",
+  "packages": [
+   "deepmerge-ts"
+  ],
+  "fixed": [
+   "8.0.0"
+  ]
+ },
+ {
+  "id": "GHSA-737v-mqg7-c878",
+  "cve": [
+   "CVE-2026-35209"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+  "summary": "defu: Prototype pollution via `__proto__` key in defaults argument",
+  "packages": [
+   "defu"
+  ],
+  "fixed": [
+   "6.1.5"
+  ]
+ },
+ {
+  "id": "GHSA-38f7-945m-qr2g",
+  "cve": [
+   "CVE-2026-32887"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+  "summary": "Effect `AsyncLocalStorage` context lost/contaminated inside Effect fibers under concurrent load with RPC",
+  "packages": [
+   "effect"
+  ],
+  "fixed": [
+   "3.20.0"
+  ]
+ },
+ {
+  "id": "GHSA-25h7-pfq9-p65f",
+  "cve": [
+   "CVE-2026-32141"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "flatted vulnerable to unbounded recursion DoS in parse() revive phase",
+  "packages": [
+   "flatted"
+  ],
+  "fixed": [
+   "3.4.0"
+  ]
+ },
+ {
+  "id": "GHSA-rf6f-7fwh-wjgh",
+  "cve": [
+   "CVE-2026-33228"
+  ],
+  "severity": "CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/E:P",
+  "summary": "Prototype Pollution via parse() in NodeJS flatted",
+  "packages": [
+   "flatted"
+  ],
+  "fixed": [
+   "3.4.2"
+  ]
+ },
+ {
+  "id": "GHSA-2883-xcg3-v3hh",
+  "cve": [
+   "CVE-2026-84375"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+  "packages": [
+   "js-yaml"
+  ],
+  "fixed": [
+   "3.15.2",
+   "4.3.2"
+  ]
+ },
+ {
+  "id": "GHSA-52cp-r559-cp3m",
+  "cve": [
+   "CVE-2026-59869"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "js-yaml: YAML merge-key chains can force quadratic CPU consumption",
+  "packages": [
+   "js-yaml"
+  ],
+  "fixed": [
+   "3.15.0",
+   "4.3.0"
+  ]
+ },
+ {
+  "id": "GHSA-5p4m-2wfm-xmqj",
+  "cve": [],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) \u2014 CVE-2026-59870 fix not backported",
+  "packages": [
+   "js-yaml"
+  ],
+  "fixed": [
+   "3.15.1",
+   "4.3.1"
+  ]
+ },
+ {
+  "id": "GHSA-h67p-54hq-rp68",
+  "cve": [
+   "CVE-2026-53550"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+  "summary": "JS-YAML: Quadratic-complexity DoS in merge key handling via repeated aliases",
+  "packages": [
+   "js-yaml"
+  ],
+  "fixed": [
+   "3.15.0",
+   "4.2.0"
+  ]
+ },
+ {
+  "id": "GHSA-f23m-r3pf-42rh",
+  "cve": [
+   "CVE-2026-2950"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L",
+  "summary": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+  "packages": [
+   "lodash",
+   "lodash-amd",
+   "lodash.unset",
+   "lodash-es"
+  ],
+  "fixed": [
+   "4.18.0"
+  ]
+ },
+ {
+  "id": "GHSA-r5fr-rjxr-66jc",
+  "cve": [
+   "CVE-2026-4800"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+  "summary": "lodash vulnerable to Code Injection via `_.template` imports key names",
+  "packages": [
+   "lodash",
+   "lodash-amd",
+   "lodash.template",
+   "lodash-es"
+  ],
+  "fixed": [
+   "4.18.0"
+  ]
+ },
+ {
+  "id": "GHSA-xxjr-mmjv-4gpg",
+  "cve": [
+   "CVE-2025-13465"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L, CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P",
+  "summary": "Lodash has Prototype Pollution Vulnerability in `_.unset` and `_.omit` functions",
+  "packages": [
+   "lodash",
+   "lodash-amd",
+   "lodash.unset",
+   "lodash-es"
+  ],
+  "fixed": [
+   "4.17.23"
+  ]
+ },
+ {
+  "id": "GHSA-g3hv-75wg-m249",
+  "cve": [
+   "CVE-2026-118764"
+  ],
+  "severity": "CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+  "summary": "minimatch has potential denial of service via globparts amplification",
+  "packages": [
+   "minimatch"
+  ],
+  "fixed": [
+   "11.0.1"
+  ]
+ },
+ {
+  "id": "GHSA-3v7f-55p6-f55p",
+  "cve": [
+   "CVE-2026-33672"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+  "summary": "Picomatch: Method Injection in POSIX Character Classes causes incorrect Glob Matching",
+  "packages": [
+   "picomatch"
+  ],
+  "fixed": [
+   "2.3.2",
+   "3.0.2",
+   "4.0.4"
+  ]
+ },
+ {
+  "id": "GHSA-c2c7-rcm5-vvqj",
+  "cve": [
+   "CVE-2026-33671"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "summary": "Picomatch has a ReDoS vulnerability via extglob quantifiers",
+  "packages": [
+   "picomatch"
+  ],
+  "fixed": [
+   "2.3.2",
+   "3.0.2",
+   "4.0.4"
+  ]
+ },
+ {
+  "id": "GHSA-68fv-2mgg-jv7q",
+  "cve": [
+   "CVE-2026-93749"
+  ],
+  "severity": "CVSS_V3:CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H, CVSS_V4:CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+  "summary": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+  "packages": [
+   "source-map-js"
+  ],
+  "fixed": [
+   "1.2.2"
+  ]
+ }
+]
