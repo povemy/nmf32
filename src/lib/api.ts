@@ -227,7 +227,13 @@ export async function notify(input: { event: string; channel: "email" | "whatsap
         channel: input.channel,
         recipient: input.recipient,
         subject: input.subject ?? null,
-        status: input.status ?? "sent",
+        // W-3 honesty fix (Phase 2 final remediation): notify() writes a
+        // RECORD, not a delivery receipt — it never sends anything. The old
+        // default "sent" claimed email delivery that never happened (the
+        // same honesty class as the fake webhook success fixed in C2.8).
+        // Default now matches the column's own schema default ("queued"); a
+        // real delivery path passes an explicit status when it exists.
+        status: input.status ?? "queued",
         error: input.error ?? null,
         dedupKey: input.dedupKey ?? null,
       },

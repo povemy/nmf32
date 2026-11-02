@@ -52,8 +52,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   const raw = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   // 3. Store + product (single product fetch carries the seller email).
-  const store = await db.store.findUnique({ where: { slug } });
-  if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+  // C1.3 defense-in-depth (V-F7 fix): live store + admin-approved seller —
+  // an inactive seller's storefront surfaces 404 fail closed (sf/[slug] pattern).
+  const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+  if (!store) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
   const product = await db.product.findFirst({
     where: { slug: pSlug, storeId: store.id },

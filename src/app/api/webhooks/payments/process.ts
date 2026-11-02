@@ -41,6 +41,7 @@ import { assertTransition } from "@/lib/payout-state";
 import { withSerializableTxRetry } from "@/lib/tx-retry";
 import { resolvePspProvider } from "@/lib/psp";
 import { recordLatePaymentObligation } from "@/lib/psp-refund";
+import { INTENT_SUCCESS_CLAIMABLE_STATUSES } from "@/lib/payment-claim-states";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
 import { toJson } from "@/lib/json";
 import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
@@ -595,8 +596,9 @@ export async function processPaymentWebhook(input: {
     // tx committed after our snapshot, an unconditional update would flip a
     // SUCCEEDED intent (money captured, order paid) to failed. Same guard as
     // the success path's claim: only requires_payment|failed may become failed.
+    // (V-F1: the whitelist now lives in payment-claim-states.ts — one source.)
     await db.paymentIntent.updateMany({
-      where: { id: intent.id, status: { in: ["requires_payment", "failed"] } },
+      where: { id: intent.id, status: { in: [...INTENT_SUCCESS_CLAIMABLE_STATUSES] } },
       data: { status: "failed" },
     });
     const order = await db.order.findUnique({ where: { id: intent.orderId } });
@@ -670,7 +672,15 @@ export async function processPaymentWebhook(input: {
       // Bounded-failure policy (see group path) — 10 s per-statement bound.
       await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '10s'");
       const claim = await tx.paymentIntent.updateMany({
-        where: { id: intent.id, status: { not: "succeeded" } },
+        // V-F1 (stage-gate verification): STRICT claimable whitelist instead
+        // of `not: "succeeded"`. A fully-refunded intent ("refunded", set by
+        // admin refund processing on full refunds) must NEVER be re-claimed
+        // into "succeeded" — a recovery re-feed (admin payouts sweep,
+        // recovery:true) or re-simulate would otherwise resurrect the ORDER
+        // refunded → paid (status-history corruption + false success
+        // envelope). Mirrors the group path's member-order whitelist
+        // (all `payment_pending`); see lib/payment-claim-states.ts.
+        where: { id: intent.id, status: { in: [...INTENT_SUCCESS_CLAIMABLE_STATUSES] } },
         data: { status: "succeeded" },
       });
       if (claim.count === 0) return { claimed: false as const };
@@ -784,15 +794,27 @@ export async function processPaymentWebhook(input: {
   }
 
   if (!outcome?.claimed) {
-    const order = await db.order.findUnique({ where: { id: intent.orderId } });
+    // V-F1 (stage-gate verification): the claim can miss for two reasons —
+    // (a) a genuine duplicate of an already-succeeded payment (idempotent
+    // re-delivery), or (b) the intent is in a TERMINAL state the claim
+    // whitelist excludes (e.g. "refunded": money already returned — a
+    // recovery re-feed must NOT resurrect it). Report the ACTUAL intent
+    // status instead of hardcoding "succeeded" so ops envelopes never
+    // mislabel a refunded intent as paid. Either way: no money moves, the
+    // delivery is acked (processed) so the PSP stops retrying, and the
+    // idempotency/reconciliation behaviour is unchanged.
+    const [missOrder, freshIntent] = await Promise.all([
+      db.order.findUnique({ where: { id: intent.orderId } }),
+      db.paymentIntent.findUnique({ where: { id: intent.id }, select: { status: true } }),
+    ]);
     await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
     return {
       ok: true,
       duplicate: true,
       eventType,
-      orderNumber: order?.orderNumber ?? "",
-      orderStatus: order?.status ?? "",
-      intentStatus: "succeeded",
+      orderNumber: missOrder?.orderNumber ?? "",
+      orderStatus: missOrder?.status ?? "",
+      intentStatus: freshIntent?.status ?? "succeeded",
     };
   }
 

@@ -194,9 +194,12 @@ export async function discoverProducts(opts: {
   const where = {
     status: "active",
     affiliateEnabled: true,
-    store: { status: "live", affiliateOptIn: true },
+    // C1.3 defense-in-depth (V-F5 fix): affiliate discovery requires an
+    // admin-approved seller, not just a live store — same posture as every
+    // other public product surface.
+    store: { status: "live", affiliateOptIn: true, seller: { status: "active" } },
     ...(opts.categorySlug ? { category: { slug: opts.categorySlug } } : {}),
-    ...(opts.storeSlug ? { store: { status: "live", affiliateOptIn: true, slug: opts.storeSlug } } : {}),
+    ...(opts.storeSlug ? { store: { status: "live", affiliateOptIn: true, slug: opts.storeSlug, seller: { status: "active" } } } : {}),
     ...(opts.maxPriceMinor != null ? { priceMinor: { lte: opts.maxPriceMinor } } : {}),
     ...(opts.q
       ? { OR: [{ title: { contains: opts.q, mode: "insensitive" as const } }, { store: { name: { contains: opts.q, mode: "insensitive" as const } } }] }

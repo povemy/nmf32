@@ -11,8 +11,15 @@ export const dynamic = "force-dynamic";
 // the shopper-facing drawer; contains no seller-private fields.
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const { slug } = await ctx.params;
-  const store = await db.store.findUnique({ where: { slug }, select: { id: true, name: true, slug: true, status: true, themeJson: true } });
-  if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+  // C1.3 defense-in-depth (V-F2 fix): "live" alone is not eligibility — the
+  // store's seller must be admin-approved, else the cart drawer (bestsellers
+  // + upsells) 404s fail closed, mirroring sf/[slug] and sf/[slug]/products.
+  // The best-seller/upsell queries below are storeId-scoped and inherit this gate.
+  const store = await db.store.findFirst({
+    where: { slug, status: "live", seller: { is: { status: "active" } } },
+    select: { id: true, name: true, slug: true, status: true, themeJson: true },
+  });
+  if (!store) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
   const settings = await db.cartSettings.findUnique({ where: { storeId: store.id } });
 

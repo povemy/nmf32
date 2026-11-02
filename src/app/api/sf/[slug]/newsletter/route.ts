@@ -28,8 +28,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   // still throttles, shared-NAT shoppers are not throttled by each other.
   rateLimitKey(email, "sf-newsletter-email", 3, 3600_000);
 
-  const store = await db.store.findUnique({ where: { slug } });
-  if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+  // C1.3 defense-in-depth (V-F7 fix): live store + admin-approved seller —
+  // an inactive seller's storefront surfaces 404 fail closed (sf/[slug] pattern).
+  const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+  if (!store) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
   // Cheap duplicate guard: if this store+email already subscribed within the
   // last 24h (double-click, retry), skip the notify/logActivity writes and

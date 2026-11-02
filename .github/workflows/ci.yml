@@ -1,32 +1,37 @@
 # ============================================================================
-# CI — Phase 2.3 (P2.3-7): the workflow referenced by docs/ops/ci-activation.md
-# was MISSING from the tree (Phase 2.3 audit: "referenced-but-missing CI
-# workflow"). This file restores a green-on-current-tree pipeline that still
-# checks src/. Activation steps (GitHub remote/runner) stay in that runbook.
+# CI — Phase 2.3 (P2.3-7), hardened in the Phase 2 final remediation (W-1/W-2):
+# the workflow referenced by docs/ops/ci-activation.md was MISSING from the
+# tree (Phase 2.3 audit: "referenced-but-missing CI workflow"). This file
+# restores a green-on-current-tree pipeline that still checks src/.
+# Activation steps (GitHub remote/runner) stay in that runbook.
 # ----------------------------------------------------------------------------
-# Gates (job: verify):
+# Gates (job: verify) — ALL HARD GATES (no continue-on-error anywhere):
 #   1. bun install --frozen-lockfile   — reproducible deps
 #   2. bunx prisma validate            — schema parses (no DB needed)
 #   3. bunx prisma generate            — client generates (no DB needed)
 #   4. bunx tsc --noEmit -p tsconfig.ci.json — TYPECHECK scoped to src/
 #   5. bunx eslint src --max-warnings 50     — LINT scoped to src/
-#   6. bun run build                   — needs-verification (see step comment)
+#   6. bun test src/lib/__tests__      — UNIT TESTS (180+ tests; W-2 fix —
+#      the suite was previously never run in CI)
+#   7. bun run build                   — production build (W-1 fix — the
+#      continue-on-error flag is REMOVED so a broken build fails CI; the
+#      build's type program is scoped via next.config.ts
+#      typescript.tsconfigPath = tsconfig.ci.json, matching gate 4)
 #
 # SCOPE LIMITATIONS on the current tree (see docs/phase23/ci.md):
-#   - Full-repo `bunx tsc --noEmit` has a ~630-error PRE-EXISTING baseline in
-#     tool-results/ (484), scripts/ (145), examples/ (1). src/ is CLEAN (0
-#     errors). tsconfig.ci.json scopes typechecking to src/ so the gate is
-#     green WITHOUT weakening src checks. TODO: clean the stale scripts
-#     (scripts/fin-tests.ts already fails to import — money.ts exports moved)
-#     and widen the include back to the full repo.
+#   - Full-repo `bunx tsc --noEmit` has a PRE-EXISTING error baseline in
+#     tool-results/, scripts/ (incl. scripts/attic/), examples/ — all outside
+#     src/. src/ itself is clean. tsconfig.ci.json scopes typechecking to
+#     src/ AND the build type program is scoped to the same file so the two
+#     gates can never disagree. TODO: clean the stale scripts and widen the
+#     include back to the full repo.
 #   - Full-repo `bun run lint` previously failed on 44 errors of the single
 #     rule react-hooks/set-state-in-effect across ~23 legacy components
-#     (change-frozen this phase); the rule is temporarily disabled in
-#     eslint.config.mjs (P2.3-7 comment) and lint runs scoped to src/.
-#     TODO: migrate those components, remove the rule-off.
+#     (change-frozen); the rule is temporarily disabled in eslint.config.mjs
+#     and lint runs scoped to src/. TODO: migrate those components, remove
+#     the rule-off.
 #   - The financial gates from docs/ops/ci-activation.md (fin-tests.ts /
-#     fin-reconcile.ts) are NOT included: fin-tests.ts is stale (imports
-#     removed money.ts exports) and fin-reconcile.ts needs a seeded DB. TODO.
+#     fin-reconcile.ts) are NOT included: they need a seeded DB (staging).
 # ============================================================================
 name: CI
 
@@ -81,23 +86,28 @@ jobs:
       - name: Lint (src/ — warnings bounded)
         run: bunx eslint src --max-warnings 50
 
-      # NEEDS-VERIFICATION (P2.3-7): `next build` could not be executed in the
-      # sandbox (it would interfere with the running dev server), so this step
-      # is UNPROVEN on the current tree. Known risks, in order:
-      #   1. next.config.ts sets typescript.ignoreBuildErrors=false while the
-      #      full-repo tsc baseline (~630 errors in tool-results/ + scripts/)
-      #      is NOT excluded from the build's type program — the build may fail
-      #      on those pre-existing errors. If so: fix the baseline (preferred)
-      #      or scope the build typecheck like tsconfig.ci.json does.
+      # W-2 fix (Phase 2 final remediation): the unit suite (OTP/HMAC/CAS/
+      # grant/proxy-CSRF/rate-limit bounds/search-normalize/url-guard/
+      # safe-fetch/MFA/password/payment-claim-states) was previously NEVER
+      # executed in CI — a regression in any of them kept CI green.
+      - name: Unit tests (src/lib/__tests__)
+        run: bun test src/lib/__tests__
+
+      # W-1 fix (Phase 2 final remediation): the continue-on-error flag is
+      # REMOVED — a failed production build now fails CI (per the phase-2
+      # remediation brief: "ensure failed tests or production builds cause CI
+      # to fail"). Known-risk mitigations in place on the current tree:
+      #   1. The build's type program is scoped to tsconfig.ci.json via
+      #      next.config.ts typescript.tsconfigPath — identical scope to the
+      #      typecheck gate above, so the pre-existing out-of-src tsc baseline
+      #      (tool-results/, scripts/, examples/) cannot fail the build.
       #   2. If any route gets statically prerendered it may attempt DB access
-      #      at build time (dummy SUPABASE_DATABASE_URL above points at
-      #      127.0.0.1:5432 — nothing listens, so it would fail loudly, which
-      #      is the honest outcome, not a silent green).
+      #      at build time (dummy SUPABASE_DATABASE_URL points at 127.0.0.1:5432
+      #      — nothing listens, so it fails loudly: the honest outcome).
       #   3. The production boot gate (instrumentation → enforceProductionSecrets)
       #      is satisfied with the dummy secret env above IF register() runs
       #      during build; if it does not run, the dummies are harmless.
-      # Keeping continue-on-error until a first verified run on a real runner;
-      # then remove the flag so this becomes a hard gate.
-      - name: Build (standalone) — NEEDS-VERIFICATION, non-blocking for now
-        continue-on-error: true
+      # NOTE: this workflow has NOT been executed on a real runner from this
+      # sandbox (no GitHub runner access) — the first real run is the verdict.
+      - name: Build (standalone)
         run: bun run build

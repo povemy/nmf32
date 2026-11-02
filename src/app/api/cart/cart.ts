@@ -252,18 +252,22 @@ export type ShapedCartStore = {
   subtotalMinor: number;
 };
 
-/** Validate a variant for adding to cart: variant + product active, store live. */
+/** Validate a variant for adding to cart: variant + product active, store live,
+ *  seller admin-approved (C1.3 defense-in-depth, V-F6 fix — the cart-ADD tier
+ *  agrees with the checkout pricing tier: an inactive seller's items are not
+ *  addable, so the drawer never shows an unpurchasable added line). */
 export async function loadAddableVariant(variantId: string) {
   const variant = await db.productVariant.findUnique({
     where: { id: variantId },
     include: {
       product: {
-        include: { store: { select: { id: true, name: true, slug: true, status: true } } },
+        include: { store: { select: { id: true, name: true, slug: true, status: true, seller: { select: { status: true } } } } },
       },
     },
   });
   if (!variant || !variant.isActive) return null;
   if (variant.product.status !== "active") return null;
   if (variant.product.store.status !== "live") return null;
+  if (variant.product.store.seller?.status !== "active") return null;
   return variant;
 }

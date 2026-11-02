@@ -96,12 +96,18 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  // Type-safety gate: the repo is tsc-clean (2026-10-27 — all 53 pre-existing
-  // errors fixed, `bunx tsc --noEmit` = 0 errors). Production builds now FAIL
-  // on type errors instead of silently ignoring them; CI re-checks the same
-  // gate (.github/workflows/ci.yml).
+  // Type-safety gate: production builds FAIL on type errors instead of
+  // silently ignoring them. The build's type program is scoped to
+  // tsconfig.ci.json (src/ + next.config + generated .next/types) — the SAME
+  // scope as the CI typecheck gate, so the two gates can never disagree, and
+  // the pre-existing out-of-src tsc baseline (tool-results/, scripts/,
+  // examples/) cannot fail the build (see .github/workflows/ci.yml header).
+  // Phase 2 final remediation (W-1): paired with the removal of the CI build
+  // step's continue-on-error flag. ignoreBuildErrors stays false — errors
+  // WITHIN src/ still hard-fail the build.
   typescript: {
     ignoreBuildErrors: false,
+    tsconfigPath: "./tsconfig.ci.json",
   },
   reactStrictMode: false,
   async headers() {

@@ -29,8 +29,15 @@ export const POST = handle(async (req: Request) => {
   // ------------------------------------------------------------------ legacy single-store
   const storeSlug = String(body.storeSlug ?? "");
   if (storeSlug) {
-    const store = await db.store.findUnique({ where: { slug: storeSlug } });
-    if (!store || store.status !== "live") throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+    // C1.3 defense-in-depth (V-F7 fix): the legacy single-store quote 404s for
+    // a live store whose seller is not admin-approved — the multi-seller path
+    // already fails closed in computeGroupPricing (VARIANT_INVALID/
+    // STORE_UNAVAILABLE), so the legacy branch must not be the weaker tier.
+    // computePricing/priceItems is only reachable from this validated store.
+    const store = await db.store.findFirst({
+      where: { slug: storeSlug, status: "live", seller: { is: { status: "active" } } },
+    });
+    if (!store) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
 
     const pricing = await computePricing({
       storeId: store.id,

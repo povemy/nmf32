@@ -27,7 +27,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     throw new ApiError(409, "CONFLICT", `Store in status "${seller.store.status}" cannot be taken down to draft — it must complete its own lifecycle first`);
   }
 
-  const updated = await db.seller.update({ where: { id }, data: { status: "terminated" } });
+  // V-F3 (stage-gate verification): SAFE ORDERING — the store takedown runs
+  // BEFORE the seller row is mutated (same rationale as suspend/reject: a
+  // CAS-losing transition must leave the seller UNTOUCHED). The mirrored
+  // partial state (store drafted, seller not yet terminated) is safe and
+  // re-runnable (planAdminStorePath(draft→draft) = [] no-op hops).
   if (seller.store) {
     try {
       await transitionStoreToward({ storeId: seller.store.id, to: "draft", actorId: admin.id, note: `seller terminated: ${reason}` });
@@ -37,6 +41,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
       throw err;
     }
   }
+  const updated = await db.seller.update({ where: { id }, data: { status: "terminated" } });
   // F-02 remediation: termination revokes every live session immediately.
   const sessionsRevoked = await revokeUserSessions("seller", id);
 

@@ -40,7 +40,10 @@ export const GET = handle(async (req: Request) => {
   const catIds = [...new Set(acts.map((a) => a.product.categoryId).filter((x): x is string => Boolean(x)))];
 
   const baseWhere = { status: "active" as const };
-  const liveScope = { store: { status: "live" as const } };
+  // C1.3 defense-in-depth (V-F4 fix): live store + ACTIVE seller — an
+  // ineligible seller's products must not feed the recommendation surface.
+  // Every query below (boosted round, fill round, total count) shares this scope.
+  const liveScope = { store: { status: "live" as const, seller: { status: "active" as const } } };
 
   // Round 1 — boosted categories, properly PAGINATED. (The old code re-ran
   // this round from the top on EVERY page, so "Load more" page 2 returned
