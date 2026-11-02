@@ -1,0 +1,1016 @@
+     1→// ============================================================================
+     2→// Shared payment-webhook verification + processing.
+     3→// Used by POST /api/webhooks/payments/[provider] AND POST /api/checkout/payments/[ref]/simulate
+     4→// (sandbox mock) AND POST /api/webhooks/payments/payout-simulate (sandbox mock,
+     5→// payout lifecycle). HMAC secret NEVER leaves the server.
+     6→//
+     7→// PAYMENT MODEL — OPTION B (approved): one PSP charge per checkout. A licensed
+     8→// payment service provider (sandbox: the "mock" provider via /simulate — see
+     9→// src/lib/psp.ts) collects a SINGLE buyer payment for a PaymentGroup covering
+    10→// N per-seller orders, deducts the platform's application fee (commission)
+    11→// at payment time and settles each seller their share. NOMOFEE NEVER TAKES
+    12→// CUSTODY OF BUYER FUNDS — the ledger T1 postings below are the platform's
+    13→// ACCOUNTING MIRROR of the PSP's per-seller balances (bookkeeping that feeds
+    14→// seller dashboards + the payout pipeline), not escrow.
+    15→// (Historical note: first built as "Option A" collect-then-disburse; the data
+    16→// model is identical under Option B — only custody semantics changed.)
+    17→//
+    18→// FIN-2b HARDENING (this revision):
+    19→//   • secret from PSP_WEBHOOK_SECRET env (sandbox fallback documented below)
+    20→//   • timing-safe signature compare (safeEqual, lib/secretbox.ts)
+    21→//   • ±10 min timestamp acceptance window → 400 STALE_EVENT (replay guard)
+    22→//   • PSP_PROVIDERS[id].sandboxOnly enforced (403 in production)
+    23→//   • success paths are CLAIM-FIRST + Serializable: one conditional updateMany
+    24→//     serializes concurrent deliveries; only the winner moves money
+    25→//   • inbound payout.succeeded / payout.failed events drive the payout
+    26→//     lifecycle (T4/T4f) with the same claim pattern
+    27→//   • optional T2 auto-settle after success (setting psp.split.auto_settle)
+    28→//   • notifications carry stable dedupKeys (unique (channel, dedupKey))
+    29→//   • webhook rows are ALWAYS logged first (log-then-verify order preserved)
+    30→// ============================================================================
+    31→import { Prisma } from "@prisma/client";
+    32→import { db } from "@/lib/db";
+    33→import { ApiError } from "@/lib/api";
+    34→import { safeEqual } from "@/lib/secretbox";
+    35→import { hmacSha256Hex } from "@/lib/password";
+    36→import { transitionOrder, dispatchStoreWebhooks, notify, logActivity } from "@/lib/api";
+    37→import { getCommissionSettings } from "@/lib/commission";
+    38→import { postOrderPaid, postGatewaySettlement, postPayoutConfirmed, postPayoutFailed, refreshWalletCache, AUTO_SETTLE_SETTING_KEY } from "@/lib/ledger";
+    39→import { postAffiliateCommissionsForOrder } from "@/lib/affiliate";
+    40→import { assertTransition } from "@/lib/payout-state";
+    41→import { withSerializableTxRetry } from "@/lib/tx-retry";
+    42→import { resolvePspProvider } from "@/lib/psp";
+    43→import { recordLatePaymentObligation } from "@/lib/psp-refund";
+    44→import { parseMaybeJson } from "@/app/api/admin/_helpers";
+    45→import { toJson } from "@/lib/json";
+    46→import { notifyShopperOrderConfirmed } from "@/lib/notify-shopper";
+    47→
+    48→// F-04 remediation (2026-10-30): the signing secret resolves at CALL time, not
+    49→// module-load time, and FAILS CLOSED in production:
+    50→//   • production + PSP_WEBHOOK_SECRET unset → the protected endpoints reject
+    51→//     with 503 WEBHOOK_SECRET_UNSET — a public demo constant can never
+    52→//     authenticate real money events, so there is NO fallback in production.
+    53→//   • sandbox/dev (NODE_ENV !== "production") keeps the documented public
+    54→//     fallback so the mock rails (simulate endpoints, fin tests) work without
+    55→//     env setup — the fallback is intentionally public knowledge there.
+    56→// Startup validation: src/instrumentation-node.ts warns loudly in production
+    57→// when the secret is missing; this call-site gate is the enforcement.
+    58→export function webhookSecret(): string {
+    59→  const secret = process.env.PSP_WEBHOOK_SECRET;
+    60→  if (secret && secret.length > 0) return secret;
+    61→  if (process.env.NODE_ENV === "production") {
+    62→    throw new ApiError(
+    63→      503,
+    64→      "WEBHOOK_SECRET_UNSET",
+    65→      "PSP_WEBHOOK_SECRET is not configured — payment webhook processing is disabled (fail closed)"
+    66→    );
+    67→  }
+    68→  return "sm_webhook_secret_demo";
+    69→}
+    70→
+    71→/** Replay-acceptance window: a correct MAC over an out-of-window timestamp is
+    72→ *  still a replay — rejected with STALE_EVENT. Simulate endpoints stamp
+    73→ *  Date.now() so sandbox flows always fall inside the window. */
+    74→export const WEBHOOK_TS_WINDOW_MS = 10 * 60_000;
+    75→
+    76→/** C1.1 (Phase 2.2): internal abort signal — a member order of a PaymentGroup
+    77→ *  left `payment_pending` before the group claim could be fulfilled (expiry
+    78→ *  sweep released its stock). Thrown INSIDE the Serializable success tx so the
+    79→ *  group claim ROLLS BACK; caught by the retry loop (never retried — the
+    80→ *  condition is deterministic) and converted into the durable late-payment
+    81→ *  refund obligation + 409 ORDER_EXPIRED. Never escapes this module. */
+    82→class OrderStateAbort extends Error {}
+    83→
+    84→export function expectedSignature(providerRef: string, eventType: string, amountMinor: number, ts: number): string {
+    85→  return hmacSha256Hex(webhookSecret(), `${providerRef}.${eventType}.${amountMinor}.${ts}`);
+    86→}
+    87→
+    88→export type ProcessResult = {
+    89→  ok: true;
+    90→  duplicate: boolean;
+    91→  eventType: string;
+    92→  orderNumber: string;
+    93→  orderStatus: string;
+    94→  intentStatus: string;
+    95→  orderNumbers?: string[]; // OPTION A: every order paid under this group ref
+    96→  isGroup?: boolean;
+    97→  // FIN-2b inbound payout events:
+    98→  /** True when the delivery was a replay/conflict (claim lost or already
+    99→   *  applied) — answered ok so PSP retries converge; never a raw throw. */
+   100→  payoutConflict?: boolean;
+   101→  /** Payout status after processing (consumed by payout-simulate + probes). */
+   102→  payoutStatus?: string;
+   103→};
+   104→
+   105→// ---------------------------------------------------------------------------
+   106→// Payout state machine: SHARED import from lib/payout-state.ts (FIN-2-a's
+   107→// single source of truth). Initially ran as a local copy under
+   108→// TODO(FIN-2-a merge) while that file was landing in parallel — swapped to the
+   109→// shared import the moment it was detected. Contract matches the checklist:
+   110→// assertTransition(from, to) throws ApiError 409 (code STATE_INVALID) on an
+   111→// illegal transition; map: requested→processing|rejected, processing→
+   112→// paid|failed, paid→returned|reversed (future, webhook-only), failed→processing.
+   113→// ---------------------------------------------------------------------------
+   114→
+   115→/** FIN-1 1.6 wiring lives here: T2 auto-settle toggle. Default false = DORMANT
+   116→ *  (documented decision) — GATEWAY:* intentionally carries the unsettled PSP
+   117→ *  position until a real PSP contract exists. */
+   118→async function autoSettleEnabled(): Promise<boolean> {
+   119→  const row = await db.setting.findUnique({ where: { key: AUTO_SETTLE_SETTING_KEY } });
+   120→  return parseMaybeJson<boolean>(row?.valueJson, false) === true;
+   121→}
+   122→
+   123→/**
+   124→ * Verify signature (caller may pre-compute it, as simulate does), log the raw
+   125→ * webhook, then process idempotently. Throws ApiError with proper status codes.
+   126→ *
+   127→ * RACE SAFETY (why claim-first): the success paths' FIRST write inside the
+   128→ * Serializable transaction is a CONDITIONAL updateMany (status flip guarded by
+   129→ * the pre-status). Two concurrent deliveries of the same event race on that
+   130→ * row lock; the loser matches zero rows, writes nothing and returns the
+   131→ * duplicate result — money movement, order transitions and notifications can
+   132→ * only ever run for the winner. The ledger dedupKeys (FIN-1) backstop this at
+   133→ * the posting layer, and the notification dedupKeys backstop the mail log.
+   134→ */
+   135→export async function processPaymentWebhook(input: {
+   136→  provider: string;
+   137→  body: { providerRef?: string; eventType?: string; amountMinor?: number; ts?: number; sig?: string; reason?: string; paymentId?: string };
+   138→  rawBody: string;
+   139→  headerSignature?: string | null;
+   140→  /** Phase 1 (E3): INTERNAL-ONLY recovery mode. Set exclusively by the
+   141→   *  authorized admin payout-ops sweep when re-feeding an event whose
+   142→   *  ORIGINAL delivery was signature-verified and persisted
+   143→   *  (PaymentWebhookLog.signatureValid = true). The HMAC is STILL fully
+   144→   *  verified against the stored payload — recovery NEVER forges or skips
+   145→   *  signature verification — only the ±10-minute freshness window is
+   146→   *  waived, because the event's age is precisely WHY it needs recovery.
+   147→   *  External webhook routes never set this flag. */
+   148→  opts?: { recovery?: boolean };
+   149→}): Promise<ProcessResult> {
+   150→  // (2b.2) Provider sandbox enforcement FIRST — fail closed. resolvePspProvider
+   151→  // falls back to the mock provider for unknown ids, so in production an
+   152→  // unregistered provider id can never sneak through: mock is sandboxOnly → 403.
+   153→  const psp = resolvePspProvider(input.provider);
+   154→  if (psp.sandboxOnly && process.env.NODE_ENV === "production") {
+   155→    throw new ApiError(403, "PROVIDER_SANDBOX_ONLY", `Provider "${input.provider}" is sandbox-only and cannot process webhooks in production`);
+   156→  }
+   157→
+   158→  const providerRef = String(input.body.providerRef ?? "");
+   159→  const eventType = String(input.body.eventType ?? "");
+   160→  const amountMinor = Math.round(Number(input.body.amountMinor ?? 0));
+   161→  const ts = Math.round(Number(input.body.ts ?? 0));
+   162→  if (!providerRef || !eventType) {
+   163→    throw new ApiError(400, "BAD_REQUEST", "providerRef and eventType are required");
+   164→  }
+   165→
+   166→  // (2b.1) Timing-safe compare + freshness. signatureValid in the log means
+   167→  // "authenticated as a LIVE event": correct MAC AND inside the replay window —
+   168→  // a stale-but-correctly-signed delivery is recorded as signatureValid=false
+   169→  // (replay protection is part of webhook authentication semantics) and
+   170→  // rejected with STALE_EVENT below, AFTER the row is logged.
+   171→  // Phase 1 (E3): in recovery mode the row records the HMAC result; the
+   172→  // freshness of the ORIGINAL receipt is what authorizes reprocessing.
+   173→  const providedSig = input.headerSignature ?? (input.body.sig ? String(input.body.sig) : null);
+   174→  const expected = expectedSignature(providerRef, eventType, amountMinor, ts);
+   175→  const sigMatches = !!providedSig && safeEqual(providedSig, expected);
+   176→  const fresh = Math.abs(Date.now() - ts) <= WEBHOOK_TS_WINDOW_MS;
+   177→  const recovery = input.opts?.recovery === true;
+   178→  const signatureValid = sigMatches && (fresh || recovery);
+   179→
+   180→  // OPTION A first: the ref may be a multi-seller payment group.
+   181→  const group = await db.paymentGroup.findUnique({
+   182→    where: { ref: providerRef },
+   183→    include: {
+   184→      orders: {
+   185→        orderBy: { createdAt: "asc" },
+   186→        include: { items: true, store: { include: { seller: { include: { wallet: true } } } } },
+   187→      },
+   188→    },
+   189→  });
+   190→
+   191→  const intent = group ? null : await db.paymentIntent.findUnique({ where: { providerRef } });
+   192→
+   193→  // ALWAYS log the webhook first (even for invalid signature / unknown ref) —
+   194→  // invalid/stale rows stay in the log with their signatureValid flag.
+   195→  const log = await db.paymentWebhookLog.create({
+   196→    data: {
+   197→      provider: input.provider,
+   198→      providerRef,
+   199→      eventType,
+   200→      payloadJson: input.rawBody,
+   201→      signatureValid,
+   202→      processed: false,
+   203→      orderId: group?.orders[0]?.id ?? intent?.orderId ?? null,
+   204→    },
+   205→  });
+   206→
+   207→  if (!sigMatches) {
+   208→    throw new ApiError(400, "BAD_SIGNATURE", "Webhook signature verification failed");
+   209→  }
+   210→  if (!fresh && !recovery) {
+   211→    throw new ApiError(400, "STALE_EVENT", `Webhook timestamp is outside the ±${WEBHOOK_TS_WINDOW_MS / 60_000}-minute acceptance window (replay protection)`);
+   212→  }
+   213→
+   214→  // ------------------------------------------------------------------ FIN-2b: inbound payout events
+   215→  if (eventType === "payout.succeeded" || eventType === "payout.failed") {
+   216→    return processPayoutEvent({ provider: input.provider, providerRef, eventType, amountMinor, reason: input.body.reason ?? null, logId: log.id });
+   217→  }
+   218→
+   219→  // ------------------------------------------------------------------ OPTION A group path
+   220→  if (group) {
+   221→    // LATE PAYMENT AFTER EXPIRY — defined recovery policy (F3 remediation):
+   222→    // the expiry sweep has already claimed this group, transitioned its orders
+   223→    // to a terminal unpaid state and RESTOCKED the items. Fulfilling now would
+   224→    // sell unreserved stock; accepting the money without goods would steal.
+   225→    // The ONLY safe response is a definitive refusal: no money moves, no order
+   226→    // is resurrected, the PSP sees a permanent failure (mock PSP surfaces it
+   227→    // to the buyer as an expired payment window). Never silently fulfill.
+   228→    //
+   229→    // DURABLE REFUND OBLIGATION (mission: final operational gaps): a REAL PSP
+   230→    // has already CAPTURED the buyer's funds when this verified event arrives —
+   231→    // the 409 below protects the order/inventory transition, it does not return
+   232→    // those funds. Record the obligation BEFORE refusing so a crash between the
+   233→    // two leaves at worst "case exists, webhook answered 5xx" → PSP redelivery
+   234→    // converges on the unique (provider, providerRef) row. Re-reservation is
+   235→    // deliberately NOT attempted (business rule: released stock may be re-sold;
+   236→    // fulfilling a stale payment without buyer re-consent is not legitimate).
+   237→    if (eventType === "payment.succeeded" && group.status === "expired") {
+   238→      await recordLatePaymentObligation({
+   239→        provider: input.provider,
+   240→        providerRef,
+   241→        providerPaymentId: input.body.paymentId ?? null,
+   242→        amountMinor,
+   243→        groupTotalMinor: group.totalMinor,
+   244→        currency: group.currency,
+   245→      });
+   246→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   247→      throw new ApiError(409, "GROUP_EXPIRED", `Payment group ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
+   248→    }
+   249→    if (eventType === "payment.failed") {
+   250→      // No money moves on failure — a single conditional update is fine outside
+   251→      // a Serializable tx (an already-succeeded group ignores the failed event).
+   252→      if (group.status === "succeeded") {
+   253→        await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   254→        return {
+   255→          ok: true,
+   256→          duplicate: true,
+   257→          eventType,
+   258→          orderNumber: group.orders[0]?.orderNumber ?? "",
+   259→          orderNumbers: group.orders.map((o) => o.orderNumber),
+   260→          orderStatus: "paid",
+   261→          intentStatus: "succeeded",
+   262→          isGroup: true,
+   263→        };
+   264→      }
+   265→      // C1.1 verification fix (Phase 2.2): CONDITIONAL failed-write. The status
+   266→      // snapshot above is stale by definition — if the expiry sweep claimed the
+   267→      // group `expired` in between, an unconditional update would RE-OPEN it to
+   268→      // `failed`, making it sweepable AND webhook-claimable again. Only a group
+   269→      // still in requires_payment|failed may be marked failed; an expired group
+   270→      // is never resurrected (the late-payment policy below owns that case).
+   271→      await db.paymentGroup.updateMany({
+   272→        where: { id: group.id, status: { in: ["requires_payment", "failed"] } },
+   273→        data: { status: "failed" },
+   274→      });
+   275→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   276→      return {
+   277→        ok: true,
+   278→        duplicate: false,
+   279→        eventType,
+   280→        orderNumber: group.orders[0]?.orderNumber ?? "",
+   281→        orderNumbers: group.orders.map((o) => o.orderNumber),
+   282→        orderStatus: group.orders[0]?.status ?? "payment_pending",
+   283→        intentStatus: "failed",
+   284→        isGroup: true,
+   285→      };
+   286→    }
+   287→
+   288→    // Unknown-event + amount checks BEFORE the claim (unchanged order) — a
+   289→    // malformed delivery must never even attempt the status flip.
+   290→    if (eventType !== "payment.succeeded") {
+   291→      throw new ApiError(400, "UNKNOWN_EVENT", `Unsupported eventType: ${eventType}`);
+   292→    }
+   293→
+   294→    if (amountMinor !== group.totalMinor) {
+   295→      throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${amountMinor} does not match payment group ${group.totalMinor}`);
+   296→    }
+   297→
+   298→    const settings = await getCommissionSettings();
+   299→    const paidAt = new Date();
+   300→
+   301→    // SUCCESS PATH — one Serializable transaction around claim + money.
+   302→    // The conditional claim is the FIRST write: count 0 ⇒ another delivery
+   303→    // already succeeded ⇒ nothing this tx wrote (the claim was the only
+   304→    // intended write) ⇒ return the duplicate sentinel; committing an empty tx
+   305→    // is equivalent to rollback-by-return.
+   306→    //
+   307→    // F1 REMEDIATION (measured): concurrent same-seller confirmations used to
+   308→    // mass-abort here (P2034 SSI conflicts on the wallet-cache row — 0/15 in
+   309→    // the measured storm). Two fixes, both evidence-driven:
+   310→    //   1. the wallet-cache refresh moved OUT of this tx (post-commit,
+   311→    //      best-effort) — the wallet row is no longer in this tx's conflict
+   312→    //      domain; payout authorization never trusted the cache anyway;
+   313→    //   2. bounded P2034 retry of the WHOLE transaction (2 retries, jittered
+   314→    //      backoff). SSI conflicts are transient by definition; the claim's
+   315→    //      conditional update + ledger dedupKeys make a full retry safe (no
+   316→    //      double-posting is possible). PSP calls stay outside — nothing
+   317→    //      non-transactional is ever retried.
+   318→    const walletIdsTouched = new Set<string>();
+   319→    // F1 [Measured]: notification/audit fan-out (notify, dispatchStoreWebhooks,
+   320→    // logActivity, shopper nudge) used to run INSIDE the Serializable tx — but
+   321→    // on the GLOBAL db client, i.e. on ADDITIONAL pool connections while the tx
+   322→    // holds its own. Under concurrent confirmations that multiplies connection
+   323→    // demand inside the tx window (15 webhooks × ≥2 connections vs pool of 10)
+   324→    // → measured P2024 connection-starvation + P2028 (dev.log). Money + order
+   325→    // state stay transactional; the non-transactional side effects fire
+   326→    // POST-COMMIT. dedupKeys make a redelivery unable to multiply mail; a
+   327→    // crash in the post-commit window can only delay/lose OBSERVABILITY rows,
+   328→    // never financial state — the correct trade for a bounded money tx.
+   329→    const postedOrders: { order: (typeof group.orders)[number]; sellerEmail: string | null }[] = [];
+   330→    let outcome: { claimed: boolean } | undefined;
+   331→    // C1.1 (Phase 2.2): set when the Serializable tx ABORTED because a member
+   332→    // order had already left `payment_pending` (expiry sweep released it) — the
+   333→    // group claim rolled back, the late-payment obligation path takes over.
+   334→    let ordersChanged = false;
+   335→    for (let attempt = 1; ; attempt++) {
+   336→      try {
+   337→        outcome = await db.$transaction(
+   338→      async (tx) => {
+   339→        // Bounded-failure policy (measured): a row lock held by another session
+   340→        // stalls statements past Prisma's interactive-tx timer (measured 120 s
+   341→        // = the server's 2-min statement_timeout). Session-scoped 10 s bound,
+   342→        // self-reverting at commit/rollback — lock contention fails FAST, the
+   343→        // PSP redelivers, and no pool connection is burned for 2 minutes.
+   344→        await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '10s'");
+   345→        const claim = await tx.paymentGroup.updateMany({
+   346→          where: { id: group.id, status: { notIn: ["succeeded", "expired"] } },
+   347→          data: { status: "succeeded", paidAt },
+   348→        });
+   349→        if (claim.count === 0) return { claimed: false as const };
+   350→
+   351→        // C1.1 (Phase 2.2) — per-order state verification INSIDE the claim tx:
+   352→        // re-read every member order and require `payment_pending`. A late
+   353→        // webhook must NEVER resurrect an order the expiry sweep already
+   354→        // cancelled/restocked (double-sell). Mismatch ⇒ THROW so the group
+   355→        // claim ROLLS BACK (a released order must not sit in a "succeeded"
+   356→        // group) and the caller records the durable refund obligation.
+   357→        // (Mirrors the legacy single-intent guard below; the group path
+   358→        // previously lacked it.)
+   359→        for (const order of group.orders) {
+   360→          const fresh = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } });
+   361→          if (!fresh || fresh.status !== "payment_pending") {
+   362→            throw new OrderStateAbort(
+   363→              `Order ${order.orderNumber} is "${fresh?.status ?? "missing"}" — released before payment confirmed`
+   364→            );
+   365→          }
+   366→        }
+   367→
+   368→        for (const order of group.orders) {
+   369→          await transitionOrder({
+   370→            orderId: order.id,
+   371→            toStatus: "paid",
+   372→            actor: "system",
+   373→            note: `Payment ${providerRef} succeeded via ${group.provider} (group payment)`,
+   374→            timestamps: { paidAt },
+   375→            tx,
+   376→          });
+   377→
+   378→          // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.
+   379→          const seller = order.store.seller;
+   380→          const wallet = seller?.wallet;
+   381→          if (seller && wallet) {
+   382→            const holdDays = seller.holdDaysOverride ?? settings.payoutHoldDays;
+   383→            const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
+   384→            const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
+   385→            const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+   386→            // AFFILIATE — seller-funded pool (T1 4th line; 0 ⇒ legacy 3-line
+   387→            // posting stays byte-compatible) + the commission rows themselves
+   388→            // (exactly once per order item: unique orderItemId idempotency).
+   389→            const affiliateMinor = order.items.reduce((s, i) => s + i.affiliatePoolMinor, 0);
+   390→            if (wallet) walletIdsTouched.add(wallet.id);
+   391→            await postOrderPaid({
+   392→              orderId: order.id,
+   393→              orderNumber: order.orderNumber,
+   394→              walletId: wallet.id,
+   395→              provider: group.provider,
+   396→              totalMinor: order.totalMinor,
+   397→              sellerNetMinor,
+   398→              commissionMinor,
+   399→              affiliateMinor,
+   400→              holdUntil,
+   401→              currency: order.currency,
+   402→              occurredAt: paidAt,
+   403→              tx,
+   404→              refreshCache: false, // post-commit below — keeps the wallet row out of this tx's conflict domain
+   405→            });
+   406→            await postAffiliateCommissionsForOrder(tx, order, paidAt);
+   407→          }
+   408→          postedOrders.push({ order, sellerEmail: seller?.email ?? null });
+   409→        }
+   410→
+   411→        // Server-side cart clearing — only the PURCHASED variants leave the cart,
+   412→        // and only on verified payment success (never on failure/pending). Lines
+   413→        // the buyer unchecked (kept for later) survive: selection-aware carts.
+   414→        // Guest checkouts (Phase 2.2): PaymentGroup.shopperId is nullable —
+   415→        // clear by the orders' cartToken instead (the legacy single-intent
+   416→        // path's precedent). Inside the tx: a rollback never strands paid
+   417→        // items out of the cart inconsistently.
+   418→        const purchasedVariantIds = [
+   419→          ...new Set(group.orders.flatMap((o) => o.items.map((it) => it.variantId)).filter((v): v is string => Boolean(v))),
+   420→        ];
+   421→        if (group.shopperId) {
+   422→          await tx.cartItem.deleteMany({
+   423→            where: { cart: { shopperId: group.shopperId }, variantId: { in: purchasedVariantIds } },
+   424→          });
+   425→        } else {
+   426→          const guestCartTokens = [
+   427→            ...new Set(group.orders.map((o) => o.cartToken).filter((t): t is string => Boolean(t))),
+   428→          ];
+   429→          if (guestCartTokens.length > 0) {
+   430→            await tx.cartItem.deleteMany({
+   431→              where: { cart: { token: { in: guestCartTokens } }, variantId: { in: purchasedVariantIds } },
+   432→            });
+   433→          }
+   434→        }
+   435→
+   436→        return { claimed: true as const };
+   437→      },
+   438→      // timeout: measured evidence (dev.log) — ~18-query Serializable tx over
+   439→      // remote RTT exceeds Prisma's 5 s default under concurrency (P2028 ×13).
+   440→      // 15 s is a BOUNDED policy, not the unbounded external-lock stall.
+   441→      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15_000 }
+   442→        );
+   443→        break;
+   444→      } catch (e) {
+   445→        // C1.1: order-state abort is deterministic (not transient) — never
+   446→        // retried; the group claim has already rolled back.
+   447→        if (e instanceof OrderStateAbort) { ordersChanged = true; break; }
+   448→        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" && attempt < 3) {
+   449→          await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
+   450→          continue;
+   451→        }
+   452→        // Phase 1 (E3): P2034 exhaustion → explicit 503 PAYMENT_TX_RETRY_EXHAUSTED
+   453→        // (the provider retries later; the row stays processed=false for the
+   454→        // ops sweep) instead of a raw 500 with no recovery contract.
+   455→        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+   456→          throw new ApiError(503, "PAYMENT_TX_RETRY_EXHAUSTED", "The payment could not be confirmed due to sustained concurrent activity — the provider should retry this delivery", { attempts: attempt });
+   457→        }
+   458→        throw e;
+   459→      }
+   460→    }
+   461→
+   462→    // C1.1 — a member order was already released by the expiry sweep: the
+   463→    // payment is late for goods whose stock was returned. Same policy as
+   464→    // GROUP_EXPIRED: record the durable refund obligation (the PSP has the
+   465→    // buyer's funds — they must be returned), mark the delivery processed,
+   466→    // and refuse. Never resurrect, never fulfill.
+   467→    if (ordersChanged) {
+   468→      await recordLatePaymentObligation({
+   469→        provider: input.provider,
+   470→        providerRef,
+   471→        providerPaymentId: input.body.paymentId ?? null,
+   472→        amountMinor,
+   473→        groupTotalMinor: group.totalMinor,
+   474→        currency: group.currency,
+   475→      });
+   476→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   477→      throw new ApiError(409, "ORDER_EXPIRED", `Order(s) for payment ${providerRef} were already expired or cancelled before payment completed — no money was moved; the buyer will be refunded via reconciliation`);
+   478→    }
+   479→
+   480→    if (!outcome?.claimed) {
+   481→      // Claim lost — WHY decides the answer. A concurrent delivery that
+   482→      // succeeded → genuine duplicate (ok). But a group the expiry sweep
+   483→      // claimed between our load and our claim must NOT be answered "ok":
+   484→      // the money must not be captured for goods we already restocked.
+   485→      // (Late-payment recovery policy — see the expired check above.)
+   486→      const nowStatus = (await db.paymentGroup.findUnique({ where: { id: group.id }, select: { status: true } }))?.status;
+   487→      if (nowStatus === "expired") {
+   488→        // The sweep won the claim while this delivery was in flight — same
+   489→        // late-payment policy as above, including the durable refund obligation.
+   490→        // G5 ordering fix: the obligation is recorded BEFORE the delivery is
+   491→        // marked processed, so a failed upsert still leaves the row unprocessed
+   492→        // for the ops recovery sweep (matches the pre-claim path's order).
+   493→        await recordLatePaymentObligation({
+   494→          provider: input.provider,
+   495→          providerRef,
+   496→          providerPaymentId: input.body.paymentId ?? null,
+   497→          amountMinor,
+   498→          groupTotalMinor: group.totalMinor,
+   499→          currency: group.currency,
+   500→        });
+   501→        await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   502→        throw new ApiError(409, "GROUP_EXPIRED", `Payment group ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
+   503→      }
+   504→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   505→      return {
+   506→        ok: true,
+   507→        duplicate: true,
+   508→        eventType,
+   509→        orderNumber: group.orders[0]?.orderNumber ?? "",
+   510→        orderNumbers: group.orders.map((o) => o.orderNumber),
+   511→        orderStatus: "paid",
+   512→        intentStatus: "succeeded",
+   513→        isGroup: true,
+   514→      };
+   515→    }
+   516→
+   517→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   518→
+   519→    // POST-COMMIT fan-out (see F1 note above) — non-transactional side effects.
+   520→    for (const { order, sellerEmail } of postedOrders) {
+   521→      try {
+   522→        await dispatchStoreWebhooks({
+   523→          storeId: order.storeId,
+   524→          event: "order.paid",
+   525→          payload: { orderNumber: order.orderNumber, totalMinor: order.totalMinor, currency: order.currency, paymentGroupRef: providerRef },
+   526→        });
+   527→        if (sellerEmail) {
+   528→          await notify({ event: "order.paid", channel: "email", recipient: sellerEmail, subject: `You have a new paid order ${order.orderNumber}`, dedupKey: `order.paid.email:${order.id}` });
+   529→          await notify({ event: "order.paid", channel: "inapp", recipient: sellerEmail, subject: "You have a new paid order", dedupKey: `order.paid.inapp:${order.id}` });
+   530→        }
+   531→        await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed`, dedupKey: `order.receipt.email:${order.id}` });
+   532→        await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
+   533→        await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: group.provider, totalMinor: order.totalMinor, paymentGroup: true } });
+   534→      } catch (e) {
+   535→        // Observability/notification loss never fails the money path.
+   536→        console.error(`[post-commit] fan-out failed for order ${order.orderNumber} (non-financial, dedupKey-guarded):`, e instanceof Error ? e.message : e);
+   537→      }
+   538→    }
+   539→
+   540→    // F1 — post-commit wallet-cache refresh (best-effort, OUTSIDE the money
+   541→    // tx). A failure here leaves the display cache stale — classified as
+   542→    // benign time-maturity/event staleness by the ledger invariant, invisible
+   543→    // to payout authorization (which recomputes truth transactionally), and
+   544→    // self-healing on the next wallet event or wallet-page read.
+   545→    for (const wid of walletIdsTouched) {
+   546→      try {
+   547→        await refreshWalletCache(wid);
+   548→      } catch (e) {
+   549→        console.error(`[wallet-cache] post-commit refresh failed for ${wid} (benign, self-heals):`, e instanceof Error ? e.message : e);
+   550→      }
+   551→    }
+   552→
+   553→    // (FIN-1 1.6 wiring) T2 auto-settle — AFTER the success tx commits. The
+   554→    // recipe is idempotent (dedupKey gateway_settlement:settlement:{ref}), so a
+   555→    // crash here is healed by the next delivery's claim-miss path... which is
+   556→    // why the call lives outside the tx: the PSP settles buyer funds to the
+   557→    // platform bank account; T2 clears the GATEWAY:{provider} receivable into
+   558→    // BANK_MAIN. Default setting false = dormant (documented decision).
+   559→    if (await autoSettleEnabled()) {
+   560→      await postGatewaySettlement({ provider: group.provider, amountMinor: group.totalMinor, ref: providerRef, occurredAt: paidAt });
+   561→    }
+   562→
+   563→    return {
+   564→      ok: true,
+   565→      duplicate: false,
+   566→      eventType,
+   567→      orderNumber: group.orders[0]?.orderNumber ?? "",
+   568→      orderNumbers: group.orders.map((o) => o.orderNumber),
+   569→      orderStatus: "paid",
+   570→      intentStatus: "succeeded",
+   571→      isGroup: true,
+   572→    };
+   573→  }
+   574→
+   575→  // ------------------------------------------------------------------ legacy single-order path
+   576→  if (!intent) {
+   577→    throw new ApiError(404, "INTENT_NOT_FOUND", "Payment intent not found");
+   578→  }
+   579→
+   580→  if (eventType === "payment.failed") {
+   581→    if (intent.status === "succeeded") {
+   582→      await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   583→      const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   584→      return {
+   585→        ok: true,
+   586→        duplicate: true,
+   587→        eventType,
+   588→        orderNumber: order?.orderNumber ?? "",
+   589→        orderStatus: order?.status ?? "",
+   590→        intentStatus: intent.status,
+   591→      };
+   592→    }
+   593→    // C1.1 verification fix (Phase 2.2): CONDITIONAL failed-write — the stale
+   594→    // read at the top of this branch must not be trusted. If a racing success
+   595→    // tx committed after our snapshot, an unconditional update would flip a
+   596→    // SUCCEEDED intent (money captured, order paid) to failed. Same guard as
+   597→    // the success path's claim: only requires_payment|failed may become failed.
+   598→    await db.paymentIntent.updateMany({
+   599→      where: { id: intent.id, status: { in: ["requires_payment", "failed"] } },
+   600→      data: { status: "failed" },
+   601→    });
+   602→    const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   603→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   604→    return {
+   605→      ok: true,
+   606→      duplicate: false,
+   607→      eventType,
+   608→      orderNumber: order?.orderNumber ?? "",
+   609→      orderStatus: order?.status ?? "",
+   610→      intentStatus: "failed",
+   611→    };
+   612→  }
+   613→
+   614→  if (eventType !== "payment.succeeded") {
+   615→    throw new ApiError(400, "UNKNOWN_EVENT", `Unsupported eventType: ${eventType}`);
+   616→  }
+   617→
+   618→  if (amountMinor !== intent.amountMinor) {
+   619→    throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${amountMinor} does not match intent ${intent.amountMinor}`);
+   620→  }
+   621→
+   622→  // Phase 1 (E1) — late-payment guard for LEGACY single-intent orders, mirroring
+   623→  // the group path's GROUP_EXPIRED policy: if the order already left
+   624→  // payment_pending because the expiry sweep released its stock (cancelled /
+   625→  // payment_expired — the sweep now covers legacy intents), the payment can no
+   626→  // longer be fulfilled. Refuse, record the durable refund obligation, and let
+   627→  // the PSP refund per its own cadence. transitionOrder is unconditional, so
+   628→  // WITHOUT this guard a late webhook would resurrect a released order
+   629→  // (double-sell). Money never moves on refusal.
+   630→  const guardOrder = await db.order.findUnique({
+   631→    where: { id: intent.orderId },
+   632→    select: { id: true, status: true, currency: true },
+   633→  });
+   634→  if (guardOrder && (guardOrder.status === "payment_expired" || guardOrder.status === "cancelled")) {
+   635→    await recordLatePaymentObligation({
+   636→      provider: input.provider,
+   637→      providerRef,
+   638→      providerPaymentId: input.body.paymentId ?? null,
+   639→      amountMinor,
+   640→      groupTotalMinor: intent.amountMinor,
+   641→      currency: guardOrder.currency,
+   642→    });
+   643→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   644→    throw new ApiError(409, "ORDER_EXPIRED", `Order for payment ${providerRef} expired before payment completed — no money was moved; the buyer must start a new checkout`);
+   645→  }
+   646→
+   647→  const settings = await getCommissionSettings();
+   648→  const paidAt = new Date();
+   649→
+   650→  // SUCCESS PATH — same claim-first Serializable pattern as the group path,
+   651→  // with the same F1 remediation (post-commit wallet refresh + bounded P2034
+   652→  // retry of the whole transaction).
+   653→  const walletIdsTouched = new Set<string>();
+   654→  // C1.1 verification fix: set when the legacy success tx aborted because the
+   655→  // order was already released (same semantics as the group path's
+   656→  // ordersChanged) — converted into the late-payment obligation below.
+   657→  let legacyOrdersChanged = false;
+   658→  // NOTE: array holder (same pattern as the group path's postedOrders) — a
+   659→  // `let x: T | null = null` assigned inside the $transaction callback gets
+   660→  // CFA-narrowed to `null` at post-commit use sites (TS never sees the callback
+   661→  // assignment), making `if (postedOrder)` `never` and every property access an
+   662→  // error. Array contents are not flow-narrowed, so the post-commit fan-out
+   663→  // below reads the real types.
+   664→  const postedOrderRef: { order: Prisma.OrderGetPayload<{ include: { items: true; store: { include: { seller: { include: { wallet: true } } } } } }>; sellerEmail: string | null }[] = [];
+   665→  let outcome: { claimed: boolean } | undefined;
+   666→  for (let attempt = 1; ; attempt++) {
+   667→    try {
+   668→      outcome = await db.$transaction(
+   669→    async (tx) => {
+   670→      // Bounded-failure policy (see group path) — 10 s per-statement bound.
+   671→      await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '10s'");
+   672→      const claim = await tx.paymentIntent.updateMany({
+   673→        where: { id: intent.id, status: { not: "succeeded" } },
+   674→        data: { status: "succeeded" },
+   675→      });
+   676→      if (claim.count === 0) return { claimed: false as const };
+   677→
+   678→      const order = await tx.order.findUnique({
+   679→        where: { id: intent.orderId },
+   680→        include: { items: true, store: { include: { seller: { include: { wallet: true } } } } },
+   681→      });
+   682→      if (!order) throw new ApiError(404, "ORDER_NOT_FOUND", "Order for payment intent not found");
+   683→
+   684→      // C1.1 verification fix (Phase 2.2): per-order state verification INSIDE
+   685→      // the claim tx — mirrors the group path exactly (the pre-tx guard above
+   686→      // is stale by construction: transitionOrder is unconditional, so a
+   687→      // release committed between that read and this tx would otherwise be
+   688→      // resurrected here, re-selling stock the sweep already returned).
+   689→      // Deterministic abort → the intent claim ROLLS BACK → the late-payment
+   690→      // obligation + 409 ORDER_EXPIRED below (never retried).
+   691→      if (order.status === "payment_expired" || order.status === "cancelled") {
+   692→        throw new OrderStateAbort(
+   693→          `legacy order ${order.id} is ${order.status} — refusing payment ${providerRef} (late-payment policy)`
+   694→        );
+   695→      }
+   696→
+   697→      await transitionOrder({ orderId: order.id, toStatus: "paid", actor: "system", note: `Payment ${providerRef} succeeded via ${intent.provider}`, timestamps: { paidAt }, tx });
+   698→
+   699→      // Server-side cart clearing — only the PURCHASED variants leave the cart,
+   700→      // and only on verified payment success (never on failure/pending, never
+   701→      // client-driven). Account carts clear by shopperId; the token is a legacy/
+   702→      // reconciliation fallback for rows that predate account-scoped carts.
+   703→      // Selection-aware: unchecked (kept-for-later) lines are never removed here.
+   704→      const purchasedVariantIds = [...new Set(order.items.map((it) => it.variantId).filter((v): v is string => Boolean(v)))];
+   705→      if (order.shopperId) {
+   706→        await tx.cartItem.deleteMany({
+   707→          where: { cart: { shopperId: order.shopperId }, variantId: { in: purchasedVariantIds } },
+   708→        });
+   709→      } else if (order.cartToken) {
+   710→        await tx.cartItem.deleteMany({
+   711→          where: { cart: { token: order.cartToken }, variantId: { in: purchasedVariantIds } },
+   712→        });
+   713→      }
+   714→
+   715→      // Ledger T1 — seller wallet credited with net, hold until = paidAt + holdDays.
+   716→      const seller = order.store.seller;
+   717→      const wallet = seller?.wallet;
+   718→      if (seller && wallet) {
+   719→        const holdDays = seller.holdDaysOverride ?? settings.payoutHoldDays;
+   720→        const holdUntil = new Date(paidAt.getTime() + holdDays * 86400000);
+   721→        const commissionMinor = order.items.reduce((s, i) => s + i.commissionMinor, 0);
+   722→        const sellerNetMinor = order.items.reduce((s, i) => s + i.sellerNetMinor, 0);
+   723→        // AFFILIATE — pool + commission rows (see group-path note).
+   724→        const affiliateMinor = order.items.reduce((s, i) => s + i.affiliatePoolMinor, 0);
+   725→        walletIdsTouched.add(wallet.id);
+   726→        await postOrderPaid({
+   727→          orderId: order.id,
+   728→          orderNumber: order.orderNumber,
+   729→          walletId: wallet.id,
+   730→          provider: intent.provider,
+   731→          totalMinor: intent.amountMinor,
+   732→          sellerNetMinor,
+   733→          commissionMinor,
+   734→          affiliateMinor,
+   735→          holdUntil,
+   736→          currency: order.currency,
+   737→          occurredAt: paidAt,
+   738→          tx,
+   739→          refreshCache: false, // post-commit below (F1)
+   740→        });
+   741→        await postAffiliateCommissionsForOrder(tx, order, paidAt);
+   742→      }
+   743→
+   744→      // Notification/audit fan-out moved POST-COMMIT (group-path F1 note):
+   745→      // these ran on the global db client inside the tx window, multiplying
+   746→      // pool-connection demand under concurrency (measured P2024/P2028).
+   747→      postedOrderRef.push({ order, sellerEmail: seller?.email ?? null });
+   748→
+   749→      return { claimed: true as const };
+   750→    },
+   751→    // timeout: same measured P2028 evidence as the group path.
+   752→    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15_000 }
+   753→      );
+   754→      break;
+   755→    } catch (e) {
+   756→      // C1.1 verification fix: order-state abort is deterministic — never
+   757→      // retried; the intent claim has already rolled back (same as group path).
+   758→      if (e instanceof OrderStateAbort) { legacyOrdersChanged = true; break; }
+   759→      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" && attempt < 3) {
+   760→        await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
+   761→        continue;
+   762→      }
+   763→      throw e;
+   764→    }
+   765→  }
+   766→
+   767→  // C1.1 verification fix — legacy twin of the group path's ordersChanged
+   768→  // handler: the order was already released by the sweep (or cancelled), so
+   769→  // the payment is late for returned stock. Record the durable refund
+   770→  // obligation FIRST (G5 ordering fix: never mark the delivery processed
+   771→  // before the obligation exists — an ops sweep must still be able to re-feed
+   772→  // this row), then refuse with 409. Never resurrect, never fulfill.
+   773→  if (legacyOrdersChanged) {
+   774→    await recordLatePaymentObligation({
+   775→      provider: input.provider,
+   776→      providerRef,
+   777→      providerPaymentId: input.body.paymentId ?? null,
+   778→      amountMinor,
+   779→      groupTotalMinor: intent.amountMinor,
+   780→      currency: guardOrder?.currency ?? "MYR",
+   781→    });
+   782→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   783→    throw new ApiError(409, "ORDER_EXPIRED", `Order for payment ${providerRef} was already expired or cancelled before payment completed — no money was moved; the buyer will be refunded via reconciliation`);
+   784→  }
+   785→
+   786→  if (!outcome?.claimed) {
+   787→    const order = await db.order.findUnique({ where: { id: intent.orderId } });
+   788→    await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   789→    return {
+   790→      ok: true,
+   791→      duplicate: true,
+   792→      eventType,
+   793→      orderNumber: order?.orderNumber ?? "",
+   794→      orderStatus: order?.status ?? "",
+   795→      intentStatus: "succeeded",
+   796→    };
+   797→  }
+   798→
+   799→  await db.paymentWebhookLog.update({ where: { id: log.id }, data: { processed: true } });
+   800→
+   801→  // POST-COMMIT fan-out (see group-path F1 note) — non-transactional side effects.
+   802→  for (const { order, sellerEmail } of postedOrderRef) {
+   803→    try {
+   804→      await dispatchStoreWebhooks({
+   805→        storeId: order.storeId,
+   806→        event: "order.paid",
+   807→        payload: { orderNumber: order.orderNumber, totalMinor: order.totalMinor, currency: order.currency },
+   808→      });
+   809→      if (sellerEmail) {
+   810→        await notify({ event: "order.paid", channel: "email", recipient: sellerEmail, subject: `You have a new paid order ${order.orderNumber}`, dedupKey: `order.paid.email:${order.id}` });
+   811→        await notify({ event: "order.paid", channel: "inapp", recipient: sellerEmail, subject: "You have a new paid order", dedupKey: `order.paid.inapp:${order.id}` });
+   812→      }
+   813→      await notify({ event: "order.receipt", channel: "email", recipient: order.customerEmail, subject: `Your order ${order.orderNumber} is confirmed`, dedupKey: `order.receipt.email:${order.id}` });
+   814→      await notifyShopperOrderConfirmed({ orderNumber: order.orderNumber, shopperId: order.shopperId, storeId: order.storeId, store: order.store });
+   815→      await logActivity({ actorType: "system", action: "payment.succeeded", entityType: "order", entityId: order.id, meta: { providerRef, provider: intent.provider, totalMinor: intent.amountMinor } });
+   816→    } catch (e) {
+   817→      console.error(`[post-commit] fan-out failed for order ${order.orderNumber} (non-financial, dedupKey-guarded):`, e instanceof Error ? e.message : e);
+   818→    }
+   819→  }
+   820→
+   821→  // F1 — post-commit wallet-cache refresh (same rationale as the group path).
+   822→  for (const wid of walletIdsTouched) {
+   823→    try {
+   824→      await refreshWalletCache(wid);
+   825→    } catch (e) {
+   826→      console.error(`[wallet-cache] post-commit refresh failed for ${wid} (benign, self-heals):`, e instanceof Error ? e.message : e);
+   827→    }
+   828→  }
+   829→
+   830→  // T2 auto-settle (see group path) — after commit, idempotent recipe.
+   831→  if (await autoSettleEnabled()) {
+   832→    await postGatewaySettlement({ provider: intent.provider, amountMinor: intent.amountMinor, ref: providerRef, occurredAt: paidAt });
+   833→  }
+   834→
+   835→  return {
+   836→    ok: true,
+   837→    duplicate: false,
+   838→    eventType,
+   839→    orderNumber: (await db.order.findUnique({ where: { id: intent.orderId } }))?.orderNumber ?? "",
+   840→    orderStatus: "paid",
+   841→    intentStatus: "succeeded",
+   842→  };
+   843→}
+   844→
+   845→/**
+   846→ * FIN-2b (2b.4) — inbound PAYOUT lifecycle events from the PSP.
+   847→ *
+   848→ * The provider confirms (or fails) a bank transfer we initiated. providerRef
+   849→ * resolution: try Payout.referenceNo first (the canonical platform reference —
+   850→ * what the mock PSP and payout-simulate echo); fall back to Payout.providerRef
+   851→ * (the transfer ref an admin recorded at mark-paid — some providers echo that
+   852→ * instead). Both lookups are documented PSP integration surface.
+   853→ *
+   854→ * Same claim-first race safety as the payment paths: assertTransition guards
+   855→ * the semantics, the conditional updateMany serializes concurrent deliveries,
+   856→ * and T4/T4f post inside the same Serializable tx as the status flip.
+   857→ */
+   858→async function processPayoutEvent(args: {
+   859→  provider: string;
+   860→  providerRef: string;
+   861→  eventType: "payout.succeeded" | "payout.failed";
+   862→  amountMinor: number;
+   863→  reason: string | null;
+   864→  logId: string;
+   865→}): Promise<ProcessResult> {
+   866→  const payout =
+   867→    (await db.payout.findUnique({ where: { referenceNo: args.providerRef } })) ??
+   868→    (await db.payout.findFirst({ where: { providerRef: args.providerRef } }));
+   869→  if (!payout) {
+   870→    throw new ApiError(404, "PAYOUT_NOT_FOUND", `No payout matches providerRef ${args.providerRef}`);
+   871→  }
+   872→
+   873→  const toStatus = args.eventType === "payout.succeeded" ? "paid" : "failed";
+   874→  const dedupKey = `${toStatus === "paid" ? "payout.paid" : "payout.failed"}:${payout.id}`;
+   875→
+   876→  // Idempotent replay: the provider re-delivered an event we already applied
+   877→  // (e.g. payout.succeeded for an already-paid payout) → ok + conflict flag,
+   878→  // never a raw 409 at the provider. Decision is recorded (processed=true).
+   879→  if (payout.status === toStatus) {
+   880→    await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+   881→    return {
+   882→      ok: true,
+   883→      duplicate: true,
+   884→      payoutConflict: true,
+   885→      eventType: args.eventType,
+   886→      orderNumber: "",
+   887→      orderStatus: payout.status,
+   888→      intentStatus: "",
+   889→      payoutStatus: payout.status,
+   890→    };
+   891→  }
+   892→
+   893→  // State machine guard (cheap, no locks): an illegal transition (e.g.
+   894→  // requested→paid — the money was never reserved by T3) is a hard 409. The
+   895→  // decision is recorded on the webhook row before throwing.
+   896→  assertTransition(payout.status, toStatus);
+   897→
+   898→  // Amount guard BEFORE the claim (mirror of the payment paths).
+   899→  if (args.amountMinor !== payout.amountMinor) {
+   900→    throw new ApiError(409, "AMOUNT_MISMATCH", `Webhook amount ${args.amountMinor} does not match payout ${payout.amountMinor}`);
+   901→  }
+   902→
+   903→  const seller = await db.seller.findUnique({ where: { id: payout.sellerId } });
+   904→  if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller for payout not found");
+   905→
+   906→  const at = new Date();
+   907→  // T4f reason: use the provider-supplied reason when present.
+   908→  const reason = args.reason ?? "provider reported failure";
+   909→  const subject = toStatus === "paid" ? `Payout ${payout.referenceNo} on the way` : `Payout ${payout.referenceNo} failed`;
+   910→
+   911→  // Phase 1 (E2): the SAME hardening the payment paths already carry —
+   912→  //   • withSerializableTxRetry: bounded P2034 retry of the WHOLE tx with
+   913→  //     jittered exponential backoff, and 503 PAYMENT_TX_RETRY_EXHAUSTED on
+   914→  //     exhaustion (the PSP retries later; the delivery stays
+   915→  //     processed=false for this sweep) instead of a raw 500.
+   916→  //   • SET LOCAL statement_timeout = 10 s bounds lock waits.
+   917→  //   • notification/audit fan-out moved POST-COMMIT (the F1 anti-pattern:
+   918→  //     extra round-trips on the global client INSIDE the Serializable tx
+   919→  //     multiply pool pressure and hot-row contention).
+   920→  //   • timeout/maxWait (10 s/10 s, env-tunable) replace Prisma's 5 s defaults.
+   921→  // Retry-safety: the claim is the first write and the only gate; a retried tx
+   922→  // whose claim matches 0 rows is a no-op. Ledger dedupKeys backstop T4/T4f.
+   923→  const outcome = await withSerializableTxRetry(async (tx) => {
+   924→    await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '10s'");
+   925→    // Conditional claim — expectedFrom is "processing" per the state machine
+   926→    // (only processing payouts are awaiting provider confirmation). count 0
+   927→    // ⇒ lost race / concurrent admin action ⇒ empty-tx-return (rollback-by-
+   928→    // return: the claim was the only intended write and it wrote nothing).
+   929→    const claim = await tx.payout.updateMany({
+   930→      where: { id: payout.id, status: "processing" },
+   931→      data: { status: toStatus },
+   932→    });
+   933→    if (claim.count === 0) return { claimed: false as const };
+   934→
+   935→    if (toStatus === "paid") {
+   936→      await tx.payout.update({ where: { id: payout.id }, data: { paidAt: at } });
+   937→      // T4 — clearing → bank; refreshWalletCache runs inside the recipe (tx).
+   938→      await postPayoutConfirmed({
+   939→        walletId: payout.walletId,
+   940→        payoutId: payout.id,
+   941→        referenceNo: payout.referenceNo,
+   942→        amountMinor: payout.amountMinor,
+   943→        tx,
+   944→      });
+   945→    } else {
+   946→      await tx.payout.update({ where: { id: payout.id }, data: { failReason: reason } });
+   947→      // T4f — reversal of T3 (clearing → back to seller payable).
+   948→      await postPayoutFailed({
+   949→        walletId: payout.walletId,
+   950→        payoutId: payout.id,
+   951→        referenceNo: payout.referenceNo,
+   952→        amountMinor: payout.amountMinor,
+   953→        reason,
+   954→        tx,
+   955→      });
+   956→    }
+   957→
+   958→    return { claimed: true as const };
+   959→  });
+   960→
+   961→  if (outcome.claimed) {
+   962→    // Phase 1 (E2): post-commit fan-out — seller notifications + audit live
+   963→    // OUTSIDE the Serializable tx. Stable per-event dedupKeys make a redelivery
+   964→    // converge; a failure here is logged and non-financial (never rolls back
+   965→    // committed ledger work).
+   966→    try {
+   967→      await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "email", recipient: seller.email, subject, dedupKey });
+   968→      await notify({ event: toStatus === "paid" ? "payout.paid" : "payout.failed", channel: "inapp", recipient: seller.email, subject, dedupKey });
+   969→      await logActivity({
+   970→        actorType: "system",
+   971→        action: toStatus === "paid" ? "payout.provider_confirmed" : "payout.provider_failed",
+   972→        entityType: "payout",
+   973→        entityId: payout.id,
+   974→        meta: { providerRef: args.providerRef, referenceNo: payout.referenceNo, amountMinor: payout.amountMinor },
+   975→      });
+   976→    } catch (e) {
+   977→      console.error(`[post-commit] payout ${payout.referenceNo} fan-out failed (non-financial, dedupKey-guarded):`, e instanceof Error ? e.message : e);
+   978→    }
+   979→  }
+   980→
+   981→  const freshPayout = await db.payout.findUnique({ where: { id: payout.id } });
+   982→  const payoutStatus = freshPayout?.status ?? payout.status;
+   983→
+   984→  if (!outcome.claimed) {
+   985→    // Lost the race (e.g. an admin transitioned the payout concurrently) —
+   986→    // answer ok with payoutConflict so the provider's retry converges; never
+   987→    // throw raw 5xx at a PSP. Decision recorded (processed=true).
+   988→    await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+   989→    return {
+   990→      ok: true,
+   991→      duplicate: true,
+   992→      payoutConflict: true,
+   993→      eventType: args.eventType,
+   994→      orderNumber: "",
+   995→      orderStatus: payoutStatus,
+   996→      intentStatus: "",
+   997→      payoutStatus,
+   998→    };
+   999→  }
+  1000→
+  1001→  await db.paymentWebhookLog.update({ where: { id: args.logId }, data: { processed: true } });
+  1002→  return {
+  1003→    ok: true,
+  1004→    duplicate: false,
+  1005→    eventType: args.eventType,
+  1006→    orderNumber: "",
+  1007→    orderStatus: payoutStatus,
+  1008→    intentStatus: "",
+  1009→    payoutStatus,
+  1010→  };
+  1011→}
+  1012→
+  1013→export function webhookPayloadJson(body: unknown): string {
+  1014→  return toJson(body);
+  1015→}
+  1016→
