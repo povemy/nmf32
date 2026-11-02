@@ -1,0 +1,470 @@
+{
+  "capturedAt": "2026-11-02T12:13:23.973Z",
+  "deployOutput": "see /tmp/migrate-deploy-output.txt (embedded in report)",
+  "stagingSchema": {
+    "name": "nomofee_staging",
+    "tableCount": 97,
+    "indexCount": 245,
+    "migrationLedger": [
+      {
+        "migration_name": "0_init",
+        "finished_at": "2026-11-02T12:08:13.852Z",
+        "applied_steps_count": 1,
+        "checksum": "de17fc28a012c3987c00cb67decd407ce2716906c28e58efaea4aab1238dd627"
+      },
+      {
+        "migration_name": "20261030000000_affiliate_system_baseline",
+        "finished_at": "2026-11-02T12:08:14.269Z",
+        "applied_steps_count": 1,
+        "checksum": "278384def521f07a2e835b13f947f0076839bdcf5c92ba641e90355f728a3da7"
+      },
+      {
+        "migration_name": "20261031000000_orderitem_affiliate_sponsor_policy_snapshot",
+        "finished_at": "2026-11-02T12:08:14.555Z",
+        "applied_steps_count": 1,
+        "checksum": "87ef65cd9cbc718eb76a936bf5e94fd35708dca4172a8451a3e9da01f454e8df"
+      },
+      {
+        "migration_name": "20261031000001_affiliate_collection_profile_fk",
+        "finished_at": "2026-11-02T12:08:14.839Z",
+        "applied_steps_count": 1,
+        "checksum": "0eb9f3f53b87ccdbcfe810369cf34ccc76704579e09f2e573b7a677f48e65e70"
+      },
+      {
+        "migration_name": "20261101000000_phase1_session_token_hashing",
+        "finished_at": "2026-11-02T12:08:15.120Z",
+        "applied_steps_count": 1,
+        "checksum": "bae92054187d8ee4c94c755ded68127e25ff5cbd61924063df848e7c4c0a8a4f"
+      },
+      {
+        "migration_name": "20261101000001_phase1_review_verified_purchase",
+        "finished_at": "2026-11-02T12:08:15.407Z",
+        "applied_steps_count": 1,
+        "checksum": "6150b79efbcfa6efbf757c915f4163ffd1a8678abd362e5d6c4c5cc55f7490d0"
+      },
+      {
+        "migration_name": "20261101000002_phase1_admin_mfa_enrollment",
+        "finished_at": "2026-11-02T12:08:15.698Z",
+        "applied_steps_count": 1,
+        "checksum": "707761889442bf20a9ad717a3236a8fcdf08edf705c3de6d523de103345544ae"
+      },
+      {
+        "migration_name": "20261102000000_phase2_performance_indexes",
+        "finished_at": "2026-11-02T12:08:15.989Z",
+        "applied_steps_count": 1,
+        "checksum": "5bfe674f567063a557c77b9cfe269d526f4017a1705181c9f59a5c0cb08ba429"
+      },
+      {
+        "migration_name": "20261103000000_phase21_mfa_totp_replay",
+        "finished_at": "2026-11-02T12:08:16.272Z",
+        "applied_steps_count": 1,
+        "checksum": "c3ceccfb2248910066818cd587ee321ab834cdde84e4625fd4709e83ee3291a9"
+      },
+      {
+        "migration_name": "20261104000000_final_email_otp",
+        "finished_at": "2026-11-02T12:08:16.556Z",
+        "applied_steps_count": 1,
+        "checksum": "18322704237961e6a7f3cac7bf220818503ccf4ddfedff900c837d6b9be463ea"
+      },
+      {
+        "migration_name": "20261105000000_phase22_marketplace_integrity",
+        "finished_at": "2026-11-02T12:08:16.845Z",
+        "applied_steps_count": 1,
+        "checksum": "4b1e20ca5e32cc4e6c86a0e9a51ad78f5bb817558d0ca1bbb8d2b1269f9bf5d2"
+      },
+      {
+        "migration_name": "20261106000000_phase23_email_delivery",
+        "finished_at": "2026-11-02T12:08:17.132Z",
+        "applied_steps_count": 1,
+        "checksum": "320b77e00ba56d20337c7648ff7f5bee04e72d3a396fd8fd2888a6ba373533c8"
+      },
+      {
+        "migration_name": "20261107000000_phase23_seller_verification",
+        "finished_at": "2026-11-02T12:08:17.415Z",
+        "applied_steps_count": 1,
+        "checksum": "fbda32ae6b9730087bc1b0a2ed78f739574d929b1bb0dbf1b4cfdfafcf624e11"
+      },
+      {
+        "migration_name": "20261108000000_phase23_webhook_delivery",
+        "finished_at": "2026-11-02T12:08:17.709Z",
+        "applied_steps_count": 1,
+        "checksum": "c53041ca769e96c1b39e25d3bfaf47e9b9b77d8f2a93e587bccfc2971fcf91be"
+      },
+      {
+        "migration_name": "20261109000000_phase24_search_indexes",
+        "finished_at": "2026-11-02T12:08:18.306Z",
+        "applied_steps_count": 1,
+        "checksum": "c4a007a39632dc248f6beb289946118bbc3cf4613203bbfa1a26be4f28a8f459"
+      }
+    ]
+  },
+  "publicAfter": {
+    "tableCount": 98,
+    "appTableCount": 97,
+    "indexCount": 240,
+    "rowCount": {
+      "ActivityLog": 974,
+      "Address": 5,
+      "AdminAuditLog": 128,
+      "AdminMfaEnrollment": 1,
+      "AdminUser": 4,
+      "AffiliateAttributionTouch": 14,
+      "AffiliateCollection": 0,
+      "AffiliateCollectionItem": 0,
+      "AffiliateCommission": 12,
+      "AffiliateCommissionEntry": 17,
+      "AffiliateLink": 9,
+      "AffiliatePayout": 2,
+      "AffiliateProfile": 15,
+      "AffiliateReferralTouch": 6,
+      "AffiliateSponsorAudit": 0,
+      "AnalyticsEvent": 92,
+      "Announcement": 1,
+      "ApiKey": 0,
+      "BankAccount": 4,
+      "Campaign": 2,
+      "Cart": 129,
+      "CartItem": 105,
+      "CartSettings": 1,
+      "Category": 18,
+      "ChatMessage": 6,
+      "ChatThread": 5,
+      "CmsPage": 190,
+      "Collection": 0,
+      "CollectionProduct": 0,
+      "CommissionExport": 0,
+      "CommissionOverride": 1,
+      "CommissionSetting": 1,
+      "Counter": 2,
+      "Coupon": 3,
+      "CouponRedemption": 2,
+      "Dispute": 1,
+      "EmailDeliveryEvent": 0,
+      "EmailOtpChallenge": 0,
+      "EmailSuppression": 0,
+      "ExportJob": 0,
+      "FeatureFlag": 5,
+      "FeaturedSlot": 4,
+      "FeeHoliday": 1,
+      "ImportJob": 3,
+      "ImportJobItem": 7,
+      "InventoryLog": 2029,
+      "KycDocument": 13,
+      "LedgerAccount": 58,
+      "LedgerLine": 1352,
+      "LedgerTransaction": 450,
+      "MarketplaceBanner": 2,
+      "MarketplaceConnection": 1,
+      "Notification": 496,
+      "NotificationLog": 6554,
+      "NotificationTemplate": 10,
+      "Order": 1207,
+      "OrderItem": 1227,
+      "OrderStatusHistory": 2463,
+      "PaymentGroup": 1218,
+      "PaymentIntent": 14,
+      "PaymentReconciliation": 33,
+      "PaymentWebhookLog": 1232,
+      "Payout": 4,
+      "PayoutBatch": 1,
+      "Plan": 1,
+      "Product": 5162,
+      "ProductCardStyle": 0,
+      "ProductImage": 38,
+      "ProductVariant": 5168,
+      "PspRefundRecord": 33,
+      "Refund": 13,
+      "Review": 5,
+      "Seller": 48,
+      "SellerCampaign": 3,
+      "SellerNote": 1,
+      "SeoMeta": 8,
+      "Session": 404,
+      "Setting": 20,
+      "Shipment": 3,
+      "ShipmentEvent": 15,
+      "ShopperUser": 1175,
+      "ShopperWallet": 1,
+      "Store": 49,
+      "StoreClaim": 1,
+      "StoreDomain": 0,
+      "StoreFollow": 1,
+      "StoreIntegration": 3,
+      "SupportMessage": 4,
+      "SupportTicket": 2,
+      "UserActivity": 27,
+      "UserVoucher": 9,
+      "Voucher": 12,
+      "Wallet": 48,
+      "WebhookDelivery": 37,
+      "WebhookDeliveryAttempt": 2,
+      "WebhookEndpoint": 4,
+      "_prisma_migrations": 4
+    },
+    "structureHashAfter": "24ac8aa602328b63f57c5de3f760fa1e2361d472bc87f6b1d6901f4a7e832efd",
+    "rowCountDeltas": [],
+    "extensions": [
+      {
+        "extname": "pg_stat_statements",
+        "nspname": "extensions"
+      },
+      {
+        "extname": "pg_trgm",
+        "nspname": "nomofee_staging"
+      },
+      {
+        "extname": "pgcrypto",
+        "nspname": "extensions"
+      },
+      {
+        "extname": "plpgsql",
+        "nspname": "pg_catalog"
+      },
+      {
+        "extname": "supabase_vault",
+        "nspname": "vault"
+      },
+      {
+        "extname": "uuid-ossp",
+        "nspname": "extensions"
+      }
+    ],
+    "prismaMigrations": [
+      {
+        "migration_name": "0_init"
+      },
+      {
+        "migration_name": "20261030000000_affiliate_system_baseline"
+      },
+      {
+        "migration_name": "20261031000000_orderitem_affiliate_sponsor_policy_snapshot"
+      },
+      {
+        "migration_name": "20261031000001_affiliate_collection_profile_fk"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "ledger.count",
+      "pass": true,
+      "detail": "15 recorded (expected 15)"
+    },
+    {
+      "name": "ledger.names",
+      "pass": true,
+      "detail": "recorded names == local migration directories"
+    },
+    {
+      "name": "ledger.allFinished",
+      "pass": true,
+      "detail": "0 unfinished rows (expected 0)"
+    },
+    {
+      "name": "ledger.checksums",
+      "pass": true,
+      "detail": "15/15 sha256(file) == recorded checksum"
+    },
+    {
+      "name": "structure.tableSet",
+      "pass": true,
+      "detail": "96 staging tables; missing=[]; extra=[]"
+    },
+    {
+      "name": "index.AffiliatePayout_one_open_per_affiliate",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"AffiliatePayout_one_open_per_affiliate\" ON nomofee_staging.\"AffiliatePayout\" USING btree (\"affiliateId\") WHERE (status = ANY (ARRAY['reques"
+    },
+    {
+      "name": "index.AffiliatePayout_one_open_per_affiliate.partial",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"AffiliatePayout_one_open_per_affiliate\" ON nomofee_staging.\"AffiliatePayout\" USING btree (\"affiliateId\") WHERE (status = ANY (ARRAY['requested'::text, 'processing'::text]))"
+    },
+    {
+      "name": "index.Review_productId_shopperId_key",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"Review_productId_shopperId_key\" ON nomofee_staging.\"Review\" USING btree (\"productId\", \"shopperId\")"
+    },
+    {
+      "name": "index.PaymentGroup_status_expiresAt_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"PaymentGroup_status_expiresAt_idx\" ON nomofee_staging.\"PaymentGroup\" USING btree (status, \"expiresAt\")"
+    },
+    {
+      "name": "index.Order_storeId_status_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Order_storeId_status_idx\" ON nomofee_staging.\"Order\" USING btree (\"storeId\", status)"
+    },
+    {
+      "name": "index.Order_status_deliveredAt_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Order_status_deliveredAt_idx\" ON nomofee_staging.\"Order\" USING btree (status, \"deliveredAt\")"
+    },
+    {
+      "name": "index.PaymentWebhookLog_processed_createdAt_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"PaymentWebhookLog_processed_createdAt_idx\" ON nomofee_staging.\"PaymentWebhookLog\" USING btree (processed, \"createdAt\")"
+    },
+    {
+      "name": "index.InventoryLog_variantId_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"InventoryLog_variantId_idx\" ON nomofee_staging.\"InventoryLog\" USING btree (\"variantId\")"
+    },
+    {
+      "name": "index.PaymentWebhookLog_processed_idx.dropped",
+      "pass": true,
+      "detail": "absent as intended (replaced by processed_createdAt)"
+    },
+    {
+      "name": "index.Product_title_trgm_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Product_title_trgm_idx\" ON nomofee_staging.\"Product\" USING gin (title nomofee_staging.gin_trgm_ops)"
+    },
+    {
+      "name": "index.Product_description_trgm_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Product_description_trgm_idx\" ON nomofee_staging.\"Product\" USING gin (description nomofee_staging.gin_trgm_ops)"
+    },
+    {
+      "name": "index.Store_name_trgm_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Store_name_trgm_idx\" ON nomofee_staging.\"Store\" USING gin (name nomofee_staging.gin_trgm_ops)"
+    },
+    {
+      "name": "index.Category_name_trgm_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"Category_name_trgm_idx\" ON nomofee_staging.\"Category\" USING gin (name nomofee_staging.gin_trgm_ops)"
+    },
+    {
+      "name": "index.EmailDeliveryEvent_provider_providerEventId_key",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"EmailDeliveryEvent_provider_providerEventId_key\" ON nomofee_staging.\"EmailDeliveryEvent\" USING btree (provider, \"providerEventId\")"
+    },
+    {
+      "name": "index.EmailDeliveryEvent_email_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"EmailDeliveryEvent_email_idx\" ON nomofee_staging.\"EmailDeliveryEvent\" USING btree (email)"
+    },
+    {
+      "name": "index.EmailDeliveryEvent_eventType_receivedAt_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"EmailDeliveryEvent_eventType_receivedAt_idx\" ON nomofee_staging.\"EmailDeliveryEvent\" USING btree (\"eventType\", \"receivedAt\")"
+    },
+    {
+      "name": "index.EmailSuppression_email_key",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"EmailSuppression_email_key\" ON nomofee_staging.\"EmailSuppression\" USING btree (email)"
+    },
+    {
+      "name": "index.EmailSuppression_reason_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"EmailSuppression_reason_idx\" ON nomofee_staging.\"EmailSuppression\" USING btree (reason)"
+    },
+    {
+      "name": "index.EmailOtpChallenge_purpose_subjectId_key",
+      "pass": true,
+      "detail": "CREATE UNIQUE INDEX \"EmailOtpChallenge_purpose_subjectId_key\" ON nomofee_staging.\"EmailOtpChallenge\" USING btree (purpose, \"subjectId\")"
+    },
+    {
+      "name": "index.WebhookDeliveryAttempt_deliveryId_attemptNo_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"WebhookDeliveryAttempt_deliveryId_attemptNo_idx\" ON nomofee_staging.\"WebhookDeliveryAttempt\" USING btree (\"deliveryId\", \"attemptNo\")"
+    },
+    {
+      "name": "index.WebhookDelivery_status_createdAt_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"WebhookDelivery_status_createdAt_idx\" ON nomofee_staging.\"WebhookDelivery\" USING btree (status, \"createdAt\")"
+    },
+    {
+      "name": "index.WebhookDelivery_endpointId_idx",
+      "pass": true,
+      "detail": "CREATE INDEX \"WebhookDelivery_endpointId_idx\" ON nomofee_staging.\"WebhookDelivery\" USING btree (\"endpointId\")"
+    },
+    {
+      "name": "column.AdminMfaEnrollment.lastUsedTotpCounter",
+      "pass": true,
+      "detail": "integer, nullable=YES"
+    },
+    {
+      "name": "column.Seller.emailVerifiedAt",
+      "pass": true,
+      "detail": "timestamp without time zone, nullable=YES"
+    },
+    {
+      "name": "column.Review.status.default",
+      "pass": true,
+      "detail": "default='pending'::text"
+    },
+    {
+      "name": "column.Session.token",
+      "pass": true,
+      "detail": "text, nullable=NO, pk-shape preserved"
+    },
+    {
+      "name": "table.EmailOtpChallenge",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "name": "table.EmailDeliveryEvent",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "name": "table.EmailSuppression",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "name": "table.WebhookDeliveryAttempt",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "name": "table.AdminMfaEnrollment",
+      "pass": true,
+      "detail": "present"
+    },
+    {
+      "name": "data.allTablesEmpty",
+      "pass": true,
+      "detail": "all 96 staging tables have 0 rows (session-token UPDATE touched 0 rows)"
+    },
+    {
+      "name": "public.structureUnchanged",
+      "pass": true,
+      "detail": "structural sha256 now=24ac8aa602328b63… vs pre=24ac8aa602328b63… (tables+rowcounts+indexes+constraints+views+functions+triggers)"
+    },
+    {
+      "name": "public.rowCountDeltas",
+      "pass": true,
+      "detail": "zero row-count deltas vs pre-flight"
+    },
+    {
+      "name": "public.noMigrationObjectsLeaked",
+      "pass": true,
+      "detail": "no trgm/feature-migration object names present in public (240/240 index defs byte-identical to pre-flight)"
+    },
+    {
+      "name": "public.prismaLedgerUnchanged",
+      "pass": true,
+      "detail": "4 rows (pre: 4) — deploy wrote nothing to public's ledger"
+    },
+    {
+      "name": "public.sessionRowsUnchanged",
+      "pass": true,
+      "detail": "404 rows, sha256 082b2b0d84c6d37a… == backup"
+    },
+    {
+      "name": "extension.pg_trgm.isolated",
+      "pass": true,
+      "detail": "installed in schema \"nomofee_staging\""
+    },
+    {
+      "name": "extension.inventoryDelta",
+      "pass": true,
+      "detail": "catalog additions from this deploy: [\"pg_trgm\"] (expected exactly [\"pg_trgm\"], isolated in nomofee_staging)"
+    }
+  ],
+  "verdict": "GREEN — all 44 checks passed."
+}

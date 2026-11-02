@@ -1,0 +1,21 @@
+// PHASE 3 / STEP 3 — THROWAWAY MECHANICS PROBE (not part of the app).
+// Exists ONLY to verify, on a disposable schema, exactly how
+// `prisma migrate deploy` behaves with `?schema=<name>` on the Supavisor
+// session pooler BEFORE the authorized nomofee_staging run:
+//   • whether unqualified DDL lands in <name> (search_path behavior),
+//   • where _prisma_migrations is created,
+//   • whether CREATE EXTENSION IF NOT EXISTS pg_trgm installs into <name>,
+//   • whether gin_trgm_ops resolves under that search_path,
+//   • whether an unqualified DROP INDEX stays scoped to <name>.
+// Deleted-schema teardown happens right after inspection; see
+// docs/staging/phase3-step3-staging-migration-report.md for results.
+// NEVER point this at a schema you care about.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PROBE_DATABASE_URL")
+}

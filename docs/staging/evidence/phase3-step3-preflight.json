@@ -1,0 +1,2352 @@
+{
+  "capturedAt": "2026-11-02T12:05:11.938Z",
+  "app": {
+    "healthUrl": "http://127.0.0.1:3000/api/health",
+    "nodeEnv": "development",
+    "dbFingerprint": "aa338c2b6272e14c",
+    "status": "healthy",
+    "db": "up"
+  },
+  "target": {
+    "urlHost": "aws-0-ap-southeast-1.pooler.supabase.com:5432",
+    "database": "postgres",
+    "user": "postgres",
+    "oid": "5",
+    "serverAddr": "2406:da18:e5c:b702:7167:733e:d6a:b7e9/128",
+    "serverPort": 5432,
+    "maxConnections": "60",
+    "computedFingerprint": "aa338c2b6272e14c",
+    "roleDefaultSearchPath": "\"\\$user\", public, extensions",
+    "serverVersion": "PostgreSQL 17.11 on aarch64-unknown-linux-gnu",
+    "serverEncoding": "UTF8"
+  },
+  "nonProductionEvidence": {
+    "databases": [
+      "postgres",
+      "template1"
+    ],
+    "schemas": [
+      {
+        "nspname": "auth",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "extensions",
+        "owner": "postgres"
+      },
+      {
+        "nspname": "graphql",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "graphql_public",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "information_schema",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "nomofee_staging",
+        "owner": "postgres"
+      },
+      {
+        "nspname": "pgbouncer",
+        "owner": "pgbouncer"
+      },
+      {
+        "nspname": "public",
+        "owner": "pg_database_owner"
+      },
+      {
+        "nspname": "realtime",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "storage",
+        "owner": "supabase_admin"
+      },
+      {
+        "nspname": "vault",
+        "owner": "supabase_admin"
+      }
+    ],
+    "loginRoles": [
+      "authenticator",
+      "pgbouncer",
+      "postgres",
+      "supabase_admin",
+      "supabase_auth_admin",
+      "supabase_etl_admin",
+      "supabase_read_only_user",
+      "supabase_replication_admin",
+      "supabase_storage_admin"
+    ],
+    "userTotal": 1175,
+    "emailDomains": [
+      {
+        "domain": "lt.test",
+        "n": 992
+      },
+      {
+        "domain": "lt.nomofee.test",
+        "n": 120
+      },
+      {
+        "domain": "verify.nomofee.io",
+        "n": 40
+      },
+      {
+        "domain": "probe.local",
+        "n": 13
+      },
+      {
+        "domain": "nomofee.test",
+        "n": 5
+      },
+      {
+        "domain": "nomofee.io",
+        "n": 3
+      },
+      {
+        "domain": "gmail.com",
+        "n": 1
+      },
+      {
+        "domain": "example.com",
+        "n": 1
+      }
+    ],
+    "dbSize": "40 MB",
+    "dbSizeBytes": 42423987,
+    "note": "Only Supabase platform databases/schemas/login roles present; data is the sandbox dev dataset (seeded stores, test email domains); the only app answering for this database reports NODE_ENV=development. No production deployment of NOMOFEE exists (no production credentials, hosts, or domains anywhere in this sandbox)."
+  },
+  "stagingTarget": {
+    "schema": "nomofee_staging",
+    "existedBefore": true,
+    "owner": "postgres",
+    "objectCountBefore": 0
+  },
+  "pgTrgm": null,
+  "publicBaseline": {
+    "tableCount": 97,
+    "rowCount": {
+      "ActivityLog": 974,
+      "Address": 5,
+      "AdminAuditLog": 128,
+      "AdminMfaEnrollment": 1,
+      "AdminUser": 4,
+      "AffiliateAttributionTouch": 14,
+      "AffiliateCollection": 0,
+      "AffiliateCollectionItem": 0,
+      "AffiliateCommission": 12,
+      "AffiliateCommissionEntry": 17,
+      "AffiliateLink": 9,
+      "AffiliatePayout": 2,
+      "AffiliateProfile": 15,
+      "AffiliateReferralTouch": 6,
+      "AffiliateSponsorAudit": 0,
+      "AnalyticsEvent": 92,
+      "Announcement": 1,
+      "ApiKey": 0,
+      "BankAccount": 4,
+      "Campaign": 2,
+      "Cart": 129,
+      "CartItem": 105,
+      "CartSettings": 1,
+      "Category": 18,
+      "ChatMessage": 6,
+      "ChatThread": 5,
+      "CmsPage": 190,
+      "Collection": 0,
+      "CollectionProduct": 0,
+      "CommissionExport": 0,
+      "CommissionOverride": 1,
+      "CommissionSetting": 1,
+      "Counter": 2,
+      "Coupon": 3,
+      "CouponRedemption": 2,
+      "Dispute": 1,
+      "EmailDeliveryEvent": 0,
+      "EmailOtpChallenge": 0,
+      "EmailSuppression": 0,
+      "ExportJob": 0,
+      "FeatureFlag": 5,
+      "FeaturedSlot": 4,
+      "FeeHoliday": 1,
+      "ImportJob": 3,
+      "ImportJobItem": 7,
+      "InventoryLog": 2029,
+      "KycDocument": 13,
+      "LedgerAccount": 58,
+      "LedgerLine": 1352,
+      "LedgerTransaction": 450,
+      "MarketplaceBanner": 2,
+      "MarketplaceConnection": 1,
+      "Notification": 496,
+      "NotificationLog": 6554,
+      "NotificationTemplate": 10,
+      "Order": 1207,
+      "OrderItem": 1227,
+      "OrderStatusHistory": 2463,
+      "PaymentGroup": 1218,
+      "PaymentIntent": 14,
+      "PaymentReconciliation": 33,
+      "PaymentWebhookLog": 1232,
+      "Payout": 4,
+      "PayoutBatch": 1,
+      "Plan": 1,
+      "Product": 5162,
+      "ProductCardStyle": 0,
+      "ProductImage": 38,
+      "ProductVariant": 5168,
+      "PspRefundRecord": 33,
+      "Refund": 13,
+      "Review": 5,
+      "Seller": 48,
+      "SellerCampaign": 3,
+      "SellerNote": 1,
+      "SeoMeta": 8,
+      "Session": 404,
+      "Setting": 20,
+      "Shipment": 3,
+      "ShipmentEvent": 15,
+      "ShopperUser": 1175,
+      "ShopperWallet": 1,
+      "Store": 49,
+      "StoreClaim": 1,
+      "StoreDomain": 0,
+      "StoreFollow": 1,
+      "StoreIntegration": 3,
+      "SupportMessage": 4,
+      "SupportTicket": 2,
+      "UserActivity": 27,
+      "UserVoucher": 9,
+      "Voucher": 12,
+      "Wallet": 48,
+      "WebhookDelivery": 37,
+      "WebhookDeliveryAttempt": 2,
+      "WebhookEndpoint": 4,
+      "_prisma_migrations": 4
+    },
+    "indexCount": 240,
+    "indexes": [
+      {
+        "tablename": "ActivityLog",
+        "indexname": "ActivityLog_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ActivityLog_pkey\" ON public.\"ActivityLog\" USING btree (id)"
+      },
+      {
+        "tablename": "Address",
+        "indexname": "Address_ownerToken_idx",
+        "indexdef": "CREATE INDEX \"Address_ownerToken_idx\" ON public.\"Address\" USING btree (\"ownerToken\")"
+      },
+      {
+        "tablename": "Address",
+        "indexname": "Address_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Address_pkey\" ON public.\"Address\" USING btree (id)"
+      },
+      {
+        "tablename": "Address",
+        "indexname": "Address_shopperId_idx",
+        "indexdef": "CREATE INDEX \"Address_shopperId_idx\" ON public.\"Address\" USING btree (\"shopperId\")"
+      },
+      {
+        "tablename": "AdminAuditLog",
+        "indexname": "AdminAuditLog_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AdminAuditLog_pkey\" ON public.\"AdminAuditLog\" USING btree (id)"
+      },
+      {
+        "tablename": "AdminMfaEnrollment",
+        "indexname": "AdminMfaEnrollment_adminId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AdminMfaEnrollment_adminId_key\" ON public.\"AdminMfaEnrollment\" USING btree (\"adminId\")"
+      },
+      {
+        "tablename": "AdminMfaEnrollment",
+        "indexname": "AdminMfaEnrollment_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AdminMfaEnrollment_pkey\" ON public.\"AdminMfaEnrollment\" USING btree (id)"
+      },
+      {
+        "tablename": "AdminUser",
+        "indexname": "AdminUser_email_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AdminUser_email_key\" ON public.\"AdminUser\" USING btree (email)"
+      },
+      {
+        "tablename": "AdminUser",
+        "indexname": "AdminUser_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AdminUser_pkey\" ON public.\"AdminUser\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateAttributionTouch",
+        "indexname": "AffiliateAttributionTouch_affiliateId_clickedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateAttributionTouch_affiliateId_clickedAt_idx\" ON public.\"AffiliateAttributionTouch\" USING btree (\"affiliateId\", \"clickedAt\")"
+      },
+      {
+        "tablename": "AffiliateAttributionTouch",
+        "indexname": "AffiliateAttributionTouch_clickedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateAttributionTouch_clickedAt_idx\" ON public.\"AffiliateAttributionTouch\" USING btree (\"clickedAt\")"
+      },
+      {
+        "tablename": "AffiliateAttributionTouch",
+        "indexname": "AffiliateAttributionTouch_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateAttributionTouch_pkey\" ON public.\"AffiliateAttributionTouch\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateAttributionTouch",
+        "indexname": "AffiliateAttributionTouch_visitorId_productId_clickedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateAttributionTouch_visitorId_productId_clickedAt_idx\" ON public.\"AffiliateAttributionTouch\" USING btree (\"visitorId\", \"productId\", \"clickedAt\")"
+      },
+      {
+        "tablename": "AffiliateAttributionTouch",
+        "indexname": "AffiliateAttributionTouch_visitorId_storeId_clickedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateAttributionTouch_visitorId_storeId_clickedAt_idx\" ON public.\"AffiliateAttributionTouch\" USING btree (\"visitorId\", \"storeId\", \"clickedAt\")"
+      },
+      {
+        "tablename": "AffiliateCollection",
+        "indexname": "AffiliateCollection_affiliateId_status_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCollection_affiliateId_status_idx\" ON public.\"AffiliateCollection\" USING btree (\"affiliateId\", status)"
+      },
+      {
+        "tablename": "AffiliateCollection",
+        "indexname": "AffiliateCollection_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCollection_pkey\" ON public.\"AffiliateCollection\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateCollection",
+        "indexname": "AffiliateCollection_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCollection_slug_key\" ON public.\"AffiliateCollection\" USING btree (slug)"
+      },
+      {
+        "tablename": "AffiliateCollectionItem",
+        "indexname": "AffiliateCollectionItem_collectionId_productId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCollectionItem_collectionId_productId_key\" ON public.\"AffiliateCollectionItem\" USING btree (\"collectionId\", \"productId\")"
+      },
+      {
+        "tablename": "AffiliateCollectionItem",
+        "indexname": "AffiliateCollectionItem_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCollectionItem_pkey\" ON public.\"AffiliateCollectionItem\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateCollectionItem",
+        "indexname": "AffiliateCollectionItem_productId_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCollectionItem_productId_idx\" ON public.\"AffiliateCollectionItem\" USING btree (\"productId\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_affiliateId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommission_affiliateId_createdAt_idx\" ON public.\"AffiliateCommission\" USING btree (\"affiliateId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_orderId_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommission_orderId_idx\" ON public.\"AffiliateCommission\" USING btree (\"orderId\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_orderItemId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCommission_orderItemId_key\" ON public.\"AffiliateCommission\" USING btree (\"orderItemId\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCommission_pkey\" ON public.\"AffiliateCommission\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_sponsorId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommission_sponsorId_createdAt_idx\" ON public.\"AffiliateCommission\" USING btree (\"sponsorId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_status_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommission_status_createdAt_idx\" ON public.\"AffiliateCommission\" USING btree (status, \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateCommission",
+        "indexname": "AffiliateCommission_storeId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommission_storeId_createdAt_idx\" ON public.\"AffiliateCommission\" USING btree (\"storeId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateCommissionEntry",
+        "indexname": "AffiliateCommissionEntry_beneficiaryAffiliateId_status_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommissionEntry_beneficiaryAffiliateId_status_idx\" ON public.\"AffiliateCommissionEntry\" USING btree (\"beneficiaryAffiliateId\", status)"
+      },
+      {
+        "tablename": "AffiliateCommissionEntry",
+        "indexname": "AffiliateCommissionEntry_commissionId_role_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCommissionEntry_commissionId_role_key\" ON public.\"AffiliateCommissionEntry\" USING btree (\"commissionId\", role)"
+      },
+      {
+        "tablename": "AffiliateCommissionEntry",
+        "indexname": "AffiliateCommissionEntry_payoutId_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommissionEntry_payoutId_idx\" ON public.\"AffiliateCommissionEntry\" USING btree (\"payoutId\")"
+      },
+      {
+        "tablename": "AffiliateCommissionEntry",
+        "indexname": "AffiliateCommissionEntry_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateCommissionEntry_pkey\" ON public.\"AffiliateCommissionEntry\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateCommissionEntry",
+        "indexname": "AffiliateCommissionEntry_status_availableAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateCommissionEntry_status_availableAt_idx\" ON public.\"AffiliateCommissionEntry\" USING btree (status, \"availableAt\")"
+      },
+      {
+        "tablename": "AffiliateLink",
+        "indexname": "AffiliateLink_affiliateId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateLink_affiliateId_createdAt_idx\" ON public.\"AffiliateLink\" USING btree (\"affiliateId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateLink",
+        "indexname": "AffiliateLink_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateLink_code_key\" ON public.\"AffiliateLink\" USING btree (code)"
+      },
+      {
+        "tablename": "AffiliateLink",
+        "indexname": "AffiliateLink_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateLink_pkey\" ON public.\"AffiliateLink\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateLink",
+        "indexname": "AffiliateLink_status_code_idx",
+        "indexdef": "CREATE INDEX \"AffiliateLink_status_code_idx\" ON public.\"AffiliateLink\" USING btree (status, code)"
+      },
+      {
+        "tablename": "AffiliatePayout",
+        "indexname": "AffiliatePayout_affiliateId_status_idx",
+        "indexdef": "CREATE INDEX \"AffiliatePayout_affiliateId_status_idx\" ON public.\"AffiliatePayout\" USING btree (\"affiliateId\", status)"
+      },
+      {
+        "tablename": "AffiliatePayout",
+        "indexname": "AffiliatePayout_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliatePayout_pkey\" ON public.\"AffiliatePayout\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliatePayout",
+        "indexname": "AffiliatePayout_status_requestedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliatePayout_status_requestedAt_idx\" ON public.\"AffiliatePayout\" USING btree (status, \"requestedAt\")"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateProfile_code_key\" ON public.\"AffiliateProfile\" USING btree (code)"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateProfile_pkey\" ON public.\"AffiliateProfile\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateProfile_slug_key\" ON public.\"AffiliateProfile\" USING btree (slug)"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_sponsorId_idx",
+        "indexdef": "CREATE INDEX \"AffiliateProfile_sponsorId_idx\" ON public.\"AffiliateProfile\" USING btree (\"sponsorId\")"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_status_idx",
+        "indexdef": "CREATE INDEX \"AffiliateProfile_status_idx\" ON public.\"AffiliateProfile\" USING btree (status)"
+      },
+      {
+        "tablename": "AffiliateProfile",
+        "indexname": "AffiliateProfile_userId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateProfile_userId_key\" ON public.\"AffiliateProfile\" USING btree (\"userId\")"
+      },
+      {
+        "tablename": "AffiliateReferralTouch",
+        "indexname": "AffiliateReferralTouch_affiliateId_touchedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateReferralTouch_affiliateId_touchedAt_idx\" ON public.\"AffiliateReferralTouch\" USING btree (\"affiliateId\", \"touchedAt\")"
+      },
+      {
+        "tablename": "AffiliateReferralTouch",
+        "indexname": "AffiliateReferralTouch_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateReferralTouch_pkey\" ON public.\"AffiliateReferralTouch\" USING btree (id)"
+      },
+      {
+        "tablename": "AffiliateReferralTouch",
+        "indexname": "AffiliateReferralTouch_visitorId_touchedAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateReferralTouch_visitorId_touchedAt_idx\" ON public.\"AffiliateReferralTouch\" USING btree (\"visitorId\", \"touchedAt\")"
+      },
+      {
+        "tablename": "AffiliateSponsorAudit",
+        "indexname": "AffiliateSponsorAudit_affiliateId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AffiliateSponsorAudit_affiliateId_createdAt_idx\" ON public.\"AffiliateSponsorAudit\" USING btree (\"affiliateId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AffiliateSponsorAudit",
+        "indexname": "AffiliateSponsorAudit_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AffiliateSponsorAudit_pkey\" ON public.\"AffiliateSponsorAudit\" USING btree (id)"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_affiliateId_eventType_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AnalyticsEvent_affiliateId_eventType_createdAt_idx\" ON public.\"AnalyticsEvent\" USING btree (\"affiliateId\", \"eventType\", \"createdAt\")"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_campaignId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AnalyticsEvent_campaignId_createdAt_idx\" ON public.\"AnalyticsEvent\" USING btree (\"campaignId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_dedupKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"AnalyticsEvent_dedupKey_key\" ON public.\"AnalyticsEvent\" USING btree (\"dedupKey\")"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"AnalyticsEvent_pkey\" ON public.\"AnalyticsEvent\" USING btree (id)"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_storeId_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AnalyticsEvent_storeId_createdAt_idx\" ON public.\"AnalyticsEvent\" USING btree (\"storeId\", \"createdAt\")"
+      },
+      {
+        "tablename": "AnalyticsEvent",
+        "indexname": "AnalyticsEvent_storeId_eventType_createdAt_idx",
+        "indexdef": "CREATE INDEX \"AnalyticsEvent_storeId_eventType_createdAt_idx\" ON public.\"AnalyticsEvent\" USING btree (\"storeId\", \"eventType\", \"createdAt\")"
+      },
+      {
+        "tablename": "Announcement",
+        "indexname": "Announcement_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Announcement_pkey\" ON public.\"Announcement\" USING btree (id)"
+      },
+      {
+        "tablename": "ApiKey",
+        "indexname": "ApiKey_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ApiKey_pkey\" ON public.\"ApiKey\" USING btree (id)"
+      },
+      {
+        "tablename": "BankAccount",
+        "indexname": "BankAccount_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"BankAccount_pkey\" ON public.\"BankAccount\" USING btree (id)"
+      },
+      {
+        "tablename": "Campaign",
+        "indexname": "Campaign_isPublished_startAt_endAt_idx",
+        "indexdef": "CREATE INDEX \"Campaign_isPublished_startAt_endAt_idx\" ON public.\"Campaign\" USING btree (\"isPublished\", \"startAt\", \"endAt\")"
+      },
+      {
+        "tablename": "Campaign",
+        "indexname": "Campaign_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Campaign_pkey\" ON public.\"Campaign\" USING btree (id)"
+      },
+      {
+        "tablename": "Cart",
+        "indexname": "Cart_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Cart_pkey\" ON public.\"Cart\" USING btree (id)"
+      },
+      {
+        "tablename": "Cart",
+        "indexname": "Cart_shopperId_idx",
+        "indexdef": "CREATE INDEX \"Cart_shopperId_idx\" ON public.\"Cart\" USING btree (\"shopperId\")"
+      },
+      {
+        "tablename": "Cart",
+        "indexname": "Cart_shopperId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Cart_shopperId_key\" ON public.\"Cart\" USING btree (\"shopperId\")"
+      },
+      {
+        "tablename": "Cart",
+        "indexname": "Cart_token_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Cart_token_key\" ON public.\"Cart\" USING btree (token)"
+      },
+      {
+        "tablename": "CartItem",
+        "indexname": "CartItem_cartId_idx",
+        "indexdef": "CREATE INDEX \"CartItem_cartId_idx\" ON public.\"CartItem\" USING btree (\"cartId\")"
+      },
+      {
+        "tablename": "CartItem",
+        "indexname": "CartItem_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CartItem_pkey\" ON public.\"CartItem\" USING btree (id)"
+      },
+      {
+        "tablename": "CartItem",
+        "indexname": "CartItem_variantId_idx",
+        "indexdef": "CREATE INDEX \"CartItem_variantId_idx\" ON public.\"CartItem\" USING btree (\"variantId\")"
+      },
+      {
+        "tablename": "CartSettings",
+        "indexname": "CartSettings_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CartSettings_pkey\" ON public.\"CartSettings\" USING btree (id)"
+      },
+      {
+        "tablename": "CartSettings",
+        "indexname": "CartSettings_storeId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"CartSettings_storeId_key\" ON public.\"CartSettings\" USING btree (\"storeId\")"
+      },
+      {
+        "tablename": "Category",
+        "indexname": "Category_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Category_pkey\" ON public.\"Category\" USING btree (id)"
+      },
+      {
+        "tablename": "Category",
+        "indexname": "Category_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Category_slug_key\" ON public.\"Category\" USING btree (slug)"
+      },
+      {
+        "tablename": "ChatMessage",
+        "indexname": "ChatMessage_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ChatMessage_pkey\" ON public.\"ChatMessage\" USING btree (id)"
+      },
+      {
+        "tablename": "ChatMessage",
+        "indexname": "ChatMessage_threadId_readAt_idx",
+        "indexdef": "CREATE INDEX \"ChatMessage_threadId_readAt_idx\" ON public.\"ChatMessage\" USING btree (\"threadId\", \"readAt\")"
+      },
+      {
+        "tablename": "ChatThread",
+        "indexname": "ChatThread_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ChatThread_pkey\" ON public.\"ChatThread\" USING btree (id)"
+      },
+      {
+        "tablename": "ChatThread",
+        "indexname": "ChatThread_shopperId_storeId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ChatThread_shopperId_storeId_key\" ON public.\"ChatThread\" USING btree (\"shopperId\", \"storeId\")"
+      },
+      {
+        "tablename": "CmsPage",
+        "indexname": "CmsPage_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CmsPage_pkey\" ON public.\"CmsPage\" USING btree (id)"
+      },
+      {
+        "tablename": "CmsPage",
+        "indexname": "CmsPage_storeId_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"CmsPage_storeId_slug_key\" ON public.\"CmsPage\" USING btree (\"storeId\", slug)"
+      },
+      {
+        "tablename": "Collection",
+        "indexname": "Collection_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Collection_pkey\" ON public.\"Collection\" USING btree (id)"
+      },
+      {
+        "tablename": "Collection",
+        "indexname": "Collection_storeId_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Collection_storeId_slug_key\" ON public.\"Collection\" USING btree (\"storeId\", slug)"
+      },
+      {
+        "tablename": "CollectionProduct",
+        "indexname": "CollectionProduct_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CollectionProduct_pkey\" ON public.\"CollectionProduct\" USING btree (id)"
+      },
+      {
+        "tablename": "CommissionExport",
+        "indexname": "CommissionExport_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CommissionExport_pkey\" ON public.\"CommissionExport\" USING btree (id)"
+      },
+      {
+        "tablename": "CommissionOverride",
+        "indexname": "CommissionOverride_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CommissionOverride_pkey\" ON public.\"CommissionOverride\" USING btree (id)"
+      },
+      {
+        "tablename": "CommissionSetting",
+        "indexname": "CommissionSetting_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CommissionSetting_pkey\" ON public.\"CommissionSetting\" USING btree (id)"
+      },
+      {
+        "tablename": "Counter",
+        "indexname": "Counter_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Counter_pkey\" ON public.\"Counter\" USING btree (key)"
+      },
+      {
+        "tablename": "Coupon",
+        "indexname": "Coupon_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Coupon_code_key\" ON public.\"Coupon\" USING btree (code)"
+      },
+      {
+        "tablename": "Coupon",
+        "indexname": "Coupon_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Coupon_pkey\" ON public.\"Coupon\" USING btree (id)"
+      },
+      {
+        "tablename": "CouponRedemption",
+        "indexname": "CouponRedemption_orderId_idx",
+        "indexdef": "CREATE INDEX \"CouponRedemption_orderId_idx\" ON public.\"CouponRedemption\" USING btree (\"orderId\")"
+      },
+      {
+        "tablename": "CouponRedemption",
+        "indexname": "CouponRedemption_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"CouponRedemption_pkey\" ON public.\"CouponRedemption\" USING btree (id)"
+      },
+      {
+        "tablename": "Dispute",
+        "indexname": "Dispute_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Dispute_pkey\" ON public.\"Dispute\" USING btree (id)"
+      },
+      {
+        "tablename": "EmailDeliveryEvent",
+        "indexname": "EmailDeliveryEvent_email_idx",
+        "indexdef": "CREATE INDEX \"EmailDeliveryEvent_email_idx\" ON public.\"EmailDeliveryEvent\" USING btree (email)"
+      },
+      {
+        "tablename": "EmailDeliveryEvent",
+        "indexname": "EmailDeliveryEvent_eventType_receivedAt_idx",
+        "indexdef": "CREATE INDEX \"EmailDeliveryEvent_eventType_receivedAt_idx\" ON public.\"EmailDeliveryEvent\" USING btree (\"eventType\", \"receivedAt\")"
+      },
+      {
+        "tablename": "EmailDeliveryEvent",
+        "indexname": "EmailDeliveryEvent_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailDeliveryEvent_pkey\" ON public.\"EmailDeliveryEvent\" USING btree (id)"
+      },
+      {
+        "tablename": "EmailDeliveryEvent",
+        "indexname": "EmailDeliveryEvent_provider_providerEventId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailDeliveryEvent_provider_providerEventId_key\" ON public.\"EmailDeliveryEvent\" USING btree (provider, \"providerEventId\")"
+      },
+      {
+        "tablename": "EmailOtpChallenge",
+        "indexname": "EmailOtpChallenge_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailOtpChallenge_pkey\" ON public.\"EmailOtpChallenge\" USING btree (id)"
+      },
+      {
+        "tablename": "EmailOtpChallenge",
+        "indexname": "EmailOtpChallenge_purpose_subjectId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailOtpChallenge_purpose_subjectId_key\" ON public.\"EmailOtpChallenge\" USING btree (purpose, \"subjectId\")"
+      },
+      {
+        "tablename": "EmailSuppression",
+        "indexname": "EmailSuppression_email_key",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailSuppression_email_key\" ON public.\"EmailSuppression\" USING btree (email)"
+      },
+      {
+        "tablename": "EmailSuppression",
+        "indexname": "EmailSuppression_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"EmailSuppression_pkey\" ON public.\"EmailSuppression\" USING btree (id)"
+      },
+      {
+        "tablename": "EmailSuppression",
+        "indexname": "EmailSuppression_reason_idx",
+        "indexdef": "CREATE INDEX \"EmailSuppression_reason_idx\" ON public.\"EmailSuppression\" USING btree (reason)"
+      },
+      {
+        "tablename": "ExportJob",
+        "indexname": "ExportJob_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ExportJob_pkey\" ON public.\"ExportJob\" USING btree (id)"
+      },
+      {
+        "tablename": "FeatureFlag",
+        "indexname": "FeatureFlag_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"FeatureFlag_pkey\" ON public.\"FeatureFlag\" USING btree (key)"
+      },
+      {
+        "tablename": "FeaturedSlot",
+        "indexname": "FeaturedSlot_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"FeaturedSlot_pkey\" ON public.\"FeaturedSlot\" USING btree (id)"
+      },
+      {
+        "tablename": "FeeHoliday",
+        "indexname": "FeeHoliday_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"FeeHoliday_pkey\" ON public.\"FeeHoliday\" USING btree (id)"
+      },
+      {
+        "tablename": "ImportJob",
+        "indexname": "ImportJob_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ImportJob_pkey\" ON public.\"ImportJob\" USING btree (id)"
+      },
+      {
+        "tablename": "ImportJob",
+        "indexname": "ImportJob_platform_createdAt_idx",
+        "indexdef": "CREATE INDEX \"ImportJob_platform_createdAt_idx\" ON public.\"ImportJob\" USING btree (platform, \"createdAt\")"
+      },
+      {
+        "tablename": "ImportJob",
+        "indexname": "ImportJob_status_idx",
+        "indexdef": "CREATE INDEX \"ImportJob_status_idx\" ON public.\"ImportJob\" USING btree (status)"
+      },
+      {
+        "tablename": "ImportJob",
+        "indexname": "ImportJob_trackingToken_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ImportJob_trackingToken_key\" ON public.\"ImportJob\" USING btree (\"trackingToken\")"
+      },
+      {
+        "tablename": "ImportJobItem",
+        "indexname": "ImportJobItem_jobId_sourcePlatform_sourceProductId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ImportJobItem_jobId_sourcePlatform_sourceProductId_key\" ON public.\"ImportJobItem\" USING btree (\"jobId\", \"sourcePlatform\", \"sourceProductId\")"
+      },
+      {
+        "tablename": "ImportJobItem",
+        "indexname": "ImportJobItem_jobId_status_idx",
+        "indexdef": "CREATE INDEX \"ImportJobItem_jobId_status_idx\" ON public.\"ImportJobItem\" USING btree (\"jobId\", status)"
+      },
+      {
+        "tablename": "ImportJobItem",
+        "indexname": "ImportJobItem_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ImportJobItem_pkey\" ON public.\"ImportJobItem\" USING btree (id)"
+      },
+      {
+        "tablename": "InventoryLog",
+        "indexname": "InventoryLog_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"InventoryLog_pkey\" ON public.\"InventoryLog\" USING btree (id)"
+      },
+      {
+        "tablename": "InventoryLog",
+        "indexname": "InventoryLog_variantId_idx",
+        "indexdef": "CREATE INDEX \"InventoryLog_variantId_idx\" ON public.\"InventoryLog\" USING btree (\"variantId\")"
+      },
+      {
+        "tablename": "KycDocument",
+        "indexname": "KycDocument_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"KycDocument_pkey\" ON public.\"KycDocument\" USING btree (id)"
+      },
+      {
+        "tablename": "LedgerAccount",
+        "indexname": "LedgerAccount_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"LedgerAccount_pkey\" ON public.\"LedgerAccount\" USING btree (code)"
+      },
+      {
+        "tablename": "LedgerLine",
+        "indexname": "LedgerLine_accountCode_idx",
+        "indexdef": "CREATE INDEX \"LedgerLine_accountCode_idx\" ON public.\"LedgerLine\" USING btree (\"accountCode\")"
+      },
+      {
+        "tablename": "LedgerLine",
+        "indexname": "LedgerLine_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"LedgerLine_pkey\" ON public.\"LedgerLine\" USING btree (id)"
+      },
+      {
+        "tablename": "LedgerLine",
+        "indexname": "LedgerLine_refType_refId_idx",
+        "indexdef": "CREATE INDEX \"LedgerLine_refType_refId_idx\" ON public.\"LedgerLine\" USING btree (\"refType\", \"refId\")"
+      },
+      {
+        "tablename": "LedgerLine",
+        "indexname": "LedgerLine_txnId_idx",
+        "indexdef": "CREATE INDEX \"LedgerLine_txnId_idx\" ON public.\"LedgerLine\" USING btree (\"txnId\")"
+      },
+      {
+        "tablename": "LedgerTransaction",
+        "indexname": "LedgerTransaction_dedupKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"LedgerTransaction_dedupKey_key\" ON public.\"LedgerTransaction\" USING btree (\"dedupKey\")"
+      },
+      {
+        "tablename": "LedgerTransaction",
+        "indexname": "LedgerTransaction_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"LedgerTransaction_pkey\" ON public.\"LedgerTransaction\" USING btree (id)"
+      },
+      {
+        "tablename": "LedgerTransaction",
+        "indexname": "LedgerTransaction_refType_refId_idx",
+        "indexdef": "CREATE INDEX \"LedgerTransaction_refType_refId_idx\" ON public.\"LedgerTransaction\" USING btree (\"refType\", \"refId\")"
+      },
+      {
+        "tablename": "MarketplaceBanner",
+        "indexname": "MarketplaceBanner_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"MarketplaceBanner_pkey\" ON public.\"MarketplaceBanner\" USING btree (id)"
+      },
+      {
+        "tablename": "MarketplaceConnection",
+        "indexname": "MarketplaceConnection_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"MarketplaceConnection_pkey\" ON public.\"MarketplaceConnection\" USING btree (id)"
+      },
+      {
+        "tablename": "MarketplaceConnection",
+        "indexname": "MarketplaceConnection_platform_shopId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"MarketplaceConnection_platform_shopId_key\" ON public.\"MarketplaceConnection\" USING btree (platform, \"shopId\")"
+      },
+      {
+        "tablename": "MarketplaceConnection",
+        "indexname": "MarketplaceConnection_sellerId_idx",
+        "indexdef": "CREATE INDEX \"MarketplaceConnection_sellerId_idx\" ON public.\"MarketplaceConnection\" USING btree (\"sellerId\")"
+      },
+      {
+        "tablename": "MarketplaceConnection",
+        "indexname": "MarketplaceConnection_storeId_idx",
+        "indexdef": "CREATE INDEX \"MarketplaceConnection_storeId_idx\" ON public.\"MarketplaceConnection\" USING btree (\"storeId\")"
+      },
+      {
+        "tablename": "Notification",
+        "indexname": "Notification_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Notification_pkey\" ON public.\"Notification\" USING btree (id)"
+      },
+      {
+        "tablename": "Notification",
+        "indexname": "Notification_shopperUserId_readAt_idx",
+        "indexdef": "CREATE INDEX \"Notification_shopperUserId_readAt_idx\" ON public.\"Notification\" USING btree (\"shopperUserId\", \"readAt\")"
+      },
+      {
+        "tablename": "NotificationLog",
+        "indexname": "NotificationLog_channel_dedupKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"NotificationLog_channel_dedupKey_key\" ON public.\"NotificationLog\" USING btree (channel, \"dedupKey\")"
+      },
+      {
+        "tablename": "NotificationLog",
+        "indexname": "NotificationLog_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"NotificationLog_pkey\" ON public.\"NotificationLog\" USING btree (id)"
+      },
+      {
+        "tablename": "NotificationTemplate",
+        "indexname": "NotificationTemplate_event_channel_key",
+        "indexdef": "CREATE UNIQUE INDEX \"NotificationTemplate_event_channel_key\" ON public.\"NotificationTemplate\" USING btree (event, channel)"
+      },
+      {
+        "tablename": "NotificationTemplate",
+        "indexname": "NotificationTemplate_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"NotificationTemplate_pkey\" ON public.\"NotificationTemplate\" USING btree (id)"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_idemKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Order_idemKey_key\" ON public.\"Order\" USING btree (\"idemKey\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_orderNumber_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Order_orderNumber_key\" ON public.\"Order\" USING btree (\"orderNumber\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_paidAt_idx",
+        "indexdef": "CREATE INDEX \"Order_paidAt_idx\" ON public.\"Order\" USING btree (\"paidAt\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_paymentGroupId_idx",
+        "indexdef": "CREATE INDEX \"Order_paymentGroupId_idx\" ON public.\"Order\" USING btree (\"paymentGroupId\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Order_pkey\" ON public.\"Order\" USING btree (id)"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_shopperId_idx",
+        "indexdef": "CREATE INDEX \"Order_shopperId_idx\" ON public.\"Order\" USING btree (\"shopperId\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_status_deliveredAt_idx",
+        "indexdef": "CREATE INDEX \"Order_status_deliveredAt_idx\" ON public.\"Order\" USING btree (status, \"deliveredAt\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_storeId_attrCampaignId_idx",
+        "indexdef": "CREATE INDEX \"Order_storeId_attrCampaignId_idx\" ON public.\"Order\" USING btree (\"storeId\", \"attrCampaignId\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_storeId_paidAt_idx",
+        "indexdef": "CREATE INDEX \"Order_storeId_paidAt_idx\" ON public.\"Order\" USING btree (\"storeId\", \"paidAt\")"
+      },
+      {
+        "tablename": "Order",
+        "indexname": "Order_storeId_status_idx",
+        "indexdef": "CREATE INDEX \"Order_storeId_status_idx\" ON public.\"Order\" USING btree (\"storeId\", status)"
+      },
+      {
+        "tablename": "OrderItem",
+        "indexname": "OrderItem_affiliateDirectId_idx",
+        "indexdef": "CREATE INDEX \"OrderItem_affiliateDirectId_idx\" ON public.\"OrderItem\" USING btree (\"affiliateDirectId\")"
+      },
+      {
+        "tablename": "OrderItem",
+        "indexname": "OrderItem_orderId_idx",
+        "indexdef": "CREATE INDEX \"OrderItem_orderId_idx\" ON public.\"OrderItem\" USING btree (\"orderId\")"
+      },
+      {
+        "tablename": "OrderItem",
+        "indexname": "OrderItem_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"OrderItem_pkey\" ON public.\"OrderItem\" USING btree (id)"
+      },
+      {
+        "tablename": "OrderItem",
+        "indexname": "OrderItem_productId_idx",
+        "indexdef": "CREATE INDEX \"OrderItem_productId_idx\" ON public.\"OrderItem\" USING btree (\"productId\")"
+      },
+      {
+        "tablename": "OrderStatusHistory",
+        "indexname": "OrderStatusHistory_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"OrderStatusHistory_pkey\" ON public.\"OrderStatusHistory\" USING btree (id)"
+      },
+      {
+        "tablename": "PaymentGroup",
+        "indexname": "PaymentGroup_idemKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentGroup_idemKey_key\" ON public.\"PaymentGroup\" USING btree (\"idemKey\")"
+      },
+      {
+        "tablename": "PaymentGroup",
+        "indexname": "PaymentGroup_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentGroup_pkey\" ON public.\"PaymentGroup\" USING btree (id)"
+      },
+      {
+        "tablename": "PaymentGroup",
+        "indexname": "PaymentGroup_ref_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentGroup_ref_key\" ON public.\"PaymentGroup\" USING btree (ref)"
+      },
+      {
+        "tablename": "PaymentGroup",
+        "indexname": "PaymentGroup_shopperId_idx",
+        "indexdef": "CREATE INDEX \"PaymentGroup_shopperId_idx\" ON public.\"PaymentGroup\" USING btree (\"shopperId\")"
+      },
+      {
+        "tablename": "PaymentGroup",
+        "indexname": "PaymentGroup_status_expiresAt_idx",
+        "indexdef": "CREATE INDEX \"PaymentGroup_status_expiresAt_idx\" ON public.\"PaymentGroup\" USING btree (status, \"expiresAt\")"
+      },
+      {
+        "tablename": "PaymentIntent",
+        "indexname": "PaymentIntent_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentIntent_pkey\" ON public.\"PaymentIntent\" USING btree (id)"
+      },
+      {
+        "tablename": "PaymentIntent",
+        "indexname": "PaymentIntent_providerRef_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentIntent_providerRef_key\" ON public.\"PaymentIntent\" USING btree (\"providerRef\")"
+      },
+      {
+        "tablename": "PaymentReconciliation",
+        "indexname": "PaymentReconciliation_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentReconciliation_pkey\" ON public.\"PaymentReconciliation\" USING btree (id)"
+      },
+      {
+        "tablename": "PaymentReconciliation",
+        "indexname": "PaymentReconciliation_provider_providerRef_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentReconciliation_provider_providerRef_key\" ON public.\"PaymentReconciliation\" USING btree (provider, \"providerRef\")"
+      },
+      {
+        "tablename": "PaymentReconciliation",
+        "indexname": "PaymentReconciliation_status_idx",
+        "indexdef": "CREATE INDEX \"PaymentReconciliation_status_idx\" ON public.\"PaymentReconciliation\" USING btree (status)"
+      },
+      {
+        "tablename": "PaymentReconciliation",
+        "indexname": "PaymentReconciliation_updatedAt_idx",
+        "indexdef": "CREATE INDEX \"PaymentReconciliation_updatedAt_idx\" ON public.\"PaymentReconciliation\" USING btree (\"updatedAt\")"
+      },
+      {
+        "tablename": "PaymentWebhookLog",
+        "indexname": "PaymentWebhookLog_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PaymentWebhookLog_pkey\" ON public.\"PaymentWebhookLog\" USING btree (id)"
+      },
+      {
+        "tablename": "PaymentWebhookLog",
+        "indexname": "PaymentWebhookLog_processed_createdAt_idx",
+        "indexdef": "CREATE INDEX \"PaymentWebhookLog_processed_createdAt_idx\" ON public.\"PaymentWebhookLog\" USING btree (processed, \"createdAt\")"
+      },
+      {
+        "tablename": "PaymentWebhookLog",
+        "indexname": "PaymentWebhookLog_providerRef_idx",
+        "indexdef": "CREATE INDEX \"PaymentWebhookLog_providerRef_idx\" ON public.\"PaymentWebhookLog\" USING btree (\"providerRef\")"
+      },
+      {
+        "tablename": "Payout",
+        "indexname": "Payout_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Payout_pkey\" ON public.\"Payout\" USING btree (id)"
+      },
+      {
+        "tablename": "Payout",
+        "indexname": "Payout_referenceNo_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Payout_referenceNo_key\" ON public.\"Payout\" USING btree (\"referenceNo\")"
+      },
+      {
+        "tablename": "Payout",
+        "indexname": "Payout_walletId_status_idx",
+        "indexdef": "CREATE INDEX \"Payout_walletId_status_idx\" ON public.\"Payout\" USING btree (\"walletId\", status)"
+      },
+      {
+        "tablename": "PayoutBatch",
+        "indexname": "PayoutBatch_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PayoutBatch_pkey\" ON public.\"PayoutBatch\" USING btree (id)"
+      },
+      {
+        "tablename": "Plan",
+        "indexname": "Plan_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Plan_code_key\" ON public.\"Plan\" USING btree (code)"
+      },
+      {
+        "tablename": "Plan",
+        "indexname": "Plan_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Plan_pkey\" ON public.\"Plan\" USING btree (id)"
+      },
+      {
+        "tablename": "Product",
+        "indexname": "Product_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Product_pkey\" ON public.\"Product\" USING btree (id)"
+      },
+      {
+        "tablename": "Product",
+        "indexname": "Product_sourcePlatform_sourceShopId_idx",
+        "indexdef": "CREATE INDEX \"Product_sourcePlatform_sourceShopId_idx\" ON public.\"Product\" USING btree (\"sourcePlatform\", \"sourceShopId\")"
+      },
+      {
+        "tablename": "Product",
+        "indexname": "Product_storeId_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Product_storeId_slug_key\" ON public.\"Product\" USING btree (\"storeId\", slug)"
+      },
+      {
+        "tablename": "Product",
+        "indexname": "Product_storeId_sourcePlatform_sourceProductId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Product_storeId_sourcePlatform_sourceProductId_key\" ON public.\"Product\" USING btree (\"storeId\", \"sourcePlatform\", \"sourceProductId\")"
+      },
+      {
+        "tablename": "Product",
+        "indexname": "Product_storeId_status_idx",
+        "indexdef": "CREATE INDEX \"Product_storeId_status_idx\" ON public.\"Product\" USING btree (\"storeId\", status)"
+      },
+      {
+        "tablename": "ProductCardStyle",
+        "indexname": "ProductCardStyle_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ProductCardStyle_pkey\" ON public.\"ProductCardStyle\" USING btree (id)"
+      },
+      {
+        "tablename": "ProductCardStyle",
+        "indexname": "ProductCardStyle_storeId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ProductCardStyle_storeId_key\" ON public.\"ProductCardStyle\" USING btree (\"storeId\")"
+      },
+      {
+        "tablename": "ProductImage",
+        "indexname": "ProductImage_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ProductImage_pkey\" ON public.\"ProductImage\" USING btree (id)"
+      },
+      {
+        "tablename": "ProductVariant",
+        "indexname": "ProductVariant_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ProductVariant_pkey\" ON public.\"ProductVariant\" USING btree (id)"
+      },
+      {
+        "tablename": "ProductVariant",
+        "indexname": "ProductVariant_productId_idx",
+        "indexdef": "CREATE INDEX \"ProductVariant_productId_idx\" ON public.\"ProductVariant\" USING btree (\"productId\")"
+      },
+      {
+        "tablename": "PspRefundRecord",
+        "indexname": "PspRefundRecord_idempotencyKey_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PspRefundRecord_idempotencyKey_key\" ON public.\"PspRefundRecord\" USING btree (\"idempotencyKey\")"
+      },
+      {
+        "tablename": "PspRefundRecord",
+        "indexname": "PspRefundRecord_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"PspRefundRecord_pkey\" ON public.\"PspRefundRecord\" USING btree (id)"
+      },
+      {
+        "tablename": "PspRefundRecord",
+        "indexname": "PspRefundRecord_providerRef_idx",
+        "indexdef": "CREATE INDEX \"PspRefundRecord_providerRef_idx\" ON public.\"PspRefundRecord\" USING btree (\"providerRef\")"
+      },
+      {
+        "tablename": "PspRefundRecord",
+        "indexname": "PspRefundRecord_refundId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"PspRefundRecord_refundId_key\" ON public.\"PspRefundRecord\" USING btree (\"refundId\")"
+      },
+      {
+        "tablename": "Refund",
+        "indexname": "Refund_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Refund_pkey\" ON public.\"Refund\" USING btree (id)"
+      },
+      {
+        "tablename": "Review",
+        "indexname": "Review_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Review_pkey\" ON public.\"Review\" USING btree (id)"
+      },
+      {
+        "tablename": "Review",
+        "indexname": "Review_productId_shopperId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Review_productId_shopperId_key\" ON public.\"Review\" USING btree (\"productId\", \"shopperId\")"
+      },
+      {
+        "tablename": "Seller",
+        "indexname": "Seller_email_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Seller_email_key\" ON public.\"Seller\" USING btree (email)"
+      },
+      {
+        "tablename": "Seller",
+        "indexname": "Seller_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Seller_pkey\" ON public.\"Seller\" USING btree (id)"
+      },
+      {
+        "tablename": "SellerCampaign",
+        "indexname": "SellerCampaign_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"SellerCampaign_code_key\" ON public.\"SellerCampaign\" USING btree (code)"
+      },
+      {
+        "tablename": "SellerCampaign",
+        "indexname": "SellerCampaign_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"SellerCampaign_pkey\" ON public.\"SellerCampaign\" USING btree (id)"
+      },
+      {
+        "tablename": "SellerCampaign",
+        "indexname": "SellerCampaign_storeId_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"SellerCampaign_storeId_slug_key\" ON public.\"SellerCampaign\" USING btree (\"storeId\", slug)"
+      },
+      {
+        "tablename": "SellerCampaign",
+        "indexname": "SellerCampaign_storeId_status_idx",
+        "indexdef": "CREATE INDEX \"SellerCampaign_storeId_status_idx\" ON public.\"SellerCampaign\" USING btree (\"storeId\", status)"
+      },
+      {
+        "tablename": "SellerNote",
+        "indexname": "SellerNote_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"SellerNote_pkey\" ON public.\"SellerNote\" USING btree (id)"
+      },
+      {
+        "tablename": "SeoMeta",
+        "indexname": "SeoMeta_entityType_entityId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"SeoMeta_entityType_entityId_key\" ON public.\"SeoMeta\" USING btree (\"entityType\", \"entityId\")"
+      },
+      {
+        "tablename": "SeoMeta",
+        "indexname": "SeoMeta_entityType_idx",
+        "indexdef": "CREATE INDEX \"SeoMeta_entityType_idx\" ON public.\"SeoMeta\" USING btree (\"entityType\")"
+      },
+      {
+        "tablename": "SeoMeta",
+        "indexname": "SeoMeta_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"SeoMeta_pkey\" ON public.\"SeoMeta\" USING btree (id)"
+      },
+      {
+        "tablename": "Session",
+        "indexname": "Session_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Session_pkey\" ON public.\"Session\" USING btree (token)"
+      },
+      {
+        "tablename": "Setting",
+        "indexname": "Setting_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Setting_pkey\" ON public.\"Setting\" USING btree (key)"
+      },
+      {
+        "tablename": "Shipment",
+        "indexname": "Shipment_orderId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Shipment_orderId_key\" ON public.\"Shipment\" USING btree (\"orderId\")"
+      },
+      {
+        "tablename": "Shipment",
+        "indexname": "Shipment_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Shipment_pkey\" ON public.\"Shipment\" USING btree (id)"
+      },
+      {
+        "tablename": "Shipment",
+        "indexname": "Shipment_status_idx",
+        "indexdef": "CREATE INDEX \"Shipment_status_idx\" ON public.\"Shipment\" USING btree (status)"
+      },
+      {
+        "tablename": "Shipment",
+        "indexname": "Shipment_storeId_idx",
+        "indexdef": "CREATE INDEX \"Shipment_storeId_idx\" ON public.\"Shipment\" USING btree (\"storeId\")"
+      },
+      {
+        "tablename": "ShipmentEvent",
+        "indexname": "ShipmentEvent_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ShipmentEvent_pkey\" ON public.\"ShipmentEvent\" USING btree (id)"
+      },
+      {
+        "tablename": "ShipmentEvent",
+        "indexname": "ShipmentEvent_shipmentId_occurredAt_idx",
+        "indexdef": "CREATE INDEX \"ShipmentEvent_shipmentId_occurredAt_idx\" ON public.\"ShipmentEvent\" USING btree (\"shipmentId\", \"occurredAt\")"
+      },
+      {
+        "tablename": "ShopperUser",
+        "indexname": "ShopperUser_email_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ShopperUser_email_key\" ON public.\"ShopperUser\" USING btree (email)"
+      },
+      {
+        "tablename": "ShopperUser",
+        "indexname": "ShopperUser_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ShopperUser_pkey\" ON public.\"ShopperUser\" USING btree (id)"
+      },
+      {
+        "tablename": "ShopperUser",
+        "indexname": "ShopperUser_username_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ShopperUser_username_key\" ON public.\"ShopperUser\" USING btree (username)"
+      },
+      {
+        "tablename": "ShopperWallet",
+        "indexname": "ShopperWallet_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"ShopperWallet_pkey\" ON public.\"ShopperWallet\" USING btree (id)"
+      },
+      {
+        "tablename": "ShopperWallet",
+        "indexname": "ShopperWallet_userId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"ShopperWallet_userId_key\" ON public.\"ShopperWallet\" USING btree (\"userId\")"
+      },
+      {
+        "tablename": "Store",
+        "indexname": "Store_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Store_pkey\" ON public.\"Store\" USING btree (id)"
+      },
+      {
+        "tablename": "Store",
+        "indexname": "Store_sellerId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Store_sellerId_key\" ON public.\"Store\" USING btree (\"sellerId\")"
+      },
+      {
+        "tablename": "Store",
+        "indexname": "Store_slug_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Store_slug_key\" ON public.\"Store\" USING btree (slug)"
+      },
+      {
+        "tablename": "StoreClaim",
+        "indexname": "StoreClaim_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreClaim_pkey\" ON public.\"StoreClaim\" USING btree (id)"
+      },
+      {
+        "tablename": "StoreClaim",
+        "indexname": "StoreClaim_storeId_status_idx",
+        "indexdef": "CREATE INDEX \"StoreClaim_storeId_status_idx\" ON public.\"StoreClaim\" USING btree (\"storeId\", status)"
+      },
+      {
+        "tablename": "StoreClaim",
+        "indexname": "StoreClaim_tokenHash_key",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreClaim_tokenHash_key\" ON public.\"StoreClaim\" USING btree (\"tokenHash\")"
+      },
+      {
+        "tablename": "StoreDomain",
+        "indexname": "StoreDomain_domain_key",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreDomain_domain_key\" ON public.\"StoreDomain\" USING btree (domain)"
+      },
+      {
+        "tablename": "StoreDomain",
+        "indexname": "StoreDomain_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreDomain_pkey\" ON public.\"StoreDomain\" USING btree (id)"
+      },
+      {
+        "tablename": "StoreFollow",
+        "indexname": "StoreFollow_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreFollow_pkey\" ON public.\"StoreFollow\" USING btree (id)"
+      },
+      {
+        "tablename": "StoreFollow",
+        "indexname": "StoreFollow_shopperUserId_storeId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreFollow_shopperUserId_storeId_key\" ON public.\"StoreFollow\" USING btree (\"shopperUserId\", \"storeId\")"
+      },
+      {
+        "tablename": "StoreFollow",
+        "indexname": "StoreFollow_storeId_idx",
+        "indexdef": "CREATE INDEX \"StoreFollow_storeId_idx\" ON public.\"StoreFollow\" USING btree (\"storeId\")"
+      },
+      {
+        "tablename": "StoreIntegration",
+        "indexname": "StoreIntegration_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreIntegration_pkey\" ON public.\"StoreIntegration\" USING btree (id)"
+      },
+      {
+        "tablename": "StoreIntegration",
+        "indexname": "StoreIntegration_storeId_provider_key",
+        "indexdef": "CREATE UNIQUE INDEX \"StoreIntegration_storeId_provider_key\" ON public.\"StoreIntegration\" USING btree (\"storeId\", provider)"
+      },
+      {
+        "tablename": "SupportMessage",
+        "indexname": "SupportMessage_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"SupportMessage_pkey\" ON public.\"SupportMessage\" USING btree (id)"
+      },
+      {
+        "tablename": "SupportTicket",
+        "indexname": "SupportTicket_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"SupportTicket_pkey\" ON public.\"SupportTicket\" USING btree (id)"
+      },
+      {
+        "tablename": "UserActivity",
+        "indexname": "UserActivity_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"UserActivity_pkey\" ON public.\"UserActivity\" USING btree (id)"
+      },
+      {
+        "tablename": "UserActivity",
+        "indexname": "UserActivity_userId_activityType_idx",
+        "indexdef": "CREATE INDEX \"UserActivity_userId_activityType_idx\" ON public.\"UserActivity\" USING btree (\"userId\", \"activityType\")"
+      },
+      {
+        "tablename": "UserActivity",
+        "indexname": "UserActivity_userId_productId_activityType_key",
+        "indexdef": "CREATE UNIQUE INDEX \"UserActivity_userId_productId_activityType_key\" ON public.\"UserActivity\" USING btree (\"userId\", \"productId\", \"activityType\")"
+      },
+      {
+        "tablename": "UserVoucher",
+        "indexname": "UserVoucher_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"UserVoucher_pkey\" ON public.\"UserVoucher\" USING btree (id)"
+      },
+      {
+        "tablename": "UserVoucher",
+        "indexname": "UserVoucher_usedOrderId_idx",
+        "indexdef": "CREATE INDEX \"UserVoucher_usedOrderId_idx\" ON public.\"UserVoucher\" USING btree (\"usedOrderId\")"
+      },
+      {
+        "tablename": "UserVoucher",
+        "indexname": "UserVoucher_userId_status_idx",
+        "indexdef": "CREATE INDEX \"UserVoucher_userId_status_idx\" ON public.\"UserVoucher\" USING btree (\"userId\", status)"
+      },
+      {
+        "tablename": "UserVoucher",
+        "indexname": "UserVoucher_userId_voucherId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"UserVoucher_userId_voucherId_key\" ON public.\"UserVoucher\" USING btree (\"userId\", \"voucherId\")"
+      },
+      {
+        "tablename": "Voucher",
+        "indexname": "Voucher_code_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Voucher_code_key\" ON public.\"Voucher\" USING btree (code)"
+      },
+      {
+        "tablename": "Voucher",
+        "indexname": "Voucher_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Voucher_pkey\" ON public.\"Voucher\" USING btree (id)"
+      },
+      {
+        "tablename": "Wallet",
+        "indexname": "Wallet_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"Wallet_pkey\" ON public.\"Wallet\" USING btree (id)"
+      },
+      {
+        "tablename": "Wallet",
+        "indexname": "Wallet_sellerId_key",
+        "indexdef": "CREATE UNIQUE INDEX \"Wallet_sellerId_key\" ON public.\"Wallet\" USING btree (\"sellerId\")"
+      },
+      {
+        "tablename": "WebhookDelivery",
+        "indexname": "WebhookDelivery_endpointId_idx",
+        "indexdef": "CREATE INDEX \"WebhookDelivery_endpointId_idx\" ON public.\"WebhookDelivery\" USING btree (\"endpointId\")"
+      },
+      {
+        "tablename": "WebhookDelivery",
+        "indexname": "WebhookDelivery_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"WebhookDelivery_pkey\" ON public.\"WebhookDelivery\" USING btree (id)"
+      },
+      {
+        "tablename": "WebhookDelivery",
+        "indexname": "WebhookDelivery_status_createdAt_idx",
+        "indexdef": "CREATE INDEX \"WebhookDelivery_status_createdAt_idx\" ON public.\"WebhookDelivery\" USING btree (status, \"createdAt\")"
+      },
+      {
+        "tablename": "WebhookDeliveryAttempt",
+        "indexname": "WebhookDeliveryAttempt_deliveryId_attemptNo_idx",
+        "indexdef": "CREATE INDEX \"WebhookDeliveryAttempt_deliveryId_attemptNo_idx\" ON public.\"WebhookDeliveryAttempt\" USING btree (\"deliveryId\", \"attemptNo\")"
+      },
+      {
+        "tablename": "WebhookDeliveryAttempt",
+        "indexname": "WebhookDeliveryAttempt_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"WebhookDeliveryAttempt_pkey\" ON public.\"WebhookDeliveryAttempt\" USING btree (id)"
+      },
+      {
+        "tablename": "WebhookEndpoint",
+        "indexname": "WebhookEndpoint_pkey",
+        "indexdef": "CREATE UNIQUE INDEX \"WebhookEndpoint_pkey\" ON public.\"WebhookEndpoint\" USING btree (id)"
+      },
+      {
+        "tablename": "_prisma_migrations",
+        "indexname": "_prisma_migrations_pkey",
+        "indexdef": "CREATE UNIQUE INDEX _prisma_migrations_pkey ON public._prisma_migrations USING btree (id)"
+      }
+    ],
+    "constraintCount": 176,
+    "constraints": [
+      {
+        "tbl": "_prisma_migrations",
+        "conname": "_prisma_migrations_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ActivityLog\"",
+        "conname": "ActivityLog_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Address\"",
+        "conname": "Address_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Address\"",
+        "conname": "Address_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"AdminAuditLog\"",
+        "conname": "AdminAuditLog_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AdminMfaEnrollment\"",
+        "conname": "AdminMfaEnrollment_adminId_fkey",
+        "def": "FOREIGN KEY (\"adminId\") REFERENCES \"AdminUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"AdminMfaEnrollment\"",
+        "conname": "AdminMfaEnrollment_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AdminUser\"",
+        "conname": "AdminUser_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateAttributionTouch\"",
+        "conname": "AffiliateAttributionTouch_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateCollection\"",
+        "conname": "AffiliateCollection_affiliateId_fkey",
+        "def": "FOREIGN KEY (\"affiliateId\") REFERENCES \"AffiliateProfile\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliateCollection\"",
+        "conname": "AffiliateCollection_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateCollectionItem\"",
+        "conname": "AffiliateCollectionItem_collectionId_fkey",
+        "def": "FOREIGN KEY (\"collectionId\") REFERENCES \"AffiliateCollection\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"AffiliateCollectionItem\"",
+        "conname": "AffiliateCollectionItem_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateCollectionItem\"",
+        "conname": "AffiliateCollectionItem_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliateCommission\"",
+        "conname": "AffiliateCommission_affiliateId_fkey",
+        "def": "FOREIGN KEY (\"affiliateId\") REFERENCES \"AffiliateProfile\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliateCommission\"",
+        "conname": "AffiliateCommission_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliateCommission\"",
+        "conname": "AffiliateCommission_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateCommissionEntry\"",
+        "conname": "AffiliateCommissionEntry_commissionId_fkey",
+        "def": "FOREIGN KEY (\"commissionId\") REFERENCES \"AffiliateCommission\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"AffiliateCommissionEntry\"",
+        "conname": "AffiliateCommissionEntry_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateLink\"",
+        "conname": "AffiliateLink_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliatePayout\"",
+        "conname": "AffiliatePayout_affiliateId_fkey",
+        "def": "FOREIGN KEY (\"affiliateId\") REFERENCES \"AffiliateProfile\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliatePayout\"",
+        "conname": "AffiliatePayout_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateProfile\"",
+        "conname": "AffiliateProfile_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateProfile\"",
+        "conname": "AffiliateProfile_sponsorId_fkey",
+        "def": "FOREIGN KEY (\"sponsorId\") REFERENCES \"AffiliateProfile\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"AffiliateProfile\"",
+        "conname": "AffiliateProfile_userId_fkey",
+        "def": "FOREIGN KEY (\"userId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"AffiliateReferralTouch\"",
+        "conname": "AffiliateReferralTouch_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AffiliateSponsorAudit\"",
+        "conname": "AffiliateSponsorAudit_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"AnalyticsEvent\"",
+        "conname": "AnalyticsEvent_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Announcement\"",
+        "conname": "Announcement_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ApiKey\"",
+        "conname": "ApiKey_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ApiKey\"",
+        "conname": "ApiKey_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"BankAccount\"",
+        "conname": "BankAccount_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"BankAccount\"",
+        "conname": "BankAccount_sellerId_fkey",
+        "def": "FOREIGN KEY (\"sellerId\") REFERENCES \"Seller\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"Campaign\"",
+        "conname": "Campaign_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Cart\"",
+        "conname": "Cart_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Cart\"",
+        "conname": "Cart_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"CartItem\"",
+        "conname": "CartItem_cartId_fkey",
+        "def": "FOREIGN KEY (\"cartId\") REFERENCES \"Cart\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"CartItem\"",
+        "conname": "CartItem_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CartItem\"",
+        "conname": "CartItem_variantId_fkey",
+        "def": "FOREIGN KEY (\"variantId\") REFERENCES \"ProductVariant\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"CartSettings\"",
+        "conname": "CartSettings_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CartSettings\"",
+        "conname": "CartSettings_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Category\"",
+        "conname": "Category_parentId_fkey",
+        "def": "FOREIGN KEY (\"parentId\") REFERENCES \"Category\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Category\"",
+        "conname": "Category_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ChatMessage\"",
+        "conname": "ChatMessage_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ChatMessage\"",
+        "conname": "ChatMessage_threadId_fkey",
+        "def": "FOREIGN KEY (\"threadId\") REFERENCES \"ChatThread\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ChatThread\"",
+        "conname": "ChatThread_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ChatThread\"",
+        "conname": "ChatThread_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"ChatThread\"",
+        "conname": "ChatThread_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ChatThread\"",
+        "conname": "ChatThread_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"CmsPage\"",
+        "conname": "CmsPage_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CmsPage\"",
+        "conname": "CmsPage_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"Collection\"",
+        "conname": "Collection_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Collection\"",
+        "conname": "Collection_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"CollectionProduct\"",
+        "conname": "CollectionProduct_collectionId_fkey",
+        "def": "FOREIGN KEY (\"collectionId\") REFERENCES \"Collection\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"CollectionProduct\"",
+        "conname": "CollectionProduct_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CollectionProduct\"",
+        "conname": "CollectionProduct_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"CommissionExport\"",
+        "conname": "CommissionExport_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CommissionOverride\"",
+        "conname": "CommissionOverride_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"CommissionSetting\"",
+        "conname": "CommissionSetting_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Counter\"",
+        "conname": "Counter_pkey",
+        "def": "PRIMARY KEY (key)"
+      },
+      {
+        "tbl": "\"Coupon\"",
+        "conname": "Coupon_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Coupon\"",
+        "conname": "Coupon_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"CouponRedemption\"",
+        "conname": "CouponRedemption_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Dispute\"",
+        "conname": "Dispute_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Dispute\"",
+        "conname": "Dispute_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"EmailDeliveryEvent\"",
+        "conname": "EmailDeliveryEvent_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"EmailOtpChallenge\"",
+        "conname": "EmailOtpChallenge_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"EmailSuppression\"",
+        "conname": "EmailSuppression_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ExportJob\"",
+        "conname": "ExportJob_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"FeaturedSlot\"",
+        "conname": "FeaturedSlot_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"FeaturedSlot\"",
+        "conname": "FeaturedSlot_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"FeatureFlag\"",
+        "conname": "FeatureFlag_pkey",
+        "def": "PRIMARY KEY (key)"
+      },
+      {
+        "tbl": "\"FeeHoliday\"",
+        "conname": "FeeHoliday_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ImportJob\"",
+        "conname": "ImportJob_connectionId_fkey",
+        "def": "FOREIGN KEY (\"connectionId\") REFERENCES \"MarketplaceConnection\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"ImportJob\"",
+        "conname": "ImportJob_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ImportJob\"",
+        "conname": "ImportJob_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"ImportJobItem\"",
+        "conname": "ImportJobItem_jobId_fkey",
+        "def": "FOREIGN KEY (\"jobId\") REFERENCES \"ImportJob\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ImportJobItem\"",
+        "conname": "ImportJobItem_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ImportJobItem\"",
+        "conname": "ImportJobItem_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"InventoryLog\"",
+        "conname": "InventoryLog_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"InventoryLog\"",
+        "conname": "InventoryLog_variantId_fkey",
+        "def": "FOREIGN KEY (\"variantId\") REFERENCES \"ProductVariant\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"KycDocument\"",
+        "conname": "KycDocument_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"KycDocument\"",
+        "conname": "KycDocument_sellerId_fkey",
+        "def": "FOREIGN KEY (\"sellerId\") REFERENCES \"Seller\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"LedgerAccount\"",
+        "conname": "LedgerAccount_pkey",
+        "def": "PRIMARY KEY (code)"
+      },
+      {
+        "tbl": "\"LedgerLine\"",
+        "conname": "LedgerLine_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"LedgerLine\"",
+        "conname": "LedgerLine_txnId_fkey",
+        "def": "FOREIGN KEY (\"txnId\") REFERENCES \"LedgerTransaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"LedgerTransaction\"",
+        "conname": "LedgerTransaction_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"MarketplaceBanner\"",
+        "conname": "MarketplaceBanner_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"MarketplaceConnection\"",
+        "conname": "MarketplaceConnection_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"MarketplaceConnection\"",
+        "conname": "MarketplaceConnection_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Notification\"",
+        "conname": "Notification_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Notification\"",
+        "conname": "Notification_shopperUserId_fkey",
+        "def": "FOREIGN KEY (\"shopperUserId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"NotificationLog\"",
+        "conname": "NotificationLog_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"NotificationTemplate\"",
+        "conname": "NotificationTemplate_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Order\"",
+        "conname": "Order_paymentGroupId_fkey",
+        "def": "FOREIGN KEY (\"paymentGroupId\") REFERENCES \"PaymentGroup\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Order\"",
+        "conname": "Order_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Order\"",
+        "conname": "Order_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Order\"",
+        "conname": "Order_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"Order\"",
+        "conname": "Order_voucherId_fkey",
+        "def": "FOREIGN KEY (\"voucherId\") REFERENCES \"Voucher\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"OrderItem\"",
+        "conname": "OrderItem_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"OrderItem\"",
+        "conname": "OrderItem_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"OrderItem\"",
+        "conname": "OrderItem_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"OrderItem\"",
+        "conname": "OrderItem_variantId_fkey",
+        "def": "FOREIGN KEY (\"variantId\") REFERENCES \"ProductVariant\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"OrderStatusHistory\"",
+        "conname": "OrderStatusHistory_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"OrderStatusHistory\"",
+        "conname": "OrderStatusHistory_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"PaymentGroup\"",
+        "conname": "PaymentGroup_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"PaymentGroup\"",
+        "conname": "PaymentGroup_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"PaymentIntent\"",
+        "conname": "PaymentIntent_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"PaymentIntent\"",
+        "conname": "PaymentIntent_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"PaymentReconciliation\"",
+        "conname": "PaymentReconciliation_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"PaymentWebhookLog\"",
+        "conname": "PaymentWebhookLog_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Payout\"",
+        "conname": "Payout_bankAccountId_fkey",
+        "def": "FOREIGN KEY (\"bankAccountId\") REFERENCES \"BankAccount\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Payout\"",
+        "conname": "Payout_batchId_fkey",
+        "def": "FOREIGN KEY (\"batchId\") REFERENCES \"PayoutBatch\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Payout\"",
+        "conname": "Payout_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"PayoutBatch\"",
+        "conname": "PayoutBatch_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Plan\"",
+        "conname": "Plan_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Product\"",
+        "conname": "Product_categoryId_fkey",
+        "def": "FOREIGN KEY (\"categoryId\") REFERENCES \"Category\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Product\"",
+        "conname": "Product_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Product\"",
+        "conname": "Product_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"ProductCardStyle\"",
+        "conname": "ProductCardStyle_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ProductCardStyle\"",
+        "conname": "ProductCardStyle_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ProductImage\"",
+        "conname": "ProductImage_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ProductImage\"",
+        "conname": "ProductImage_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ProductVariant\"",
+        "conname": "ProductVariant_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ProductVariant\"",
+        "conname": "ProductVariant_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"PspRefundRecord\"",
+        "conname": "PspRefundRecord_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Refund\"",
+        "conname": "Refund_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Refund\"",
+        "conname": "Refund_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Review\"",
+        "conname": "Review_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Review\"",
+        "conname": "Review_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Review\"",
+        "conname": "Review_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Review\"",
+        "conname": "Review_shopperId_fkey",
+        "def": "FOREIGN KEY (\"shopperId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Seller\"",
+        "conname": "Seller_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"SellerCampaign\"",
+        "conname": "SellerCampaign_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"SellerNote\"",
+        "conname": "SellerNote_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"SellerNote\"",
+        "conname": "SellerNote_sellerId_fkey",
+        "def": "FOREIGN KEY (\"sellerId\") REFERENCES \"Seller\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"SeoMeta\"",
+        "conname": "SeoMeta_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Session\"",
+        "conname": "Session_pkey",
+        "def": "PRIMARY KEY (token)"
+      },
+      {
+        "tbl": "\"Setting\"",
+        "conname": "Setting_pkey",
+        "def": "PRIMARY KEY (key)"
+      },
+      {
+        "tbl": "\"Shipment\"",
+        "conname": "Shipment_orderId_fkey",
+        "def": "FOREIGN KEY (\"orderId\") REFERENCES \"Order\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Shipment\"",
+        "conname": "Shipment_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ShipmentEvent\"",
+        "conname": "ShipmentEvent_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ShipmentEvent\"",
+        "conname": "ShipmentEvent_shipmentId_fkey",
+        "def": "FOREIGN KEY (\"shipmentId\") REFERENCES \"Shipment\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"ShopperUser\"",
+        "conname": "ShopperUser_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ShopperWallet\"",
+        "conname": "ShopperWallet_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"ShopperWallet\"",
+        "conname": "ShopperWallet_userId_fkey",
+        "def": "FOREIGN KEY (\"userId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Store\"",
+        "conname": "Store_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Store\"",
+        "conname": "Store_sellerId_fkey",
+        "def": "FOREIGN KEY (\"sellerId\") REFERENCES \"Seller\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"StoreClaim\"",
+        "conname": "StoreClaim_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"StoreClaim\"",
+        "conname": "StoreClaim_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"StoreDomain\"",
+        "conname": "StoreDomain_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"StoreDomain\"",
+        "conname": "StoreDomain_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"StoreFollow\"",
+        "conname": "StoreFollow_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"StoreFollow\"",
+        "conname": "StoreFollow_shopperUserId_fkey",
+        "def": "FOREIGN KEY (\"shopperUserId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"StoreFollow\"",
+        "conname": "StoreFollow_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"StoreIntegration\"",
+        "conname": "StoreIntegration_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"StoreIntegration\"",
+        "conname": "StoreIntegration_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"SupportMessage\"",
+        "conname": "SupportMessage_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"SupportMessage\"",
+        "conname": "SupportMessage_ticketId_fkey",
+        "def": "FOREIGN KEY (\"ticketId\") REFERENCES \"SupportTicket\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"SupportTicket\"",
+        "conname": "SupportTicket_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"UserActivity\"",
+        "conname": "UserActivity_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"UserActivity\"",
+        "conname": "UserActivity_productId_fkey",
+        "def": "FOREIGN KEY (\"productId\") REFERENCES \"Product\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"UserActivity\"",
+        "conname": "UserActivity_userId_fkey",
+        "def": "FOREIGN KEY (\"userId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"UserVoucher\"",
+        "conname": "UserVoucher_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"UserVoucher\"",
+        "conname": "UserVoucher_userId_fkey",
+        "def": "FOREIGN KEY (\"userId\") REFERENCES \"ShopperUser\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"UserVoucher\"",
+        "conname": "UserVoucher_voucherId_fkey",
+        "def": "FOREIGN KEY (\"voucherId\") REFERENCES \"Voucher\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"Voucher\"",
+        "conname": "Voucher_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Voucher\"",
+        "conname": "Voucher_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE SET NULL"
+      },
+      {
+        "tbl": "\"Wallet\"",
+        "conname": "Wallet_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"Wallet\"",
+        "conname": "Wallet_sellerId_fkey",
+        "def": "FOREIGN KEY (\"sellerId\") REFERENCES \"Seller\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      },
+      {
+        "tbl": "\"WebhookDelivery\"",
+        "conname": "WebhookDelivery_endpointId_fkey",
+        "def": "FOREIGN KEY (\"endpointId\") REFERENCES \"WebhookEndpoint\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"WebhookDelivery\"",
+        "conname": "WebhookDelivery_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"WebhookDeliveryAttempt\"",
+        "conname": "WebhookDeliveryAttempt_deliveryId_fkey",
+        "def": "FOREIGN KEY (\"deliveryId\") REFERENCES \"WebhookDelivery\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+      },
+      {
+        "tbl": "\"WebhookDeliveryAttempt\"",
+        "conname": "WebhookDeliveryAttempt_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"WebhookEndpoint\"",
+        "conname": "WebhookEndpoint_pkey",
+        "def": "PRIMARY KEY (id)"
+      },
+      {
+        "tbl": "\"WebhookEndpoint\"",
+        "conname": "WebhookEndpoint_storeId_fkey",
+        "def": "FOREIGN KEY (\"storeId\") REFERENCES \"Store\"(id) ON UPDATE CASCADE ON DELETE RESTRICT"
+      }
+    ],
+    "views": [],
+    "functions": [
+      "lt_fault_once",
+      "lt_fault_sweep",
+      "lt_fault_wallet_w4",
+      "rls_auto_enable"
+    ],
+    "triggers": [],
+    "prismaMigrationsTable": true,
+    "prismaMigrations": [
+      {
+        "migration_name": "0_init",
+        "finished_at": "2026-10-27T04:16:31.051Z"
+      },
+      {
+        "migration_name": "20261030000000_affiliate_system_baseline",
+        "finished_at": "2026-10-31T00:19:54.170Z"
+      },
+      {
+        "migration_name": "20261031000000_orderitem_affiliate_sponsor_policy_snapshot",
+        "finished_at": "2026-10-31T00:19:56.431Z"
+      },
+      {
+        "migration_name": "20261031000001_affiliate_collection_profile_fk",
+        "finished_at": "2026-10-31T00:32:43.368Z"
+      }
+    ],
+    "baselineHash": "567696d5c996ab5bf4fed80c8e10a3d7e2be3cdde0031e28a6ca772a09b9db84"
+  },
+  "sessionBackup": {
+    "rows": 404,
+    "file": "phase3-step3-session-backup.json"
+  },
+  "verdict": "GREEN — identity confirmed, non-production project confirmed, fresh nomofee_staging target, baseline captured."
+}

@@ -4,8 +4,8 @@
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.497Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.389Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -22,17 +22,17 @@
         "errors": [],
         "throttled": false,
         "remainingBacklog": 0,
-        "durationMs": 237,
-        "at": "2026-11-02T11:36:44.459Z",
+        "durationMs": 181,
+        "at": "2026-11-02T12:49:44.342Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 5464
+      "ticks": 5610
     },
     "refund": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.343Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.340Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -45,8 +45,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-11-02T11:36:44.299Z",
-        "durationMs": 73,
+        "at": "2026-11-02T12:49:44.294Z",
+        "durationMs": 127,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -54,16 +54,16 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 5464
+      "ticks": 5610
     },
     "analytics": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.545Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.434Z",
       "lastOutcome": {
-        "ranAt": "2026-11-02T11:36:44.502Z",
-        "durationMs": 273,
+        "ranAt": "2026-11-02T12:49:44.391Z",
+        "durationMs": 222,
         "retentionDays": 180,
-        "cutoff": "2026-05-06T11:36:44.312Z",
+        "cutoff": "2026-05-06T12:49:44.256Z",
         "purged": 0,
         "flush": {
           "flushed": 0,
@@ -75,26 +75,26 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 4514
+      "ticks": 4660
     },
     "affiliate": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.697Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.974Z",
       "lastOutcome": {
         "approved": 0,
         "matured": 0,
         "remainingPending": 8,
-        "durationMs": 416,
-        "at": "2026-11-02T11:36:44.650Z",
+        "durationMs": 708,
+        "at": "2026-11-02T12:49:44.882Z",
         "authMode": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1406
+      "ticks": 1552
     },
     "sessions": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.238Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.178Z",
       "lastOutcome": {
         "throttled": true,
         "purged": 0,
@@ -102,18 +102,18 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1533
+      "ticks": 1679
     },
     "orders": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.436Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.355Z",
       "lastOutcome": {
-        "ranAt": "2026-11-02T11:36:44.388Z",
-        "durationMs": 147,
+        "ranAt": "2026-11-02T12:49:44.309Z",
+        "durationMs": 129,
         "autoComplete": {
           "candidates": 0,
           "completed": 0,
-          "cutoff": "2026-10-19T11:36:44.241Z"
+          "cutoff": "2026-10-19T12:49:44.180Z"
         },
         "tracking": {
           "scanned": 0,
@@ -124,11 +124,11 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1406
+      "ticks": 1552
     },
     "webhook": {
-      "lastTickAt": "2026-11-02T11:36:43.869Z",
-      "lastSuccessAt": "2026-11-02T11:36:44.804Z",
+      "lastTickAt": "2026-11-02T12:49:43.869Z",
+      "lastSuccessAt": "2026-11-02T12:49:44.564Z",
       "lastOutcome": {
         "scanned": 1,
         "attempted": 0,
@@ -142,13 +142,13 @@
         "staleFailed": 0,
         "errors": 0,
         "remainingBacklog": 1,
-        "durationMs": 513,
-        "at": "2026-11-02T11:36:44.757Z",
+        "durationMs": 336,
+        "at": "2026-11-02T12:49:44.518Z",
         "schedule": "inline → 1m → 5m → 15m → 1h → 4h → 12h → 24h (8 attempts, then failed)"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 565
+      "ticks": 711
     }
   },
   "alerts": [
