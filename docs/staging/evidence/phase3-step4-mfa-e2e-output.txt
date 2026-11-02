@@ -1,0 +1,20 @@
+PASS  S7a privileged admin can sign in (pre-enrollment) — status=200
+PASS  S7b /me reports mfaEnrollmentRequired=true
+PASS  S7c privileged API blocked pre-enrollment (403 MFA_ENROLLMENT_REQUIRED) — status=403
+PASS  S7d MFA bootstrap routes stay reachable while restricted
+PASS  S1 enrollment returns secretBase32 + otpauthUrl once — status=200
+PASS  S1b wrong password → 401, no secret leak
+PASS  S2 confirm accepts live TOTP; 10 recovery codes returned — status=200 codes=10
+PASS  S9 confirm revoked every prior admin session — me=200 userType=null (anonymous ⇒ token dead)
+PASS  S3 login returns mfaRequired + challenge, NO token
+PASS  S4 first two wrong codes → uniform 401 MFA_INVALID
+PASS  S4b third wrong code → 429 MFA_LOCKED with retryAfter (temporary) — status=429
+PASS  S5a valid code verifies and mints a session — status=200
+PASS  S5b SAME code replayed on a fresh challenge is REJECTED — status=401
+PASS  S6a recovery code verifies once — status=200
+PASS  S6b the SAME recovery code cannot be used twice — status=401
+PASS  S8 sustained failures trigger the per-admin mint cooldown (429)
+PASS  S3b admin session stored as sha256(token) only
+[cleanup] removed [LT] admin lt-mfa-fin-mvzcjk41@nomofee.test
+
+MFA E2E: ALL PASS

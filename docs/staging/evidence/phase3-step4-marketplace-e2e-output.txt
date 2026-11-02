@@ -1,0 +1,50 @@
+PASS  M1.a new shopper registers (200/201) — status=200
+PASS  M1.b registration verification email DELIVERED via Mailpit — inbox 171 → 172
+[mkt] M1: {"shopper":"lt-mkt-buyer-mvzebgpc@lt.test","inbox":"171→172"}
+PASS  M2.a multi-seller checkout created — status=201
+PASS  M2.b one PaymentGroup → TWO per-seller orders — orders=bytebazaar,glow-theory
+PASS  M2.c single webhook settles BOTH orders — http=200 statuses=paid,paid
+PASS  M2.d stock decremented per item — byte 61→59, glow 39→38
+[mkt] M2: {"group":"ref_73ea94c3b1330e42","orders":[{"store":"bytebazaar","number":"NM-100187","total":20000},{"store":"glow-theory","number":"NM-100188","total":10000}]}
+PASS  M3.a payment.failed webhook accepted — http=200
+PASS  M3.b payment GROUP marked failed; order stays retryable payment_pending — group=failed order=payment_pending
+PASS  M3.c failed payment posts NO T1 — t1=0
+[mkt] M3: {"group":"failed","order":"NM-100189","orderStatus":"payment_pending"}
+PASS  M4.a expiry sweep via cron route — http=200 expired=1
+PASS  M4.b order payment_expired + stock restored — status=payment_expired stock=10
+[mkt] M4: {"order":"NM-100190","status":"payment_expired","stock":10}
+PASS  M5.a T1 posted for BOTH per-seller orders — byte=true glow=true
+PASS  M5.b bytebazaar commission at the category rate (electronics) — line=1200 expected≈1200 (category 6%)
+PASS  M5.c glow-theory commission at the category rate (beauty) — line=900 expected≈900 (category 9%)
+PASS  M5.d wallets carry PENDING settlement (hold period) — byte pending=18800 glow pending=9100
+[mkt] M5: {"byte":{"total":20000,"commission":1200,"walletPending":18800},"glow":{"total":10000,"commission":900,"walletPending":9100}}
+PASS  M6.a FULL refund processed — http=200
+PASS  M6.b full refund → order refunded — status=refunded
+PASS  M6.c full refund restocks the items — stock 59→61 (expect 61)
+PASS  M6.d PARTIAL refund processed — http=200
+PASS  M6.e partial refund → order partially refunded — status=partially_refunded
+PASS  M6.f partial refund bookkeeping present (proportional restock logged or zero-floor) — glow stock 38→38, refund-restock logs=0
+[mkt] M6: {"full":{"order":"NM-100187","status":"refunded","stock":61},"partial":{"order":"NM-100188","status":"partially_refunded","amount":5000,"restockLogs":0}}
+PASS  M7.a seller withdrawal request accepted — http=200 amount={"data":{"payout":{"id":"cmvzedf5003ttox512jzoqsni","batchId":null,"sellerId":"c
+PASS  M7.b duplicate request while open → 409 — http=409
+PASS  M7.c admin approve → processing + T3 posted — http=200 status=processing t3=1
+PASS  M7.d mark-paid → paid + T4 posted (mock reference) — http=200 status=paid t4=1
+[mkt] M7: {"payout":"cmvzedf5003ttox512jzoqsni","amount":5000,"states":"requested→processing→paid"}
+PASS  M8.a delayed duplicate webhook → graceful duplicate ack — http=200
+PASS  M8.b duplicate posts NOTHING new — t1 postings=2 (expect 2)
+[mkt] M8: {"http":200,"t1":2}
+PASS  M9.0 seller self-registers (onboarding + draft store) — http=201
+PASS  M9.a unapproved seller's storefront 404s — http=404 store=lt-mkt-store-mvzebgpc
+PASS  M9.c ops approves onboarding seller — http=200 seller=active store=live
+PASS  M9.c2 seller creates first product → pending_review (first_n rule) — http=201 status=pending_review
+PASS  M9.d PENDING-MODERATION product 404s on the live store — http=404
+PASS  M9.e admin product approval publishes it — http=200 status=active pdp=200
+[mkt] M9: {"seller":"active","store":"live","product":"active","pdp":200,"storeSlug":"lt-mkt-store-mvzebgpc"}
+PASS  M10.a bounce event → suppression recorded — http=200
+PASS  M10.b EmailSuppression row exists — reason=hard_bounce
+PASS  M10.c duplicate provider event → duplicate:true, no double row — http=200 body={"data":{"received":true,"duplicate":true,"eventType":"email.bounced"}}
+PASS  M10.d OTP request for suppressed address → uniform 200, suppressed — http=200 body={"data":{"sent":true,"message":"If an order matches those details, a 6-digit verification code has b
+PASS  M10.e suppression.removed event clears the row — http=200 row=false
+[mkt] M10: {"bounce":"lt-bounce-mvzebgpc@lt.test","suppressed":true,"duplicateAck":true,"removed":true}
+
+[marketplace-e2e] run mvzebgpc complete — evidence written.

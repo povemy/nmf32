@@ -33,19 +33,72 @@ import {
   BASE,
 } from "./lib";
 import { runExpirySweep } from "../../src/lib/expiry-sweep";
+import { hashPasswordAsync } from "../../src/lib/password";
+import { base32Decode, totpCode, totpCounterAt } from "../../src/lib/mfa";
 
 const stamp = Date.now().toString(36);
+// PHASE 3 / STEP 4 fixture fix: link codes must satisfy the PRODUCTION hex
+// format gate (/^[a-f0-9-]{6,32}$/i in resolveAffiliateLink) — the original
+// `ltp22link…` alphabet contains non-hex letters and was rejected 404
+// LINK_NOT_FOUND on first-ever execution. Same for the profile code below.
+const hexStamp = `${Date.now().toString(16)}${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0")}`;
 
 // ── local helpers (staging-only; [LT]-tagged fixtures) ────────────────────────
-async function adminToken(email: string, password: string): Promise<string> {
-  const r = await fetch(`${BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+// PHASE 3 / STEP 4: the C1.2 admin flows hit the affiliate.finance capability,
+// whose roles (superadmin/finance) are MFA-mandatory (mfaEnrollmentGate).
+// The original plain-login adminToken predates that gate and was never run
+// anywhere — every admin money call would 403 MFA_ENROLLMENT_REQUIRED. This
+// version provisions a dedicated [LT] finance admin, enrolls + confirms MFA
+// through the REAL API surface (no bypass), and completes the challenge login
+// with a computed TOTP — the exact mfa-e2e machinery.
+async function adminToken(_email: string, _password: string): Promise<string> {
+  const email = `lt-p22-fin-${stamp}@nomofee.test`;
+  const password = "LtP22Fin123!pass";
+  await db.adminUser.create({
+    data: { email, name: "LT P22 Finance", role: "finance", isActive: true, passwordHash: await hashPasswordAsync(password) },
+  });
+  const login0 = await fetch(`${BASE}/api/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, portal: "admin" }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (r.status !== 200) throw new Error(`admin login failed (${r.status})`);
-  return j.data.token;
+  const j0 = (await login0.json().catch(() => ({})))?.data ?? {};
+  const tok0 = j0.token as string;
+  if (login0.status !== 200 || !tok0) throw new Error(`MFA-fixture admin login failed (${login0.status})`);
+  const enroll = await fetch(`${BASE}/api/admin/mfa/enroll`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok0}` },
+    body: JSON.stringify({ password }),
+  });
+  const en = (await enroll.json().catch(() => ({})))?.data ?? {};
+  const secret = base32Decode(String(en.secretBase32 ?? ""));
+  if (enroll.status !== 200 || !secret) throw new Error(`MFA enrollment failed (${enroll.status})`);
+  const code = totpCode(secret, totpCounterAt(Math.floor(Date.now() / 1000)));
+  const confirm = await fetch(`${BASE}/api/admin/mfa/confirm`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok0}` },
+    body: JSON.stringify({ password, code }),
+  });
+  if (confirm.status !== 200) throw new Error(`MFA confirm failed (${confirm.status})`);
+  // The confirm consumed TOTP counter C; the replay guard (consumeTotpCounter,
+  // lastUsedTotpCounter monotonic) rejects any reuse of C. Wait for the NEXT
+  // 30 s window so the challenge verify uses a genuinely fresh counter —
+  // this is the replay protection doing its job, not a defect.
+  const waitMs = Math.max(0, 30_100 - (Date.now() % 30_000));
+  await new Promise((r) => setTimeout(r, waitMs));
+  // Challenge login → TOTP verify → session token.
+  const login1 = await fetch(`${BASE}/api/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, portal: "admin" }),
+  });
+  const j1 = (await login1.json().catch(() => ({})))?.data ?? {};
+  const challenge = j1.challenge as string | undefined;
+  if (login1.status !== 200 || !challenge) throw new Error(`MFA challenge login failed (${login1.status})`);
+  const code2 = totpCode(secret, totpCounterAt(Math.floor(Date.now() / 1000)));
+  const verify = await fetch(`${BASE}/api/auth/mfa/verify`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ challenge, code: code2 }),
+  });
+  const jv = (await verify.json().catch(() => ({})))?.data ?? {};
+  if (verify.status !== 200 || !jv.token) throw new Error(`MFA verify failed (${verify.status})`);
+  return jv.token as string;
 }
 
 /** Variant in a specific store (lib.makeLtVariant is bytebazaar-only). */
@@ -53,7 +106,7 @@ async function makeLtVariantIn(storeSlug: string, tag: string, stock: number) {
   const store = await db.store.findUnique({ where: { slug: storeSlug }, select: { id: true } });
   if (!store) throw new Error(`${storeSlug} store missing`);
   const product = await db.product.create({
-    data: { storeId: store.id, title: `${LT} P22 product ${tag}`, slug: `lt-p22-${tag}-${stamp}`, description: "Phase 2.2 race-test artifact", status: "active", priceMinor: 1000 },
+    data: { storeId: store.id, title: `${LT} P22 product ${tag}`, slug: `lt-p22-${tag}-${stamp}`, description: "Phase 2.2 race-test artifact", status: "active", priceMinor: 1000, affiliateEnabled: true },
   });
   const variant = await db.productVariant.create({
     data: { productId: product.id, name: "std", stock, moq: 1, priceMinor: 1000, isActive: true },
@@ -190,10 +243,20 @@ async function suiteC12() {
   console.log("── P1–P6: affiliate payout ↔ refund races ──");
   // Fixture: [LT] affiliate (user + profile + link), [LT] buyer with attribution.
   const affEmail = `lt-p22-aff-${stamp}@lt.test`;
-  const reg = await fetch(`${BASE}/api/auth/shopper/register`, {
+  // 429-aware registration (5/min/IP in-app window — rapid re-runs trip it).
+  let reg = await fetch(`${BASE}/api/auth/shopper/register`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: affEmail, password: "LtAff123!", fullName: "LT P22 Affiliate" }),
   });
+  if (reg.status === 429) {
+    const waitMs = Number((await reg.json().catch(() => ({})))?.error?.details?.retryAfterSeconds ?? 0) * 1000;
+    console.log(`[p22] affiliate register 429 — waiting ${waitMs || 65000}ms`);
+    await new Promise((r) => setTimeout(r, waitMs || 65_000));
+    reg = await fetch(`${BASE}/api/auth/shopper/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: affEmail, password: "LtAff123!", fullName: "LT P22 Affiliate" }),
+    });
+  }
   const affLogin = await fetch(`${BASE}/api/auth/shopper/login`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: affEmail, password: "LtAff123!" }),
@@ -203,13 +266,17 @@ async function suiteC12() {
   const affUser = await db.shopperUser.findUnique({ where: { email: affEmail } });
   if (!affUser || !affBearer) { check("P fixture: affiliate user", false, `reg=${reg.status} login=${affLogin.status}`); return; }
   const profile = await db.affiliateProfile.create({
-    data: { userId: affUser.id, status: "active", code: `ltp22${stamp}`, slug: `lt-p22-${stamp}`, displayName: "LT P22 Affiliate", termsVersion: 1, termsAcceptedAt: new Date() },
+    data: { userId: affUser.id, status: "active", code: hexStamp, slug: `lt-p22-${stamp}`, displayName: "LT P22 Affiliate", termsVersion: 1, termsAcceptedAt: new Date() },
   });
   const link = await db.affiliateLink.create({
-    data: { affiliateId: profile.id, type: "store", code: `ltp22link${stamp}`, storeId: (await db.store.findUnique({ where: { slug: "bytebazaar" }, select: { id: true } }))!.id },
+    data: { affiliateId: profile.id, type: "store", code: `f22${hexStamp}`, storeId: (await db.store.findUnique({ where: { slug: "bytebazaar" }, select: { id: true } }))!.id },
   });
 
-  const v = await makeLtVariant(`p-${stamp}`, 10);
+  // PHASE 3 / STEP 4 fixture fix: qty 25 × RM 10 = RM 250 → 5% affiliate pool
+  // = RM 12.50, comfortably ABOVE the RM 10.00 minPayoutMinor default the
+  // payout request route enforces (BELOW_MIN_PAYOUT 409 otherwise — the
+  // original qty-2 fixture yielded RM 1.00 and could never reach a payout).
+  const v = await makeLtVariant(`p-${stamp}`, 40);
   createdVariantIds.push(v.variantId);
   // Buyer visits the affiliate link (money-grade touch cookie), then checks out.
   const buyerCookie = await ltShopperCookie(`lt-p22-buyer2-${stamp}@lt.test`, "LT P22 Buyer 2");
@@ -221,7 +288,7 @@ async function suiteC12() {
   const co = await fetch(`${BASE}/api/checkout/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie: `${buyerCookie}; ${setCookie}`, "Idempotency-Key": `p22-p-${stamp}` },
-    body: JSON.stringify({ items: [{ variantId: v.variantId, qty: 2 }], customer: { name: "LT P22 Buyer 2", email: `lt-p22-buyer2-${stamp}@lt.test` }, shippingAddress: { line1: "1 LT Jalan", city: "Kuala Lumpur", postcode: "50000", state: "Kuala Lumpur" }, provider: "fpx_toyyibpay" }),
+    body: JSON.stringify({ items: [{ variantId: v.variantId, qty: 25 }], customer: { name: "LT P22 Buyer 2", email: `lt-p22-buyer2-${stamp}@lt.test` }, shippingAddress: { line1: "1 LT Jalan", city: "Kuala Lumpur", postcode: "50000", state: "Kuala Lumpur" }, provider: "fpx_toyyibpay" }),
   });
   const coBody = await co.json().catch(() => ({}));
   if (co.status !== 201) { check("P fixture: attributed checkout", false, `status=${co.status}`); return; }
@@ -236,6 +303,27 @@ async function suiteC12() {
     where: { commissionId: { in: commissions.map((c) => c.id) } },
     data: { status: "available", availableAt: new Date(Date.now() - 1000) },
   });
+  // PHASE 3 / STEP 4 fixture completion: the SELLER-side hold must mature too.
+  // The refund process route's conservative sufficiency gate requires the FULL
+  // refund amount to be AVAILABLE (ledger truth), and fresh T1 credits sit in
+  // the hold period (payoutHoldDays / bytebazaar holdDaysOverride=10) — without
+  // this aging the P3 refund correctly 409s INSUFFICIENT_WALLET and the whole
+  // refund-during-processing scenario is unreachable.
+  {
+    const byteStore = await db.store.findUnique({
+      where: { slug: "bytebazaar" },
+      select: { seller: { select: { wallet: { select: { id: true } } } } },
+    });
+    const byteWalletId = byteStore?.seller?.wallet?.id;
+    if (byteWalletId) {
+      await db.ledgerLine.updateMany({
+        where: { walletId: byteWalletId, availableAt: { gt: new Date() } },
+        data: { availableAt: new Date(Date.now() - 1000) },
+      });
+      const { refreshWalletCache } = await import("../../src/lib/ledger");
+      await refreshWalletCache(byteWalletId);
+    }
+  }
 
   const admin = await adminToken(process.env.LT_ADMIN_EMAIL ?? "finance@nomofee.io", process.env.LT_ADMIN_PASSWORD ?? "Finance123!");
   const adminH = { "Content-Type": "application/json", Authorization: `Bearer ${admin}` };
@@ -253,7 +341,10 @@ async function suiteC12() {
   check("P1.a: exactly one open payout survives two racing requests", payouts.length === 1, `open=${payouts.length}`);
   check("P1.b: loser refused (409 PAYOUT_OPEN / CLAIM_CONFLICT)", loser?.error?.code === "PAYOUT_OPEN" || loser?.error?.code === "PAYOUT_CLAIM_CONFLICT", `code=${loser?.error?.code}`);
   check("P1.c: frozen amount equals claimed matured entries", (wonPayout?.data?.amountMinor ?? 0) > 0, `amount=${wonPayout?.data?.amountMinor}`);
-  const payoutId = wonPayout?.data?.id as string;
+  // PHASE 3 / STEP 4 fixture fix: POST /api/affiliate/payouts returns
+  // { payoutId, amountMinor } (requestAffiliatePayout) — the original read
+  // data.id (always undefined → every admin process call 404'd).
+  const payoutId = (wonPayout?.data?.payoutId ?? wonPayout?.data?.id) as string;
   const frozen = wonPayout?.data?.amountMinor as number;
 
   // P2 — duplicate approval race.
@@ -314,8 +405,21 @@ try {
       const v = await db.productVariant.findUnique({ where: { id: vid }, include: { product: true } });
       if (v) { await db.productVariant.delete({ where: { id: vid } }).catch(() => {}); await db.product.delete({ where: { id: v.productId } }).catch(() => {}); }
     }
-    await db.affiliateLink.deleteMany({ where: { code: { startsWith: "ltp22link" } } });
-    await db.affiliateProfile.deleteMany({ where: { slug: `lt-p22-${stamp}` } });
+    // PHASE 3 / STEP 4: affiliate profile/link/commission fixtures are
+    // RETAINED (audit convention — the race's financial evidence feeds the
+    // post-run invariant verification; deleting the profile trips
+    // AffiliateCommission_affiliateId_fkey anyway).
+    // [LT] MFA finance admin fixture (Phase 3 / Step 4): enrollment + sessions
+    // + account, mirroring mfa-e2e's cleanup.
+    try {
+      const finAdmin = await db.adminUser.findUnique({ where: { email: `lt-p22-fin-${stamp}@nomofee.test` } });
+      if (finAdmin) {
+        await db.adminMfaEnrollment.deleteMany({ where: { adminId: finAdmin.id } });
+        await db.session.deleteMany({ where: { userId: finAdmin.id } });
+        await db.activityLog.deleteMany({ where: { actorId: finAdmin.id } });
+        await db.adminUser.delete({ where: { id: finAdmin.id } });
+      }
+    } catch {}
     await cleanupCarts([shopperEmail, `lt-p22-aff-${stamp}@lt.test`, `lt-p22-buyer2-${stamp}@lt.test`]);
   } catch (e) {
     console.log("[cleanup] best-effort cleanup failed (fixtures remain, [LT]-tagged):", e instanceof Error ? e.message : e);

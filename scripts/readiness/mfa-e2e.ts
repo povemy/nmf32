@@ -32,7 +32,7 @@ import { hashPasswordAsync } from "../../src/lib/password";
 import { base32Decode, totpCode, totpCounterAt } from "../../src/lib/mfa";
 import { check, summary, exitCode } from "./lib";
 
-const BASE = "http://127.0.0.1:3000";
+const BASE = process.env.LT_BASE ?? "http://127.0.0.1:3000"; // Phase 3/Step 4: staging instance override
 const RUN = Date.now().toString(36);
 const FIN_EMAIL = `lt-mfa-fin-${RUN}@nomofee.test`;
 const PASSWORD = "LtMfa123!pass";
@@ -84,7 +84,12 @@ async function main() {
     const codes = (data(cf.json).recoveryCodes ?? []) as string[];
     check("S2 confirm accepts live TOTP; 10 recovery codes returned", cf.status === 200 && codes.length === 10, `status=${cf.status} codes=${codes.length}`);
     const meAfter = await api("GET", "/api/auth/me", { token: tok0 });
-    check("S9 confirm revoked every prior admin session", meAfter.status === 401, `status=${meAfter.status}`);
+    // PHASE 3 / STEP 4 assertion calibration: /api/auth/me answers 200 with
+    // {userType:null} for ANONYMOUS callers (route contract, line 8) — the
+    // revoked-token property is "no longer authenticates as the admin", not
+    // "HTTP 401". Verified independently: session rows for the admin are 0
+    // after confirm (revokeUserSessions works; isolated repro 2026-11-02).
+    check("S9 confirm revoked every prior admin session", meAfter.status === 200 && data(meAfter.json).userType == null, `me=${meAfter.status} userType=${JSON.stringify(data(meAfter.json).userType)} (anonymous ⇒ token dead)`);
 
     // 3 — login now demands MFA; no session minted by the password step.
     const li2 = await adminLogin(FIN_EMAIL, PASSWORD);
@@ -102,7 +107,12 @@ async function main() {
     // 5 — a FRESH challenge: the code from S2's counter may now be an earlier
     //     step; use the CURRENT step's code, verify OK, then REPLAY it once
     //     more on another fresh challenge → must be rejected.
+    //     PHASE 3 / STEP 4 pacing fix: the confirm at S2 BURNED the current
+    //     TOTP counter (consumeTotpCounter replay guard — correct security
+    //     behavior). A code from the SAME 30 s window is a replay ⇒ 401. Wait
+    //     for the NEXT window so S5a exercises a genuinely fresh code.
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    await sleep(Math.max(0, 30_100 - (Date.now() % 30_000))); // fresh TOTP window
     await sleep(2000);
     const c2 = totpCounterAt(Math.floor(Date.now() / 1000));
     const li3 = await adminLogin(FIN_EMAIL, PASSWORD);
@@ -117,6 +127,12 @@ async function main() {
     check("S5b SAME code replayed on a fresh challenge is REJECTED", replayRejected && !data(v2.json).token, `status=${v2.status}`);
 
     // 6 — recovery code: use once (fresh challenge), then the SAME code again fails.
+    //     PHASE 3 / STEP 4 pacing fix: login + mfa/verify SHARE the per-IP
+    //     "auth-login" bucket (10/min — deliberate brute-force control). The
+    //     suite's call density exhausts it right here (S7a login + S3 + 3×S4
+    //     verifies + S5's 2 logins + 2 verifies = 9); wait out the window
+    //     instead of tripping RATE_LIMITED.
+    await sleep(62_000);
     const li5 = await adminLogin(FIN_EMAIL, PASSWORD);
     const ch5 = String(data(li5.json).challenge ?? "");
     const rc = codes[0].replace(/-/g, "");

@@ -1,0 +1,23 @@
+── A) inventory-boundary rollback (line 2 out of stock) ──
+PASS  A1: zero-stock line rejected 409 OUT_OF_STOCK — 409 OUT_OF_STOCK
+PASS  A2: line-1 stock unchanged (decrement rolled back) — pre=10 after=10
+PASS  A3: no inventoryLog written — pre=0 after=0
+PASS  A4: no ledger rows written — pre=38 after=38
+PASS  A5: no order rows persisted — count=0
+── B) ledger-boundary rollback (T1 insert faulted by trigger) ──
+PASS  B1: faulted webhook does NOT report success — status=500 ms=1152
+PASS  B2: order stays payment_pending (tx rolled back) — status=payment_pending
+PASS  B3: no T1 ledger posting — t1=0
+PASS  B4: webhook log left processed=false (retryable) — processed=false
+PASS  B5: cart line survives (cart clearing rolled back) — cartItems=1
+   fault trigger removed — redelivering
+PASS  B6: redelivery after fault converges 200 — status=200 {"data":{"ok":true,"duplicate":false,"orderNumber":"NM-100070","orderStatus":"paid"}}
+PASS  B7: order paid exactly once — status=paid
+PASS  B8: exactly one T1 posting — t1=1
+PASS  B9: success log marked processed — processedLogs=1
+PASS  B10: successful redelivery clears the cart line — cartItems=0
+[cleanup] stocks restored; [LT] artifacts left tagged for audit: products rbA/rbB/rbC-mvzaqokq
+
+RESULTS_JSON {"runId":"mvzaqokq","startedAt":"2026-11-02T13:30:19.754Z","tests":[{"test":"A_inventory_boundary_rollback","checks":[null,null,null,null,null],"httpStatus":409},{"test":"B_ledger_boundary_fault","checks":[null,null,null,null,null],"httpStatus":500,"faultMs":1152},{"test":"B_ledger_recovery_redelivery","checks":[null,null,null,null,null],"httpStatus":200}],"finishedAt":"2026-11-02T13:30:29.633Z"}
+
+fault-rollback: ALL PASS

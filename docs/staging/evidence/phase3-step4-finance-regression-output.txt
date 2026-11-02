@@ -1,0 +1,89 @@
+fixture seller=cmvzanh3o0000oxqgl23j5mhg wallet=cmvzanh6d0002oxqgi1ro8ljj
+
+── case 1: cache == truth after refresh ──
+PASS  1a: matured T1 → available reflects net — cache=9500 truth=9500
+PASS  1b: cache lifetime fields == truth
+── case 2/5: time-maturity drift reproduced on fixture ──
+PASS  2a: while held → cache == truth, pending>0, available unchanged — pend=19000
+PASS  2b: after maturity → invariant classifies TIME_MATURITY (benign), not hard drift — maturedSinceLastWrite=19000
+PASS  2c: totals equal (no money missing)
+PASS  2d: magnitude equals the matured hold — 19000
+── case 15/13/14: reconcile utility (dry-run → apply → re-apply) ──
+PASS  13a: dry-run exits clean — exit=0
+PASS  13b: dry-run classifies STALE_TIME_MATURITY — STALE_TIME_MATURITY
+PASS  13c: dry-run wrote NOTHING (cache untouched) — updatedAt unchanged=true
+PASS  15a: apply succeeds and verifies — exit=0
+PASS  15b: after repair cache == truth (available includes matured hold) — cache=28500/0 truth=28500/0
+PASS  15c: invariant reports MATCH for fixture (no drift entries)
+PASS  14a: ledger history unchanged by repair (count + checksum) — 2→2 cksum -681781448→-681781448
+PASS  13d: re-apply idempotent (same cache values, exit clean)
+PASS  13e: re-apply did not touch ledger
+── case 12: concurrent reconciliation attempts ──
+PASS  12: concurrent applies both succeed, cache == truth exactly once — exits=0,0 
+── case 3: corrupted cache classification + repair ──
+PASS  3a: totals-differ drift is HARD (flips ok=false) — availΔ=1
+PASS  3b: repair from truth fixes corruption
+PASS  3c: ok=true again after repair
+── case 6: payout lifecycle ──
+PASS  6a: T3 debit reduces available exactly once — 28500 → 25500
+PASS  6b: T4 clearing→bank leaves seller payable unchanged
+PASS  6c: T4f reversal credits available back (immediately matured) — 25500
+PASS  6d: cache tracks truth through the lifecycle
+── case 7: refund ──
+PASS  7a: T5 debits seller share (amount − commission reversal) — Δ=-4750
+PASS  7b: refund keeps cache == truth
+prisma:error 
+Invalid `tx.ledgerTransaction.create()` invocation in
+/home/z/my-project/src/lib/ledger.ts:163:50
+
+  160   : null;
+  161 if (sp) await tx.$executeRawUnsafe(`SAVEPOINT ${sp}`);
+  162 try {
+→ 163   const created = await tx.ledgerTransaction.create(
+Unique constraint failed on the fields: (`dedupKey`)
+PASS  7c: duplicate refund replay converges (dedupKey, no double debit) — idempotentReplay=true
+── case 8: 5 concurrent same-wallet postings ──
+PASS  8a: 5/5 concurrent postings succeed (row-lock wait, no SSI storm) — 5/5
+PASS  8b: exactly 5 new pending credits (no double/lost movement) — pend 0 → 4500
+PASS  8c: final cache == truth
+── case 10: fault injection at the cache-update boundary ──
+prisma:error 
+Invalid `client.wallet.update()` invocation in
+/home/z/my-project/src/lib/ledger.ts:264:23
+
+  261 export async function refreshWalletCache(walletId: string, tx?: Prisma.TransactionClient) {
+  262   const truth = await walletTruth(walletId, tx);
+  263   const client = tx ?? db;
+→ 264   await client.wallet.update(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "P0001", message: "LT fault injection: wallet_update", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+PASS  10a: posting path THROWS when the cache update faults
+PASS  10b: T1 posting SURVIVED committed and balanced (no lost/partial money) — 12→13
+prisma:error 
+Invalid `tx.ledgerTransaction.create()` invocation in
+/home/z/my-project/src/lib/ledger.ts:163:50
+
+  160   : null;
+  161 if (sp) await tx.$executeRawUnsafe(`SAVEPOINT ${sp}`);
+  162 try {
+→ 163   const created = await tx.ledgerTransaction.create(
+Unique constraint failed on the fields: (`dedupKey`)
+PASS  10c: retry after the fault converges via dedupKey (no double posting) — txns=1
+PASS  10d: cache healed by the retry's refresh (== truth again)
+── case 11: transient fault then retry converges exactly-once ──
+prisma:error 
+Invalid `tx.ledgerTransaction.create()` invocation in
+/home/z/my-project/src/lib/ledger.ts:163:50
+
+  160   : null;
+  161 if (sp) await tx.$executeRawUnsafe(`SAVEPOINT ${sp}`);
+  162 try {
+→ 163   const created = await tx.ledgerTransaction.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "P0001", message: "LT fault injection: ledger_insert", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+PASS  11a: first attempt failed on injected fault
+PASS  11b: retry succeeds and exactly ONE posting exists (dedupKey backstop) — txns=1
+PASS  final: fixture wallet fully reconciled (no drift of either class)
+PASS  final: ledger still balanced after every operation
+
+[cleanup] fixture seller/wallet/ledger rows removed

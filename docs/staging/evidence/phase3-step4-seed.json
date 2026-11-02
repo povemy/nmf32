@@ -1,0 +1,30 @@
+{
+  "seededAt": "2026-11-02T13:08:36.698Z",
+  "target": "nomofee_staging",
+  "commissionSetting": "id=1 (8% default, 7 payout hold days)",
+  "plan": "free",
+  "categories": 8,
+  "admins": [
+    "admin@nomofee.io (superadmin)",
+    "ops@nomofee.io (ops)",
+    "finance@nomofee.io (finance)",
+    "moderator@nomofee.io (moderator)"
+  ],
+  "sellers": [
+    "bytebazaar:live",
+    "glow-theory:live",
+    "pending-pantry:draft"
+  ],
+  "qaShopper": "qa.shopper@nomofee.test / Shopper123!",
+  "ledgerAccounts": 5,
+  "durationMs": 7761,
+  "counts": {
+    "stores": 3,
+    "sellers": 3,
+    "products": 7,
+    "admins": 4,
+    "wallets": 2,
+    "categories": 8,
+    "ledgerAccounts": 7
+  }
+}

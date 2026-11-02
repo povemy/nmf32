@@ -1,0 +1,112 @@
+{
+  "runId": "mvzebgpc",
+  "target": "nomofee_staging",
+  "steps": [
+    {
+      "name": "M1",
+      "detail": {
+        "shopper": "lt-mkt-buyer-mvzebgpc@lt.test",
+        "inbox": "171→172"
+      }
+    },
+    {
+      "name": "M2",
+      "detail": {
+        "group": "ref_73ea94c3b1330e42",
+        "orders": [
+          {
+            "store": "bytebazaar",
+            "number": "NM-100187",
+            "total": 20000
+          },
+          {
+            "store": "glow-theory",
+            "number": "NM-100188",
+            "total": 10000
+          }
+        ]
+      }
+    },
+    {
+      "name": "M3",
+      "detail": {
+        "group": "failed",
+        "order": "NM-100189",
+        "orderStatus": "payment_pending"
+      }
+    },
+    {
+      "name": "M4",
+      "detail": {
+        "order": "NM-100190",
+        "status": "payment_expired",
+        "stock": 10
+      }
+    },
+    {
+      "name": "M5",
+      "detail": {
+        "byte": {
+          "total": 20000,
+          "commission": 1200,
+          "walletPending": 18800
+        },
+        "glow": {
+          "total": 10000,
+          "commission": 900,
+          "walletPending": 9100
+        }
+      }
+    },
+    {
+      "name": "M6",
+      "detail": {
+        "full": {
+          "order": "NM-100187",
+          "status": "refunded",
+          "stock": 61
+        },
+        "partial": {
+          "order": "NM-100188",
+          "status": "partially_refunded",
+          "amount": 5000,
+          "restockLogs": 0
+        }
+      }
+    },
+    {
+      "name": "M7",
+      "detail": {
+        "payout": "cmvzedf5003ttox512jzoqsni",
+        "amount": 5000,
+        "states": "requested→processing→paid"
+      }
+    },
+    {
+      "name": "M8",
+      "detail": {
+        "http": 200,
+        "t1": 2
+      }
+    },
+    {
+      "name": "M9",
+      "detail": {
+        "seller": "active",
+        "store": "live",
+        "product": "active",
+        "pdp": 200,
+        "storeSlug": "lt-mkt-store-mvzebgpc"
+      }
+    },
+    {
+      "name": "M10",
+      "detail": {
+        "bounce": "lt-bounce-mvzebgpc@lt.test",
+        "suppressed": true,
+        "duplicateAck": true,
+        "removed": true
+      }
+    }
+  ]
+}

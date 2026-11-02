@@ -20,7 +20,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 // CONNECTION BUDGET [Measured]: Supavisor session pooler rejects clients past
 // pool_size=15 (EMAXCONNSESSION). Dev server (≤10) + this script + spawned
 // reconcile children must stay under it → small per-process limits here.
-const rawUrl = readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
+// (Phase 3/Step 4: env override first — staging runs pin schema=nomofee_staging.)
+const rawUrl = process.env.SUPABASE_DATABASE_URL ?? readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
 const limitUrl = (n: number) => rawUrl + (rawUrl.includes("?") ? "&" : "?") + `connection_limit=${n}`;
 process.env.SUPABASE_DATABASE_URL = limitUrl(2);
 

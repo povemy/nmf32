@@ -96,6 +96,14 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // PHASE 3 / STEP 4 (staging acceptance testing): when NEXT_DIST_DIR is set,
+  // this process is the ISOLATED temporary staging instance (separate port,
+  // separate database schema, per the authorized staging test plan). Two
+  // `next dev` processes MUST NOT share one .next/ directory — they corrupt
+  // each other's build artifacts. Default is unchanged (.next) for every
+  // other run; the env gate only ever activates for the explicit staging
+  // instance launched with NEXT_DIST_DIR=.next-staging.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // Type-safety gate: production builds FAIL on type errors instead of
   // silently ignoring them. The build's type program is scoped to
   // tsconfig.ci.json (src/ + next.config + generated .next/types) — the SAME

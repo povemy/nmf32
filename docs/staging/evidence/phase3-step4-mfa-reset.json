@@ -1,0 +1,11 @@
+{
+  "runId": "mvzeha4q",
+  "target": "nomofee_staging",
+  "summary": {
+    "oneTimeRecoveryCodes": "burn-once semantics proven by mfa-e2e S6 (staging run 2026-11-02)",
+    "authorizedReset": "offline runbook only — no online self-service reset route exists (grep: no admin MFA reset API route)",
+    "mandatoryReenrollment": true,
+    "auditRecord": true,
+    "sessionRevocation": true
+  }
+}

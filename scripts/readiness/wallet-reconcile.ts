@@ -64,7 +64,7 @@ function check(name: string, ok: boolean, detail = "") {
 // ever disagree, the FORMULA itself is suspect — exactly what the mission
 // asks us to avoid assuming.
 async function sqlTruth(accountCode: string) {
-  const url = readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
+  const url = process.env.SUPABASE_DATABASE_URL ?? readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
   const u = new URL(url);
   const dbId = `${u.host}${u.pathname}`;
   // Independent SQL-side derivation via $queryRaw (server-side aggregation,
@@ -229,7 +229,7 @@ if (APPLY && CONFIRM !== (ALL_WALLETS ? "ALL" : WALLET_ARG)) {
   process.exit(2);
 }
 
-const url = readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
+const url = process.env.SUPABASE_DATABASE_URL ?? readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
 const u = new URL(url);
 console.log(`database: ${u.host}${u.pathname} (credentials omitted)`);
 

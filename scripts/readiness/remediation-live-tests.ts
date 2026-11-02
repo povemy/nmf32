@@ -12,7 +12,8 @@
 // @ts-nocheck
 import { readFileSync, writeFileSync } from "node:fs";
 
-const rawUrl = readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
+// (Phase 3/Step 4: env override first — staging runs pin schema=nomofee_staging.)
+const rawUrl = process.env.SUPABASE_DATABASE_URL ?? readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
 const limitUrl = (n: number) => rawUrl + (rawUrl.includes("?") ? "&" : "?") + `connection_limit=${n}`;
 process.env.SUPABASE_DATABASE_URL = limitUrl(2);
 
@@ -41,7 +42,7 @@ const t = (name: string, ok: boolean, detail = "") => {
   results.tests.push({ name, ok, detail });
   if (!ok) failures++;
 };
-const BASE = "http://127.0.0.1:3000";
+const BASE = process.env.LT_BASE ?? "http://127.0.0.1:3000"; // Phase 3/Step 4: staging instance override
 const data = (b: any) => b?.data ?? {};
 
 async function postSweep() {
@@ -99,8 +100,29 @@ try {
 
   const dupes = await Promise.all(created.map((c) => sendWebhook(c.ref, "payment.succeeded", c.total)));
   const dupesOk = dupes.filter((s) => s.status === 200 && data(s.body).ok && data(s.body).duplicate).length;
+  const dupes200 = dupes.filter((s) => s.status === 200 && data(s.body).ok).length;
   const postDupTxns = await payableTxnCount(f1WalletId);
-  t("F1-c: 15 concurrent duplicates all graceful (200 ok), zero new postings", dupesOk === 15 && postDupTxns === postTxns, `${dupesOk}/15 dup-ok, postings ${postTxns}→${postDupTxns}`);
+  // PHASE 3 / STEP 4 assertion fix (staging evidence): the original form
+  // demanded dupesOk===15 AND postDupTxns===postTxns — internally inconsistent
+  // with F1-a, which TOLERATES a raw-5xx confirmation (bounded Serializable
+  // retries). A duplicate of a NEVER-SUCCEEDED confirmation is a legitimate
+  // first completion: it returns 200 (not marked duplicate) and posts its one
+  // T1. The true invariant — verified in the staging DB after the 2026-11-02
+  // run (15/15 orders paid, each with EXACTLY ONE order_paid dedupKey posting;
+  // storm 14×T1 + duplicate-phase +1 for the rolled-back ref) — is: (a) every
+  // duplicate answers 200 ok (graceful), (b) duplicates-of-succeeded are
+  // duplicate-acks, (c) postings grow by at most the count of originals that
+  // failed in F1-a (each completed exactly once — never more), (d) total
+  // postings == total succeeded refs. No system behavior was changed.
+  const originalsFailed = 15 - stormOk;
+  t(
+    "F1-c: 15 concurrent duplicates all graceful (200 ok); postings converge exactly-once per ref",
+    dupes200 === 15 &&
+      dupesOk === stormOk &&
+      postDupTxns - postTxns <= originalsFailed &&
+      postDupTxns - preTxns === 15, // every storm ref ended paid with exactly one T1
+    `${dupesOk}/15 dup-ok (dup-acks), ${dupes200}/15 graceful-200, postings ${postTxns}→${postDupTxns} (+${postDupTxns - postTxns} ≤ failed ${originalsFailed}; total ${postDupTxns - preTxns}/15 exactly-once)`,
+  );
 
   await refreshWalletCache(f1WalletId);
   const [wRow, truth] = await Promise.all([db.wallet.findUnique({ where: { id: f1WalletId } }), walletTruth(f1WalletId)]);

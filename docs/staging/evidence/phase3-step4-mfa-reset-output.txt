@@ -1,0 +1,16 @@
+PASS  R0.a fixture admin MFA-enrolled + confirmed — confirm=200
+PASS  R0.b enrollment row exists pre-reset — adminId=t1g3mf
+PASS  R0.c challenge-login mints a live privileged session — token=true
+PASS  R0.d privileged API works pre-reset — http=200
+[mfa-reset] runbook output:
+[mfa-admin-reset] Reset lt-reset-fin-mvzeha4q@nomofee.test: enrollment deleted, 1 session(s) revoked, audit row written. The admin must sign in with password and re-enroll; the mandatory-enrollment gate restricts privileged access until confirmed.
+PASS  R2.a operator reset runbook exits clean — exit=0
+PASS  R2.b enrollment row deleted by the reset — row=false
+PASS  R4 audit row admin.mfa.reset written (operator recorded) — action=admin.mfa.reset operator=lt-ops-operator@nomofee.test
+PASS  R5.a every admin session revoked — sessions=0
+PASS  R5.b pre-reset token no longer authenticates — userType=null
+PASS  R3.a password-only login works after reset — token=true
+PASS  R3.b privileged API blocked until re-enrollment (403 MFA_ENROLLMENT_REQUIRED) — http=403 code=MFA_ENROLLMENT_REQUIRED
+PASS  R3.c MFA bootstrap routes stay reachable while restricted — http=200
+
+[mfa-reset] assessment complete — evidence written.

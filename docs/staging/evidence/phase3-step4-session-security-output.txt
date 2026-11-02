@@ -1,0 +1,13 @@
+PASS  S1 login issues a 64-hex token — status=200
+PASS  S2 DB stores sha256(token) for the new session
+PASS  S3 NO plaintext row exists (no raw-token fallback)
+PASS  S4 Bearer token authenticates
+PASS  S5 chat hub-auth accepts the hashed-store token — status=200
+PASS  S6 second login mints a distinct session
+PASS  S7 expired session cannot authenticate — status=200 userType=null
+PASS  S8 logout succeeds — status=200
+PASS  S9 logged-out token no longer authenticates — status=200 userType=null
+PASS  S10 session row deleted on logout
+[cleanup] removed [LT] shopper lt-session-mvzcppes@nomofee.test
+
+Session security E2E: ALL PASS

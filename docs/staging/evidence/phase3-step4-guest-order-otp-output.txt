@@ -1,0 +1,32 @@
+PASS  1a knowledge-pair lookup DENIED (existing order) — status=401
+PASS  1b ghost order → IDENTICAL 401 body (no oracle) — status=401
+PASS  2a OTP request (existing pair) → uniform 200 — status=200
+PASS  2b OTP request (ghost pair) → IDENTICAL 200 body — status=200
+PASS  3.1 wrong code #1 → uniform 401 — status=401
+PASS  3.2 wrong code #2 → uniform 401 — status=401
+PASS  3.3 wrong code #3 → uniform 401 — status=401
+PASS  3.4 wrong code #4 → uniform 401 — status=401
+PASS  3.5 wrong code #5 → uniform 401 — status=401
+PASS  3.6 CORRECT code after 5 wrong → still 401 (locked; counter survives re-issuance) — status=401
+PASS  3.7 re-issuance after expiry → 200 — status=200
+PASS  4a correct code → 200 + accessGrant (v1…) — status=200
+PASS  5 same code replay → 401 (challenge consumed) — status=401
+PASS  6a grant lookup → 200 with order data — status=200
+PASS  6b grant is order-specific (other order's number → 401) — status=401
+PASS  6c forged grant → 401 — status=401
+PASS  7a receipt unauthenticated → 401 BEFORE the payment gate (never 409) — status=401
+PASS  7b receipt with grant → payment gate retained (409 NOT_PAID) — status=409
+PASS  8a registration itself succeeds (email delivery is never a blocker) — status=200
+PASS  8b UNVERIFIED login claims NOTHING — claimed={"addressesClaimed":0,"ordersClaimed":0,"skipped":"email-unverified"}
+PASS  8c guest orders remain unclaimed (shopperId still null)
+PASS  8d unverified account CANNOT read the guest order (401) — status=401
+PASS  9a email-verification request → 200 — status=200
+PASS  9b verification → verified + BOTH guest orders claimed exactly once — status=200 claimed=2
+PASS  9c second verify → alreadyVerified, claims 0 more — status=200
+PASS  9d re-login after verification claims nothing more — claimed={"addressesClaimed":0,"ordersClaimed":0}
+PASS  9e orders now owned by the verified account
+PASS  10a OWNING session lookup → 200 — status=200
+PASS  10b foreign shopper registered — status=200
+PASS  10c FOREIGN session → uniform 401 (no oracle) — status=401
+
+guest-order-otp-e2e: ALL PASS

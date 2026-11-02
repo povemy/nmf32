@@ -24,7 +24,7 @@ import { db } from "../../src/lib/db";
 import { writeFileSync } from "node:fs";
 const { LT, ltShopperCookie, makeLtVariant, checkout, sendWebhook, check, exitCode, pgClient, stopScheduler, startScheduler, sleep, setSetting } = await import("./lib");
 
-const BASE = "http://127.0.0.1:3000";
+const BASE = process.env.LT_BASE ?? "http://127.0.0.1:3000"; // Phase 3/Step 4: staging instance override
 const stamp = Date.now().toString(36);
 const BEHAVIOR_KEY = "psp.mock.refund.behavior";
 const FAULT_KEY = "recon.fault";

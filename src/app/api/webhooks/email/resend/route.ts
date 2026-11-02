@@ -65,7 +65,14 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(400, "BAD_SIGNATURE", "Webhook signature headers missing (svix-id/timestamp/signature)");
   }
   const ts = Number(svixTimestamp);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TS_WINDOW_MS) {
+  // PHASE 3 / STEP 4 defect fix (staging evidence 2026-11-02): Svix/Resend
+  // webhook timestamps are UNIX SECONDS, but this check compared them against
+  // Date.now() (milliseconds) — |ms − s| ≈ 1.7e12 always exceeded the window,
+  // so EVERY real provider event was rejected STALE_EVENT (bounce/complaint
+  // suppression could never receive live events; only tests sending ms
+  // timestamps passed). Normalize both to seconds — the ±5-minute replay
+  // window semantics are unchanged.
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > TS_WINDOW_MS / 1000) {
     throw new ApiError(400, "STALE_EVENT", `Webhook timestamp is outside the ±${TS_WINDOW_MS / 60_000}-minute acceptance window (replay protection)`);
   }
   if (!verifySvixSignature({ secret: webhookSecret(), svixId, svixTimestamp, svixSignature, rawBody })) {

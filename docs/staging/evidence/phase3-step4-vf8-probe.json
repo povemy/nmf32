@@ -1,0 +1,125 @@
+{
+  "runId": "mvzc7xmw",
+  "target": "nomofee_staging",
+  "steps": [
+    {
+      "name": "affiliate fixture",
+      "detail": {
+        "affiliate": "cmvzc8bdl0002oxlc117aqmkl",
+        "link": "d81a19c9a0e0839ab"
+      }
+    },
+    {
+      "name": "track",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "O1 paid",
+      "detail": {
+        "order": "NM-100165",
+        "total": 20000,
+        "items": 1
+      }
+    },
+    {
+      "name": "E_old created",
+      "detail": {
+        "amount": 1000
+      }
+    },
+    {
+      "name": "P1 requested",
+      "detail": {
+        "status": 201,
+        "amount": 1000
+      }
+    },
+    {
+      "name": "P1 paid → E_old.status",
+      "detail": "paid"
+    },
+    {
+      "name": "O1 refunded after payout",
+      "detail": {
+        "http": 200,
+        "E_old": {
+          "status": "paid",
+          "reversed": 1000,
+          "amount": 1000
+        }
+      }
+    },
+    {
+      "name": "O2 paid",
+      "detail": {
+        "order": "NM-100166",
+        "total": 40000,
+        "items": 2
+      }
+    },
+    {
+      "name": "E1+E2 created",
+      "detail": {
+        "commissions": 2,
+        "total": 2000
+      }
+    },
+    {
+      "name": "P2 requested",
+      "detail": {
+        "status": 201,
+        "amount": 1000,
+        "note": "amount = requestable = available(2000) − recovery(1000)"
+      }
+    },
+    {
+      "name": "P2 approved",
+      "detail": {
+        "http": 200,
+        "amount": 1000
+      }
+    },
+    {
+      "name": "O2 refunded while processing",
+      "detail": {
+        "http": 200,
+        "P2": {
+          "status": "processing",
+          "amount": 0
+        },
+        "PAYOUT_CLEARING_net": -2000
+      }
+    },
+    {
+      "name": "P2 marked paid at 0",
+      "detail": {
+        "http": 500,
+        "status": "processing",
+        "amount": 0
+      }
+    }
+  ],
+  "finalState": {
+    "PAYOUT_CLEARING_net": -2000,
+    "AFFILIATE_LIABILITY_net": 3950,
+    "BANK_MAIN_net": 3875,
+    "globalDebit": 521475,
+    "globalCredit": 521475,
+    "p1": {
+      "id": "cmvzc8i6s02x6ox519o1nzjou",
+      "amount": 0
+    },
+    "p2": {
+      "id": "cmvzc8t5102yuox51k0q9m8zp",
+      "amount": 0,
+      "status": "processing"
+    }
+  },
+  "verdict": {
+    "reproduced": true,
+    "note": "V-F8 confirmed with live evidence: the C1.2 refund coordination reverses the FULL claimed-entry value (2000) against PAYOUT_CLEARING while T-A3 credited only the recovery-netted frozen amount (1000); the payout amount floors at 0 but the clearing debit is not clamped. Global books balance (D==C, every txn balanced) — account-split presentation defect only, exactly as classified (LOW, no money creation).",
+    "candidateFix": "Clamp adj.clearing per payout to min(adj.clearing, payout.amountMinor) and route the excess to the liability/recovery side — REQUIRES a dedicated financial-allocation review before implementation (owner rule: no allocation change without proven-safe correction)."
+  }
+}

@@ -1,0 +1,20 @@
+PASS — B1.a: no variant has negative stock: 0 variants with stock<0
+PASS — B1.b: restock logs trace to expired order items: every expiry: restock log maps to ≥1 expired order item
+PASS — B2.a: no LedgerTransaction dedupKey appears twice: 0 duplicate dedupKeys
+PASS — B2.b: no order has more than one order_paid T1: orders with duplicated T1: 0
+PASS — B2.c: webhook (providerRef,eventType) may be logged (replays) — money keyed by dedupKey: replayed webhook events logged: 50 groups (logging replays is the audit trail; B2.a/b prove no double money)
+PASS — B3.a: Σdebit == Σcredit in EVERY transaction (independent SQL): all 120 transactions balanced
+PASS — B3.b: app runLedgerInvariants reports no hard problems: []
+PASS — B4.a: every wallet cache equals ledger truth: 4 wallets all MATCH (available+pending)
+PASS — B5.a: no entry reversed beyond its amount: entries with reversedMinor>amountMinor: 0
+PASS — B5.b: every paid payout amount within [Σ(entries net), Σ(entries gross)]: 4 paid payouts conserve (amount == net at payout time; later recovery reversals documented)
+PASS — B6.a: Σ refund amounts ≤ order total for every order: orders over-refunded: 0
+PASS — B7.a: exactly one expiry restock log per (variant,ref): (variant,refId) pairs with >1 expiry log: 0
+PASS — B7.b: voucher restoration bookkeeping present (count check): vouchers currently inactive: 0 (restoration path exercised by suites; per-order voucher deltas retained in [LT] audit rows)
+PASS — B8.a: one reconciliation obligation per expired group (idempotent upsert): 26 obligations total, 0 duplicate refs
+PASS — B8.b: obligation statuses sane: unknown statuses: 0 (observed vocabulary: requested/processing/succeeded/failed/cancelled/refunded)
+PASS — B9.a: global ledger balances (Σdebit == Σcredit across ALL lines): D=876475 C=876475 across 7 accounts
+PASS — B10 (observation): PLATFORM:PAYOUT_CLEARING net (V-F8 presentation watch, credit−debit): net=3000 (D18500/C21500) — positive
+PASS — B9.b: AFFILIATE_LIABILITY / BANK_MAIN nets recorded: AFFILIATE_LIABILITY net=-3950, BANK_MAIN net=-13875 (informational; conservation proven by B9.a + B5.b)
+
+[invariants] 18/18 passed — GREEN — all 18 invariant checks passed.

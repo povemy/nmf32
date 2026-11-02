@@ -73,7 +73,12 @@ const data = (j: Json) => (j.data ?? {}) as Record<string, unknown>;
 const errCode = (j: Json) => ((j.error as { code?: string } | undefined)?.code ?? "");
 
 /** Read the freshest 6-digit code from the configured REAL provider.
- *  `subjectPart` narrows to a specific email; empty = any code email. */
+ *  `subjectPart` narrows to a specific email; empty = any code email.
+ *  PHASE 3 / STEP 4 fix: Mailpit's LIST endpoint (/api/v1/messages) returns
+ *  message summaries WITHOUT the Text body — the code regex always saw "".
+ *  Match the subject in the list, then fetch the message DETAIL
+ *  (/api/v1/message/{ID}) for the body (verified live against Mailpit
+ *  v1.21: list hit found, Text empty; detail contains the 6-digit code). */
 async function readCodeFromMailbox(subjectPart: string): Promise<string> {
   if (MANUAL_CODE) return MANUAL_CODE;
   if (!MAILPIT) throw new Error("Set MAILPIT_URL (real local provider) or GUEST_OTP_TEST_CODE (operator run)");
@@ -81,15 +86,21 @@ async function readCodeFromMailbox(subjectPart: string): Promise<string> {
     await sleep(1_000);
     const res = await fetch(`${MAILPIT}/api/v1/messages?limit=10`);
     if (!res.ok) continue;
-    const body = (await res.json()) as { messages?: { Subject?: string; Text?: string }[] };
+    const body = (await res.json()) as { messages?: { ID?: string; Subject?: string }[] };
     const messages = body.messages ?? [];
     const hit = subjectPart
       ? messages.find((m) => (m.Subject ?? "").includes(subjectPart))
-      : messages.find((m) => /\b\d{6}\b/.test(m.Text ?? ""));
-    const m = (hit?.Text ?? "").match(/\b(\d{6})\b/);
-    if (m) return m[1];
+      : messages[0];
+    if (hit?.ID) {
+      const detail = await fetch(`${MAILPIT}/api/v1/message/${hit.ID}`);
+      if (detail.ok) {
+        const dm = (await detail.json()) as { Text?: string };
+        const m = (dm.Text ?? "").match(/\b(\d{6})\b/);
+        if (m) return m[1];
+      }
+    }
   }
-  throw new Error(`No OTP email (subject~${subjectPart || "any"}) arrived within 30s`);
+  throw new Error(`No OTP email (subject~${subjectPart || "any"}) with a 6-digit code arrived within 30s`);
 }
 
 async function shopperSession(email: string, password: string) {

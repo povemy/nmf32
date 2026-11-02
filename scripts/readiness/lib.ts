@@ -1,26 +1,59 @@
 // Shared helpers for the production-readiness test suite (mission: RX-PRV).
 // All test data is tagged "[LT]" and cleaned/restored after each scenario.
+//
+// PHASE 3 / STEP 4 (staging): BASE and the pg fault-injection client now honor
+// environment overrides so the SAME suites can target the isolated staging
+// application instance + nomofee_staging schema:
+//   • LT_BASE (default http://127.0.0.1:3000) — HTTP base of the app under test.
+//   • SUPABASE_DATABASE_URL env (falls back to the .env read as before) — and
+//     when the URL pins `schema=<name>`, pgClient FORCES the session search_path
+//     to that schema and hard-fails if it does not stick. This is a safety fix:
+//     node-postgres IGNORES the Prisma-only `schema=` URL parameter (verified
+//     empirically — search_path stays "$user", public), so without the explicit
+//     SET, unqualified fault-injection DDL (triggers on "Wallet" etc.) would
+//     land in public even though the runner believed it targeted staging.
 // @ts-nocheck
 import { db } from "../../src/lib/db";
 import { hmacSha256Hex } from "../../src/lib/password";
 import { readFileSync } from "node:fs";
 
-export const BASE = "http://127.0.0.1:3000";
+export const BASE = process.env.LT_BASE ?? "http://127.0.0.1:3000";
 export const LT = "[LT]";
 export const WEBHOOK_SECRET = process.env.PSP_WEBHOOK_SECRET ?? "sm_webhook_secret_demo";
+
+/** Resolve the database URL: env override first (staging runs), then .env. */
+export function dbUrl(): string {
+  if (process.env.SUPABASE_DATABASE_URL) return process.env.SUPABASE_DATABASE_URL;
+  return readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim() ?? "";
+}
 
 /** Postgres client factory for fault injection (separate session from Prisma). */
 export async function pgClient() {
   const { Client } = await import("pg");
-  const url = readFileSync(".env", "utf8").match(/SUPABASE_DATABASE_URL=(.+)/)?.[1]?.trim();
-  if (!url) throw new Error("SUPABASE_DATABASE_URL missing from .env");
+  const url = dbUrl();
+  if (!url) throw new Error("SUPABASE_DATABASE_URL missing (env + .env)");
   // drop sslmode param (Supabase pooler chain is self-signed from this box; we
   // opt out of verification explicitly instead of pg's verify-full default)
   const u = new URL(url);
+  const pinnedSchema = u.searchParams.get("schema"); // Prisma-only param — node-postgres IGNORES it
   u.searchParams.delete("sslmode");
   const bare = u.toString();
   const c = new Client({ connectionString: bare, ssl: { rejectUnauthorized: false } });
   await c.connect();
+  // SAFETY (Phase 3 / Step 4): when the URL pins a schema, force the session
+  // search_path to it and hard-fail on mismatch. Without this, unqualified
+  // fault DDL resolves through the role default ("$user", public) and would
+  // create triggers/tables in the WRONG schema.
+  if (pinnedSchema) {
+    const safe = pinnedSchema.replace(/[^a-zA-Z0-9_]/g, "");
+    if (!safe || safe !== pinnedSchema) throw new Error(`pgClient refuses unsafe schema name "${pinnedSchema}"`);
+    await c.query(`SET search_path TO "${safe}"`);
+    const got = (await c.query("SHOW search_path")).rows[0].search_path;
+    if (got !== pinnedSchema) {
+      await c.end().catch(() => {});
+      throw new Error(`pgClient search_path safety check failed: wanted "${pinnedSchema}", got "${got}" — refusing to run fault DDL against an unintended schema`);
+    }
+  }
   return c;
 }
 
@@ -52,15 +85,28 @@ export function summary(name: string) {
 }
 export function exitCode() { return failures; }
 
-/** Register (idempotent by unique email) or login a [LT] shopper; returns cookie. */
+/** Register (idempotent by unique email) or login a [LT] shopper; returns cookie.
+ *  Phase 3 / Step 4: 429-aware — the shopper-register route limits 5/min/IP
+ *  (in-app window), which rapid suite re-runs trip. Waits out the announced
+ *  retryAfter window (max 3 attempts) before falling back to login. */
 export async function ltShopperCookie(email: string, fullName = "LT Load Buyer"): Promise<string> {
-  const reg = await fetch(`${BASE}/api/auth/shopper/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "LtBuyer123!", fullName }),
-  });
-  if (reg.status === 200 || reg.status === 201) {
-    return (reg.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const reg = await fetch(`${BASE}/api/auth/shopper/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "LtBuyer123!", fullName }),
+    });
+    if (reg.status === 200 || reg.status === 201) {
+      return (reg.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+    }
+    if (reg.status === 429 && attempt < 3) {
+      const body = await reg.json().catch(() => ({}));
+      const waitMs = Number(body?.error?.details?.retryAfterSeconds ?? 0) * 1000;
+      console.log(`[lib] shopper register 429 (attempt ${attempt + 1}) — waiting ${waitMs || 65000}ms for the rate window`);
+      await sleep(waitMs || 65_000);
+      continue;
+    }
+    break; // non-429 rejection (e.g. existing account) → fall through to login
   }
   const login = await fetch(`${BASE}/api/auth/shopper/login`, {
     method: "POST",
@@ -83,6 +129,11 @@ export async function makeLtVariant(tag: string, stock: number, moq = 1) {
       description: "Readiness-test artifact",
       status: "active",
       priceMinor: 1000,
+      // PHASE 3 / STEP 4 fixture fix: affiliate-enrolled so the affiliate
+      // commission paths (phase22-races C1.2, seller-attribution) actually
+      // exercise. Gate verified fail-closed: without enrollment the suite's
+      // P0 check fails with commissions=0 (first-ever execution finding).
+      affiliateEnabled: true,
     },
   });
   const variant = await db.productVariant.create({

@@ -1,0 +1,25 @@
+── A) 5 sequential redeliveries of payment.succeeded ──
+PASS  A1: all deliveries answered ok — statuses=200,200,200,200,200
+PASS  A2: first delivery claims, rest duplicate — dup=false,true,true,true,true
+PASS  A3: exactly one T1 ledger posting — t1=1
+PASS  A4: T1 balanced and credits = group total — credits=2800 debits=2800 total=2800
+PASS  A5: order paid — status=paid
+── B) 8 concurrent duplicate deliveries ──
+PASS  B1: all concurrent duplicates answered gracefully (200, no raw 5xx) — ok=8 5xx=0
+PASS  B1-b: exactly ONE delivery claims (7× duplicate:true) — dup=7
+PASS  B2: money movement EXACTLY-ONCE under concurrent delivery (no double credit) — t1=1 credits=1800 status=paid
+   F1-REMEDIATED: concurrent duplicates → 8×200 / 0×500 (one claimer, 7 graceful duplicates)
+── C) transient DB failure (FOR UPDATE lock on claim row) ──
+   lock held by foreign session — delivering webhook (expect failure ~5s)
+   lock released after 10554ms fault window — MEASURED webhook hang=10554ms
+PASS  C1: webhook during fault eventually FAILS (non-2xx), never half-applies — status=500 hangMs=10554
+PASS  C2: order NOT paid while fault active — status=payment_pending
+   FINDING C-MEASURED: webhook hung 10554ms under row-lock contention (≈ server statement_timeout 120s; Prisma 5s interactive-tx bound did NOT manifest). A stuck lock in production stalls PSP deliveries ~2min each and burns a pool connection.
+PASS  C3: redelivery after fault converges 200 — status=200
+PASS  C4: order paid exactly once after recovery — status=paid
+PASS  C5: exactly one T1 after recovery — t1=1
+[cleanup] stock 16→20 restored; [LT] orders ref_a324ef3a7f715757/ref_8a7e996a76545587/ref_bc941fd626f3c473 left tagged
+
+RESULTS_JSON {"runId":"mvzapwjg","startedAt":"2026-11-02T13:29:43.420Z","tests":[{"test":"A_sequential_redelivery","checks":[null,null,null,null,null],"statuses":[200,200,200,200,200]},{"test":"B_concurrent_duplicate_deliveries","checks":[null,null,null,null],"statuses":[200,200,200,200,200,200,200,200]},{"test":"C_transient_db_fault_recovery","checks":[null,null,null,null,null,null],"faultStatus":500,"faultMs":10554}],"finishedAt":"2026-11-02T13:30:13.293Z"}
+
+webhook-resilience: ALL PASS

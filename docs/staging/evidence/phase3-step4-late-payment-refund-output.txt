@@ -1,0 +1,40 @@
+[LT] late-payment-refund suite mvzao8x9 — scheduler running: true (stopping for deterministic ticks)
+[LT] pre-suite drain: succeeded=20 openLeft=0
+── S1: payment before expiry — normal success, NO reconciliation case ──
+PASS  S1: webhook ok, group succeeded, order paid, T1 posted, ZERO reconciliation cases — 200 group=succeeded order=paid cases=0 txns 34→35
+   ↳ S1: status=200 group=succeeded order=paid cases=0 ledgerTxns=35
+── S2/S3: expiry wins before payment-success; late payment records the durable obligation ──
+PASS  S2: late payment → 409 GROUP_EXPIRED; order stays payment_expired; stock stays released; NO T1 — 409 GROUP_EXPIRED order=payment_expired stock=19 txns=35
+PASS  S3: durable obligation recorded — provider, ref, amount(=captured), currency, reason, status requested — case=cmvzaoloj00zpox516e74pny2 amount=1800 status=requested attempts=0
+PASS  S3: audit trail — webhook log row processed=true for the refused event — processedRows=1
+   ↳ S2/S3: 409 GROUP_EXPIRED; case requested amount=1800; order payment_expired; stock stable 19
+── S4: duplicate late-payment webhooks — one obligation, never regressed ──
+PASS  S4: duplicate → 409 again; still EXACTLY ONE case; status/attempts untouched; no T1 — 409 cases=1 status=requested attempts=0
+PASS  S4: audit trail — both deliveries logged+processed — processedRows=2
+   ↳ S4: duplicate=409 cases=1 processedWebhookRows=2
+── S5: refund request times out (unknown outcome) → later confirmed from provider record ──
+PASS  S5a: timeout → case status unknown + providerRefundId kept; provider record PENDING; attempts=1 — case=unknown refundId=rfnd_mock_mvzaon6z_ouexen2t pspRecord=pending attempts=1 tick=1unknown
+PASS  S5b: immediate re-tick respects backoff (no new attempt) — attempts=1 tickAttempted=0
+PASS  S5c: after provider completes → case succeeded, confirmed from provider record (still ONE refund) — case=succeeded psp=succeeded note=Refunded via provider (refund rfnd_mock_mvzaon6z_ouexen2t) —
+   ↳ S5: unknown(pending)→succeeded via provider record; refundId=rfnd_mock_mvzaon6z_ouexen2t
+── S6: refund succeeds but worker crashes before saving — idempotent recovery ──
+PASS  S6a: crash-after-provider — provider EXECUTED (record succeeded) but case outcome NOT saved — faultsApplied=1 psp=succeeded case=requested err=simulated crash after provider call, before outcom
+PASS  S6b: recovery tick converges via SAME idempotency key — succeeded, exactly ONE provider refund, attempts=2 — case=succeeded refunds=1 attempts=2
+   ↳ S6: crash simulated; converged to succeeded with 1 provider refund (idempotency key recon:cmvzap35k0108ox51iadmnhgp)
+── S7: provider rejects refund — permanent failure stays visible ──
+PASS  S7a: rejection → case failed with visible error + operator/runbook note; provider record failed — case=failed err=refund rejected by provider (sandbox behaviour=reject) note=Provider REJECTED the refund — permanent; operator action re psp=failed
+PASS  S7b: later ticks never resurrect or re-execute a permanently failed case — case=failed attempts=1 tickAttempted=0
+   ↳ S7: rejected → failed (permanent, operator-visible); attempts stayed 1
+── S8: same provider idempotency key — never a second refund ──
+PASS  S8: every late-payment case maps to AT MOST ONE provider refund (idempotency keys hold) — cases=23 refunds=23
+   ↳ S8: cases=23; all idempotencyKeys ≤ 1 refund
+── S9: DB failure while recording the refund/reconciliation request ──
+PASS  S9a: DB fault → webhook 500, NO obligation row, log row left unprocessed (PSP will redeliver) — 500 cases=0
+PASS  S9b: redelivery after recovery → 409 + exactly ONE obligation (converged, not duplicated) — 409 cases=1 status=requested
+   ↳ S9: fault-injected obligation write 500 → redelivery converged on one case
+── S10: final policy audit — no resurrection, no double restock, no T1, refund completed ──
+PASS  S10: order NOT resurrected; stock restored EXACTLY once; NO T1 for the late payment; refund succeeded (policy) — order=payment_expired expiryLogs=1 historyRows=1 case=succeeded stock=19
+PASS  S10: ledger unchanged except S1's legitimate payment; invariants balanced — txns 34→35 (+1 expected) invariantsOk=true problems=[]
+   ↳ S10: order=payment_expired case=succeeded refundId=rfnd_mock_mvzaon6z_ouexen2t ledger +1 (S1 only)
+scheduler restored: true
+evidence → performance/runs/2026-11-02-late-payment-refund.json

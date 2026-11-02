@@ -1,0 +1,7 @@
+table sets equal (step3 vs step4 baselines): true
+row counts equal (step3 vs step4 baselines): true
+public structural hash BEFORE: 24ac8aa602328b63f57c …
+public structural hash AFTER:  24ac8aa602328b63f57c …
+IDENTICAL: true
+row-count deltas: none
+fault artifacts in public: 0 (expect 0)

@@ -1,0 +1,148 @@
+{
+  "capturedAt": "2026-11-02T15:16:32.090Z",
+  "target": "nomofee_staging",
+  "checks": [
+    {
+      "name": "B1.a: no variant has negative stock",
+      "pass": true,
+      "detail": "0 variants with stock<0"
+    },
+    {
+      "name": "B1.b: restock logs trace to expired order items",
+      "pass": true,
+      "detail": "every expiry: restock log maps to ≥1 expired order item"
+    },
+    {
+      "name": "B2.a: no LedgerTransaction dedupKey appears twice",
+      "pass": true,
+      "detail": "0 duplicate dedupKeys"
+    },
+    {
+      "name": "B2.b: no order has more than one order_paid T1",
+      "pass": true,
+      "detail": "orders with duplicated T1: 0"
+    },
+    {
+      "name": "B2.c: webhook (providerRef,eventType) may be logged (replays) — money keyed by dedupKey",
+      "pass": true,
+      "detail": "replayed webhook events logged: 50 groups (logging replays is the audit trail; B2.a/b prove no double money)"
+    },
+    {
+      "name": "B3.a: Σdebit == Σcredit in EVERY transaction (independent SQL)",
+      "pass": true,
+      "detail": "all 120 transactions balanced"
+    },
+    {
+      "name": "B3.b: app runLedgerInvariants reports no hard problems",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "B4.a: every wallet cache equals ledger truth",
+      "pass": true,
+      "detail": "4 wallets all MATCH (available+pending)"
+    },
+    {
+      "name": "B5.a: no entry reversed beyond its amount",
+      "pass": true,
+      "detail": "entries with reversedMinor>amountMinor: 0"
+    },
+    {
+      "name": "B5.b: every paid payout amount within [Σ(entries net), Σ(entries gross)]",
+      "pass": true,
+      "detail": "4 paid payouts conserve (amount == net at payout time; later recovery reversals documented)"
+    },
+    {
+      "name": "B6.a: Σ refund amounts ≤ order total for every order",
+      "pass": true,
+      "detail": "orders over-refunded: 0"
+    },
+    {
+      "name": "B7.a: exactly one expiry restock log per (variant,ref)",
+      "pass": true,
+      "detail": "(variant,refId) pairs with >1 expiry log: 0"
+    },
+    {
+      "name": "B7.b: voucher restoration bookkeeping present (count check)",
+      "pass": true,
+      "detail": "vouchers currently inactive: 0 (restoration path exercised by suites; per-order voucher deltas retained in [LT] audit rows)"
+    },
+    {
+      "name": "B8.a: one reconciliation obligation per expired group (idempotent upsert)",
+      "pass": true,
+      "detail": "26 obligations total, 0 duplicate refs"
+    },
+    {
+      "name": "B8.b: obligation statuses sane",
+      "pass": true,
+      "detail": "unknown statuses: 0 (observed vocabulary: requested/processing/succeeded/failed/cancelled/refunded)"
+    },
+    {
+      "name": "B9.a: global ledger balances (Σdebit == Σcredit across ALL lines)",
+      "pass": true,
+      "detail": "D=876475 C=876475 across 7 accounts"
+    },
+    {
+      "name": "B10 (observation): PLATFORM:PAYOUT_CLEARING net (V-F8 presentation watch, credit−debit)",
+      "pass": true,
+      "detail": "net=3000 (D18500/C21500) — positive"
+    },
+    {
+      "name": "B9.b: AFFILIATE_LIABILITY / BANK_MAIN nets recorded",
+      "pass": true,
+      "detail": "AFFILIATE_LIABILITY net=-3950, BANK_MAIN net=-13875 (informational; conservation proven by B9.a + B5.b)"
+    }
+  ],
+  "accountNets": [
+    {
+      "code": "GATEWAY:FPX_TOYYIBPAY",
+      "debit": 551000,
+      "credit": 290100,
+      "net": 260900
+    },
+    {
+      "code": "PLATFORM:AFFILIATE_LIABILITY",
+      "debit": 8800,
+      "credit": 12750,
+      "net": -3950
+    },
+    {
+      "code": "PLATFORM:BANK_MAIN",
+      "debit": 0,
+      "credit": 13875,
+      "net": -13875
+    },
+    {
+      "code": "PLATFORM:PAYOUT_CLEARING",
+      "debit": 18500,
+      "credit": 21500,
+      "net": -3000
+    },
+    {
+      "code": "PLATFORM:REVENUE_COMMISSION",
+      "debit": 20980,
+      "credit": 38320,
+      "net": -17340
+    },
+    {
+      "code": "SELLER:cmvz9yu42000hox3x08n5gnmk:PAYABLE",
+      "debit": 249895,
+      "credit": 428330,
+      "net": -178435
+    },
+    {
+      "code": "SELLER:cmvz9yuym000yox3xmgwady0f:PAYABLE",
+      "debit": 27300,
+      "credit": 71600,
+      "net": -44300
+    }
+  ],
+  "walletCount": 4,
+  "txnCount": 120,
+  "appInvariants": {
+    "problems": [],
+    "hardDrift": 0,
+    "timeMaturityStale": 0
+  },
+  "verdict": "GREEN — all 18 invariant checks passed."
+}

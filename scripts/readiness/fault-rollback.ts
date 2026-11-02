@@ -26,7 +26,7 @@ const preLedger = await db.ledgerTransaction.count();
 const preOrdersAll = await db.order.count({ where: { idemKey: { startsWith: `rb-${stamp}` } } });
 
 // two-line checkout under ONE idempotency key: line 1 has stock, line 2 is out
-const rBoth = await fetch("http://127.0.0.1:3000/api/checkout/create", {
+const rBoth = await fetch(`${process.env.LT_BASE ?? "http://127.0.0.1:3000"}/api/checkout/create`, { // Phase 3/Step 4: staging instance override
   method: "POST",
   headers: { "Content-Type": "application/json", cookie, "Idempotency-Key": `rb-both-${stamp}` },
   body: JSON.stringify({

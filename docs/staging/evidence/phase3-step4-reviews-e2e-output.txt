@@ -1,0 +1,12 @@
+PASS  R1 anonymous submission rejected (401) — status=401
+PASS  R2 non-purchaser rejected (403) — status=403 code=VERIFIED_PURCHASE_REQUIRED
+PASS  R3 eligible buyer accepted (pending) — status=201 code=
+PASS  R4 duplicate review rejected — status=409 code=REVIEW_ALREADY_EXISTS
+PASS  R5 pending review excluded from public aggregates — 0 → 0
+PASS  R6a moderation approve accepted — status=200 code=
+PASS  R6b published review counted in aggregates — 0 → 1
+PASS  R7a seller SESSION cannot review (shopper-only gate) — status=401
+PASS  R7b same-email shopper ATTACK blocked at registration (cross-portal clash guard) — status=409 code=EMAIL_TAKEN
+[cleanup] removed [LT] review fixtures (LT-REV-mvzdcas3, lt-review-mvzdcas3@nomofee.test)
+
+Reviews E2E: ALL PASS

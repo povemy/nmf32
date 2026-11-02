@@ -20,7 +20,7 @@ import { createHash } from "crypto";
 import { db } from "../../src/lib/db";
 import { check, summary, exitCode } from "./lib";
 
-const BASE = "http://127.0.0.1:3000";
+const BASE = process.env.LT_BASE ?? "http://127.0.0.1:3000"; // Phase 3/Step 4: staging instance override
 const RUN = Date.now().toString(36);
 const EMAIL = `lt-session-${RUN}@nomofee.test`;
 const PASSWORD = "LtSession123!";
@@ -56,7 +56,12 @@ async function main() {
   check("S4 Bearer token authenticates", me.status === 200 && (me.json.data as Record<string, unknown>)?.userType === "shopper");
 
   // Chat hub-auth uses the same hashed model.
-  const hub = await api("POST", "/api/chat/hub-auth", { token });
+  // PHASE 3 / STEP 4 fixture fix: hub-auth takes the session token in the
+  // request BODY ({token, rooms}) — it validates the hub-presented credential,
+  // not the caller's own Bearer header. The original call passed the token as
+  // the api helper's `token` opt (Authorization header only, no body), so
+  // body.token was always undefined ⇒ 401 on first-ever execution.
+  const hub = await api("POST", "/api/chat/hub-auth", { body: { token, rooms: [] } });
   check("S5 chat hub-auth accepts the hashed-store token", hub.status === 200 || hub.status === 204, `status=${hub.status}`);
 
   // Second session for the principal → revoke-all semantics.
@@ -67,13 +72,17 @@ async function main() {
   // Expire token2 directly in the DB → must fail to authenticate.
   await db.session.update({ where: { token: sha256(token2) }, data: { expiresAt: new Date(Date.now() - 1000) } });
   const me2 = await api("GET", "/api/auth/me", { token: token2 });
-  check("S7 expired session cannot authenticate (401)", me2.status === 401, `status=${me2.status}`);
+  // PHASE 3 / STEP 4 assertion calibration: /api/auth/me answers 200 with
+  // {userType:null} for anonymous callers (route contract) — the property is
+  // "the expired token no longer authenticates the shopper", not HTTP 401.
+  check("S7 expired session cannot authenticate", me2.status === 200 && (me2.json.data as Record<string, unknown>)?.userType == null, `status=${me2.status} userType=${JSON.stringify((me2.json.data as Record<string, unknown>)?.userType)}`);
 
   // Logout kills the presented token.
   const out = await api("POST", "/api/auth/logout", { token });
   check("S8 logout succeeds", out.status === 200 || out.status === 204, `status=${out.status}`);
   const meAfter = await api("GET", "/api/auth/me", { token });
-  check("S9 logged-out token no longer authenticates", meAfter.status === 401, `status=${meAfter.status}`);
+  // PHASE 3 / STEP 4 assertion calibration: same anonymous-contract as S7.
+  check("S9 logged-out token no longer authenticates", meAfter.status === 200 && (meAfter.json.data as Record<string, unknown>)?.userType == null, `status=${meAfter.status} userType=${JSON.stringify((meAfter.json.data as Record<string, unknown>)?.userType)}`);
   const rowAfter = await db.session.findUnique({ where: { token: sha256(token) } });
   check("S10 session row deleted on logout", !rowAfter);
 

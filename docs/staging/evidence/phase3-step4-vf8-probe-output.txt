@@ -1,0 +1,24 @@
+[vf8] affiliate fixture: {"affiliate":"cmvzc8bdl0002oxlc117aqmkl","link":"d81a19c9a0e0839ab"}
+[vf8] track: {"status":200}
+[vf8] O1 paid: {"order":"NM-100165","total":20000,"items":1}
+[vf8] E_old created: {"amount":1000}
+[vf8] P1 requested: {"status":201,"amount":1000}
+[vf8] P1 paid → E_old.status: paid
+[vf8] O1 refunded after payout: {"http":200,"E_old":{"status":"paid","reversed":1000,"amount":1000}}
+PASS  V-F8 step-2: E_old reversed as RECOVERY on the PAID entry — status=paid reversed=1000/1000
+[vf8] O2 paid: {"order":"NM-100166","total":40000,"items":2}
+[vf8] E1+E2 created: {"commissions":2,"total":2000}
+PASS  V-F8 precondition: O2 entries total == 2 × O1 entry — E1+E2=2000 vs 2×E_old=2000
+[vf8] P2 requested: {"status":201,"amount":1000,"note":"amount = requestable = available(2000) − recovery(1000)"}
+PASS  V-F8 precondition: P2 amount NETS the recovery offset (1000, not 2000) — amount=1000 expected=1000
+[vf8] P2 approved: {"http":200,"amount":1000}
+PASS  V-F8 step-4: approve accepted the recovery-netted amount — http=200
+[vf8] O2 refunded while processing: {"http":200,"P2":{"status":"processing","amount":0},"PAYOUT_CLEARING_net":-2000}
+PASS  V-F8 REPRODUCTION: P2 processing-amount floored at 0 — amount=0
+PASS  V-F8 REPRODUCTION: PAYOUT_CLEARING is NEGATIVE (full entry reversal beyond the frozen amount) — net=-2000
+[vf8] P2 marked paid at 0: {"http":500,"status":"processing","amount":0}
+FAIL  V-F8 adjacent defect: mark-paid on a refund-shrunk-to-0 processing payout — http=500 (a 500 leaves the payout stuck in processing — recorded as a finding; expected behavior: settle cleanly at 0 or refuse with an actionable 409)
+PASS  V-F8 conservation: global books still balance (D==C) — D=521475 C=521475
+PASS  V-F8 conservation: every transaction balanced — unbalanced txns: 0
+
+[vf8] PAYOUT_CLEARING net = -2000 — V-F8 REPRODUCED.

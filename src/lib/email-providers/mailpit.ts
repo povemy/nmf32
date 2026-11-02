@@ -35,8 +35,15 @@ export function getMailpitChannel(): TransactionalEmailChannel | null {
         const res = await fetch(`${base}/api/v1/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          // PHASE 3 / STEP 4 defect fix: Mailpit's /api/v1/send contract takes
+          // `from` as a SINGLE {Email, Name} object and `to` as an array of the
+          // same — the previous `from: [{…}]` array shape is rejected 400 by
+          // every current Mailpit build ("json: cannot unmarshal array into Go
+          // struct field SendRequest.From"), verified live against v1.21.
+          // Without this fix every Mailpit send fails and the OTP flows
+          // surface as delivery errors instead of testable email evidence.
           body: JSON.stringify({
-            from: [{ Email: from, Name: from }],
+            from: { Email: from, Name: from },
             to: [{ Email: email.to }],
             subject: email.subject,
             text: email.textBody,
