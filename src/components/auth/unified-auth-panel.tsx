@@ -34,7 +34,7 @@ import { Eye, EyeOff, KeyRound, Loader2, LogIn, ShieldCheck } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authHeaders, clearDeviceCartToken, setSessionToken } from "@/lib/session-client";
+import { authHeaders, clearDeviceCartToken, knownCartToken, setSessionToken } from "@/lib/session-client";
 import { DevAccountsPanel } from "./dev-accounts-panel";
 
 export type UnifiedUserType = "admin" | "seller" | "shopper";
@@ -95,12 +95,21 @@ async function requestUnifiedLogin(
   portal?: UnifiedUserType
 ): Promise<LoginResult> {
   try {
+    // CART FIX: attach the KNOWN guest cart token (never mint one) so the
+    // server's mergeGuestCartForShopper() can fold this device's guest cart
+    // into the account even where the sm_cart cookie is unavailable (sandboxed
+    // iframe previews). No token yet → header omitted, merge is a no-op.
+    const cartToken = knownCartToken();
     const res = await fetch("/api/auth/unified-login", {
       method: "POST",
       cache: "no-store",
       // authHeaders always carries the X-SM-Client origin-gate marker the
       // route requires (plus any stale Bearer, which login simply ignores).
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...(cartToken ? { "X-Cart-Token": cartToken } : {}),
+      },
       body: JSON.stringify(portal ? { email, password, portal } : { email, password }),
     });
     const body = (await res.json().catch(() => ({}))) as {
@@ -208,14 +217,18 @@ function mfaFailureMessage(fail: LoginFail): string {
 export function UnifiedAuthPanel({
   onAuthed,
   submitLabel = "Sign in",
+  initialEmail,
 }: {
   /** Called once the server has minted a session; owns all portal routing. */
   onAuthed: (userType: UnifiedUserType, res: UnifiedLoginResponse) => void | Promise<void>;
   /** Optional per-surface button label (defaults to the neutral "Sign in"). */
   submitLabel?: string;
+  /** WORK ORDER 1 — prefilled email (e.g. returning from a successful
+   *  password reset, so the shopper only types the new password). */
+  initialEmail?: string;
 }) {
   const idPrefix = useId();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);

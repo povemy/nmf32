@@ -108,6 +108,29 @@ export function syncCartToken(token: string | null | undefined): void {
   }
 }
 
+/** Read the KNOWN cart token WITHOUT minting one (memory → localStorage →
+ *  cookie). Used by the LOGIN request: the server's guest-cart merge
+ *  (mergeGuestCartForShopper) resolves the device cart through X-Cart-Token OR
+ *  the sm_cart cookie — sending the known token belt-and-braces covers the
+ *  contexts where cookies are blocked (sandboxed iframe previews) but
+ *  localStorage still works. Minting here would be WRONG: a fabricated token
+ *  names a cart that does not exist and would poison the merge lookup. */
+export function knownCartToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const memoised = memoryTokens.get(CART_TOKEN_KEY);
+  if (memoised) return memoised;
+  try {
+    const stored = window.localStorage.getItem(CART_TOKEN_KEY);
+    if (stored && /^[A-Za-z0-9_-]{8,64}$/.test(stored)) {
+      memoryTokens.set(CART_TOKEN_KEY, stored);
+      return stored;
+    }
+  } catch {
+    /* storage blocked */
+  }
+  return readCookieToken(CART_COOKIE_NAME);
+}
+
 /** Retire the device guest-cart token. PHASE 2.2 guest checkout restoration:
  *  the server merges the guest cart into the shopper's account cart at
  *  login/registration and retires ITS cookie token (clearCartToken) - the

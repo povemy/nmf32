@@ -74,6 +74,10 @@ export const ORDER_ACCESS_GRANT_TTL_MS = 15 * 60 * 1000;
  *  guest checkout restoration. Short by design (same posture as the order
  *  access grant): just long enough to complete a checkout, no refresh. */
 export const GUEST_CHECKOUT_TOKEN_TTL_MS = 30 * 60 * 1000;
+/** Password-recovery code lifetime (Work Order 1): ~15 minutes per the
+ *  recovery contract — slightly longer than the 10-minute OTP default so a
+ *  shopper typing the code from their mailbox is not racing the clock. */
+export const PASSWORD_RESET_OTP_TTL_MS = 15 * 60 * 1000;
 
 /** The challenge purposes sharing this machinery. "guest-checkout" (Phase
  *  2.2) lets an UNAUTHENTICATED buyer prove ownership of the email they are
@@ -83,8 +87,12 @@ export const GUEST_CHECKOUT_TOKEN_TTL_MS = 30 * 60 * 1000;
  *  prove ownership of the email on their own account — the durable proof
  *  (row persists with verifiedAt, exactly like shopper-email) is mirrored
  *  onto Seller.emailVerifiedAt by the verify route IN THE SAME $transaction
- *  as the consume (the optional onWin hook below). */
-export type EmailOtpPurpose = "guest-order" | "shopper-email" | "guest-checkout" | "seller-email";
+ *  as the consume (the optional onWin hook below). "password-reset" (Work
+ *  Order 1) lets an UNAUTHENTICATED shopper prove ownership of the mailbox
+ *  behind a REGISTERED account before establishing a new password — a
+ *  single-shot challenge like guest-checkout; the verify route mints a
+ *  short-lived "prg:v1:" reset grant (src/lib/password-recovery.ts). */
+export type EmailOtpPurpose = "guest-order" | "shopper-email" | "guest-checkout" | "seller-email" | "password-reset";
 
 const OTP_HASH_DOMAIN = "otp:v1:";
 const GRANT_DOMAIN = "oag:v1:";
@@ -375,11 +383,16 @@ export async function issueEmailOtp(input: {
   subjectId: string;
   deliver: (code: string) => Promise<void>;
   nowMs?: number;
+  /** Per-purpose TTL override (Work Order 1): password-reset codes live
+   *  ~15 minutes instead of the 10-minute default. Defaults to
+   *  EMAIL_OTP_TTL_MS — every existing caller is byte-identical. */
+  ttlMs?: number;
 }): Promise<IssueEmailOtpResult> {
   await assertEmailOtpStorage();
   const model = emailOtpModel();
   if (!model) throw EMAIL_OTP_UNAVAILABLE(); // probe caches "missing" — unreachable, kept for type narrowing
   const now = input.nowMs ?? Date.now();
+  const ttlMs = input.ttlMs ?? EMAIL_OTP_TTL_MS;
 
   const existing = await model.findUnique({
     where: { purpose_subjectId: { purpose: input.purpose, subjectId: input.subjectId } },
@@ -391,7 +404,7 @@ export async function issueEmailOtp(input: {
 
   const code = generateOtpCode();
   const codeHash = otpCodeHash(code, input.purpose, input.subjectId, otpDayBucket(now));
-  const expiresAt = new Date(now + EMAIL_OTP_TTL_MS);
+  const expiresAt = new Date(now + ttlMs);
   // Attempt carry-over: reset ONLY when the previous row is gone/expired.
   // (verifiedAt is deliberately NOT in `update` — a row that raced to
   // verified between our read and this upsert keeps its verified state.)
@@ -486,11 +499,12 @@ export async function verifyEmailOtp(input: {
     return { ok: false, reason: "wrong-code" };
   }
 
-  if (input.purpose === "guest-order" || input.purpose === "guest-checkout") {
-    // Both are single-shot challenges: CAS DELETE (WHERE id + codeHash) so the
+  if (input.purpose === "guest-order" || input.purpose === "guest-checkout" || input.purpose === "password-reset") {
+    // All three are single-shot challenges: CAS DELETE (WHERE id + codeHash) so the
     // same code can never verify twice; concurrent duplicates produce exactly
     // ONE winner. The durable proof differs: guest-order mints an order access
-    // grant at the route; guest-checkout mints a "gcv:v1:" token at the route.
+    // grant at the route; guest-checkout mints a "gcv:v1:" token at the route;
+    // password-reset mints a "prg:v1:" reset grant at the route.
     const consumed = await model.deleteMany({
       where: { id: row.id, codeHash: row.codeHash },
     });

@@ -120,7 +120,17 @@ export async function findCartForCaller(shopperId: string | null): Promise<CartW
  *    creation so subsequent requests (and the payment webhook's cart clearing,
  *    via Order.cartToken) address the same cart.
  *  A stale cookie token that collides with an ACCOUNT-bound row can never leak
- *  it — a fresh guest token is minted instead. */
+ *  it — a fresh guest token is minted instead.
+ *
+ *  CART FIX (2026-12): the cookie is now synced on EVERY guest ensure, not only
+ *  when the server mints a fresh token. The SPA always sends an X-Cart-Token
+ *  header (client-minted via deviceToken()), so the old "only mint sets the
+ *  cookie" path never ran in browsers — the cookie stayed ABSENT, and the LOGIN
+ *  request (which carries NO cart header, only the cookie) could not resolve
+ *  the guest cart for mergeGuestCartForShopper(). The guest cart was then
+ *  orphaned at sign-in ("0 items" after login despite a successful add).
+ *  Keeping the cookie in lockstep with the token actually used makes the
+ *  cookie the durable identity contract across every request shape. */
 export async function ensureCartForCaller(shopperId: string | null): Promise<CartWithItems> {
   if (shopperId) {
     const existing = await findCartForShopper(shopperId);
@@ -142,8 +152,11 @@ export async function ensureCartForCaller(shopperId: string | null): Promise<Car
   }
   if (!token) {
     token = randomToken(16);
-    await setCartToken(token);
   }
+  // ALWAYS sync the cookie to the effective token (see block comment above):
+  // header-driven adds must publish the identity to cookie-only consumers
+  // (login merge, webhook cart clearing) exactly like server-minted ones.
+  await setCartToken(token);
   try {
     await db.cart.create({ data: { token, shopperId: null, storeId: null } });
   } catch {

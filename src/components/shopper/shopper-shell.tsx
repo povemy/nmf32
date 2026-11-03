@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Settings,
   LockKeyhole,
+  KeyRound,
   Headphones,
   Truck,
   Banknote,
@@ -60,6 +61,7 @@ import {
 import { useApp } from "@/lib/app-store";
 import { clearDeviceCartToken, setSessionToken, webHeaders } from "@/lib/session-client";
 import { UnifiedAuthPanel, type UnifiedUserType } from "@/components/auth/unified-auth-panel";
+import { PasswordRecoveryPanel } from "@/components/auth/password-recovery-panel";
 import { SIGNED_OUT_EVENT, SHOPPER_VIEW_KEY } from "@/lib/session-events";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -1027,6 +1029,11 @@ function ShopperAuthDialog() {
   const refreshMe = useApp((s) => s.refreshMe);
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
+  // WORK ORDER 1 — password recovery mode: the dialog swaps its tab body for
+  // the recovery panel (request code → verify + set new password). Leaving
+  // the mode (Back / dialog close) drops any in-memory reset grant.
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryEmailHint, setRecoveryEmailHint] = useState<string | undefined>(undefined);
 
   // Phase 2.4 (C2.x): Back closes the modal instead of navigating away. Opening
   // pushes a sentinel history entry ({nomofeeAuthModal}); a popstate that lands
@@ -1061,6 +1068,14 @@ function ShopperAuthDialog() {
 
   useEffect(() => {
     if (open) setTab("login");
+  }, [open]);
+
+  // Reset the recovery mode whenever the dialog reopens.
+  useEffect(() => {
+    if (open) {
+      setRecoveryMode(false);
+      setRecoveryEmailHint(undefined);
+    }
   }, [open]);
 
   const finish = async () => {
@@ -1128,10 +1143,23 @@ function ShopperAuthDialog() {
       <DialogContent className="max-h-[88vh] overflow-y-auto max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5 text-teal-700" /> NOMOFEE shopper account
+            <User className="h-5 w-5 text-teal-700" /> {recoveryMode ? "Reset your password" : "NOMOFEE shopper account"}
           </DialogTitle>
-          <DialogDescription>Sign in to chat with sellers, or create a free account in seconds.</DialogDescription>
+          <DialogDescription>
+            {recoveryMode
+              ? "Enter your email to receive a recovery code, then set a new password."
+              : "Sign in to chat with sellers, or create a free account in seconds."}
+          </DialogDescription>
         </DialogHeader>
+        {recoveryMode ? (
+          <PasswordRecoveryPanel
+            onBackToLogin={(email) => {
+              setRecoveryMode(false);
+              setTab("login");
+              setRecoveryEmailHint(email);
+            }}
+          />
+        ) : (
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Sign in</TabsTrigger>
@@ -1139,7 +1167,16 @@ function ShopperAuthDialog() {
           </TabsList>
           <TabsContent value="login">
             <div className="pt-2">
-              <UnifiedAuthPanel onAuthed={handleAuthed} />
+              <UnifiedAuthPanel onAuthed={handleAuthed} initialEmail={recoveryEmailHint} />
+              {/* WORK ORDER 1 — forgot-password entry point (uniform server
+                  responses; the panel handles the code + new password steps). */}
+              <button
+                type="button"
+                onClick={() => setRecoveryMode(true)}
+                className="mt-3 flex w-full items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-teal-700 min-h-[44px]"
+              >
+                <KeyRound className="h-3.5 w-3.5" aria-hidden /> Forgot password?
+              </button>
             </div>
           </TabsContent>
           <TabsContent value="register">
@@ -1153,6 +1190,7 @@ function ShopperAuthDialog() {
             </form>
           </TabsContent>
         </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -2107,7 +2145,10 @@ function CartDrawer({
   // layer, not the last.
   const stockProbeSeq = useRef(0);
   useEffect(() => {
-    if (!open || !signedIn) return;
+    if (!open) return;
+    // PHASE 2.2 guest checkout: guests have token-keyed carts too — the stock
+    // probe must refresh THEIR volatile numbers exactly like a signed-in
+    // shopper's (the old !signedIn gate served the pre-guest-cart design).
     const ids = [...new Set(cartSnapshot().items.map((i) => i.variantId))];
     if (ids.length === 0) return;
     const seq = ++stockProbeSeq.current;
@@ -2479,41 +2520,62 @@ function CartDrawer({
           <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : !signedIn ? (
-          <div className="flex flex-1 items-center justify-center">
-            <EmptyState
-              icon={ShoppingCart}
-              title="Sign in to use your cart"
-              hint="Carts live on your NOMOFEE account — your items stay with you on every device and are waiting when you come back."
-              action={
-                <Button onClick={() => openShopperAuth()} className="bg-brand-gradient-deep text-white hover:brightness-110 gap-2">
-                  <LogIn className="h-4 w-4" /> Sign in or create account
-                </Button>
-              }
-            />
-          </div>
         ) : !cart || cart.items.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               icon={ShoppingCart}
               title="Your cart is empty"
-              hint="Discover products across the marketplace and its stores."
+              hint={
+                signedIn
+                  ? "Discover products across the marketplace and its stores."
+                  : "Browse the marketplace and add something you love — check out as a guest or sign in first."
+              }
               action={
-                <Button
-                  onClick={() => {
-                    onOpenChange(false);
-                    ctx.nav({ name: "market" });
-                  }}
-                  className="bg-teal-700 hover:bg-teal-800"
-                >
-                  Browse marketplace
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    onClick={() => {
+                      onOpenChange(false);
+                      ctx.nav({ name: "market" });
+                    }}
+                    className="bg-teal-700 hover:bg-teal-800"
+                  >
+                    Browse marketplace
+                  </Button>
+                  {!signedIn ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => openShopperAuth()}
+                      className="gap-2"
+                    >
+                      <LogIn className="h-4 w-4" /> Sign in or create account
+                    </Button>
+                  ) : null}
+                </div>
               }
             />
           </div>
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 space-y-3">
+              {/* PHASE 2.2 guest checkout: a guest's token-keyed cart IS shown —
+                  the items render exactly like a signed-in shopper's (the old
+                  blanket !signedIn gate hid a successfully-added cart and read
+                  as "empty"). The soft nudge below keeps the sign-in affordance
+                  WITHOUT hiding anything: on login the server merges this cart
+                  into the account (lib/shopper-merge.ts) and useCart refetches. */}
+              {!signedIn ? (
+                <button
+                  type="button"
+                  onClick={() => openShopperAuth()}
+                  className="flex w-full items-center gap-2.5 rounded-lg border border-teal-200 bg-teal-50/70 px-3 py-2.5 text-left text-xs text-teal-900 transition-colors hover:bg-teal-100/70 min-h-[44px]"
+                >
+                  <LogIn className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold">Checking out as a guest</span>
+                    <span className="block text-teal-800/80">Sign in to save this cart to your account — your items follow you.</span>
+                  </span>
+                </button>
+              ) : null}
               {/* urgency: cart reservation countdown — Task 30: fixed-height,
                   single-line row so the label never reflows the items below */}
               {showCountdown ? (
