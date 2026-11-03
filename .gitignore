@@ -65,3 +65,9 @@ download/
 db/backup/
 .next-staging/
 .next-prod/
+# Work Orders 1&2 hygiene (2026-12): local SQLite scratch DB (contains Session/
+# AdminUser/Seller/KycDocument tables — dev fixtures, never source material)
+# and mini-service runtime state must never enter a future commit.
+db/*.db
+db/*.sqlite
+mini-services/*/state.json
