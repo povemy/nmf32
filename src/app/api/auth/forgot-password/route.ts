@@ -53,7 +53,10 @@ export const POST = handle(async (req: Request) => {
   });
 
   let issued = false;
-  let suppressed: "locked" | "delivery-failed" | null = null;
+  // Full IssueEmailOtpResult union: "already-verified" cannot occur for the
+  // single-shot password-reset purpose (consumed rows are deleted, not
+  // verified-persisted), but the local type must match the contract.
+  let suppressed: "locked" | "already-verified" | "delivery-failed" | null = null;
   if (shopper && shopper.status === "active") {
     // Registered + active → issue (or re-issue) the single live challenge.
     // Re-issuance replaces the code/hash and extends the expiry (latest email

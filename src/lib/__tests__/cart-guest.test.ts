@@ -8,7 +8,10 @@
 // running dev server with the agent browser — see the work-order report.
 // ============================================================================
 import { describe, expect, test } from "bun:test";
-import { isValidCartToken, shapeCart, type ShapedCart } from "@/app/api/cart/cart";
+import { isValidCartToken, shapeCart } from "@/app/api/cart/cart";
+
+/** The shaped cart payload contract (shapeCart's return type). */
+type ShapedCart = ReturnType<typeof shapeCart>;
 
 // Minimal structural stand-in for Prisma's CartWithItems (shapeCart only
 // reads these fields — the include-tree types collapse to the same shape).
