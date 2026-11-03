@@ -1,0 +1,91 @@
+================================================================================
+WORK ORDERS 1 & 2 — LOCAL VERIFICATION EVIDENCE (2026-11-03)
+================================================================================
+
+A. PASSWORD RECOVERY (Work Order 1) — live Mailpit E2E on dev :3000
+--------------------------------------------------------------------------------
+[1] Existing shopper requests recovery (qa.shopper@nomofee.test)
+    POST /api/auth/forgot-password -> 200 {"sent":true,...uniform message}
+    Mailpit inbox: "Your NOMOFEE password recovery code" delivered to the address.
+[2] Unknown email (nobody@nowhere.test)
+    -> 200, byte-identical message/status/shape (no existence oracle);
+    not-found branch burns ~30ms scrypt + 20-140ms jitter (timing band overlap).
+[3] Valid code -> POST /api/auth/verify-recovery 200 -> "prg:v1:" grant minted.
+[4] Invalid code ("000000") -> 401 INVALID uniform.
+[5] Expired code (row force-expired in DB) -> 401 INVALID uniform.
+[6] Replayed code (same 6 digits again) -> 401 INVALID (single-shot CAS delete).
+[7] Concurrent verify: 4 parallel requests with the same code -> exactly ONE
+    winner (3x loser 401, 1x winner grant).
+[8] Rate limiting: 6 rapid forgot-password requests -> 200,200,200,429,429,429
+    (5/min/IP); per-email bucket observed enforcing 3/h (retry-after 3171s).
+[9] Reset -> login with NEW password -> 200 session minted.
+[10] Old password -> 401 INVALID_CREDENTIALS.
+[11] Pre-reset session after reset -> /api/auth/me {userType:null};
+     /api/me/notifications -> 401 (session revoked; audit: sessionsRevoked:3).
+[12] Grant replay after reset -> 401 INVALID_GRANT (password-epoch binding).
+Extra: registration password policy (>=8 chars) enforced at reset;
+       guest-checkout OTP (same table, purpose guest-checkout) request+verify
+       still green after guest-otp.ts changes.
+Frontend E2E (agent browser): "Forgot password?" -> email -> code (from
+Mailpit) -> new password -> "Password changed" -> login prefilled -> sign-in
+with new password -> "Welcome back!" + "Signed in as QA Shopper".
+Dev fixture restored: qa.shopper@nomofee.test / Shopper123! (documented value).
+
+B. CART DEFECT (Work Order 2) — agent browser on dev :3000
+--------------------------------------------------------------------------------
+ROOT CAUSE 1: CartDrawer rendered a blanket "!signedIn" gate BEFORE the item
+list (pre-Phase-2.2 leftover) — a guest's successfully-added cart showed
+"Sign in to use your cart" while the title said "(1 item)" -> perceived as
+empty cart after a success notification.
+ROOT CAUSE 2: ensureCartForCaller only set the sm_cart cookie when the SERVER
+minted the token; the SPA always sends a client-minted X-Cart-Token, so the
+cookie never existed and the login request (cookie-only, no cart header)
+could not resolve the guest cart -> mergeGuestCartForShopper() no-opped ->
+"Open cart, 0 items" after sign-in.
+FIXES: drawer renders guest items + soft sign-in nudge; stock probe runs for
+guests; cookie synced on every guest ensure; login request carries the known
+cart token (never mints).
+Browser evidence (fresh context, storage+cookies cleared):
+- guest add -> drawer "ByteBazaar — your cart (1 item)" with the item row,
+  selection checkbox, remove button, guest nudge bar (screenshot:
+  .agent-tmp/wo-final-cart-drawer.png, also cart-fix-verify.png);
+- reload -> header "Open cart, 1 item" + drawer still shows the item;
+- remove -> DELETE 200 -> "Your cart is empty" state;
+- guest add -> sign in -> "Open cart, 1 item" (merged into account cart),
+  localStorage cart token retired.
+No false success notifications: the PDP toast fires only after postJson
+resolves 2xx; server rejections surface error toasts (throw path).
+
+C. LOCAL CI-EQUIVALENT GATES (same gates as .github/workflows/ci.yml)
+--------------------------------------------------------------------------------
+1. bun install --frozen-lockfile ................. EXIT 0 (574 installs, no changes)
+2. bunx prisma validate .......................... valid
+3. bunx prisma generate .......................... EXIT 0
+4. bunx tsc --noEmit -p tsconfig.ci.json ......... EXIT 0 (after 2 fixes, committed)
+5. bunx eslint src --max-warnings 50 ............. 0 errors, 39 warnings (within cap)
+6. bun test src/lib/__tests__ .................... 207/207 pass (baseline 187 + 20 new)
+7. Production build (NEXT_DIST_DIR=.next-prod,
+   next build + standalone post-steps) ........... EXIT 0; dev server on :3000
+   untouched and healthy throughout.
+HOSTED CI STATUS: NOT RUN — GitHub Actions has never executed this workflow
+(no runner access from the sandbox; origin unreachable). Local gates only.
+
+D. CROSS-FEATURE REGRESSION — Phase 3 marketplace E2E (M1-M10, 40 checks)
+--------------------------------------------------------------------------------
+Run against the ISOLATED staging target (next dev :3100, .next-staging,
+schema=nomofee_staging, Mailpit, mock PSP) — public schema untouched:
+M1 registration + verification email (Mailpit 6->7) ........ PASS
+M2 multi-seller checkout: 1 PaymentGroup -> 2 orders,
+   single webhook settles both, stock decremented ........... PASS
+M3 payment.failed -> group failed, order retryable, no T1 .. PASS
+M4 expiry sweep -> payment_expired + restock ............... PASS
+M5 commissions at category rates + pending settlements ..... PASS
+M6 full refund (restock) + partial refund bookkeeping ...... PASS
+M7 withdrawal -> approve (T3) -> mark-paid (T4) ............ PASS
+M8 delayed duplicate webhook -> duplicate ack, no postings . PASS
+M9 seller approval + product publication restrictions ...... PASS
+M10 email webhooks: bounce suppression + duplicate ack ..... PASS
+Dev-instance smokes: admin MFA enrollment gate (403
+MFA_ENROLLMENT_REQUIRED for unenrolled privileged admin; /api/auth/me
+ungated shape intact; TOTP verify exercised inside the staging E2E);
+seller login 200; session revocation after password reset -> 401.
