@@ -1,0 +1,135 @@
+[w2] baselines — clearing=3000 liability=3950 bank=14875
+
+══ S1 — refund before payout request ══
+PASS  S1: refund processed 200 — http=200
+PASS  S1: entries fully reversed (status=reversed) — ["reversed:1000/1000"]
+PASS  S1: payout request refused (nothing requestable) — http=400 code=BELOW_MIN_PAYOUT
+PASS  S1: clearing untouched by the un-requested flow — clearing=3000
+
+══ S1 ══
+
+══ S2 — refund after request, before approval ══
+PASS  S2: payout requested at full pool — http=201 amount=2000 pool=2000
+PASS  S2: partial refund processed — http=200
+PASS  S2: requested payout auto-shrunk to pool − entry reversal — amount=1000 expected=1000 (reversal 1000)
+PASS  S2: payout still requested (auto-release only at 0) — status=requested
+PASS  S2: approve + mark-paid at the SHRUNK amount — approve=200 mark-paid=200 amount=1000
+PASS  S2: T-A3 == T-A4 == shrunk amount (clearing nets 0) — a3=1000 a4=1000 amount=1000
+
+══ S2 ══
+
+══ S3 — refund after approval, before mark-paid ══
+[lib] shopper register 429 (attempt 1) — waiting 29000ms for the rate window
+PASS  S3: approved at full amount — http=200 amount=2000
+PASS  S3: refund processed while processing — http=200
+PASS  S3: processing payout shrunk by the entry-level reversal (X == R ≤ remaining) — amount=1500 expected=1500 (reversal 500)
+PASS  S3: mark-paid at the reduced amount — http=200 amount=1500
+PASS  S3: T-A3(full) − T5clearing(rev) − T-A4(shrunk) ⇒ clearing scope nets 0 — a3=2000 a4=1500 T5-clearing=500 ⇒ scope 0
+
+══ S3 ══
+
+══ S4 — full refund consumes a processing payout to zero ══
+PASS  S4: full refund processed — http=200
+PASS  S4: payout auto-released (failed, amount 0) — NOT stuck processing — status=failed amount=0 failReason=Auto-released: fully consumed by refunds before transfer
+PASS  S4: auto-release reason recorded — Auto-released: fully consumed by refunds before transfer
+PASS  S4: T-A3 posted, NO T-A4/T-A4f (zero-value skipped) — a3=2000 a4=undefined a4f=undefined
+PASS  S4: PAYOUT_CLEARING not driven negative by the run so far — clearing=3000 (start 3000)
+PASS  S4: affiliate can re-request (nothing left ⇒ BELOW_MIN_PAYOUT) — http=400 code=BELOW_MIN_PAYOUT
+
+══ S4 ══
+
+══ S5 — partial refund reduces payout amount ══
+PASS  S5: partial refund processed — http=200
+PASS  S5: payout shrunk exactly by the entry-level reversal — amount=1400 expected=1400 (reversal 600)
+PASS  S5: mark-paid at reduced amount — http=200
+PASS  S5: clearing scope nets 0 (a3 == a4 + T5-clearing) — a3=2000 a4=1400 T5clearing=600
+
+══ S5 ══
+
+══ S6 — multiple refunds, one payout ══
+[pacing] 429 on /api/auth/shopper/register — waiting 19000ms
+[pacing] 429 on /api/affiliate/payouts — waiting 14000ms
+PASS  S6: first two partial refunds processed — r1=200 r2=200
+PASS  S6: payout shrunk by the CUMULATIVE reversal after two refunds — amount=1000 expected=1000 (reversed 1000)
+PASS  S6: third refund processed — http=200
+PASS  S6: cumulative reversal stays within the pool — reversed=1999/2000
+PASS  S6: exactly one T5 per refund row (3 rows ⇒ 3 txns) — t5s=3
+PASS  S6: payout terminaled at the converged amount — http=200 amount=1 (status processing)
+
+══ S6 ══
+
+══ S7 — concurrent refund + mark-paid ══
+PASS  S7: both concurrent calls returned definitive outcomes (no 500) — refund=200 mark-paid=200
+PASS  S7: payout reached a TERMINAL state (exactly one winner) — status=paid
+PASS  S7(paid): T-A3 == T-A4 (paid-payout refund is recovery, liability-side) — a3=2000 a4=2000
+PASS  S7: clearing never negative across the race — clearing=3000
+
+══ S7 ══
+
+══ S8 — concurrent refund + approval ══
+[lib] shopper register 429 (attempt 1) — waiting 14000ms for the rate window
+PASS  S8: both concurrent calls returned definitive outcomes (no 500) — refund=200 approve=200
+PASS  S8: payout amount == pool − reversal regardless of interleaving — amount=1000 expected=1000 (reversal=1000)
+PASS  S8: mark-paid at the converged amount — http=200 amount=1000 (status processing)
+PASS  S8: clearing never negative across the race — clearing=3000
+
+══ S8 ══
+
+══ S9 — repeated processing and retry requests ══
+[pacing] 429 on /api/affiliate/payouts — waiting 3000ms
+[pacing] 429 on /api/affiliate/payouts — waiting 3000ms
+PASS  S9: duplicate concurrent payout requests → exactly one 201 + one 409 PAYOUT_OPEN — ["201:undefined","409:PAYOUT_OPEN"]
+PASS  S9: duplicate approve → exactly one 200 — approve outcomes: 200/409
+PASS  S9: duplicate mark-paid → exactly one 200 (no double T-A4) — mark-paid outcomes: 200/409
+PASS  S9: exactly ONE T-A3 and ONE T-A4 — a3=2000 a4=2000
+PASS  S9: new request after terminal payout (nothing left ⇒ BELOW_MIN) — http=400 code=BELOW_MIN_PAYOUT
+
+══ S9 ══
+
+══ S10 — late recovery + overclaimed payout + full in-flight reversal (V-F8) ══
+[pacing] 429 on /api/affiliate/payouts — waiting 52000ms
+PASS  S10: P1 requested at full pool — http=201 amount=1000
+PASS  S10: late refund processed — http=200
+PASS  S10: E_old stays paid as a RECOVERY offset — paid:1000/1000
+PASS  S10: P2 amount NETS the recovery (claims 2× the amount — the withholding vehicle) — http=201 amount=1000 expected=1000
+PASS  S10: P2 approved at the recovery-netted amount — http=200
+PASS  S10: in-flight full refund processed — http=200
+PASS  S10: P2 auto-released (failed @ 0) — NOT stuck processing — status=failed amount=0
+PASS  S10: V-F8 FIXED — clearing delta across the whole window is ZERO (was −recovery pre-fix) — delta=0
+PASS  S10: clearing account NOT driven negative — clearing=3000 (start 3000)
+PASS  S10: P2 has T-A3 only (no zero-value T-A4/T-A4f) — a3=1000 a4=undefined a4f=undefined
+PASS  S10: no further payout requestable (recovery + reversals consumed everything) — http=400 code=BELOW_MIN_PAYOUT
+
+══ S10 ══
+
+══ S11 — payout failure, release, re-request, full cycle ══
+[pacing] 429 on /api/affiliate/payouts — waiting 34000ms
+PASS  S11: fail processed — http=200
+PASS  S11: T-A3 == T-A4f (clearing returned to liability) — a3=2000 a4f=2000 a4=undefined
+PASS  S11: entries released back to the pool — ["available:null"]
+PASS  S11: re-request succeeds at the FULL amount — http=201 amount=2000
+PASS  S11: partial refund processed — http=200
+PASS  S11: retry completes (approve + mark-paid) — http=200
+PASS  S11: retry T-A3 == T-A4 == final amount (clearing nets 0) — a3=1500 a4=1500 amount=1500
+
+══ S11 ══
+
+══ S12 — duplicate refund delivery ══
+PASS  S12: first process 200, duplicate 409 ALREADY_PROCESSED — first=200 dup=409
+PASS  S12: exactly one T5 for the refund row; reversal applied exactly once — t5s=1; reversal=1000
+PASS  S12: payout still completes after the duplicate delivery — http=200 amount=1000
+
+══ S12 ══
+
+══ INDEPENDENT DB INVARIANTS ══
+PASS  V.a: every ledger transaction balanced (independent SQL) — unbalanced=0
+PASS  V.b: global books balance (D==C) — D=1787375 C=1787375
+PASS  V.c: no zero-value ledger transaction exists (post-fix fixtures) — zeroTxns=0
+PASS  V.d: PAYOUT_CLEARING run-delta == 0 (every fixture payout netted; never negative) — delta=0, end=3000, start=3000
+PASS  V.e: no fixture payout stuck in requested/processing — stuck=[]
+PASS  V.f: paid entries all bound to a payout; no entry reversed beyond its amount — paidUnbound=0 overReversed=0
+PASS  V.g: app ledger invariants report zero hard problems — {"problems":[],"hardDrift":0}
+PASS  V.h: every terminal fixture payout's ledger postings equal its row amount (auto-released ⇒ none) — mismatches=0
+PASS  V.i: BANK_MAIN run-delta == Σ fixture T-A4 payouts (no money created or lost) — delta=12401 expected=12401
+
+phase3-work2-vf8f1-regression: ALL PASS

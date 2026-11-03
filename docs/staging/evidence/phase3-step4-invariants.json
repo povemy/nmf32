@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-11-02T15:16:32.090Z",
+  "capturedAt": "2026-11-03T08:57:27.144Z",
   "target": "nomofee_staging",
   "checks": [
     {
@@ -25,12 +25,12 @@
     {
       "name": "B2.c: webhook (providerRef,eventType) may be logged (replays) — money keyed by dedupKey",
       "pass": true,
-      "detail": "replayed webhook events logged: 50 groups (logging replays is the audit trail; B2.a/b prove no double money)"
+      "detail": "replayed webhook events logged: 52 groups (logging replays is the audit trail; B2.a/b prove no double money)"
     },
     {
       "name": "B3.a: Σdebit == Σcredit in EVERY transaction (independent SQL)",
       "pass": true,
-      "detail": "all 120 transactions balanced"
+      "detail": "all 190 transactions balanced"
     },
     {
       "name": "B3.b: app runLedgerInvariants reports no hard problems",
@@ -50,7 +50,7 @@
     {
       "name": "B5.b: every paid payout amount within [Σ(entries net), Σ(entries gross)]",
       "pass": true,
-      "detail": "4 paid payouts conserve (amount == net at payout time; later recovery reversals documented)"
+      "detail": "17 paid payouts conserve (amount == net at payout time; later recovery reversals documented)"
     },
     {
       "name": "B6.a: Σ refund amounts ≤ order total for every order",
@@ -70,7 +70,7 @@
     {
       "name": "B8.a: one reconciliation obligation per expired group (idempotent upsert)",
       "pass": true,
-      "detail": "26 obligations total, 0 duplicate refs"
+      "detail": "29 obligations total, 0 duplicate refs"
     },
     {
       "name": "B8.b: obligation statuses sane",
@@ -80,65 +80,65 @@
     {
       "name": "B9.a: global ledger balances (Σdebit == Σcredit across ALL lines)",
       "pass": true,
-      "detail": "D=876475 C=876475 across 7 accounts"
+      "detail": "D=1876125 C=1876125 across 7 accounts"
     },
     {
       "name": "B10 (observation): PLATFORM:PAYOUT_CLEARING net (V-F8 presentation watch, credit−debit)",
       "pass": true,
-      "detail": "net=3000 (D18500/C21500) — positive"
+      "detail": "net=3000 (D44500/C47500) — positive"
     },
     {
       "name": "B9.b: AFFILIATE_LIABILITY / BANK_MAIN nets recorded",
       "pass": true,
-      "detail": "AFFILIATE_LIABILITY net=-3950, BANK_MAIN net=-13875 (informational; conservation proven by B9.a + B5.b)"
+      "detail": "AFFILIATE_LIABILITY net=-950, BANK_MAIN net=-28526 (informational; conservation proven by B9.a + B5.b)"
     }
   ],
   "accountNets": [
     {
       "code": "GATEWAY:FPX_TOYYIBPAY",
-      "debit": 551000,
-      "credit": 290100,
-      "net": 260900
+      "debit": 1151000,
+      "credit": 647099,
+      "net": 503901
     },
     {
       "code": "PLATFORM:AFFILIATE_LIABILITY",
-      "debit": 8800,
-      "credit": 12750,
-      "net": -3950
+      "debit": 43300,
+      "credit": 44250,
+      "net": -950
     },
     {
       "code": "PLATFORM:BANK_MAIN",
       "debit": 0,
-      "credit": 13875,
-      "net": -13875
+      "credit": 28526,
+      "net": -28526
     },
     {
       "code": "PLATFORM:PAYOUT_CLEARING",
-      "debit": 18500,
-      "credit": 21500,
+      "debit": 44500,
+      "credit": 47500,
       "net": -3000
     },
     {
       "code": "PLATFORM:REVENUE_COMMISSION",
-      "debit": 20980,
-      "credit": 38320,
-      "net": -17340
+      "debit": 49540,
+      "credit": 86040,
+      "net": -36500
     },
     {
       "code": "SELLER:cmvz9yu42000hox3x08n5gnmk:PAYABLE",
-      "debit": 249895,
-      "credit": 428330,
-      "net": -178435
+      "debit": 560485,
+      "credit": 947710,
+      "net": -387225
     },
     {
       "code": "SELLER:cmvz9yuym000yox3xmgwady0f:PAYABLE",
       "debit": 27300,
-      "credit": 71600,
-      "net": -44300
+      "credit": 75000,
+      "net": -47700
     }
   ],
   "walletCount": 4,
-  "txnCount": 120,
+  "txnCount": 190,
   "appInvariants": {
     "problems": [],
     "hardDrift": 0,

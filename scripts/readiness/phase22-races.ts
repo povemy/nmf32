@@ -156,8 +156,12 @@ async function suiteC11() {
   const t1 = await db.ledgerTransaction.count({ where: { dedupKey: `order_paid:order:${orderId}` } });
   const obligations = await db.paymentReconciliation.count({ where: { providerRef: ref } });
   check("R1.a: exactly one terminal outcome (paid XOR payment_expired)", paid !== expired, `status=${order!.status}`);
+  // Work 2 re-run finding (fixture-assertion defect, product behavior correct):
+  // stock=5 − qty=2 ⇒ PAID leaves 3 (sold), EXPIRED restores to 5 with exactly
+  // qty restocked. The paid branch previously asserted stock===5 — a latent
+  // bug only visible when PAYMENT wins the race (Step 4's run had expiry win).
   check("R1.b: no resurrection — paid ⇒ no restock / expired ⇒ restocked exactly once",
-    paid ? (restocked === 0 && stock === 5) : (restocked === 2 && stock === 5), `stock=${stock} restocked=${restocked}`);
+    paid ? (restocked === 0 && stock === 3) : (restocked === 2 && stock === 5), `stock=${stock} restocked=${restocked}`);
   check("R1.c: T1 exists iff paid (no duplicate ledger postings)", paid ? t1 === 1 : t1 === 0, `t1=${t1}`);
   check("R1.d: sweep outcome sane (never both failed and claimed)", sweepRes.failures === 0, JSON.stringify(sweepRes));
   check("R1.e: webhook honoured the winner (200-ish when paid, 409 when expired)",

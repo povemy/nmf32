@@ -1,0 +1,29 @@
+{
+  "runId": "mw0gntvj",
+  "actions": [
+    {
+      "payout": "cmvzc2a3l02vfox51xyyp74gq",
+      "action": "fail",
+      "http": 200,
+      "status": "failed"
+    },
+    {
+      "payout": "cmvzc8t5102yuox51k0q9m8zp",
+      "action": "mark-paid",
+      "http": 200,
+      "status": "paid"
+    },
+    {
+      "payout": "cmvzagmz200psox514ovdrwer",
+      "action": "reject",
+      "http": 200,
+      "status": "rejected"
+    }
+  ],
+  "finalState": {
+    "openPayouts": 0,
+    "clearingBefore": 3000,
+    "clearingAfter": 3000
+  },
+  "failures": 0
+}

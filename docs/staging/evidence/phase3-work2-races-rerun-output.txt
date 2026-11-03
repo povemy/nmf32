@@ -1,0 +1,40 @@
+── R1: webhook vs expiry race ──
+PASS  R1.a: exactly one terminal outcome (paid XOR payment_expired) — status=payment_expired
+PASS  R1.b: no resurrection — paid ⇒ no restock / expired ⇒ restocked exactly once — stock=5 restocked=2
+PASS  R1.c: T1 exists iff paid (no duplicate ledger postings) — t1=0
+PASS  R1.d: sweep outcome sane (never both failed and claimed) — {"examined":1,"expired":1,"ordersExpired":1,"itemsRestocked":1,"skippedConcurrent":0,"anomalies":0,"failures":0,"vouchersRestored":0,"couponsRestored":0,"scanned":0,"released":0,"skipped":0,"errors":[],"throttled":false}
+PASS  R1.e: webhook honoured the winner (200-ish when paid, 409 when expired) — http=409 code=GROUP_EXPIRED
+PASS  R1.f: late-payment obligation exists iff expiry won — obligations=1
+── R2: two simultaneous expiry workers on the same group ──
+PASS  R2.a: stock restored exactly once (3 workers, 1 unit) — stock=3 restocked=1
+PASS  R2.b: exactly one InventoryLog row per restocked unit — logs=1
+PASS  R2.c: group terminal-expired exactly once
+── R3: late successful payment after expiry ──
+PASS  R3.a: both deliveries refused 409 (no resurrection) — 409/409
+PASS  R3.b: order stays payment_expired — payment_expired
+PASS  R3.c: zero T1 postings for the late payment — t1=0
+PASS  R3.d: exactly one durable refund obligation (idempotent upsert) — obligations=1
+PASS  R3.e: stock NOT double-restocked by the webhook
+── R4: multi-order PaymentGroup expiry + payment ──
+PASS  R4.a: one group → two per-seller orders — orders=2
+PASS  R4.b: one webhook settles BOTH member orders — http=200 statuses=paid,paid
+PASS  R4.c: exactly two T1 postings (one per order)
+PASS  R4.d: group expiry transitions EVERY member order — n=1 payment_expired
+PASS  R4.e: stock restored for the expired group's variants
+── P1–P6: affiliate payout ↔ refund races ──
+PASS  P0.a: payment created affiliate commission entries — commissions=1
+PASS  P1.a: exactly one open payout survives two racing requests — open=1
+PASS  P1.b: loser refused (409 PAYOUT_OPEN / CLAIM_CONFLICT) — code=PAYOUT_OPEN
+PASS  P1.c: frozen amount equals claimed matured entries — amount=1250
+PASS  P2.a: exactly one approve wins — 200/409
+PASS  P2.b: exactly one T-A3 clearing posting (dedupKey) — tA3=1
+PASS  P3.a: refund processed while payout in-flight — http=200
+PASS  P3.b: frozen payout amount shrank by the applied reversal (refund cannot double-consume) — frozen 1250 → 625, reversed=625
+PASS  P3.c: entries carry the reversal (exactly-once consumption bookkeeping) — reversed=625
+PASS  P5.a: exactly one mark-paid wins — 200/409
+PASS  P5.b: exactly one T-A4 transfer posting (PSP/transfer idempotency) — tA4=1
+PASS  P5.c: payout paid at the POST-refund reduced amount (never the stale frozen figure) — status=paid amount=625
+PASS  P6.a: commission conservation (amounts == reversed + paid + residual) — total=1250 reversed=625 paid=625
+PASS  P6.b: affiliate balance endpoint healthy after the race — http=200
+
+Phase 2.2 race suite run mw0g8cc3 complete.

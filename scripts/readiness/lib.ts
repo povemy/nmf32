@@ -32,6 +32,28 @@ export async function pgClient() {
   const { Client } = await import("pg");
   const url = dbUrl();
   if (!url) throw new Error("SUPABASE_DATABASE_URL missing (env + .env)");
+  // PHASE 3 / WORK 1 hardening (post-Step-4 review): the pgClient guard only
+  // engages when the URL pins a schema. Two accidental-public foot-guns were
+  // closed:
+  //   (1) SUPABASE_DATABASE_URL env override WITHOUT a schema pin — the runner
+  //       believes it retargeted the suites, but the raw session silently
+  //       resolves unqualified fault DDL through the role default
+  //       ("$user", public). Refuse: an env override only exists to retarget,
+  //       so it must carry the pin. (Dev regression runs set NO override and
+  //       fall back to the .env URL — their behavior is unchanged.)
+  //   (2) An explicit schema=public pin — public is never a valid
+  //       fault-injection target under any circumstances.
+  const urlPinsSchema = new URL(url).searchParams.get("schema");
+  if (process.env.SUPABASE_DATABASE_URL && !urlPinsSchema) {
+    throw new Error(
+      "pgClient: SUPABASE_DATABASE_URL env override carries no schema= pin — refusing to connect " +
+        "(an unpinned raw session resolves unqualified fault DDL to the role-default public schema). " +
+        "Staging runs must pin schema=nomofee_staging; dev runs must not set the override at all."
+    );
+  }
+  if (urlPinsSchema === "public") {
+    throw new Error("pgClient: refusing schema=public — fault-injection DDL must never target the public schema");
+  }
   // drop sslmode param (Supabase pooler chain is self-signed from this box; we
   // opt out of verification explicitly instead of pg's verify-full default)
   const u = new URL(url);

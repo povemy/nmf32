@@ -57,3 +57,11 @@ server.log
 .env.*
 !.env.example
 upload/.env.vault
+# Phase 3 hygiene: sandbox auto-snapshot must not capture scratch/backup areas
+# (already-tracked files remain tracked until an authorized cleanup commit)
+.agent-tmp/
+tool-results/
+download/
+db/backup/
+.next-staging/
+.next-prod/

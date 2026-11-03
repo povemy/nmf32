@@ -1,0 +1,154 @@
+{
+  "runId": "mw0f6cqb",
+  "target": "nomofee_staging",
+  "scenarios": [
+    {
+      "name": "S1 — refund before payout request",
+      "detail": {}
+    },
+    {
+      "name": "S1",
+      "detail": {
+        "result": "entries reversed; request refused BELOW_MIN_PAYOUT; clearing untouched"
+      }
+    },
+    {
+      "name": "S2 — refund after request, before approval",
+      "detail": {}
+    },
+    {
+      "name": "S2",
+      "detail": {
+        "result": "shrunk 2000→1000; T-A3==T-A4==1000"
+      }
+    },
+    {
+      "name": "S3 — refund after approval, before mark-paid",
+      "detail": {}
+    },
+    {
+      "name": "S3",
+      "detail": {
+        "result": "T-A3=2000, T5-clearing=500, T-A4=1500 ⇒ clearing scope 0"
+      }
+    },
+    {
+      "name": "S4 — full refund consumes a processing payout to zero",
+      "detail": {}
+    },
+    {
+      "name": "S4",
+      "detail": {
+        "result": "auto-released failed@0; no zero-value posting; clearing never negative; nothing stuck"
+      }
+    },
+    {
+      "name": "S5 — partial refund reduces payout amount",
+      "detail": {}
+    },
+    {
+      "name": "S5",
+      "detail": {
+        "result": "reversal 600 shrinks payout to 1400; clearing nets 0"
+      }
+    },
+    {
+      "name": "S6 — multiple refunds, one payout",
+      "detail": {}
+    },
+    {
+      "name": "S6",
+      "detail": {
+        "result": "3 sequential refunds; cumulative reversal 1999/2000; paid@1"
+      }
+    },
+    {
+      "name": "S7 — concurrent refund + mark-paid",
+      "detail": {}
+    },
+    {
+      "name": "S7",
+      "detail": {
+        "result": "refund=200 mark-paid=200 → payout paid@2000, reversal=2000"
+      }
+    },
+    {
+      "name": "S8 — concurrent refund + approval",
+      "detail": {}
+    },
+    {
+      "name": "S8",
+      "detail": {
+        "result": "refund=200 approve=200 → processing@1000"
+      }
+    },
+    {
+      "name": "S9 — repeated processing and retry requests",
+      "detail": {}
+    },
+    {
+      "name": "S9",
+      "detail": {
+        "result": "one-open, one-approve, one-T-A4 under duplicate concurrent submits"
+      }
+    },
+    {
+      "name": "S10 — late recovery + overclaimed payout + full in-flight reversal (V-F8)",
+      "detail": {}
+    },
+    {
+      "name": "S10",
+      "detail": {
+        "result": "V-F8 window executed: clearing delta 0 (0 ⇒ FIXED); P2 auto-released@0; no stuck"
+      }
+    },
+    {
+      "name": "S11 — payout failure, release, re-request, full cycle",
+      "detail": {}
+    },
+    {
+      "name": "S11",
+      "detail": {
+        "result": "fail→release→re-request→refund-shrink→paid@1500"
+      }
+    },
+    {
+      "name": "S12 — duplicate refund delivery",
+      "detail": {}
+    },
+    {
+      "name": "S12",
+      "detail": {
+        "result": "duplicate process → 409; one T5; reversal exactly-once"
+      }
+    }
+  ],
+  "invariants": {
+    "globalDebit": 1787375,
+    "globalCredit": 1787375,
+    "clearingStart": 3000,
+    "clearingEnd": 3000,
+    "clearingDelta": 0,
+    "liabilityStart": 3950,
+    "liabilityEnd": 950,
+    "bankStart": 14875,
+    "bankEnd": 27276,
+    "bankPaidTotal": 12401,
+    "fixturePayoutIds": [
+      "cmw0f76md0068osjc8maej6c0",
+      "cmw0f84ol007yosjcpp4ux26d",
+      "cmw0f8ft6009oosjcdaokmz9q",
+      "cmw0f8qs100b9osjcf31w8ujh",
+      "cmw0f9qpo00czosjcq7qmybva",
+      "cmw0fa5tt00fhosjctocac9h2",
+      "cmw0fap2100h7osjcy0da72ww",
+      "cmw0fb0zf00ixosjcyapn587x",
+      "cmw0fcbk800kbosjcql03ullc",
+      "cmw0fckgs00lzosjcjadtk7e1",
+      "cmw0fdmbj00nlosjcdk3785ex",
+      "cmw0fdp0b00nxosjcp5vcuywv",
+      "cmw0fe22q00pnosjc2b1gp9bg"
+    ]
+  },
+  "failures": 0
+}

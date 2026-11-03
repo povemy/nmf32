@@ -1,11 +1,11 @@
 {
   "service": "expiry-scheduler",
-  "startedAt": "2026-11-03T03:09:50.285Z",
+  "startedAt": "2026-11-03T09:12:29.156Z",
   "intervalMs": 30000,
   "endpoints": {
     "expiry": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.494Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.412Z",
       "lastOutcome": {
         "examined": 0,
         "expired": 0,
@@ -22,17 +22,17 @@
         "errors": [],
         "throttled": false,
         "remainingBacklog": 0,
-        "durationMs": 313,
-        "at": "2026-11-03T05:13:56.450Z",
+        "durationMs": 163,
+        "at": "2026-11-03T10:47:32.369Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 6199
+      "ticks": 6652
     },
     "refund": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.319Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.377Z",
       "lastOutcome": {
         "examined": 0,
         "attempted": 0,
@@ -45,8 +45,8 @@
         "skippedExhausted": 0,
         "transientErrors": 0,
         "faultsApplied": 0,
-        "at": "2026-11-03T05:13:56.277Z",
-        "durationMs": 136,
+        "at": "2026-11-03T10:47:32.333Z",
+        "durationMs": 124,
         "backoffMs": 15000,
         "maxAttempts": 8,
         "batchLimit": 25,
@@ -54,47 +54,47 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 6199
+      "ticks": 6652
     },
     "analytics": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.525Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.457Z",
       "lastOutcome": {
-        "ranAt": "2026-11-03T05:13:56.478Z",
-        "durationMs": 333,
+        "ranAt": "2026-11-03T10:47:32.412Z",
+        "durationMs": 200,
         "retentionDays": 180,
-        "cutoff": "2026-05-07T05:13:56.291Z",
+        "cutoff": "2026-05-07T10:47:32.291Z",
         "purged": 0,
         "flush": {
           "flushed": 1,
           "pending": 0
         },
-        "remaining": 93,
+        "remaining": 94,
         "oldestEventAt": "2026-10-28T14:16:18.540Z",
         "auth": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 5249
+      "ticks": 5702
     },
     "affiliate": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.790Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.669Z",
       "lastOutcome": {
         "approved": 0,
         "matured": 0,
         "remainingPending": 8,
-        "durationMs": 593,
-        "at": "2026-11-03T05:13:56.744Z",
+        "durationMs": 410,
+        "at": "2026-11-03T10:47:32.625Z",
         "authMode": "dev-open"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2141
+      "ticks": 2594
     },
     "sessions": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.156Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.219Z",
       "lastOutcome": {
         "throttled": true,
         "purged": 0,
@@ -102,18 +102,18 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2268
+      "ticks": 2721
     },
     "orders": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.353Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.467Z",
       "lastOutcome": {
-        "ranAt": "2026-11-03T05:13:56.305Z",
-        "durationMs": 145,
+        "ranAt": "2026-11-03T10:47:32.425Z",
+        "durationMs": 201,
         "autoComplete": {
           "candidates": 0,
           "completed": 0,
-          "cutoff": "2026-10-20T05:13:56.160Z"
+          "cutoff": "2026-10-20T10:47:32.224Z"
         },
         "tracking": {
           "scanned": 0,
@@ -124,54 +124,34 @@
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 2141
+      "ticks": 2594
     },
     "webhook": {
-      "lastTickAt": "2026-11-03T05:13:55.804Z",
-      "lastSuccessAt": "2026-11-03T05:13:56.802Z",
+      "lastTickAt": "2026-11-03T10:47:31.896Z",
+      "lastSuccessAt": "2026-11-03T10:47:32.683Z",
       "lastOutcome": {
-        "scanned": 1,
+        "scanned": 0,
         "attempted": 0,
         "succeeded": 0,
         "retried": 0,
         "failedFinal": 0,
-        "skippedNotDue": 1,
+        "skippedNotDue": 0,
         "skippedInactive": 0,
         "unsubscribedFailed": 0,
         "skippedOther": 0,
         "staleFailed": 0,
         "errors": 0,
-        "remainingBacklog": 1,
-        "durationMs": 591,
-        "at": "2026-11-03T05:13:56.754Z",
+        "remainingBacklog": 0,
+        "durationMs": 407,
+        "at": "2026-11-03T10:47:32.634Z",
         "schedule": "inline → 1m → 5m → 15m → 1h → 4h → 12h → 24h (8 attempts, then failed)"
       },
       "consecutiveFailures": 0,
       "lastError": null,
-      "ticks": 1300
+      "ticks": 1753
     }
   },
   "alerts": [
-    {
-      "at": "2026-10-30T05:30:48.976Z",
-      "type": "OVERDUE_SWEEP",
-      "detail": "expiry: no successful tick for 120s (> 3× interval)"
-    },
-    {
-      "at": "2026-10-31T00:01:27.026Z",
-      "type": "MISSED_INTERVAL",
-      "detail": "scheduler was down ~33507s (last success 2026-10-30T14:42:59.922Z) — catch-up tick starting now"
-    },
-    {
-      "at": "2026-10-31T00:01:57.048Z",
-      "type": "OVERDUE_SWEEP",
-      "detail": "expiry: no successful tick for 33537s (> 3× interval)"
-    },
-    {
-      "at": "2026-10-31T00:33:57.049Z",
-      "type": "TICK_UNREACHABLE",
-      "detail": "expiry: Unable to connect. Is the computer able to access the url? ×2 consecutive"
-    },
     {
       "at": "2026-10-31T11:27:28.979Z",
       "type": "MISSED_INTERVAL",
@@ -401,6 +381,26 @@
       "at": "2026-11-03T03:09:50.285Z",
       "type": "MISSED_INTERVAL",
       "detail": "scheduler was down ~41352s (last success 2026-11-02T15:40:38.251Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-11-03T06:58:48.674Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~6292s (last success 2026-11-03T05:13:56.494Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-11-03T08:58:45.667Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~80s (last success 2026-11-03T08:57:25.299Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-11-03T09:11:01.246Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~78s (last success 2026-11-03T09:09:42.814Z) — catch-up tick starting now"
+    },
+    {
+      "at": "2026-11-03T09:12:29.156Z",
+      "type": "MISSED_INTERVAL",
+      "detail": "scheduler was down ~56s (last success 2026-11-03T09:11:33.320Z) — catch-up tick starting now"
     }
   ]
 }

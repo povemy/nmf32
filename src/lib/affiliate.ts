@@ -777,14 +777,29 @@ export async function reverseAffiliateForRefund(
   //   requested  → liability-side: T5 keeps debiting AFFILIATE_LIABILITY and
   //                the payout's frozen amount shrinks (no ledger posted for a
   //                requested payout yet — fully consistent).
-  //   processing → clearing-side: T-A3 already moved the frozen amount from
-  //                AFFILIATE_LIABILITY into PAYOUT_CLEARING, so the reversal
-  //                must debit PAYOUT_CLEARING (returned as
-  //                affiliateClearingMinor for the T5 split) and the payout
-  //                amount shrinks so T-A4 pays the reduced figure — the
-  //                clearing account nets to exactly zero across T-A3, T5's
-  //                split line and T-A4/T-A4f at the adjusted amount.
-  const adjByPayout = new Map<string, { liability: number; clearing: number }>();
+  //   processing → clearing-side: T-A3 already moved the payout AMOUNT from
+  //                AFFILIATE_LIABILITY into PAYOUT_CLEARING, so the portion of
+  //                the reversal covered by that amount debits PAYOUT_CLEARING
+  //                (returned as affiliateClearingMinor for the T5 split);
+  //                the payout amount shrinks by the same figure so T-A4 pays
+  //                the reduced amount.
+  //   V-F8 FIX (Work 2, docs/finance/vf8-f1-correction-design.md §3.1): the
+  //   clearing allocation is CAPPED at the payout's remaining amount. When a
+  //   recovery offset existed at request time, the claimed entries' value V
+  //   exceeds the payout amount A = V − recovery (the overclaim is the
+  //   withholding vehicle — only A was parked in clearing by T-A3). A refund
+  //   reversing more than the remaining amount routes the EXCESS to the
+  //   liability side implicitly — postRefund books the liability line as
+  //   (affiliateReversal − affiliateClearing) globally, so the excess needs
+  //   no per-payout bookkeeping — and the payout amount only ever loses the
+  //   capped X — otherwise PAYOUT_CLEARING is debited beyond its T-A3 credit
+  //   (V-F8: −recovery presentation) and the withheld liability is never
+  //   reversed. In-memory `remainingByPayout` tracks each locked payout's
+  //   amount through this transaction's reductions (the DB row is updated
+  //   once, at the end).
+  const adjByPayout = new Map<string, { clearing: number; shrink: number }>();
+  const remainingByPayout = new Map<string, number>();
+  for (const p of payoutById.values()) remainingByPayout.set(p.id, p.amountMinor);
   let clearingTotal = 0;
 
   // Apply to the commission + entries (proportional split within each pool).
@@ -821,16 +836,26 @@ export async function reverseAffiliateForRefund(
             ...(entry.status !== "paid" && fullyReversedFn(newReversed, entry.amountMinor) ? { status: "reversed" as const } : {}),
           },
         });
-        // ---- C1.2 payout coordination: shrink the frozen amount of the open
-        // payout that claimed this entry, by exactly the share applied. A
-        // refund and a payout can no longer both consume the same commission
-        // liability.
+        // ---- C1.2 payout coordination (V-F8-capped): shrink the frozen amount
+        // of the open payout that claimed this entry by the CAPPED portion X =
+        // min(share, remaining); the excess (only possible when the claimed
+        // value exceeds the payout amount — the recovery-withholding case)
+        // reverses liability that was never parked in clearing. A refund and a
+        // payout can no longer both consume the same commission liability, and
+        // PAYOUT_CLEARING can never be debited beyond its T-A3 credit.
         if (actualApplied > 0 && entry.payoutId) {
           const payout = payoutById.get(entry.payoutId);
           if (payout && (payout.status === "requested" || payout.status === "processing")) {
-            const adj = adjByPayout.get(payout.id) ?? { liability: 0, clearing: 0 };
-            if (payout.status === "processing") { adj.clearing += actualApplied; clearingTotal += actualApplied; }
-            else adj.liability += actualApplied;
+            const adj = adjByPayout.get(payout.id) ?? { clearing: 0, shrink: 0 };
+            const remaining = remainingByPayout.get(payout.id) ?? payout.amountMinor;
+            const x = Math.min(actualApplied, Math.max(0, remaining));
+            // Only the T-A3-parked portion (capped X) hits clearing, and only
+            // the same X shrinks the payout amount; the excess (recovery-
+            // withholding case) flows to the T5 liability line via postRefund's
+            // global arithmetic (affiliateReversal − affiliateClearing).
+            if (payout.status === "processing") { adj.clearing += x; clearingTotal += x; }
+            adj.shrink += x;
+            remainingByPayout.set(payout.id, remaining - x);
             adjByPayout.set(payout.id, adj);
           }
         }
@@ -849,19 +874,35 @@ export async function reverseAffiliateForRefund(
   // already locked). A REQUESTED payout whose frozen amount is fully consumed
   // is auto-released (rejected + entries unclaimed) — no ledger was posted
   // for it, so this is clean; the affiliate simply re-requests later.
+  // V-F8 FIX: the reduction is the CAPPED shrink ΣX (≤ the amount by
+  // construction), so newAmount can never go negative — a negative value here
+  // is a logic bug and fails loudly instead of being masked by a floor.
+  // F-1 FIX (symmetry): a PROCESSING payout consumed to 0 auto-terminates to
+  // `failed` and releases its live claimed entries, mirroring the requested-
+  // state auto-release — clearing already nets to zero across T-A3 + the T5
+  // clearing lines (ΣX == the T-A3 amount), so NO T-A4f is posted (a
+  // zero-value posting would be rejected by the ledger core — the old
+  // stuck-in-processing defect). The one-open-payout-per-affiliate invariant
+  // is never blocked on operator action.
   for (const [payoutId, adj] of adjByPayout) {
     const payout = payoutById.get(payoutId);
     if (!payout) continue;
-    const reduce = adj.liability + adj.clearing;
+    const reduce = adj.shrink;
     if (reduce <= 0) continue;
-    const newAmount = Math.max(0, payout.amountMinor - reduce);
-    if (payout.status === "requested" && newAmount <= 0) {
+    const newAmount = payout.amountMinor - reduce;
+    if (newAmount < 0) {
+      throw new ApiError(409, "PAYOUT_STATE_CONFLICT", "Affiliate payout amount reduction exceeded the frozen amount — refund aborted (accounting invariant violation)");
+    }
+    if (newAmount === 0) {
       await tx.affiliatePayout.update({
-        where: { id: payoutId, status: "requested" },
+        where: { id: payoutId, status: payout.status },
         data: {
-          status: "rejected",
+          status: payout.status === "requested" ? "rejected" : "failed",
           amountMinor: 0,
-          failReason: "Auto-released: commissions fully reversed by refunds before approval",
+          failReason:
+            payout.status === "requested"
+              ? "Auto-released: commissions fully reversed by refunds before approval"
+              : "Auto-released: fully consumed by refunds before transfer",
           processedAt: new Date(),
         },
       });
@@ -870,7 +911,7 @@ export async function reverseAffiliateForRefund(
         where: { payoutId, status: { in: ["available", "approved"] } },
         data: { payoutId: null },
       });
-    } else if (newAmount !== payout.amountMinor) {
+    } else {
       const shrunk = await tx.affiliatePayout.updateMany({
         where: { id: payoutId, status: { in: ["requested", "processing"] } },
         data: { amountMinor: newAmount },
@@ -918,6 +959,13 @@ export async function requestAffiliatePayout(affiliateId: string): Promise<{ pay
     const balances = await affiliateBalances(affiliateId, tx);
     if (balances.requestableMinor < settings.minPayoutMinor) {
       throw new ApiError(400, "BELOW_MIN_PAYOUT", `Minimum payout is RM ${(settings.minPayoutMinor / 100).toFixed(2)}`);
+    }
+    // F-1 belt-and-braces (Work 2): a payout can never be CREATED at amount 0
+    // even if an operator hand-edits affiliate.min_payout_minor to 0 — a
+    // zero-amount payout would later hit the ledger's zero-value rejection at
+    // approve (T-A3) and brick the workflow.
+    if (balances.requestableMinor <= 0) {
+      throw new ApiError(400, "BELOW_MIN_PAYOUT", "No requestable affiliate balance");
     }
 
     const amountMinor = balances.requestableMinor;

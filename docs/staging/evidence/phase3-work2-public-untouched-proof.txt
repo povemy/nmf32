@@ -1,0 +1,11 @@
+Phase 3 / Work 2 — public schema untouched proof (V-F8/F-1 regression run, 2026-11-03)
+- Structural hash changed ONLY via live dev-server (:3000, public) housekeeping writes:
+    Session 395→391 (session-expiry cleanup sweep — 0 expired rows remain present)
+    WebhookDeliveryAttempt 2→3 (dev app webhook-delivery cron heartbeat, latest 08:18:56Z)
+- Staging-test artifact scan of public: ALL CLEAN —
+    ShopperUser/AdminUser/AffiliateProfile/AffiliatePayout (3h window): 0 [LT-W2] rows
+    LedgerTransaction affiliate (3h window): 0; Refund [LT]W2: 0; Order (3h window): 0
+    Product [LT] count 5128 = LEGACY dev load-test data (created before this run;
+    products created in last 6h: 0)
+- Verdict: the Work 2 regression run (75/75 checks) wrote NOTHING to public;
+  the dev app's own normal operations account for every delta.

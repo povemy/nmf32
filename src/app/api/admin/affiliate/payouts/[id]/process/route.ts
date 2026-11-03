@@ -50,15 +50,21 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   if (!["approve", "mark-paid", "fail", "reject"].includes(action)) {
     throw new ApiError(400, "VALIDATION", "action must be approve | mark-paid | fail | reject");
   }
-  if (action === "mark-paid" && !reference) {
-    throw new ApiError(400, "VALIDATION", "The bank/PSP transfer reference is required to mark a payout paid");
-  }
   if ((action === "fail" || action === "reject") && (!reason || reason.trim().length < 5)) {
     throw new ApiError(400, "VALIDATION", "A reason is required");
   }
 
   const payout = await db.affiliatePayout.findUnique({ where: { id } });
   if (!payout) throw new ApiError(404, "NOT_FOUND", "Payout not found");
+
+  if (action === "mark-paid" && payout.amountMinor > 0 && !reference) {
+    // F-1 FIX (Work 2): a payout consumed to 0 by refunds settles with NO bank
+    // transfer, so no transfer reference can exist — the requirement applies
+    // only when there is money to transfer. (amountMinor read pre-tx; a refund
+    // shrinking it further between read and claim only makes the provided
+    // reference unused, never a missing one.)
+    throw new ApiError(400, "VALIDATION", "The bank/PSP transfer reference is required to mark a payout paid");
+  }
 
   const result = await db.$transaction(async (tx) => {
     if (action === "approve") {
@@ -111,8 +117,18 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
       // record the adjusted figure (finance should transfer the CURRENT
       // amount shown in the queue, and the T5 clearing split keeps the books
       // balanced at exactly this number).
+      // F-1 FIX (Work 2): at amount 0 there is nothing to transfer — the T5
+      // clearing lines already returned the full T-A3 credit (ΣX == T-A3
+      // amount under the V-F8 cap), so PAYOUT_CLEARING already nets to zero.
+      // Skip the T-A4 posting entirely: a zero-value transaction is rejected
+      // by the ledger core and would 500 the payout into a permanent
+      // `processing` stuck state. (Reachable only for legacy pre-fix rows —
+      // post-fix refunds auto-release processing payouts at 0 — kept as the
+      // operator remediation path.)
       const fresh = await tx.affiliatePayout.findUniqueOrThrow({ where: { id } });
-      await postAffiliatePayoutConfirmed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reference: reference!, tx });
+      if (fresh.amountMinor > 0) {
+        await postAffiliatePayoutConfirmed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reference: reference!, tx });
+      }
       const paidAt = new Date();
       // The claimed entries become paid (skip any reversed in the interim —
       // those remain recovery offsets rather than double-counting).
@@ -151,8 +167,14 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
       if (claim.count === 0) throw new ApiError(409, "STATE_INVALID", "Only a processing payout can be marked failed");
       // C1.2: fresh read AFTER the claim — T-A4f must release the ADJUSTED
       // amount so PAYOUT_CLEARING nets to zero against T-A3 + any T5 splits.
+      // F-1 FIX (Work 2): at amount 0 the T5 clearing lines have already
+      // consumed the entire T-A3 credit (ΣX == T-A3 amount) — a T-A4f would
+      // be zero-value (rejected by the ledger core, HTTP 500, stuck
+      // processing). Skip it; the entry release below still runs.
       const fresh = await tx.affiliatePayout.findUniqueOrThrow({ where: { id } });
-      await postAffiliatePayoutFailed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reason: reason ?? "unspecified", tx });
+      if (fresh.amountMinor > 0) {
+        await postAffiliatePayoutFailed({ payoutId: fresh.id, amountMinor: fresh.amountMinor, reason: reason ?? "unspecified", tx });
+      }
       // Release the claimed entries back to the available pool.
       await tx.affiliateCommissionEntry.updateMany({
         where: { payoutId: fresh.id, status: { in: ["available", "approved"] } },
