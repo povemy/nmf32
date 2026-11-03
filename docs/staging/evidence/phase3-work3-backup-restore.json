@@ -1,0 +1,76 @@
+{
+  "createdAt": "2026-11-03T11:14:59.040Z",
+  "sourceSchema": "nomofee_staging",
+  "drillDatabase": "nomofee_restore_drill",
+  "backupFile": "db/backup/phase3-work3-staging-backup.json",
+  "totalRows": 5078,
+  "checks": [
+    {
+      "name": "backup.tablesEnumerated",
+      "pass": true,
+      "detail": "96 app tables"
+    },
+    {
+      "name": "backup.selfRefsIdentified",
+      "pass": true,
+      "detail": "Category.parentId, AffiliateProfile.sponsorId"
+    },
+    {
+      "name": "backup.rowsCaptured",
+      "pass": true,
+      "detail": "5078 rows across 96 tables → db/backup/phase3-work3-staging-backup.json"
+    },
+    {
+      "name": "restore.schemaRecreatedViaMigrations",
+      "pass": true,
+      "detail": "prisma migrate deploy applied 15/15 migrations onto the virgin nomofee_restore_drill (public schema, production mechanism)"
+    },
+    {
+      "name": "restore.pgTrgmCleanInstall",
+      "pass": true,
+      "detail": "pg_trgm installed into public on the virgin DB (unqualified gin_trgm_ops resolves — the same-database second-schema replay failure is documented as a DR-runbook note)"
+    },
+    {
+      "name": "restore.rowsInsertedFromBackupFile",
+      "pass": true,
+      "detail": "5078 rows into nomofee_restore_drill.public"
+    },
+    {
+      "name": "restore.sequencesResynced",
+      "pass": true,
+      "detail": "1 serial columns set to max(id)+1 semantics"
+    },
+    {
+      "name": "verify.migrationLedgerIdentical",
+      "pass": true,
+      "detail": "15 rows, names+checksums equal drill↔source"
+    },
+    {
+      "name": "verify.rowCountsIdentical",
+      "pass": true,
+      "detail": "all 96 tables match the source"
+    },
+    {
+      "name": "verify.drillLedgerBalanced",
+      "pass": true,
+      "detail": "every txn balanced; D=1877925 == C=1877925"
+    },
+    {
+      "name": "verify.drillLedgerEqualsSource",
+      "pass": true,
+      "detail": "drill D 1877925 == source D 1877925"
+    },
+    {
+      "name": "verify.drillAppHealthy",
+      "pass": true,
+      "detail": "nodeEnv=development fp=0ee2daf5e40afa1d stores=5 products=58 orders=224 ledgerOk=true txns=191"
+    },
+    {
+      "name": "teardown.drillDatabaseDropped",
+      "pass": true,
+      "detail": "nomofee_restore_drill dropped WITH FORCE; temp app killed; .next-drill removed"
+    }
+  ],
+  "drRunbookNote": "Migration 20261109000000 references gin_trgm_ops UNQUALIFIED — same-database second-schema replay fails 42704 when pg_trgm already exists in another schema (verified live before this drill). Virgin-database deploy (the real DR path, executed here) is unaffected.",
+  "verdict": "ALL PASS"
+}

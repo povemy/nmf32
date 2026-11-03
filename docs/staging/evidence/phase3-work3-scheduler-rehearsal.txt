@@ -1,0 +1,20 @@
+== Work 3B scheduler reliability rehearsal — 2026-11-03T11:18:25Z ==
+-- A. liveness --
+PASS — A1 scheduler service answering on :3005
+PASS — A2 zero consecutive tick failures
+PASS — A3 app-side scheduler health FRESH
+    baseline: expiredOrders=111 expiryRestockLogs=76
+-- B. controlled interruption (~70s) --
+PASS — B1 scheduler stopped (pid 1382)
+PASS — B2 app-side health flips to STALE during outage
+-- C. recovery --
+PASS — C1 scheduler restarted and answering
+PASS — C2 zero failures after recovery
+PASS — C3 catch-up tick recorded (MISSED_INTERVAL alert in scheduler.log)
+PASS — C4 app-side health back to FRESH
+-- D. exactly-once across the outage window --
+    after: expiredOrders=111 expiryRestockLogs=76
+PASS — D1 no new expired orders during the idle outage window (no duplicate sweep effects)
+PASS — D2 restock log count unchanged (exactly-once preserved)
+
+== Work 3B scheduler rehearsal: 11 PASS / 0 FAIL ==

@@ -1,0 +1,29 @@
+== Work 3A production-like deployment rehearsal — 2026-11-03T11:16:03Z ==
+target: staging DB via schema pin (fingerprint aa338c2b6272e14c), app :3200
+-- A. production build (standalone, CI-equivalent env) --
+PASS — A1 production build EXIT 0, standalone server.js emitted
+PASS — A2 standalone assets staged (static + public)
+-- B. fail-closed boot proofs (must ABORT) --
+PASS — B1 mailpit refused at production boot (fail closed)
+PASS — B2 missing mandatory secrets abort boot (PSP_WEBHOOK_SECRET listed)
+PASS — B3 CRON_SECRET enforced at boot
+-- C. valid production-mode boot on :3200 --
+PASS — C1 health healthy
+PASS — C2 nodeEnv=production
+PASS — C3 authorized staging DB fingerprint
+PASS — C4 ledger invariants ok at boot
+PASS — C5 CSP security header present
+PASS — C6 nosniff header present
+PASS — C7 root page renders (200 + HTML shell)
+-- D. money-surface gates --
+PASS — D1 mock-PSP webhook rejected in production (403 PROVIDER_SANDBOX_ONLY) even with valid-format demo signature
+PASS — D2 cron 403 without secret
+PASS — D3 cron 403 wrong secret
+PASS — D4 cron 200 correct secret (timing-safe)
+-- E. restart persistence --
+    server stopped cleanly
+PASS — E1 restart → healthy production server (same config)
+PASS — F1 rehearsal server torn down
+PASS — F2 documented degraded-mode warnings observed (SHIPPING_WEBHOOK_SECRET fail-closed 503 posture)
+
+== Work 3A rehearsal: 19 PASS / 0 FAIL ==
