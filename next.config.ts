@@ -96,6 +96,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Mobile homepage work order 2: the default Next.js dev-tools bubble floats
+  // at bottom-left, ON TOP of the fixed mobile bottom navigation (Home tab).
+  // It is dev-only chrome (never in production), but it makes the dev preview
+  // look like the nav is overlapped — disabled so the preview matches the
+  // real, production appearance.
+  devIndicators: false,
   // DEV-ONLY (ignored in production builds): allow the loopback IP as a dev
   // origin. Next 16 blocks /_next/hmr + dev fonts for hosts it doesn't
   // recognize (canonical is localhost) — browsing via 127.0.0.1:3000 (or the

@@ -725,7 +725,12 @@ function MarketHeader({
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       {/* brand gradient strip */}
       <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
-      <div className="mx-auto flex max-w-7xl items-center gap-2 sm:gap-4 px-4 py-3">
+      {/* Mobile homepage work order 2: below md the header is TWO rows —
+          row 1: hamburger + logo + account/wishlist/cart cluster (reference
+          layout), row 2: full-width search pill. Desktop (md+) keeps the
+          single-row layout via flex-nowrap + order reset. One search input /
+          suggestion dropdown — reflowed, never duplicated. */}
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 gap-y-2.5 px-4 py-3 sm:gap-x-4 md:flex-nowrap">
         {/* mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
@@ -789,7 +794,10 @@ function MarketHeader({
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-sm">
             <ShoppingBag className="h-5 w-5" />
           </span>
-          <span className="hidden text-lg font-extrabold tracking-tight text-teal-900 sm:inline">
+          {/* Mobile homepage work order 2: the wordmark shows from 360px up
+              (reference header) — at the very narrow 320px the icon alone
+              keeps row 1 comfortable beside the right icon cluster. */}
+          <span className="hidden min-[360px]:inline text-base font-extrabold tracking-tight text-teal-900 sm:text-lg">
             NOMO<span className="text-brand-gradient">FEE</span>
           </span>
         </button>
@@ -804,8 +812,8 @@ function MarketHeader({
             Work order 14: live suggestions from the hardened public endpoint.
             Desktop homepage work order: wider field + explicit teal submit
             button (md+) — Enter still submits, suggestions unchanged. */}
-        <div className={cn("relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-xl lg:max-w-2xl", isMe && "max-md:hidden")}>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className={cn("relative order-last min-w-0 basis-full md:order-none md:ml-0 md:basis-auto md:max-w-xl md:flex-1 lg:max-w-2xl", isMe && "max-md:hidden")}>
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => {
@@ -821,9 +829,9 @@ function MarketHeader({
               // Delay so clicking a suggestion fires before the blur close.
               setTimeout(() => setSuggestOpen(false), 150);
             }}
-            placeholder="Search the marketplace…"
-            className="pl-9 md:pr-24 min-h-[44px] rounded-full"
-            aria-label="Search the marketplace"
+            placeholder="Search products, brands & more…"
+            className="pl-10 md:pl-9 md:pr-24 min-h-[44px] rounded-full"
+            aria-label="Search for products, brands and more"
             aria-expanded={hasSuggestions}
             aria-autocomplete="list"
             role="combobox"
@@ -890,9 +898,13 @@ function MarketHeader({
           ) : null}
         </div>
 
-        <div className={cn("ml-0 flex shrink-0 items-center gap-1.5", isMe && "max-md:hidden")}>
+        {/* Right cluster — mobile (reference layout): account → wishlist →
+            cart; signed-in extras (messages, bell) trail after. Desktop keeps
+            the long-standing order. Implemented with max-md order utilities so
+            the DOM stays a single tree (no duplicate buttons). */}
+        <div className={cn("ml-auto flex shrink-0 items-center gap-1.5 md:ml-0", isMe && "max-md:hidden")}>
           {/* buyer notification bell (Task 10-d) — self-gates for guests */}
-          <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} className="hidden sm:inline-flex" />
+          <NotificationBell onOpenOrder={(orderNumber) => nav({ name: "order-status", orderNumber })} className="hidden max-md:order-5 sm:inline-flex" />
 
           {/* messages — account feature, hidden for guests */}
           {shopperSignedIn ? (
@@ -901,7 +913,7 @@ function MarketHeader({
               onClick={() => nav({ name: "messages" })}
               aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
               className={cn(
-                "relative inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+                "relative inline-flex max-md:order-4 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
                 view.name === "messages" && "text-teal-800 bg-teal-50"
               )}
             >
@@ -949,7 +961,7 @@ function MarketHeader({
             onClick={() => (shopperSignedIn ? nav({ name: "me", tab: "likes" }) : openShopperAuth())}
             aria-label="Wishlist — my liked products"
             className={cn(
-              "inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              "inline-flex max-md:order-2 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
               view.name === "me" && view.tab === "likes" && "text-teal-800 bg-teal-50"
             )}
           >
@@ -962,7 +974,7 @@ function MarketHeader({
             type="button"
             onClick={openCart}
             aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
-            className="relative flex h-10 w-10 min-h-[44px] items-center justify-center rounded-lg border bg-card hover:bg-muted transition-colors"
+            className="relative flex max-md:order-3 h-10 w-10 min-h-[44px] items-center justify-center rounded-lg border bg-card hover:bg-muted transition-colors"
           >
             <ShoppingCart className="h-5 w-5 text-teal-700" />
             {count > 0 ? (
@@ -977,8 +989,11 @@ function MarketHeader({
             ) : null}
           </button>
 
-          {/* account (shopper auth) */}
-          <AccountButton nav={nav} />
+          {/* account (shopper auth) — FIRST in the mobile right cluster
+              (reference layout: account · wishlist · cart). */}
+          <span className="flex max-md:order-1">
+            <AccountButton nav={nav} />
+          </span>
         </div>
 
         {/* Task 30 — Me page account bar (MOBILE ONLY). Order right→left as
@@ -1886,7 +1901,12 @@ function ShopperFooter({
     "inline-flex min-h-[36px] w-fit items-center rounded text-teal-100/80 transition-colors hover:text-white hover:underline underline-offset-2 text-xs sm:text-[13px]";
 
   return (
-    <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 text-teal-50">
+    // Mobile homepage work order 2: below md the fixed bottom navigation
+    // overlays the LAST 4.25rem of the page at full scroll — the footer's
+    // copyright/CTA tail sat behind it. Same reserve the main content uses
+    // (nav height + iOS safe-area inset), reset on desktop where the nav is
+    // hidden. Minimal spacing adjustment ONLY — no footer content changes.
+    <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 pb-[calc(4.25rem+env(safe-area-inset-bottom))] text-teal-50 md:pb-0">
       <div className="mx-auto max-w-7xl px-4 py-10">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
           {/* About NOMOFEE */}

@@ -16,15 +16,19 @@ export function HomeProductRail({
   ariaLabel,
   quickActions = false,
   showStore = false,
+  mobileActions,
 }: {
   products: ProductCardT[];
   ctx: ShopperCtx;
   ariaLabel: string;
   /** Desktop homepage work order: wishlist + add-to-cart quick actions on the
-   *  cards (md+ only — mobile cards unchanged). */
+   *  cards (md+ by default). */
   quickActions?: boolean;
   /** Show the seller name on the card (e.g. the Trending section). */
   showStore?: boolean;
+  /** Mobile homepage work order 2 (reference layout): "full" = wishlist +
+   *  add-to-cart (flash deals); "wishlist" = heart only (trending). */
+  mobileActions?: "full" | "wishlist";
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [atStart, setAtStart] = useState(true);
@@ -64,8 +68,8 @@ export function HomeProductRail({
         className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {products.map((p) => (
-          <div key={p.id} className="w-[46%] sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%] shrink-0 snap-start">
-            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} />
+          <div key={p.id} className="w-[40%] shrink-0 snap-start sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%]">
+            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} mobileActions={mobileActions} />
           </div>
         ))}
       </div>

@@ -65,7 +65,9 @@ function SlideBody({
         <img src={slide.imageUrl} alt={slide.title} className="hidden h-full w-full object-cover sm:block" loading="eager" />
         <img src={mobile} alt={slide.title} className="h-full w-full object-cover sm:hidden" loading="eager" />
         <span className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent" aria-hidden="true" />
-        <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
+        {/* px-14 below sm keeps the campaign text clear of the edge arrows
+            (reference hero keeps its copy inside the arrow-free centre). */}
+        <span className="absolute inset-0 flex flex-col justify-center gap-1.5 px-14 py-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
           {slide.kind === "campaign" ? (
             <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300 lg:text-xs">
               {t?.ornament} {slide.name}
@@ -95,7 +97,8 @@ function SlideBody({
       <span aria-hidden="true" className="pointer-events-none absolute -bottom-6 right-8 select-none text-7xl opacity-15">
         {t?.ornament}
       </span>
-      <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
+      {/* px-14 below sm keeps the campaign text clear of the edge arrows. */}
+      <span className="absolute inset-0 flex flex-col justify-center gap-1.5 px-14 py-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
         <span className="text-[11px] font-bold uppercase tracking-widest text-white/75 lg:text-xs">
           {t?.ornament} {slide.name}
         </span>
@@ -146,7 +149,7 @@ export function HomeHero({
     return (
       <div className="mx-auto max-w-7xl px-4 pt-4">
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="relative h-44 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" aria-roledescription="banner">
+          <div className="relative h-40 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" aria-roledescription="banner">
             <DefaultSlide ctx={ctx} />
           </div>
           <SecondaryTiles tiles={secondary} ctx={ctx} />
@@ -177,7 +180,7 @@ export function HomeHero({
             if (Math.abs(dx) >= SWIPE_THRESHOLD_PX) go(idx + (dx < 0 ? 1 : -1));
           }}
         >
-          <div className="relative h-44 sm:h-56 lg:h-[360px] xl:h-[400px]" aria-live="polite">
+          <div className="relative h-40 sm:h-56 lg:h-[360px] xl:h-[400px]" aria-live="polite">
             {slides.map((s, i) => {
               const active = i === idx;
               const inner = <SlideBody slide={s} ctx={ctx} campaignNav={campaignNav} />;
@@ -262,9 +265,15 @@ export function HomeHero({
 function SecondaryTiles({ tiles, ctx }: { tiles: HeroTileT[]; ctx: ShopperCtx }) {
   const campaignNav = useCampaignNav(ctx);
   if (tiles.length === 0) return null;
+  // Mobile homepage work order 2: a SINGLE live tile renders full-width on
+  // mobile (half-width lone tiles look like a layout bug); two tiles keep
+  // the reference dual-banner row. Desktop side-stack (lg+) is unchanged.
+  const shown = tiles.slice(0, 2);
+  const solo = shown.length === 1;
+  const tileCls = solo ? "col-span-2 lg:col-span-1" : "";
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-      {tiles.slice(0, 2).map((tile) => {
+      {shown.map((tile) => {
         const inner = (
           <>
             {tile.imageUrl ? (
@@ -307,7 +316,7 @@ function SecondaryTiles({ tiles, ctx }: { tiles: HeroTileT[]; ctx: ShopperCtx })
               key={tile.id}
               url={tile.cta.url}
               ariaLabel={`${tile.ctaLabel} — ${tile.name}`}
-              className="relative h-28 overflow-hidden rounded-2xl border lg:h-full lg:min-h-[8.5rem]"
+              className={cn("relative h-28 overflow-hidden rounded-2xl border lg:h-full lg:min-h-[8.5rem]", tileCls)}
             >
               {inner}
             </ExternalCtaLink>
@@ -319,7 +328,7 @@ function SecondaryTiles({ tiles, ctx }: { tiles: HeroTileT[]; ctx: ShopperCtx })
             type="button"
             onClick={() => campaignNav(tile.cta)}
             aria-label={`${tile.ctaLabel} — ${tile.name}`}
-            className="relative h-28 overflow-hidden rounded-2xl border text-left lg:h-full lg:min-h-[8.5rem]"
+            className={cn("relative h-28 overflow-hidden rounded-2xl border text-left lg:h-full lg:min-h-[8.5rem]", tileCls)}
           >
             {inner}
           </button>

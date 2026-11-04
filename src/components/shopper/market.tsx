@@ -143,6 +143,7 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
             ctx={ctx}
             viewAll={{ label: "View popular", onClick: () => ctx.nav({ name: "search", q: "", sort: "popular" }) }}
             quickActions
+            mobileActions="wishlist"
             showStore
           />
         ) : null;
@@ -190,13 +191,13 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         if (content == null) return null;
         if (WRAPPED.has(id)) {
           return (
-            <div key={`${id}-${i}`} className="mx-auto w-full max-w-7xl px-4 py-6">
+            <div key={`${id}-${i}`} className="mx-auto w-full max-w-7xl px-4 py-4 md:py-6">
               {content}
             </div>
           );
         }
         return (
-          <div key={`${id}-${i}`} className={id === "quick_access" ? "pt-6" : undefined}>
+          <div key={`${id}-${i}`} className={id === "quick_access" ? "pt-4 md:pt-6" : undefined}>
             {content}
           </div>
         );
@@ -252,6 +253,7 @@ function HomeSectionRail({
   ctx,
   viewAll,
   quickActions = false,
+  mobileActions,
   showStore = false,
 }: {
   id?: string;
@@ -263,12 +265,15 @@ function HomeSectionRail({
   viewAll: { label: string; onClick: () => void };
   /** Desktop homepage work order: card quick actions (md+ only). */
   quickActions?: boolean;
+  /** Mobile homepage work order 2: "wishlist" surfaces the heart on mobile
+   *  trending cards (reference layout); "full" adds add-to-cart too. */
+  mobileActions?: "full" | "wishlist";
   /** Show the seller name on the card (Trending section). */
   showStore?: boolean;
 }) {
   return (
     <SectionShell id={id} title={title} subtitle={subtitle} icon={icon} viewAll={viewAll}>
-      <HomeProductRail products={products} ctx={ctx} ariaLabel={title} quickActions={quickActions} showStore={showStore} />
+      <HomeProductRail products={products} ctx={ctx} ariaLabel={title} quickActions={quickActions} mobileActions={mobileActions} showStore={showStore} />
     </SectionShell>
   );
 }

@@ -103,9 +103,12 @@ export function HomeFlashDeals({
         </div>
       ) : null}
       {/* Desktop homepage work order: cards carry wishlist + add-to-cart
-          quick actions (md+ only). Prices/discounts stay EXACTLY as the
-          seller set them — the homepage never invents a promotion. */}
-      <HomeProductRail products={products} ctx={ctx} ariaLabel="Flash deal products" quickActions />
+          quick actions (md+ only). MOBILE homepage work order 2 (reference
+          layout): the same actions are surfaced on mobile too — flash-deal
+          cards show the full-width Add-to-Cart pill + wishlist heart.
+          Prices/discounts stay EXACTLY as the seller set them — the homepage
+          never invents a promotion. */}
+      <HomeProductRail products={products} ctx={ctx} ariaLabel="Flash deal products" quickActions mobileActions="full" />
     </SectionShell>
   );
 }

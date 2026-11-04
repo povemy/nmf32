@@ -1,16 +1,16 @@
 {
-  "runId": "mw25u7g6",
+  "runId": "mw27hg5q",
   "base": "http://127.0.0.1:3000",
   "steps": [
     {
       "name": "run",
-      "detail": "base=http://127.0.0.1:3000 runId=mw25u7g6"
+      "detail": "base=http://127.0.0.1:3000 runId=mw27hg5q"
     },
     {
       "name": "cleanup",
       "detail": "removed 6 [LT14] campaigns + ops admin; layout restored to default"
     }
   ],
-  "scheduledPropagationMs": 558,
-  "renamePropagationMs": 612
+  "scheduledPropagationMs": 784,
+  "renamePropagationMs": 763
 }

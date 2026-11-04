@@ -517,7 +517,7 @@ export function Stars({ rating, count, className }: { rating: number; count?: nu
  *  re-validates variant/stock/MOQ and is the sole authority), heart →
  *  POST /api/me/activity LIKE (idempotent upsert; guests get the sign-in
  *  dialog with intent resume). */
-function QuickCardActions({ p }: { p: ProductCardT }) {
+function QuickCardActions({ p, mobileActions }: { p: ProductCardT; mobileActions?: "full" | "wishlist" }) {
   const me = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const [busy, setBusy] = useState(false);
@@ -573,24 +573,31 @@ function QuickCardActions({ p }: { p: ProductCardT }) {
         aria-label={liked ? `${p.title} — in your wishlist` : `Save ${p.title} to wishlist`}
         aria-pressed={liked}
         className={cn(
-          "absolute right-1.5 top-1.5 z-20 hidden h-8 w-8 items-center justify-center rounded-full border bg-background/90 shadow-sm backdrop-blur transition-all hover:scale-105 md:inline-flex",
+          "absolute right-1.5 top-1.5 z-20 h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full border bg-background/90 shadow-sm backdrop-blur transition-all hover:scale-105",
+          mobileActions ? "inline-flex" : "hidden md:inline-flex",
           liked ? "border-rose-200 text-rose-500" : "border-border text-muted-foreground hover:text-rose-500"
         )}
       >
         <Heart className={cn("h-4 w-4", liked && "fill-rose-500")} aria-hidden="true" />
       </button>
 
-      {/* add-to-cart — full-width row under the card body (md+ only).
-          Hidden when the payload carries no purchasable variant id — never a
-          blind add the server would refuse. */}
+      {/* add-to-cart — full-width row under the card body (md+ by default;
+          mobile when the rail opts in with "full" — reference flash-deal
+          cards). Hidden when the payload carries no purchasable variant id —
+          never a blind add the server would refuse. */}
       {p.variantId ? (
-        <div className="relative z-20 hidden px-2.5 pb-2.5 pt-1 md:block">
+        <div
+          className={cn(
+            "relative z-20 px-2.5 pb-2.5 pt-1",
+            mobileActions === "full" ? "block" : "hidden md:block"
+          )}
+        >
           <button
             type="button"
             onClick={() => void addToCart()}
             disabled={busy}
             aria-label={`Add ${p.title} to cart`}
-            className="inline-flex h-8 min-h-[32px] w-full items-center justify-center gap-1.5 rounded-lg bg-brand-gradient text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:opacity-60"
+            className="inline-flex h-8 max-md:h-9 min-h-[32px] w-full items-center justify-center gap-1.5 rounded-lg bg-brand-gradient text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <ShoppingCart className="h-3.5 w-3.5" aria-hidden="true" />}
             {busy ? "Adding…" : "Add to cart"}
@@ -611,6 +618,7 @@ export function ProductCard({
   hidePrice = false,
   cardStyle,
   quickActions = false,
+  mobileActions,
 }: {
   p: ProductCardT;
   onOpen: (p: ProductCardT) => void;
@@ -619,9 +627,13 @@ export function ProductCard({
   /** Seller-customized typography — only passed on the seller's own storefront. */
   cardStyle?: CardStyleTokens | null;
   /** Desktop homepage work order: render wishlist + add-to-cart quick actions
-   *  (visible md+ only — mobile cards are untouched). Off by default so every
-   *  existing consumer (search grid, storefront, PDP related…) is unchanged. */
+   *  (visible md+ by default). Off by default so every existing consumer
+   *  (search grid, storefront, PDP related…) is unchanged. */
   quickActions?: boolean;
+  /** Mobile homepage work order 2: surface the quick actions on MOBILE too.
+   *  "full" = wishlist + add-to-cart (flash deals rail — reference layout);
+   *  "wishlist" = heart only (trending rail). Requires quickActions. */
+  mobileActions?: "full" | "wishlist";
 }) {
   const discount =
     p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
@@ -673,7 +685,7 @@ export function ProductCard({
           className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-600/50 rounded-[8px]"
           aria-label={`${p.title} from ${p.storeName}, ${formatMinor(p.priceMinor)}`}
         />
-        <QuickCardActions p={p} />
+        <QuickCardActions p={p} mobileActions={mobileActions} />
       </div>
     );
   }

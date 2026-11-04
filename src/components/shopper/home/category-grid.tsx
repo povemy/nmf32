@@ -8,9 +8,11 @@
 // menu pattern is reused via a lightweight inline expansion).
 //
 // Desktop revamp (reference layout): md+ renders bare SOFT-TINTED circles
-// (rotating palette, like the reference's "Shop by Category" row) with the
-// card chrome dissolved; below md the original white-card tiles are
-// byte-for-byte unchanged (mobile styling is out of scope).
+// (rotating palette) in the WO1 grid.
+// MOBILE homepage work order 2 (reference layout): below md the categories
+// render as ONE horizontally-scrollable row of pastel circles — the
+// reference "Shop by Category" band. Sub-category counts stay desktop-only
+// (the reference keeps mobile labels clean).
 // ============================================================================
 import { useState } from "react";
 import { LayoutGrid } from "lucide-react";
@@ -21,17 +23,17 @@ import type { CategoryT, ShopperCtx } from "../ui-bits";
 
 const CAP = 12;
 
-// Rotating desktop-only circle tints — the same accent families the rest of
-// the homepage already uses (teal/amber/rose/emerald/sky/violet/orange), so
-// the variety reads intentional rather than random.
-const MD_TINTS = [
-  "md:bg-teal-100 md:text-teal-700",
-  "md:bg-amber-100 md:text-amber-600",
-  "md:bg-rose-100 md:text-rose-600",
-  "md:bg-emerald-100 md:text-emerald-600",
-  "md:bg-sky-100 md:text-sky-600",
-  "md:bg-violet-100 md:text-violet-600",
-  "md:bg-orange-100 md:text-orange-600",
+// Rotating circle tints — applied at BASE (mobile row + desktop grid share
+// the same accent families: teal/amber/rose/emerald/sky/violet/orange) so the
+// variety reads intentional rather than random.
+const TINTS = [
+  "bg-teal-100 text-teal-700",
+  "bg-amber-100 text-amber-600",
+  "bg-rose-100 text-rose-600",
+  "bg-emerald-100 text-emerald-600",
+  "bg-sky-100 text-sky-600",
+  "bg-violet-100 text-violet-600",
+  "bg-orange-100 text-orange-600",
 ] as const;
 
 export function HomeCategoryGrid({ categories, ctx }: { categories: CategoryT[]; ctx: ShopperCtx }) {
@@ -56,7 +58,9 @@ export function HomeCategoryGrid({ categories, ctx }: { categories: CategoryT[];
           : undefined
       }
     >
-      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+      {/* Mobile (<md): single scrollable circle row (reference layout).
+          Desktop (md+): the WO1 bare-circle grid. */}
+      <div className="flex snap-x gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:snap-none md:grid-cols-6 md:gap-2.5 md:overflow-visible md:pb-0 lg:grid-cols-8">
         {shown.map((cat, i) => {
           const Icon = categoryIcon(cat.name);
           return (
@@ -65,25 +69,21 @@ export function HomeCategoryGrid({ categories, ctx }: { categories: CategoryT[];
               type="button"
               onClick={() => ctx.nav({ name: "category", categorySlug: cat.slug, label: cat.name })}
               className={cn(
-                "group flex min-h-[44px] flex-col items-center gap-2 rounded-xl border bg-card shadow-soft p-3 transition-all",
-                "hover:border-teal-600/50 hover:shadow-md",
-                // Desktop (md+): reference-layout bare tinted circles.
-                "md:border-transparent md:bg-transparent md:p-2 md:shadow-none md:hover:shadow-none md:hover:border-transparent md:hover:-translate-y-0.5"
+                "group flex w-[5.25rem] shrink-0 snap-start flex-col items-center gap-1.5 md:w-auto md:min-h-[44px] md:gap-2 md:p-2 md:hover:-translate-y-0.5"
               )}
               aria-label={`Browse ${cat.name}`}
             >
               <span
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-full bg-teal-50 text-teal-700 transition-all",
-                  "group-hover:bg-brand-gradient group-hover:text-white md:h-12 md:w-12",
-                  MD_TINTS[i % MD_TINTS.length]
+                  "flex h-12 w-12 items-center justify-center rounded-full transition-all group-hover:bg-brand-gradient group-hover:text-white md:h-12 md:w-12",
+                  TINTS[i % TINTS.length]
                 )}
               >
-                <Icon className="h-5 w-5 md:h-6 md:w-6" />
+                <Icon className="h-6 w-6 md:h-6 md:w-6" />
               </span>
               <span className="text-center text-xs font-medium leading-tight line-clamp-2">{cat.name}</span>
               {cat.children.length > 0 ? (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="hidden text-[10px] text-muted-foreground md:block">
                   {cat.children.length} sub-categor{cat.children.length === 1 ? "y" : "ies"}
                 </span>
               ) : null}
