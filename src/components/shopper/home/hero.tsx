@@ -30,12 +30,12 @@ function DefaultSlide({ ctx }: { ctx: ShopperCtx }) {
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
         <ShoppingBag className="h-6 w-6 text-white" aria-hidden="true" />
       </span>
-      <span className="text-lg font-extrabold text-white sm:text-2xl">Discover the marketplace</span>
-      <span className="max-w-md text-xs text-white/85 sm:text-sm">
+      <span className="text-lg font-extrabold text-white sm:text-2xl lg:text-4xl">Discover the marketplace</span>
+      <span className="max-w-md text-xs text-white/85 sm:text-sm lg:max-w-xl lg:text-base">
         Thousands of products from independent Malaysian shops — fresh finds every day.
       </span>
-      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-4 py-1.5 text-xs font-semibold text-teal-800 shadow-sm">
-        Start shopping <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-4 py-1.5 text-xs font-semibold text-teal-800 shadow-sm lg:px-5 lg:py-2 lg:text-sm">
+        Start shopping <ChevronRight className="h-3.5 w-3.5 lg:h-4 lg:w-4" aria-hidden="true" />
       </span>
     </button>
   );
@@ -52,8 +52,8 @@ function SlideBody({
 }) {
   const t = slide.theme;
   const ctaChip = (
-    <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-teal-800 shadow-sm">
-      {slide.ctaLabel} <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+    <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-teal-800 shadow-sm lg:px-4 lg:py-2 lg:text-[13px]">
+      {slide.ctaLabel} <ChevronRight className="h-3.5 w-3.5 lg:h-4 lg:w-4" aria-hidden="true" />
     </span>
   );
 
@@ -65,16 +65,16 @@ function SlideBody({
         <img src={slide.imageUrl} alt={slide.title} className="hidden h-full w-full object-cover sm:block" loading="eager" />
         <img src={mobile} alt={slide.title} className="h-full w-full object-cover sm:hidden" loading="eager" />
         <span className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent" aria-hidden="true" />
-        <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8">
+        <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
           {slide.kind === "campaign" ? (
-            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300 lg:text-xs">
               {t?.ornament} {slide.name}
             </span>
           ) : (
-            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">NOMOFEE picks</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300 lg:text-xs">NOMOFEE picks</span>
           )}
-          <span className="text-lg sm:text-2xl font-extrabold text-white leading-snug drop-shadow line-clamp-2">{slide.title}</span>
-          {slide.subtext ? <span className="hidden text-xs text-white/85 sm:inline line-clamp-2">{slide.subtext}</span> : null}
+          <span className="text-lg sm:text-2xl lg:text-3xl xl:text-4xl font-extrabold text-white leading-snug drop-shadow line-clamp-2">{slide.title}</span>
+          {slide.subtext ? <span className="hidden text-xs text-white/85 sm:inline line-clamp-2 lg:text-sm">{slide.subtext}</span> : null}
           {ctaChip}
         </span>
       </>
@@ -95,12 +95,12 @@ function SlideBody({
       <span aria-hidden="true" className="pointer-events-none absolute -bottom-6 right-8 select-none text-7xl opacity-15">
         {t?.ornament}
       </span>
-      <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-white/75">
+      <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 max-w-lg sm:p-8 lg:gap-3 lg:max-w-2xl lg:p-12">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-white/75 lg:text-xs">
           {t?.ornament} {slide.name}
         </span>
-        <span className="text-lg sm:text-2xl font-extrabold text-white leading-snug drop-shadow line-clamp-2">{slide.title}</span>
-        {slide.subtext ? <span className="hidden text-xs text-white/85 sm:inline line-clamp-2">{slide.subtext}</span> : null}
+        <span className="text-lg sm:text-2xl lg:text-3xl xl:text-4xl font-extrabold text-white leading-snug drop-shadow line-clamp-2">{slide.title}</span>
+        {slide.subtext ? <span className="hidden text-xs text-white/85 sm:inline line-clamp-2 lg:text-sm">{slide.subtext}</span> : null}
         {ctaChip}
       </span>
     </>
@@ -145,8 +145,8 @@ export function HomeHero({
     // No campaigns, no banners — the default branded slide (never empty).
     return (
       <div className="mx-auto max-w-7xl px-4 pt-4">
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-          <div className="relative h-44 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-72" aria-roledescription="banner">
+        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="relative h-44 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" aria-roledescription="banner">
             <DefaultSlide ctx={ctx} />
           </div>
           <SecondaryTiles tiles={secondary} ctx={ctx} />
@@ -157,7 +157,7 @@ export function HomeHero({
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div
           className="relative overflow-hidden rounded-2xl border bg-muted"
           aria-roledescription="carousel"
@@ -177,7 +177,7 @@ export function HomeHero({
             if (Math.abs(dx) >= SWIPE_THRESHOLD_PX) go(idx + (dx < 0 ? 1 : -1));
           }}
         >
-          <div className="relative h-44 sm:h-56 lg:h-72" aria-live="polite">
+          <div className="relative h-44 sm:h-56 lg:h-[360px] xl:h-[400px]" aria-live="polite">
             {slides.map((s, i) => {
               const active = i === idx;
               const inner = <SlideBody slide={s} ctx={ctx} campaignNav={campaignNav} />;

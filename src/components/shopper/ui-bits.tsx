@@ -16,13 +16,16 @@ import {
   Bike,
   Camera,
   ClipboardCheck,
+  Heart,
   Home,
+  Loader2,
   MapPin,
   PackageCheck,
   PackageOpen,
   Minus,
   Plus,
   RotateCcw,
+  ShoppingCart,
   Star,
   StarHalf,
   Truck,
@@ -30,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +82,11 @@ export type ProductCardT = {
   title: string;
   priceMinor: number;
   compareAtPriceMinor: number | null;
+  /** Cheapest ACTIVE variant id (desktop homepage work order) — powers the
+   *  quick add-to-cart affordance. Optional/absent on legacy payloads: the
+   *  client simply hides quick-add then. The cart API re-validates the
+   *  variant, stock and MOQ on every add — this is never a purchase promise. */
+  variantId?: string | null;
   imageUrl: string;
   storeName: string;
   storeSlug: string;
@@ -496,6 +505,102 @@ export function Stars({ rating, count, className }: { rating: number; count?: nu
 // ProductCard
 // ---------------------------------------------------------------------------
 
+/** Desktop homepage work order — quick actions (wishlist heart + add-to-cart)
+ *  rendered ABOVE the full-card open hit-area (overlay pattern: the card body
+ *  is plain markup, an invisible button covers it for open-on-click, and the
+ *  action buttons sit at a higher z-index — no nested <button>, valid HTML).
+ *  Visible at md+ ONLY: mobile product cards stay exactly as they were before
+ *  this work order (mobile homepage is a separate work order).
+ *
+ *  Everything reuses EXISTING platform flows — no second cart, no second
+ *  wishlist: add → POST /api/cart/items (guest token carts included; server
+ *  re-validates variant/stock/MOQ and is the sole authority), heart →
+ *  POST /api/me/activity LIKE (idempotent upsert; guests get the sign-in
+ *  dialog with intent resume). */
+function QuickCardActions({ p }: { p: ProductCardT }) {
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const [busy, setBusy] = useState(false);
+  const [liked, setLiked] = useState(false);
+
+  async function like() {
+    if (!me.loaded || !me.shopper) {
+      openShopperAuth(() => void like());
+      return;
+    }
+    setLiked(true); // optimistic — the server LIKE upsert is idempotent
+    try {
+      await postJson("/api/me/activity", { productId: p.id, activityType: "LIKE" });
+      toast.success("Saved to My Likes", { description: p.title });
+    } catch {
+      setLiked(false);
+      toast.error("Could not save to wishlist");
+    }
+  }
+
+  async function addToCart() {
+    if (!p.variantId || busy) return;
+    setBusy(true);
+    try {
+      const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", {
+        variantId: p.variantId,
+        qty: 1,
+      });
+      // Same-frame badge/drawer update via the shared cart store — no refetch.
+      applyServerCart(res.cart);
+      if (res.notice) toast.warning("Cart updated", { description: res.notice });
+      else toast.success("Added to cart", { description: p.title });
+    } catch (e) {
+      // Same honest contract as the PDP: an invalid shopper session gets the
+      // sign-in-first flow; genuine availability errors surface verbatim
+      // (the cart API is the authority — it re-validates stock + MOQ).
+      if (e instanceof ApiFail && (e.status === 401 || e.code === "SHOPPER_LOGIN_REQUIRED")) {
+        openShopperAuth(() => void addToCart());
+        return;
+      }
+      toast.error(e instanceof Error ? e.message : "Could not add to cart");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      {/* wishlist heart — top-right of the image, above the open hit-area */}
+      <button
+        type="button"
+        onClick={() => void like()}
+        aria-label={liked ? `${p.title} — in your wishlist` : `Save ${p.title} to wishlist`}
+        aria-pressed={liked}
+        className={cn(
+          "absolute right-1.5 top-1.5 z-20 hidden h-8 w-8 items-center justify-center rounded-full border bg-background/90 shadow-sm backdrop-blur transition-all hover:scale-105 md:inline-flex",
+          liked ? "border-rose-200 text-rose-500" : "border-border text-muted-foreground hover:text-rose-500"
+        )}
+      >
+        <Heart className={cn("h-4 w-4", liked && "fill-rose-500")} aria-hidden="true" />
+      </button>
+
+      {/* add-to-cart — full-width row under the card body (md+ only).
+          Hidden when the payload carries no purchasable variant id — never a
+          blind add the server would refuse. */}
+      {p.variantId ? (
+        <div className="relative z-20 hidden px-2.5 pb-2.5 pt-1 md:block">
+          <button
+            type="button"
+            onClick={() => void addToCart()}
+            disabled={busy}
+            aria-label={`Add ${p.title} to cart`}
+            className="inline-flex h-8 min-h-[32px] w-full items-center justify-center gap-1.5 rounded-lg bg-brand-gradient text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <ShoppingCart className="h-3.5 w-3.5" aria-hidden="true" />}
+            {busy ? "Adding…" : "Add to cart"}
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function ProductCard({
   p,
   onOpen,
@@ -505,6 +610,7 @@ export function ProductCard({
   showStore = false,
   hidePrice = false,
   cardStyle,
+  quickActions = false,
 }: {
   p: ProductCardT;
   onOpen: (p: ProductCardT) => void;
@@ -512,6 +618,10 @@ export function ProductCard({
   hidePrice?: boolean;
   /** Seller-customized typography — only passed on the seller's own storefront. */
   cardStyle?: CardStyleTokens | null;
+  /** Desktop homepage work order: render wishlist + add-to-cart quick actions
+   *  (visible md+ only — mobile cards are untouched). Off by default so every
+   *  existing consumer (search grid, storefront, PDP related…) is unchanged. */
+  quickActions?: boolean;
 }) {
   const discount =
     p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
@@ -523,6 +633,51 @@ export function ProductCard({
   const priceCss: React.CSSProperties = cardStyle
     ? { fontFamily: fontStack(cardStyle.priceFont), fontSize: `${priceSizePx(cardStyle.priceSize)}px`, textAlign: cardStyle.priceAlign as React.CSSProperties["textAlign"] }
     : {};
+
+  // ---- quick mode (homepage flash deals / trending rails, md+) --------------
+  if (quickActions) {
+    return (
+      <div className="group relative text-left rounded-[8px] border bg-card shadow-soft overflow-hidden hover:shadow-md hover:border-teal-600/40 hover:-translate-y-0.5 transition-all">
+        <div className="relative aspect-square overflow-hidden bg-muted">
+          {/* plain <img> (product mockups / placeholder service) — never next/image here */}
+          <img
+            src={p.imageUrl}
+            alt={p.title}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+          />
+          {discount ? (
+            <span className="absolute top-1.5 left-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5">
+              -{discount}%
+            </span>
+          ) : null}
+        </div>
+        <div className="p-2.5 space-y-0.5">
+          <h3 className="font-normal leading-snug line-clamp-2 min-h-[2rem] text-xs">{p.title}</h3>
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="font-bold text-teal-700 text-sm">{formatMinor(p.priceMinor)}</span>
+            {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
+              <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+            ) : null}
+          </div>
+          {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
+          <div className="flex items-center justify-between gap-1 pt-0.5">
+            <Stars rating={p.ratingAvg} />
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+          </div>
+        </div>
+        {/* full-card open hit-area (sits BELOW the quick-action buttons) */}
+        <button
+          type="button"
+          onClick={() => onOpen(p)}
+          className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-600/50 rounded-[8px]"
+          aria-label={`${p.title} from ${p.storeName}, ${formatMinor(p.priceMinor)}`}
+        />
+        <QuickCardActions p={p} />
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"

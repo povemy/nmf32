@@ -14,10 +14,17 @@ export function HomeProductRail({
   products,
   ctx,
   ariaLabel,
+  quickActions = false,
+  showStore = false,
 }: {
   products: ProductCardT[];
   ctx: ShopperCtx;
   ariaLabel: string;
+  /** Desktop homepage work order: wishlist + add-to-cart quick actions on the
+   *  cards (md+ only — mobile cards unchanged). */
+  quickActions?: boolean;
+  /** Show the seller name on the card (e.g. the Trending section). */
+  showStore?: boolean;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [atStart, setAtStart] = useState(true);
@@ -58,7 +65,7 @@ export function HomeProductRail({
       >
         {products.map((p) => (
           <div key={p.id} className="w-[46%] xs:w-[40%] sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%] shrink-0 snap-start">
-            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} />
+            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} />
           </div>
         ))}
       </div>

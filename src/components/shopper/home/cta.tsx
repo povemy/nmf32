@@ -18,6 +18,30 @@ export function scrollHomeSection(id: string): void {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/** Desktop chrome work order — reach a homepage section from ANY shopper
+ *  view: on the homepage it scrolls immediately; from another view it
+ *  navigates to the market view first, then polls briefly for the section
+ *  element (the homepage mounts while its payload loads). Gives up silently
+ *  after ~2s — the section is still reachable by scrolling. */
+export function navToHomeSection(nav: ShopperCtx["nav"], sectionId: string, isOnHome: boolean): void {
+  if (isOnHome) {
+    scrollHomeSection(sectionId);
+    return;
+  }
+  nav({ name: "market" });
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    const el = document.getElementById(sectionId);
+    if (el) {
+      clearInterval(timer);
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (tries > 40) {
+      clearInterval(timer);
+    }
+  }, 50);
+}
+
 export const HOME_SECTION_IDS = {
   flashDeals: "home-flash-deals",
   categories: "home-categories",

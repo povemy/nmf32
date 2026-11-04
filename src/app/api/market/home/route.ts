@@ -179,7 +179,12 @@ const loadHome = publicCache(
       db.store.findMany({
         // C1.3: featured stores must belong to an admin-approved seller —
         // store.status alone is not proof of public eligibility.
-        where: { status: "live", seller: { is: { status: "active" } } },
+        // Desktop homepage work order: added marketplaceOptIn (same clause as
+        // every product query) — a seller who opted OUT of the marketplace
+        // must not have their store surfaced in "Featured stores" while their
+        // products stay hidden. Verified against live data: no currently
+        // listed store changes (all active sellers are opted in).
+        where: { status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } },
         include: { _count: { select: { products: { where: { status: "active" } } } } },
         orderBy: { createdAt: "asc" },
         take: 6,

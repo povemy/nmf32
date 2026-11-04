@@ -75,7 +75,10 @@ export function HomeFlashDeals({
           <span className="text-[11px] text-muted-foreground">until the {campaign.name} campaign ends</span>
         </div>
       ) : null}
-      <HomeProductRail products={products} ctx={ctx} ariaLabel="Flash deal products" />
+      {/* Desktop homepage work order: cards carry wishlist + add-to-cart
+          quick actions (md+ only). Prices/discounts stay EXACTLY as the
+          seller set them — the homepage never invents a promotion. */}
+      <HomeProductRail products={products} ctx={ctx} ariaLabel="Flash deal products" quickActions />
     </SectionShell>
   );
 }

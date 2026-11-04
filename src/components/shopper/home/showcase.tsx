@@ -26,12 +26,16 @@ export function HomeShowcase({ cards, ctx }: { cards: ShowcaseCardT[]; ctx: Shop
       subtitle="Celebration sales curated by the NOMOFEE team"
       icon={<PartyPopper className="h-5 w-5 text-teal-700" />}
     >
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {/* Desktop homepage work order: three-column banner layout on md+ (the
+          reference layout); mobile keeps the original 2-column grid — and when
+          fewer than three campaigns are live the grid simply renders fewer
+          cards (no fabricated padding banners). */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {cards.map((c) => {
           const days = daysUntil(c.endsAt);
           const body = (
             <>
-              <div className="relative h-24 overflow-hidden sm:h-28">
+              <div className="relative h-24 overflow-hidden sm:h-28 md:h-36 lg:h-40">
                 {c.thumbnailUrl ? (
                   <img src={c.thumbnailUrl} alt={c.name} className="h-full w-full object-cover" loading="lazy" />
                 ) : (
@@ -51,9 +55,9 @@ export function HomeShowcase({ cards, ctx }: { cards: ShowcaseCardT[]; ctx: Shop
                 </span>
               </div>
               <div className="flex flex-1 flex-col gap-1 p-3">
-                <p className="text-sm font-bold leading-tight line-clamp-1">{c.name}</p>
+                <p className="text-sm font-bold leading-tight line-clamp-1 md:text-base">{c.name}</p>
                 {c.description ? (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{c.description}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-2 md:line-clamp-1">{c.description}</p>
                 ) : (
                   <p className="text-xs text-muted-foreground line-clamp-1">{c.theme.tagline}</p>
                 )}

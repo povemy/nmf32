@@ -59,7 +59,9 @@ export function HomeCategoryGrid({ categories, ctx }: { categories: CategoryT[];
               </span>
               <span className="text-center text-xs font-medium leading-tight line-clamp-2">{cat.name}</span>
               {cat.children.length > 0 ? (
-                <span className="text-[10px] text-muted-foreground">{cat.children.length} sub-categories</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {cat.children.length} sub-categor{cat.children.length === 1 ? "y" : "ies"}
+                </span>
               ) : null}
             </button>
           );

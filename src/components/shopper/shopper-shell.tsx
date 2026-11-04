@@ -10,7 +10,6 @@ import {
   ShoppingBag,
   Search,
   ShoppingCart,
-  ChevronDown,
   Menu,
   PackageSearch,
   Trash2,
@@ -54,9 +53,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/lib/app-store";
@@ -86,7 +82,8 @@ import {
   type ShopperCtx,
   type ShopperView,
 } from "./ui-bits";
-import MarketHome, { ResultsView, categoryIcon } from "./market";
+import MarketHome, { ResultsView } from "./market";
+import { UtilityBar, DesktopNavBar } from "./desktop-chrome";
 import { fetchMarketHome } from "./market-home-client";
 import PdpView from "./pdp";
 import StorefrontView, { StorePageView } from "./storefront";
@@ -468,13 +465,19 @@ export default function ShopperShell() {
       <ShopperAuthDialog />
 
       {showChrome ? (
-        <MarketHeader
-          view={view}
-          nav={nav}
-          openCart={() => setCartOpen(true)}
-          search={headerSearch}
-          setSearch={setHeaderSearch}
-        />
+        <>
+          {/* Desktop homepage work order — slim utility strip ABOVE the sticky
+              header (desktop only; scrolls away with the page). Real
+              destinations only — no invented policies. */}
+          <UtilityBar nav={nav} />
+          <MarketHeader
+            view={view}
+            nav={nav}
+            openCart={() => setCartOpen(true)}
+            search={headerSearch}
+            setSearch={setHeaderSearch}
+          />
+        </>
       ) : null}
 
       <AnimatePresence mode="wait">
@@ -549,6 +552,9 @@ export default function ShopperShell() {
           onLikes={() => nav({ name: "me", tab: "likes" })}
           onMessages={() => (me.loaded && me.shopper ? nav({ name: "messages" }) : openShopperAuth())}
           onDeals={() => nav({ name: "search", q: "", deals: true })}
+          onPopular={() => nav({ name: "search", q: "", sort: "popular" })}
+          onNew={() => nav({ name: "search", q: "", sort: "newest" })}
+          onAffiliate={() => nav({ name: "affiliate" })}
         />
       ) : null}
 
@@ -788,61 +794,17 @@ function MarketHeader({
           </span>
         </button>
 
-        {/* category dropdown (desktop) */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="hidden md:inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              aria-label="Browse categories"
-            >
-              <Menu className="h-4 w-4" /> Categories <ChevronDown className="h-3.5 w-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 max-h-[70vh] overflow-y-auto">
-            {categories == null ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              categories.map((c) => {
-                const Icon = categoryIcon(c.name);
-                return c.children.length > 0 ? (
-                  <DropdownMenuSub key={c.id}>
-                    <DropdownMenuSubTrigger className="min-h-[44px]">
-                      <span className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-teal-700" />
-                        {c.name}
-                      </span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-56">
-                      <DropdownMenuItem className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: c.slug, label: c.name })}>
-                        All {c.name}
-                      </DropdownMenuItem>
-                      {c.children.map((ch) => (
-                        <DropdownMenuItem key={ch.id} className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: ch.slug, label: ch.name })}>
-                          {ch.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                ) : (
-                  <DropdownMenuItem key={c.id} className="min-h-[44px]" onClick={() => nav({ name: "category", categorySlug: c.slug, label: c.name })}>
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-teal-700" />
-                      {c.name}
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* (Desktop) category browsing moved to the DesktopNavBar below the
+            header row ("All Categories" dropdown) — the desktop-only dropdown
+            that used to sit here is retired to avoid duplicate desktop chrome.
+            Mobile keeps the hamburger Sheet above, untouched. */}
 
         {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons;
             hidden on the Me page (mobile) which swaps to an account bar.
-            Work order 14: live suggestions from the hardened public endpoint. */}
-        <div className={cn("relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md", isMe && "max-md:hidden")}>
+            Work order 14: live suggestions from the hardened public endpoint.
+            Desktop homepage work order: wider field + explicit teal submit
+            button (md+) — Enter still submits, suggestions unchanged. */}
+        <div className={cn("relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-xl lg:max-w-2xl", isMe && "max-md:hidden")}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
@@ -860,12 +822,22 @@ function MarketHeader({
               setTimeout(() => setSuggestOpen(false), 150);
             }}
             placeholder="Search the marketplace…"
-            className="pl-9 min-h-[44px] rounded-full"
+            className="pl-9 md:pr-24 min-h-[44px] rounded-full"
             aria-label="Search the marketplace"
             aria-expanded={hasSuggestions}
             aria-autocomplete="list"
             role="combobox"
           />
+          {/* explicit submit button — desktop only (mobile keeps Enter / Go) */}
+          <button
+            type="button"
+            onClick={submitSearch}
+            className="absolute right-1.5 top-1/2 hidden h-9 -translate-y-1/2 items-center gap-1.5 rounded-full bg-brand-gradient px-4 text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 md:inline-flex"
+            aria-label="Search"
+          >
+            <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="hidden lg:inline">Search</span>
+          </button>
           {hasSuggestions ? (
             <div
               role="listbox"
@@ -1086,6 +1058,12 @@ function MarketHeader({
           </div>
         ) : null}
       </div>
+
+      {/* Desktop homepage work order — prominent horizontal navigation bar
+          (desktop/tablet only, `hidden md:block`): All Categories dropdown +
+          real marketplace destinations. Mobile keeps the hamburger Sheet —
+          the mobile bottom navigation is NOT touched. */}
+      <DesktopNavBar view={view} nav={nav} categories={categories} />
     </header>
   );
 }
@@ -1882,6 +1860,9 @@ function ShopperFooter({
   onLikes,
   onMessages,
   onDeals,
+  onPopular,
+  onNew,
+  onAffiliate,
 }: {
   onSeller: () => void;
   onLookup: () => void;
@@ -1891,19 +1872,24 @@ function ShopperFooter({
   onLikes: () => void;
   onMessages: () => void;
   onDeals: () => void;
+  onPopular: () => void;
+  onNew: () => void;
+  onAffiliate: () => void;
 }) {
-  // Work order 14 §10 — grouped footer. Every link is a REAL destination in
-  // this app (no dead links, no fictitious contact details, no fake socials —
-  // the sandbox has none). Account rows open the sign-in dialog for guests
-  // (handled by the shell callbacks).
+  // Work order 14 §10 + desktop homepage work order — grouped footer. Every
+  // link is a REAL destination in this app (no dead links, no fictitious
+  // contact details, no fake socials or payment badges — the sandbox has
+  // none, so none are rendered). Account rows open the sign-in dialog for
+  // guests (handled by the shell callbacks). Five groups on desktop,
+  // unchanged single-column stacking on mobile.
   const linkCls =
     "inline-flex min-h-[36px] w-fit items-center rounded text-teal-100/80 transition-colors hover:text-white hover:underline underline-offset-2 text-xs sm:text-[13px]";
 
   return (
     <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 text-teal-50">
       <div className="mx-auto max-w-7xl px-4 py-10">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          {/* About */}
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+          {/* About NOMOFEE */}
           <div className="space-y-3">
             <p className="flex items-center gap-2 text-lg font-extrabold tracking-tight">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50/10">
@@ -1922,13 +1908,23 @@ function ShopperFooter({
           </div>
 
           {/* Shopping */}
-          <nav aria-label="Shopping" className="space-y-2.5">
+          {/* Footer link groups: flex column so links STACK VERTICALLY. The
+              previous space-y-2.5 only set vertical margins, which inline-level
+              buttons ignore for flow — links rendered as run-together inline
+              text ("All productsDealsPopular products"). */}
+          <nav aria-label="Shopping" className="flex flex-col items-start gap-2.5">
             <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Shopping</p>
             <button type="button" onClick={onMarket} className={linkCls}>
               All products
             </button>
             <button type="button" onClick={onDeals} className={linkCls}>
               Deals
+            </button>
+            <button type="button" onClick={onPopular} className={linkCls}>
+              Popular products
+            </button>
+            <button type="button" onClick={onNew} className={linkCls}>
+              New arrivals
             </button>
             <button type="button" onClick={onVouchers} className={linkCls}>
               My vouchers
@@ -1939,7 +1935,7 @@ function ShopperFooter({
           </nav>
 
           {/* Customer service */}
-          <nav aria-label="Customer service" className="space-y-2.5">
+          <nav aria-label="Customer service" className="flex flex-col items-start gap-2.5">
             <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Customer service</p>
             <button type="button" onClick={onLookup} className={linkCls}>
               Track my order
@@ -1949,15 +1945,29 @@ function ShopperFooter({
             </button>
           </nav>
 
-          {/* Seller centre */}
-          <nav aria-label="Seller centre" className="space-y-2.5">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Seller centre</p>
+          {/* Sell on NOMOFEE */}
+          <nav aria-label="Seller centre" className="flex flex-col items-start gap-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Sell on NOMOFEE</p>
             <button type="button" onClick={onSeller} className={linkCls}>
               Launch your free store
             </button>
             <button type="button" onClick={onGenerate} className={linkCls}>
               Generate a store from a link
             </button>
+            <button type="button" onClick={onSeller} className={linkCls}>
+              Seller Centre
+            </button>
+          </nav>
+
+          {/* Earn */}
+          <nav aria-label="Earn with NOMOFEE" className="flex flex-col items-start gap-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Earn with NOMOFEE</p>
+            <button type="button" onClick={onAffiliate} className={linkCls}>
+              Affiliate programme
+            </button>
+            <p className="max-w-[220px] text-[11px] leading-relaxed text-teal-200/70">
+              Share products you love and earn from every qualifying sale.
+            </p>
           </nav>
         </div>
 

@@ -44,12 +44,25 @@ export function toProductCard(p: ProductWithRelations) {
   const priceMinor = mv ? mv.priceMinor : p.priceMinor;
   const compareAtPriceMinor = mv?.compareAtPriceMinor ?? null;
   const imageUrl = p.images[0]?.url ?? FALLBACK_IMG;
+  // Desktop homepage work order: the id of the CHEAPEST ACTIVE variant (the
+  // one the displayed price belongs to) so quick add-to-cart can address the
+  // exact variant. Computed from the ACTIVE pool only — a product whose
+  // variants are all deactivated keeps price display (legacy fallback pool)
+  // but null variantId, so the client hides quick-add instead of firing a
+  // POST the cart API would rightly refuse. The cart API stays the authority:
+  // it re-loads the variant and re-validates stock + MOQ on every add.
+  const activeVariants = p.variants.filter((v) => v.isActive !== false);
+  const activeMin =
+    activeVariants.length > 0
+      ? activeVariants.reduce((min, v) => (v.priceMinor < min.priceMinor ? v : min), activeVariants[0])
+      : null;
   return {
     id: p.id,
     slug: p.slug,
     title: p.title,
     priceMinor,
     compareAtPriceMinor,
+    variantId: activeMin?.id ?? null,
     imageUrl,
     storeName: p.store.name,
     storeSlug: p.store.slug,

@@ -141,6 +141,8 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
             products={home.trending}
             ctx={ctx}
             viewAll={{ label: "View popular", onClick: () => ctx.nav({ name: "search", q: "", sort: "popular" }) }}
+            quickActions
+            showStore
           />
         ) : null;
       case "featured":
@@ -248,6 +250,8 @@ function HomeSectionRail({
   products,
   ctx,
   viewAll,
+  quickActions = false,
+  showStore = false,
 }: {
   id?: string;
   title: string;
@@ -256,10 +260,14 @@ function HomeSectionRail({
   products: ProductCardT[];
   ctx: ShopperCtx;
   viewAll: { label: string; onClick: () => void };
+  /** Desktop homepage work order: card quick actions (md+ only). */
+  quickActions?: boolean;
+  /** Show the seller name on the card (Trending section). */
+  showStore?: boolean;
 }) {
   return (
     <SectionShell id={id} title={title} subtitle={subtitle} icon={icon} viewAll={viewAll}>
-      <HomeProductRail products={products} ctx={ctx} ariaLabel={title} />
+      <HomeProductRail products={products} ctx={ctx} ariaLabel={title} quickActions={quickActions} showStore={showStore} />
     </SectionShell>
   );
 }
@@ -296,6 +304,9 @@ function HomeStores({ stores, ctx }: { stores: StoreCardT[]; ctx: ShopperCtx }) 
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{s.name}</span>
+                        {s.tagline ? (
+                          <span className="block truncate text-[11px] italic text-muted-foreground/80">{s.tagline}</span>
+                        ) : null}
                         <span className="block truncate text-xs text-muted-foreground">
                           {s.productCount} product{s.productCount === 1 ? "" : "s"}
                         </span>
