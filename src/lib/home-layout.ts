@@ -119,3 +119,22 @@ export function sectionOrderFromSetting(valueJson: string | null | undefined): H
 }
 
 export const HOME_SECTION_ORDER_KEY = "home.section_order";
+
+/** Admin-curated featured-store ids (ordered JSON array) — written by
+ *  PUT /api/admin/featured-stores, read by the public market-home payload.
+ *  Shared here (client-safe, no server imports) so the admin route and the
+ *  public route can never drift on the key name. */
+export const FEATURED_STORES_KEY = "home.featured_stores";
+
+/** Parse a Setting row valueJson (unknown JSON) into an ordered id list —
+ *  tolerant of missing/malformed rows (returns []). */
+export function idListFromSetting(valueJson: string | null | undefined): string[] {
+  if (valueJson == null) return [];
+  try {
+    const v: unknown = JSON.parse(valueJson);
+    if (!Array.isArray(v)) return [];
+    return v.filter((x): x is string => typeof x === "string" && x.trim() !== "");
+  } catch {
+    return [];
+  }
+}

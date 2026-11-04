@@ -61,7 +61,12 @@ export function HomeShowcase({ cards, ctx }: { cards: ShowcaseCardT[]; ctx: Shop
                 ) : (
                   <p className="text-xs text-muted-foreground line-clamp-1">{c.theme.tagline}</p>
                 )}
-                <span className="mt-auto inline-flex items-center gap-1 pt-1.5 text-xs font-semibold text-teal-700">
+                {/* Desktop revamp (reference layout): pill CTA button in the
+                    campaign's own accent colour instead of a plain text link. */}
+                <span
+                  className="mt-auto inline-flex w-fit items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
+                  style={{ borderColor: c.theme.accent, color: c.theme.accent }}
+                >
                   {c.ctaLabel} <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
               </div>

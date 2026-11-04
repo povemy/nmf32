@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
 import {
   fetchJson,
@@ -276,52 +277,101 @@ function HomeStores({ stores, ctx }: { stores: StoreCardT[]; ctx: ShopperCtx }) 
   return (
     <SectionShell
       id="home-stores"
-      title="Featured stores"
+      title="Our featured stores"
       subtitle="Shops our team hand-picked"
       icon={<Store className="h-5 w-5 text-teal-700" />}
     >
       {stores.length === 0 ? (
         <EmptyState title="No featured stores yet" hint="Check back soon — shops are being curated." />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {chunkEvery(stores, 3).map((group, gi) => (
-            <div key={gi} className="overflow-hidden rounded-xl border bg-card shadow-soft">
-              <ul className="divide-y">
-                {group.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
-                      aria-label={`Visit ${s.name}`}
+        <>
+          {/* Desktop (md+) — reference-layout horizontal brand strip: tinted
+              bar with logo chips. Every chip opens the real storefront. */}
+          <div className="hidden overflow-hidden rounded-2xl border border-teal-100 bg-teal-50/70 shadow-soft md:block">
+            <ul className="flex divide-x divide-teal-100">
+              {stores.map((s, i) => (
+                <li key={s.id} className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
+                    className="group flex w-full min-h-[44px] flex-col items-center gap-1.5 px-3 py-4 transition-colors hover:bg-teal-100/70"
+                    aria-label={`Visit ${s.name}`}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 bg-white shadow-sm transition-transform group-hover:scale-105",
+                        STORE_RING_TINTS[i % STORE_RING_TINTS.length]
+                      )}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                        {s.logoUrl ? (
-                          <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
-                        ) : (
-                          <Store className="h-4 w-4 text-teal-700" />
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{s.name}</span>
-                        {s.tagline ? (
-                          <span className="block truncate text-[11px] italic text-muted-foreground/80">{s.tagline}</span>
-                        ) : null}
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {s.productCount} product{s.productCount === 1 ? "" : "s"}
+                      {s.logoUrl ? (
+                        <img src={s.logoUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <span className="text-sm font-bold text-teal-700">{s.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </span>
+                    <span className="w-full truncate text-center text-xs font-semibold">{s.name}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {s.productCount} product{s.productCount === 1 ? "" : "s"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Mobile — original grouped rows (unchanged by the desktop revamp). */}
+          <div className="grid gap-3 sm:grid-cols-2 md:hidden">
+            {chunkEvery(stores, 3).map((group, gi) => (
+              <div key={gi} className="overflow-hidden rounded-xl border bg-card shadow-soft">
+                <ul className="divide-y">
+                  {group.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+                        aria-label={`Visit ${s.name}`}
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                          {s.logoUrl ? (
+                            <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
+                          ) : (
+                            <Store className="h-4 w-4 text-teal-700" />
+                          )}
                         </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{s.name}</span>
+                          {s.tagline ? (
+                            <span className="block truncate text-[11px] italic text-muted-foreground/80">{s.tagline}</span>
+                          ) : null}
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {s.productCount} product{s.productCount === 1 ? "" : "s"}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </SectionShell>
   );
 }
+
+// Rotating logo-ring tints for the desktop brand strip (same accent families
+// as the quick-entry/category circles).
+const STORE_RING_TINTS = [
+  "border-teal-300",
+  "border-amber-300",
+  "border-rose-300",
+  "border-emerald-300",
+  "border-sky-300",
+  "border-violet-300",
+  "border-orange-300",
+] as const;
 
 // split a list into fixed-size groups (featured stores: 3 per card)
 function chunkEvery<T>(arr: T[], size: number): T[][] {

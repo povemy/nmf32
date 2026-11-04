@@ -10,7 +10,7 @@ import {
   type CampaignThemeT,
   type LiveCampaignRow,
 } from "@/lib/campaigns";
-import { HOME_SECTION_ORDER_KEY, sectionOrderFromSetting } from "@/lib/home-layout";
+import { FEATURED_STORES_KEY, HOME_SECTION_ORDER_KEY, idListFromSetting, sectionOrderFromSetting } from "@/lib/home-layout";
 
 export const dynamic = "force-dynamic";
 
@@ -156,8 +156,8 @@ const loadHome = publicCache(
   async () => {
     const now = new Date();
 
-    // Phase 1 — base data, live campaigns, section-order setting (parallel).
-    const [banners, roots, featuredSlots, latest, topStores, campaigns, settingRow] = await Promise.all([
+    // Phase 1 — base data, live campaigns, homepage settings (parallel).
+    const [banners, roots, featuredSlots, latest, topStores, campaigns, settingRows] = await Promise.all([
       db.marketplaceBanner.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" }, take: 6 }),
       db.category.findMany({
         where: { parentId: null },
@@ -182,16 +182,59 @@ const loadHome = publicCache(
         // Desktop homepage work order: added marketplaceOptIn (same clause as
         // every product query) — a seller who opted OUT of the marketplace
         // must not have their store surfaced in "Featured stores" while their
-        // products stay hidden. Verified against live data: no currently
-        // listed store changes (all active sellers are opted in).
-        where: { status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } },
+        // products stay hidden.
+        // DEFAULT-curation quality rule: at least one ACTIVE product — a
+        // homepage "featured store" with nothing to buy is noise (load-test
+        // store shells stay out). Admin-CURATED stores bypass this below.
+        where: {
+          status: "live",
+          seller: { is: { status: "active", marketplaceOptIn: true } },
+          products: { some: { status: "active" } },
+        },
         include: { _count: { select: { products: { where: { status: "active" } } } } },
         orderBy: { createdAt: "asc" },
         take: 6,
       }),
       resolveHomeCampaigns(now),
-      db.setting.findUnique({ where: { key: HOME_SECTION_ORDER_KEY } }),
+      // Homepage settings — section order + admin-curated featured stores
+      // (one query for both keys; the curated list drives the section below).
+      db.setting.findMany({ where: { key: { in: [HOME_SECTION_ORDER_KEY, FEATURED_STORES_KEY] } } }),
     ]);
+
+    const settingOf = (key: string): string | null => settingRows.find((r) => r.key === key)?.valueJson ?? null;
+
+    // Featured-store curation (R8 + desktop homepage work order): admins
+    // pick an ORDERED list via PUT /api/admin/featured-stores (Setting
+    // home.featured_stores). Resolution rules:
+    //   • curated ids that fail the public eligibility filter (store live,
+    //     seller active + opted-in) are dropped silently;
+    //   • fewer than 6 eligible curated stores → padded with the DEFAULT
+    //     curation (first live stores by createdAt), deduped;
+    //   • empty/missing setting → pure default curation (previous behaviour).
+    let featuredStores = topStores;
+    const curatedIds = idListFromSetting(settingOf(FEATURED_STORES_KEY));
+    if (curatedIds.length > 0) {
+      const curatedRows = await db.store.findMany({
+        where: { id: { in: curatedIds }, status: "live", seller: { is: { status: "active", marketplaceOptIn: true } } },
+        include: { _count: { select: { products: { where: { status: "active" } } } } },
+      });
+      const byId = new Map(curatedRows.map((s) => [s.id, s]));
+      const ordered = curatedIds
+        .map((id) => byId.get(id))
+        .filter((s) => s != null)
+        .slice(0, 6);
+      if (ordered.length < 6) {
+        const seen = new Set(ordered.map((s) => s.id));
+        for (const s of topStores) {
+          if (ordered.length >= 6) break;
+          if (!seen.has(s.id)) {
+            ordered.push(s);
+            seen.add(s.id);
+          }
+        }
+      }
+      featuredStores = ordered;
+    }
 
     // Group campaigns per placement (rows are already in priority order).
     const byPlacement = (p: string) => campaigns.filter((c) => c.placement === p);
@@ -309,7 +352,7 @@ const loadHome = publicCache(
       roots,
       featuredSlots,
       latest,
-      topStores,
+      featuredStores,
       heroSlides,
       heroSecondary,
       promoTiles,
@@ -319,7 +362,7 @@ const loadHome = publicCache(
       flashProducts,
       flashCampaign: flashCampaign ? { id: flashCampaign.id, name: flashCampaign.name, endAt: isoOf(flashCampaign.endAt) } : null,
       trending,
-      sectionOrderRaw: settingRow?.valueJson ?? null,
+      sectionOrderRaw: settingOf(HOME_SECTION_ORDER_KEY),
     };
   },
   ["market-home"],
@@ -384,7 +427,8 @@ export const GET = handle(async () => {
     featured: home.featuredSlots.map((fs) => toProductCard(fs.product as unknown as ProductWithRelations)),
     latest: home.latest.map((p) => toProductCard(p as unknown as ProductWithRelations)),
     // Task 30: renamed topStores → featuredStores ("Featured stores" section).
-    featuredStores: home.topStores.map((s) => ({
+    // Curated resolution happens inside the cached loader above.
+    featuredStores: home.featuredStores.map((s) => ({
       id: s.id,
       name: s.name,
       slug: s.slug,

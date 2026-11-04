@@ -222,19 +222,19 @@ export function HomeHero({
                 type="button"
                 onClick={() => go(idx - 1)}
                 aria-label="Previous promotion"
-                className="absolute left-2 top-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/85 shadow hover:bg-background transition-colors"
+                className="absolute left-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/45 lg:h-10 lg:w-10"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
               </button>
               <button
                 type="button"
                 onClick={() => go(idx + 1)}
                 aria-label="Next promotion"
-                className="absolute right-2 top-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/85 shadow hover:bg-background transition-colors"
+                className="absolute right-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/45 lg:h-10 lg:w-10"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
               </button>
-              <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
+              <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 rounded-full bg-black/25 px-2 py-1 backdrop-blur-[2px]">
                 {slides.map((s, i) => (
                   <button
                     key={s.id}
@@ -242,7 +242,7 @@ export function HomeHero({
                     onClick={() => go(i)}
                     aria-label={`Go to promotion ${i + 1}`}
                     aria-current={i === idx}
-                    className={cn("h-1.5 rounded-full transition-all", i === idx ? "w-6 bg-white" : "w-1.5 bg-white/60")}
+                    className={cn("h-1.5 rounded-full transition-all", i === idx ? "w-6 bg-white shadow-sm" : "w-1.5 bg-white/70 hover:bg-white")}
                   />
                 ))}
               </div>
@@ -289,7 +289,7 @@ function SecondaryTiles({ tiles, ctx }: { tiles: HeroTileT[]; ctx: ShopperCtx })
                 aria-hidden="true"
               />
             )}
-            {tile.imageUrl ? <span className="absolute inset-0 bg-black/35" aria-hidden="true" /> : null}
+            {tile.imageUrl ? <span className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-black/20" aria-hidden="true" /> : null}
             <span className="relative flex h-full flex-col justify-end gap-0.5 p-3 sm:p-4">
               <span className="text-[10px] font-bold uppercase tracking-widest text-white/75">
                 {tile.theme.ornament} {tile.name}

@@ -64,7 +64,7 @@ export function HomeProductRail({
         className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {products.map((p) => (
-          <div key={p.id} className="w-[46%] xs:w-[40%] sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%] shrink-0 snap-start">
+          <div key={p.id} className="w-[46%] sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%] shrink-0 snap-start">
             <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} />
           </div>
         ))}

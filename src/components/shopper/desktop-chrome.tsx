@@ -15,6 +15,7 @@
 // bar (the sandbox has no such published policies to cite).
 // ============================================================================
 import {
+  BadgeCheck,
   ChevronDown,
   HandCoins,
   LayoutGrid,
@@ -22,6 +23,7 @@ import {
   MessagesSquare,
   MoreHorizontal,
   PackageSearch,
+  ShoppingBag,
   Sparkles,
   Store,
   Ticket,
@@ -47,6 +49,10 @@ import type { CategoryT, ShopperView } from "./ui-bits";
 
 // ---------------------------------------------------------------------------
 // UtilityBar — desktop-only slim information strip above the sticky header.
+// Reference-layout style: three FACTUAL platform traits with icons on the
+// left (the marketplace's real differentiators — no invented shipping /
+// returns / authenticity claims: the sandbox has no such published policies
+// to cite) + utility links on the right.
 // ---------------------------------------------------------------------------
 
 export function UtilityBar({ nav }: { nav: (v: ShopperView) => void }) {
@@ -57,14 +63,23 @@ export function UtilityBar({ nav }: { nav: (v: ShopperView) => void }) {
 
   const itemCls =
     "inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors hover:text-white hover:bg-teal-800/60";
+  const perkCls = "inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium tracking-wide text-teal-100/75";
 
   return (
     <div className="hidden border-b border-teal-50/10 bg-teal-950 text-teal-200/85 md:block">
       <div className="mx-auto flex h-9 max-w-7xl items-center justify-between gap-4 px-4">
-        {/* factual platform line — the same wording the footer already uses */}
-        <p className="truncate text-[11px] font-medium tracking-wide text-teal-100/70">
-          NOMOFEE — the marketplace where independent Malaysian shops sell
-        </p>
+        {/* factual platform traits — same wording family the footer uses */}
+        <ul className="flex min-w-0 items-center gap-5" aria-label="Why shop on NOMOFEE">
+          <li className={cn(perkCls, "hidden lg:inline-flex")}>
+            <ShoppingBag className="h-3.5 w-3.5 text-teal-300" aria-hidden="true" /> Independent Malaysian shops
+          </li>
+          <li className={perkCls}>
+            <BadgeCheck className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" /> Admin-approved sellers
+          </li>
+          <li className={cn(perkCls, "hidden lg:inline-flex")}>
+            <HandCoins className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" /> Earn as an affiliate
+          </li>
+        </ul>
         <nav aria-label="Utilities" className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium">
           <button type="button" onClick={() => nav({ name: "lookup" })} className={itemCls}>
             <PackageSearch className="h-3.5 w-3.5" aria-hidden="true" /> Track my order

@@ -3,13 +3,17 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, parseMaybeJson } from "@/app/api/admin/_helpers";
+import { FEATURED_STORES_KEY } from "@/lib/home-layout";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 // R8 — featured STORES on the marketplace home ("Featured stores" section).
 // The ordered list lives in Setting `home.featured_stores` as a JSON array of
 // store ids. Empty/missing setting = marketplace falls back to its default
 // curation (first 6 live stores by createdAt), exactly like before this route.
+// The PUBLIC read side (/api/market/home) resolves the same Setting — admin
+// changes propagate through the shared pub:market cache tag below.
 
-export const FEATURED_STORES_KEY = "home.featured_stores";
+export { FEATURED_STORES_KEY }; // re-export: existing importers keep working
 const MAX_SLOTS = 12;
 
 type StoreCard = {
@@ -115,6 +119,12 @@ export const PUT = handle(async (req: NextRequest) => {
     before,
     after: ids,
   });
+
+  // Homepage cache propagation: the public market-home payload reads this
+  // Setting, so a curation change must bust the shared public cache tags —
+  // previously this write never invalidated anything (the 60 s TTL was the
+  // only, undocumented, safety net).
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.market, PUBLIC_CACHE_TAGS.stores);
 
   const stores = await resolveStores(ids);
   return ok({ key: FEATURED_STORES_KEY, stores });

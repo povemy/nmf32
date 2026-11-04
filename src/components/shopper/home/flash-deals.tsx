@@ -7,12 +7,28 @@
 // supplies a real end time; otherwise the section renders without a timer
 // (never a fabricated countdown). "View all deals" opens the deals listing
 // (search view with the on-sale filter).
+//
+// Desktop revamp (reference layout): the countdown renders as boxed
+// dd/hh/mm/ss segments in dark tiles with colon separators — the reference's
+// signature flash-sale timer. Colour stays in the NOMOFEE teal family.
 // ============================================================================
 import { useEffect, useState } from "react";
 import { Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { SectionShell } from "./section-shell";
 import { HomeProductRail } from "./product-rail";
 import type { ProductCardT, ShopperCtx } from "../ui-bits";
+
+function TimeBox({ value }: { value: string }) {
+  return (
+    <span
+      className="inline-flex h-6 min-w-7 items-center justify-center rounded-md bg-teal-900 px-1 text-xs font-bold tabular-nums text-white shadow-sm"
+      aria-hidden="true"
+    >
+      {value}
+    </span>
+  );
+}
 
 function Countdown({ endAt, name }: { endAt: string; name: string }) {
   const [remaining, setRemaining] = useState(() => endAtRemaingMs(endAt));
@@ -29,15 +45,26 @@ function Countdown({ endAt, name }: { endAt: string; name: string }) {
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
   const p = (n: number) => String(n).padStart(2, "0");
+  const colon = <span className="text-sm font-bold text-teal-900" aria-hidden="true">:</span>;
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
-      aria-label={`${name} ends in ${d} days ${h} hours`}
+      className="inline-flex items-center gap-1.5"
+      role="timer"
+      aria-label={`${name} ends in ${d} days ${h} hours ${m} minutes ${s} seconds`}
     >
-      <span aria-hidden="true">⏳</span>
-      {d > 0 ? `${d}d ` : ""}
-      {p(h)}:{p(m)}:{p(s)}
+      <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Ends in</span>
+      {d > 0 ? (
+        <>
+          <TimeBox value={p(d)} />
+          {colon}
+        </>
+      ) : null}
+      <TimeBox value={p(h)} />
+      {colon}
+      <TimeBox value={p(m)} />
+      {colon}
+      <TimeBox value={p(s)} />
     </span>
   );
 }
@@ -70,7 +97,7 @@ export function HomeFlashDeals({
       viewAll={{ label: "View all deals", onClick: () => ctx.nav({ name: "search", q: "", deals: true }) }}
     >
       {campaign ? (
-        <div className="flex items-center gap-2 pb-1">
+        <div className={cn("flex flex-wrap items-center gap-2 pb-1")}>
           <Countdown endAt={campaign.endAt} name={campaign.name} />
           <span className="text-[11px] text-muted-foreground">until the {campaign.name} campaign ends</span>
         </div>

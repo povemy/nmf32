@@ -5,7 +5,10 @@ import { parseJson } from "@/lib/json";
 import { db } from "@/lib/db";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
 
-export const FALLBACK_IMG = "/api/img/fallback?w=600&h=600";
+// ?icon=product → the /api/img service's neutral branded product-glyph tile
+// (soft slate-teal gradient + shopping-bag glyph) — a calm, unmistakable
+// placeholder for imageless products across every shopper surface.
+export const FALLBACK_IMG = "/api/img/fallback?w=600&h=600&icon=product";
 
 export const productCardInclude = {
   images: { orderBy: { sortOrder: "asc" as const } },
