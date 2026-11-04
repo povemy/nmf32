@@ -3,12 +3,15 @@ import { handle, ok, okPaged, ApiError, getPagination, auditAdmin } from "@/lib/
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optDate, optBool } from "@/app/api/admin/_helpers";
+import { parseCampaignMerchFields } from "@/app/api/admin/_campaign-merch";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import {
   CAMPAIGN_PRESETS,
   DEFAULT_CAMPAIGN_THEME,
   campaignStatusOf,
   daysUntil,
   findCampaignPreset,
+  findPlacement,
   invalidateCampaignCache,
   parseCampaignTheme,
   presetDateRange,
@@ -20,9 +23,20 @@ import {
 type CampaignRow = {
   id: string;
   name: string;
+  description: string | null;
   presetId: string | null;
   themeJson: string;
   isPublished: boolean;
+  placement: string;
+  priority: number;
+  displayOrder: number;
+  ctaLabel: string | null;
+  ctaHref: string | null;
+  bannerDesktopUrl: string | null;
+  bannerMobileUrl: string | null;
+  thumbnailUrl: string | null;
+  productQuery: string | null;
+  archivedAt: Date | null;
   startAt: Date;
   endAt: Date;
   createdAt: Date;
@@ -38,39 +52,55 @@ function present(c: CampaignRow) {
     daysLeft: daysUntil(c.endAt),
   };
 }
-
-/** Map the derived status token onto a Prisma where-fragment. */
+// Work order 14: the derived status token maps onto a Prisma where-fragment.
+// "archived" is a real filter, and the DEFAULT listing (no/other status)
+// EXCLUDES archived campaigns — exactly like the public homepage.
 function statusWhere(status: string, now: Date) {
   switch (status) {
     case "draft":
-      return { isPublished: false };
+      return { isPublished: false, archivedAt: null };
     case "scheduled":
-      return { isPublished: true, startAt: { gt: now } };
+      return { isPublished: true, archivedAt: null, startAt: { gt: now } };
     case "live":
-      return { isPublished: true, startAt: { lte: now }, endAt: { gte: now } };
+      return { isPublished: true, archivedAt: null, startAt: { lte: now }, endAt: { gte: now } };
     case "ended":
-      return { isPublished: true, endAt: { lt: now } };
+      return { isPublished: true, archivedAt: null, endAt: { lt: now } };
+    case "archived":
+      return { archivedAt: { not: null } };
     default:
-      return {};
+      return { archivedAt: null };
   }
 }
 
+// ---------------------------------------------------------------------------
+// Cache invalidation shared by every campaign mutation: globalThis memo +
+// the pub:campaigns tag (market-home aggregate) — the TTL is only the safety
+// net. Public staleness window is therefore seconds, not minutes.
+// ---------------------------------------------------------------------------
+
+function bustCampaignCaches(): void {
+  invalidateCampaignCache();
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.campaigns, PUBLIC_CACHE_TAGS.market);
+}
+
 // GET /api/admin/campaigns — paged list (RBAC campaigns.manage).
-// Query: page, size, status=draft|scheduled|live|ended, q=<name contains>.
+// Query: page, size, status=draft|scheduled|live|ended|archived, placement, q.
 export const GET = handle(async (req: NextRequest) => {
   await requireCap("campaigns.manage");
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url);
   const status = url.searchParams.get("status") ?? "";
+  const placement = url.searchParams.get("placement") ?? "";
   const q = (url.searchParams.get("q") ?? "").trim();
 
   const where = {
     ...statusWhere(status, new Date()),
+    ...(placement && findPlacement(placement) ? { placement } : {}),
     ...(q ? { name: { contains: q } } : {}),
   };
 
   const [rows, total] = await Promise.all([
-    db.campaign.findMany({ where, orderBy: { startAt: "desc" }, skip, take }),
+    db.campaign.findMany({ where, orderBy: [{ priority: "desc" }, { displayOrder: "asc" }, { startAt: "desc" }], skip, take }),
     db.campaign.count({ where }),
   ]);
 
@@ -78,7 +108,10 @@ export const GET = handle(async (req: NextRequest) => {
 });
 
 // POST /api/admin/campaigns — create (RBAC campaigns.manage).
-// Body: { name, presetId?, startAt?, endAt?, theme?, isPublished? }.
+// Body: { name, presetId?, startAt?, endAt?, theme?, isPublished?,
+//         description?, placement?, priority?, displayOrder?, ctaLabel?,
+//         ctaHref?, bannerDesktopUrl?, bannerMobileUrl?, thumbnailUrl?,
+//         productQuery? }.
 // With a presetId and no dates, the window is auto-filled from the preset
 // (nearest upcoming occurrence). Theme JSON is validated server-side.
 export const POST = handle(async (req: NextRequest) => {
@@ -116,6 +149,7 @@ export const POST = handle(async (req: NextRequest) => {
   }
 
   const isPublished = optBool(body, "isPublished") ?? false;
+  const merch = parseCampaignMerchFields(body);
 
   const created = await db.campaign.create({
     data: {
@@ -125,6 +159,7 @@ export const POST = handle(async (req: NextRequest) => {
       isPublished,
       startAt,
       endAt,
+      ...merch,
     },
   });
 
@@ -134,9 +169,9 @@ export const POST = handle(async (req: NextRequest) => {
     action: "campaign.create",
     entityType: "campaign",
     entityId: created.id,
-    after: { name: created.name, presetId: created.presetId, isPublished: created.isPublished, startAt, endAt },
+    after: { name: created.name, presetId: created.presetId, isPublished: created.isPublished, placement: created.placement, priority: created.priority, displayOrder: created.displayOrder, startAt, endAt },
   });
 
-  invalidateCampaignCache();
+  bustCampaignCaches();
   return ok(present(created));
 });

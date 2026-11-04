@@ -15,6 +15,7 @@ import {
   HeartPulse,
   Landmark,
   LayoutDashboard,
+  LayoutTemplate,
   LifeBuoy,
   Loader2,
   LogOut,
@@ -80,7 +81,9 @@ import {
 import { WalletsView, LedgerView } from "./wallets-ledger";
 import { PayoutsView, PayoutDetailView } from "./payouts";
 import { BanksView } from "./banks";
-import { BannersView, CampaignsView, FeaturedView, CouponsView } from "./marketing";
+import { BannersView, FeaturedView, CouponsView } from "./marketing";
+import { CampaignsView } from "./campaigns-view";
+import { HomepageLayoutView } from "./homepage-layout";
 import { SupportView } from "./support";
 import { ReportsView } from "./reports";
 import { SettingsView, AuditView, ActivityView, NotificationsView, HealthView } from "./system";
@@ -153,6 +156,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { view: "banners", label: "Banners", icon: Megaphone },
       { view: "campaigns", label: "Campaigns", icon: PartyPopper, caps: ["campaigns.manage"] },
+      { view: "homepage", label: "Homepage Layout", icon: LayoutTemplate, caps: ["campaigns.manage"] },
       { view: "featured", label: "Featured", icon: Star },
       { view: "coupons", label: "Coupons", icon: Ticket, caps: ["campaigns.manage"] },
     ],
@@ -205,6 +209,7 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   banks: BanksView,
   banners: BannersView,
   campaigns: CampaignsView,
+  homepage: HomepageLayoutView,
   featured: FeaturedView,
   coupons: CouponsView,
   tickets: SupportView,

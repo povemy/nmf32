@@ -1,12 +1,13 @@
 // ============================================================================
-// Campaign engine (Task 10-e / rebuild 13-c) — festive campaign presets,
-// theme parsing/validation, active-campaign resolution.
+// Campaign engine (Task 10-e / rebuild 13-c / work order 14) — festive campaign
+// presets, theme parsing/validation, homepage placements + CTA destinations,
+// active-campaign resolution.
 //
 // CLIENT-SAFE MODULE: Wave 2 shopper/admin UI imports the presets + theme
 // helpers from this file, so the Prisma client is NEVER imported at module
-// top level. resolveActiveCampaign() loads it lazily via `await import("./db")`
-// (Turbopack duplicates module instances per route — the active-campaign cache
-// therefore lives on globalThis, not in module scope).
+// top level. resolveActiveCampaign()/resolveHomeCampaigns() load it lazily via
+// `await import("./db")` (Turbopack duplicates module instances per route — the
+// active-campaign cache therefore lives on globalThis, not in module scope).
 //
 // All preset windows are anchored to Asia/Kuala_Lumpur time (UTC+8, no DST).
 // Dates crossing the wire are ISO strings.
@@ -338,6 +339,205 @@ export function findCampaignPreset(presetId: string | null | undefined): Campaig
 }
 
 // ---------------------------------------------------------------------------
+// Homepage placements (work order 14) — WHERE a live campaign renders on the
+// public homepage. Placement decides the section; priority/displayOrder
+// decide order WITHIN a placement. These are presentation slots ONLY: a
+// placement never grants a discount or changes product data.
+// ---------------------------------------------------------------------------
+
+export type CampaignPlacement = "hero" | "hero_secondary" | "promo_tile" | "showcase" | "inline";
+
+export type PlacementMeta = {
+  id: CampaignPlacement;
+  /** Admin-facing label. */
+  label: string;
+  /** One-line explanation for the admin form. */
+  hint: string;
+  /** Max live campaigns the homepage consumes from this placement. */
+  capacity: number;
+};
+
+export const CAMPAIGN_PLACEMENTS: PlacementMeta[] = [
+  {
+    id: "hero",
+    label: "Main hero carousel",
+    hint: "Full-width slides at the top of the homepage (desktop + mobile banners, CTA).",
+    capacity: 4,
+  },
+  {
+    id: "hero_secondary",
+    label: "Secondary hero tile",
+    hint: "Compact promo tiles beside/below the hero carousel (max 2 shown).",
+    capacity: 2,
+  },
+  {
+    id: "promo_tile",
+    label: "Quick-access promo tile",
+    hint: "A festive shortcut tile appended to the quick-access row (max 2 shown).",
+    capacity: 2,
+  },
+  {
+    id: "showcase",
+    label: "Campaign showcase",
+    hint: "Card in the “Festive & seasonal campaigns” grid — the default placement.",
+    capacity: 8,
+  },
+  {
+    id: "inline",
+    label: "Inline banner / product shelf",
+    hint: "Promo module between homepage sections; with a product query it becomes a product shelf (max 3, max 2 with shelves).",
+    capacity: 3,
+  },
+];
+
+export function findPlacement(id: string | null | undefined): PlacementMeta | undefined {
+  return CAMPAIGN_PLACEMENTS.find((p) => p.id === id);
+}
+
+/** Validate a placement id (write side). */
+export function parsePlacement(v: unknown): CampaignPlacement | null {
+  return typeof v === "string" && findPlacement(v) ? (v as CampaignPlacement) : null;
+}
+
+// ---------------------------------------------------------------------------
+// CTA destinations (work order 14) — admin writes a compact TOKEN, the public
+// API resolves it to a structured {kind, value} the shopper app can navigate
+// without ever parsing URLs client-side. External links must be https.
+//
+//   search            → browse all products
+//   search:<keywords> → product search (keywords ≤ 60 chars)
+//   category:<slug>   → category listing
+//   store:<slug>      → seller storefront
+//   deals             → flash-deals section on the homepage
+//   vouchers          → My vouchers (account area)
+//   https://…         → approved external link (https only, ≤ 500 chars)
+// ---------------------------------------------------------------------------
+
+export type CampaignCta =
+  | { kind: "search"; q: string }
+  | { kind: "category"; slug: string }
+  | { kind: "store"; slug: string }
+  | { kind: "deals" }
+  | { kind: "vouchers" }
+  | { kind: "external"; url: string };
+
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const CTA_Q_MAX = 60;
+const CTA_URL_MAX = 500;
+
+/** Strip control chars / collapse whitespace in a keyword token value. */
+function cleanKeyword(v: string): string {
+  return v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Write-side validation for admin mutations — reports a human error. */
+export function validateCampaignCtaHref(raw: string): { ok: true; value: string } | { ok: false; error: string } {
+  const v = cleanKeyword(raw);
+  if (v === "") return { ok: false, error: "Destination cannot be empty" };
+  if (v.length > CTA_URL_MAX) return { ok: false, error: `Destination must be ≤ ${CTA_URL_MAX} characters` };
+  if (v === "search" || v === "deals" || v === "vouchers") return { ok: true, value: v };
+  if (v.startsWith("search:")) {
+    const q = cleanKeyword(v.slice("search:".length));
+    if (q === "") return { ok: false, error: "search: needs keywords, e.g. search:raya" };
+    if (q.length > CTA_Q_MAX) return { ok: false, error: `search keywords must be ≤ ${CTA_Q_MAX} characters` };
+    return { ok: true, value: `search:${q}` };
+  }
+  if (v.startsWith("category:") || v.startsWith("store:")) {
+    const [prefix, slug] = v.split(":") as [string, string | undefined];
+    if (!slug || !SLUG_RE.test(slug)) return { ok: false, error: `${prefix}: needs a valid slug (lowercase letters, digits, dashes)` };
+    return { ok: true, value: v };
+  }
+  if (/^https:\/\//i.test(v)) {
+    // Full external URL — same guard rules as every other user-controlled URL
+    // in the codebase (scheme allowlist, no credentials, length cap). Only
+    // https is accepted for campaign destinations (no http downgrade).
+    try {
+      const u = new URL(v);
+      if (u.protocol !== "https:") return { ok: false, error: "External links must use https://" };
+      if (u.username || u.password) return { ok: false, error: "External links cannot carry credentials" };
+      return { ok: true, value: u.toString() };
+    } catch {
+      return { ok: false, error: "External link is not a valid https:// URL" };
+    }
+  }
+  return {
+    ok: false,
+    error: "Destination must be one of: search, search:<keywords>, category:<slug>, store:<slug>, deals, vouchers, or an https:// URL",
+  };
+}
+
+/** Read-side resolution (defense in depth: an invalid STORED token degrades to
+ *  null — never throws, never reaches the client as a raw URL). */
+export function resolveCampaignCta(raw: string | null | undefined): CampaignCta | null {
+  if (typeof raw !== "string") return null;
+  const v = cleanKeyword(raw);
+  if (v === "" || v.length > CTA_URL_MAX) return null;
+  if (v === "search") return { kind: "search", q: "" };
+  if (v === "deals") return { kind: "deals" };
+  if (v === "vouchers") return { kind: "vouchers" };
+  if (v.startsWith("search:")) {
+    const q = cleanKeyword(v.slice("search:".length));
+    if (q === "" || q.length > CTA_Q_MAX) return null;
+    return { kind: "search", q };
+  }
+  if (v.startsWith("category:") || v.startsWith("store:")) {
+    const prefix = v.slice(0, v.indexOf(":"));
+    const slug = v.slice(prefix.length + 1);
+    if (!SLUG_RE.test(slug)) return null;
+    return prefix === "category" ? { kind: "category", slug } : { kind: "store", slug };
+  }
+  if (/^https:\/\//i.test(v)) {
+    try {
+      const u = new URL(v);
+      if (u.protocol !== "https:" || u.username || u.password) return null;
+      return { kind: "external", url: u.toString() };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Write-side validation for campaign creative URLs (existing convention:
+ *  site-relative paths like /api/img/… or /uploads/… OR https). */
+export function validateCampaignImageUrl(raw: string): { ok: true; value: string } | { ok: false; error: string } {
+  const v = raw.trim();
+  if (v === "") return { ok: false, error: "Image URL cannot be empty" };
+  if (v.length > 500) return { ok: false, error: "Image URL must be ≤ 500 characters" };
+  if (v.startsWith("/")) {
+    if (v[1] === "/" || v[1] === "\\") return { ok: false, error: "Image URL must not be a protocol-relative path" };
+    if (/[\u0000-\u001f\u007f\s]/.test(v)) return { ok: false, error: "Image URL contains unsafe characters" };
+    return { ok: true, value: v };
+  }
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "https:") return { ok: false, error: "Remote images must use https://" };
+    if (u.username || u.password) return { ok: false, error: "Image URL cannot carry credentials" };
+    return { ok: true, value: u.toString() };
+  } catch {
+    return { ok: false, error: "Image URL must start with / or https://" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ordering + status (work order 14)
+// ---------------------------------------------------------------------------
+
+/** Deterministic within-placement ordering: priority DESC → displayOrder ASC
+ *  → startAt DESC (newest campaign wins ties) → id (stable total order). */
+export function compareCampaigns(
+  a: { priority: number; displayOrder: number; startAt: Date | string | number; id: string },
+  b: { priority: number; displayOrder: number; startAt: Date | string | number; id: string }
+): number {
+  if (a.priority !== b.priority) return b.priority - a.priority;
+  if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+  const at = new Date(a.startAt).getTime();
+  const bt = new Date(b.startAt).getTime();
+  if (at !== bt) return bt - at;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Date windows (Asia/Kuala_Lumpur = UTC+8, no DST)
 // ---------------------------------------------------------------------------
 
@@ -437,14 +637,17 @@ export function presetDateRange(preset: CampaignPreset, now: Date = new Date()):
 // Status helpers
 // ---------------------------------------------------------------------------
 
-export type CampaignStatusT = "draft" | "scheduled" | "live" | "ended";
+export type CampaignStatusT = "draft" | "scheduled" | "live" | "ended" | "archived";
 
-/** Derived status: unpublished → draft; published but not started → scheduled;
- *  published and inside the window → live; published after the window → ended. */
+/** Derived status: archived → archived; unpublished → draft; published but not
+ *  started → scheduled; published and inside the window → live; published
+ *  after the window → ended. `archivedAt` is optional so every existing caller
+ *  (rows without the field) keeps working unchanged. */
 export function campaignStatusOf(
-  c: { isPublished: boolean; startAt: Date | string | number; endAt: Date | string | number },
+  c: { isPublished: boolean; startAt: Date | string | number; endAt: Date | string | number; archivedAt?: Date | string | number | null },
   now: Date = new Date()
 ): CampaignStatusT {
+  if (c.archivedAt != null) return "archived";
   if (!c.isPublished) return "draft";
   const startAt = new Date(c.startAt);
   const endAt = new Date(c.endAt);
@@ -467,6 +670,8 @@ export type ActiveCampaign = {
   name: string;
   presetId: string | null;
   isPublished: boolean;
+  /** Homepage placement (work order 14; additive — existing consumers ignore it). */
+  placement: CampaignPlacement;
   /** ISO timestamps (client-safe). */
   startAt: string;
   endAt: string;
@@ -496,19 +701,22 @@ export function invalidateCampaignCache(): void {
   delete (globalThis as unknown as Record<string, unknown>)[CAMPAIGN_CACHE_KEY];
 }
 
-/** The single published campaign whose window contains `now` (latest startAt
- *  first), or null. Memoised for 60s on globalThis; DB import is lazy so
- *  client components can safely import this module's presets/helpers. */
+/** The single live campaign with the highest placement priority (memoised for
+ *  60 s on globalThis) — used for the shopper theme accents. The FULL set of
+ *  live campaigns per placement comes from resolveHomeCampaigns() below, which
+ *  the market-home aggregate consumes. DB import is lazy so client components
+ *  can safely import this module's presets/helpers. */
 export async function resolveActiveCampaign(now: Date = new Date()): Promise<ActiveCampaign | null> {
   const cached = campaignCache();
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
   const { db } = await import("./db");
-  const row = await db.campaign.findFirst({
-    where: { isPublished: true, startAt: { lte: now }, endAt: { gte: now } },
-    orderBy: { startAt: "desc" },
+  const rows = await db.campaign.findMany({
+    where: { isPublished: true, archivedAt: null, startAt: { lte: now }, endAt: { gte: now } },
+    orderBy: [{ priority: "desc" }, { displayOrder: "asc" }, { startAt: "desc" }],
     take: 1,
   });
+  const row = rows[0];
 
   const data: ActiveCampaign | null = row
     ? {
@@ -516,6 +724,7 @@ export async function resolveActiveCampaign(now: Date = new Date()): Promise<Act
         name: row.name,
         presetId: row.presetId,
         isPublished: row.isPublished,
+        placement: (parsePlacement(row.placement) ?? "showcase") as CampaignPlacement,
         startAt: row.startAt.toISOString(),
         endAt: row.endAt.toISOString(),
         theme: parseCampaignTheme(row.themeJson),
@@ -525,4 +734,43 @@ export async function resolveActiveCampaign(now: Date = new Date()): Promise<Act
 
   setCampaignCache(data);
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Homepage campaign resolution (work order 14) — ALL live campaigns for the
+// public homepage aggregate, already ordered deterministically. Filtering by
+// isPublished + archivedAt + date window AT READ TIME is what makes campaigns
+// appear/disappear automatically at their scheduled boundaries (no cron, no
+// manual removal). The 60 s TTL + tag bust bounds the public staleness window.
+// ---------------------------------------------------------------------------
+
+export type LiveCampaignRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  presetId: string | null;
+  themeJson: string;
+  isPublished: boolean;
+  placement: string;
+  priority: number;
+  displayOrder: number;
+  ctaLabel: string | null;
+  ctaHref: string | null;
+  bannerDesktopUrl: string | null;
+  bannerMobileUrl: string | null;
+  thumbnailUrl: string | null;
+  productQuery: string | null;
+  startAt: Date;
+  endAt: Date;
+};
+
+/** Every campaign currently live (published, not archived, window containing
+ *  `now`), ordered by compareCampaigns. Callers slice per placement capacity. */
+export async function resolveHomeCampaigns(now: Date = new Date()): Promise<LiveCampaignRow[]> {
+  const { db } = await import("./db");
+  const rows = await db.campaign.findMany({
+    where: { isPublished: true, archivedAt: null, startAt: { lte: now }, endAt: { gte: now } },
+    orderBy: [{ priority: "desc" }, { displayOrder: "asc" }, { startAt: "desc" }],
+  });
+  return rows as LiveCampaignRow[];
 }

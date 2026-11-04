@@ -164,10 +164,13 @@ export default function proxy(req: NextRequest): NextResponse {
     return NextResponse.next();
   }
 
-  // (5) Content-type gate: bodies must be JSON (this app defines no form or
-  // multipart endpoints — all clients send application/json, verified).
-  // Applies even to non-browser clients: cheap, uniform, and kills the
-  // classic HTML-form CSRF vector regardless of header support.
+  // (5) Content-type gate: bodies must be JSON. The ONE sanctioned multipart
+  // endpoint is /api/admin/campaign-media (work order 14 banner uploads) —
+  // it is unreachable through this gate for cookie-only flows by design: the
+  // app's own upload helper always carries the Bearer bridge / client marker
+  // (steps 1-2), while a cross-site HTML form post (the classic CSRF vector
+  // for file uploads) is 415'd right here before it can touch the route. The
+  // route itself then re-checks RBAC (campaigns.manage) + magic bytes.
   const hasBody =
     (req.headers.get("content-length") ?? "") !== "0" &&
     (Boolean(req.headers.get("content-length")) || Boolean(req.headers.get("transfer-encoding")));

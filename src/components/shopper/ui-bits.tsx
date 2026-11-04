@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 export type ShopperView =
   | { name: "market" }
   | { name: "category"; categorySlug: string; label?: string }
-  | { name: "search"; q: string }
+  | { name: "search"; q: string; sort?: "relevance" | "newest" | "price_asc" | "price_desc" | "popular"; deals?: boolean }
   | { name: "storefront"; slug: string }
   | { name: "pdp"; slug: string; pSlug: string }
   | { name: "checkout" }

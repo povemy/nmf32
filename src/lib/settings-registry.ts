@@ -129,6 +129,16 @@ export const SETTINGS_REGISTRY: SettingMeta[] = [
     wiredNote: "Takes effect the next time the shopper app loads (cached up to 60 s).",
   },
   {
+    key: "home.section_order",
+    group: "storefront",
+    label: "Homepage section order",
+    description:
+      "JSON array of homepage section ids in render order (work order 14). Managed with up/down controls in Marketing → Homepage Layout — prefer that page over editing raw JSON here. Omitted sections are hidden; hero is always first; up to 3 'inline' promo slots.",
+    field: { kind: "json" },
+    wired: true,
+    wiredNote: "Read by /api/market/home on every homepage load (cached ≤ 60 s); changes apply within that window.",
+  },
+  {
     key: "maintenance.mode",
     group: "storefront",
     label: "Maintenance mode",

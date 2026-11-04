@@ -29,9 +29,21 @@
 // `secretConfigured` is exposed. When the app runs fail-closed (production
 // without a secret), ticks get 503 CRON_NOT_CONFIGURED → TICK_FAILED alerts,
 // which is exactly the intended loud failure.
+//
+// SANDBOX DEV-SERVER SUPERVISOR (work order 14, opt-in): this sandbox reaps
+// every process spawned from an agent tool session when that session ends —
+// including `next dev`. The platform only starts the dev server once at boot,
+// so after an agent-driven restart (e.g. a Prisma client regeneration needs
+// a fresh module graph) nothing would bring it back and the preview stays
+// dark. This service is ALREADY an always-on supervisor, so when the project
+// .env sets DEV_SUPERVISOR=1 it also keeps the dev server alive: every 15 s
+// it checks port 3000 and respawns `bun run dev` (detached child of THIS
+// persistent process) when it is down. Default OFF — deployments without
+// the flag are completely unaffected.
 // ============================================================================
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 
 const PORT = 3005;
 const APP_BASE = process.env.APP_BASE ?? "http://127.0.0.1:3000";
@@ -72,6 +84,7 @@ function readProjectEnv(): Record<string, string> {
   }
 }
 const CRON_SECRET = process.env.CRON_SECRET || readProjectEnv()["CRON_SECRET"] || "";
+const DEV_SUPERVISOR = process.env.DEV_SUPERVISOR || readProjectEnv()["DEV_SUPERVISOR"] || "";
 
 type State = {
   service: string;
@@ -201,6 +214,39 @@ async function tick(kind: Kind) {
   saveState();
 }
 
+// --- SANDBOX DEV-SERVER SUPERVISOR (see file header; opt-in via DEV_SUPERVISOR=1). ---
+let devChild: ReturnType<typeof spawn> | null = null;
+let devSpawns = 0;
+async function devServerAnswering(): Promise<boolean> {
+  try {
+    await fetch("http://127.0.0.1:3000/api/sf/app-config", { signal: AbortSignal.timeout(1500) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function superviseDevServer(): Promise<void> {
+  if (DEV_SUPERVISOR !== "1") return;
+  if (await devServerAnswering()) return;
+  // Still booting? Give the existing child time before judging it dead.
+  if (devChild && devChild.exitCode === null) return;
+  devSpawns++;
+  if (devSpawns > 50) return; // hard cap: never fork-bomb a broken build
+  console.log(`[dev-supervisor] port 3000 not answering — spawning \`bun run dev\` (attempt ${devSpawns})`);
+  try {
+    devChild = spawn(process.execPath, ["run", "dev"], {
+      cwd: "/home/z/my-project",
+      detached: true, // own process group — survives independently of this service
+      stdio: "ignore", // the dev script's own `tee dev.log` handles logging
+      env: process.env,
+    });
+    devChild.unref();
+    devChild.on("error", (e) => console.error(`[dev-supervisor] spawn failed: ${e instanceof Error ? e.message : e}`));
+  } catch (e) {
+    console.error(`[dev-supervisor] spawn threw: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
 function monitor() {
   const now = Date.now();
   for (const kind of ["expiry", "refund", "analytics", "affiliate", "sessions", "orders", "webhook"] as Kind[]) {
@@ -271,10 +317,24 @@ Bun.serve({
           appBase: APP_BASE,
           intervalMs: INTERVAL_MS,
           secretConfigured: Boolean(CRON_SECRET), // the secret itself is never exposed
+          devSupervisor: {
+            enabled: DEV_SUPERVISOR === "1",
+            spawns: devSpawns,
+            childRunning: devChild != null && devChild.exitCode === null,
+          },
         },
       });
     }
     return new Response("Not Found", { status: 404 });
   },
 });
-console.log(`[expiry-scheduler] listening on :${PORT}; interval ${INTERVAL_MS}ms; app ${APP_BASE}; secret ${CRON_SECRET ? "configured" : "not configured (dev-open)"}`);
+console.log(`[expiry-scheduler] listening on :${PORT}; interval ${INTERVAL_MS}ms; app ${APP_BASE}; secret ${CRON_SECRET ? "configured" : "not configured (dev-open)"}; dev-supervisor ${DEV_SUPERVISOR === "1" ? "ON" : "off"}`);
+
+// Supervisor loop — starts AFTER the status server so a reload never leaves
+// the port answerless; runs whether or not the boot ticks succeed.
+if (DEV_SUPERVISOR === "1") {
+  setInterval(() => {
+    void superviseDevServer();
+  }, 15_000);
+  void superviseDevServer();
+}

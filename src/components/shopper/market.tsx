@@ -1,33 +1,32 @@
 "use client";
 // ============================================================================
-// Shopper — MARKET HOME + SEARCH/CATEGORY RESULTS (Task 2-e).
+// Shopper — MARKET HOME (work order 14: data-driven section renderer) +
+// SEARCH/CATEGORY/DEALS RESULTS (Task 2-e).
+//
+// The homepage renders sections in the ADMIN-CONTROLLED order (Setting
+// home.section_order via /api/market/home sectionOrder); omitting a section
+// hides it; "inline" entries consume the next live inline campaign. Every
+// section auto-hides when it has no data — a dataless homepage still shows
+// the hero (default branded slide) and quick access.
 // ============================================================================
-import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import {
   ShoppingBag,
-  ChevronRight,
-  ChevronLeft,
-  Store,
   Sparkles,
-  Lamp,
+  Store,
+  Flame,
   Headphones,
   Shirt,
+  Lamp,
   Coffee,
   Dumbbell,
   PawPrint,
   Gamepad2,
   Package,
-  SlidersHorizontal,
-  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
-// Type-only import (zero runtime) — the campaign module is client-safe by
-// design (RECOVERY.md 10-e): presets/theme types carry no Prisma import.
-import type { ActiveCampaign } from "@/lib/campaigns";
 import {
   fetchJson,
   fetchEnvelope,
@@ -40,18 +39,21 @@ import {
   type ShopperCtx,
   type StoreCardT,
 } from "./ui-bits";
+import { fetchMarketHome } from "./market-home-client";
+import type { HomePayload } from "./home/types";
+import type { HomeSectionId } from "@/lib/home-layout";
+import { HomeHero } from "./home/hero";
+import { HomeQuickAccess } from "./home/quick-access";
+import { HomeShowcase } from "./home/showcase";
+import { HomeFlashDeals } from "./home/flash-deals";
+import { HomeCategoryGrid } from "./home/category-grid";
+import { HomeInline } from "./home/inline";
+import { SectionShell } from "./home/section-shell";
+import { HomeProductRail } from "./home/product-rail";
 
 // ---------------------------------------------------------------------------
 // Market home
 // ---------------------------------------------------------------------------
-
-type HomePayload = {
-  banners: { id: string; title: string; imageUrl: string; linkUrl: string | null }[];
-  categories: CategoryT[];
-  featured: ProductCardT[];
-  latest: ProductCardT[];
-  featuredStores: StoreCardT[];
-};
 
 const CATEGORY_ICONS: [RegExp, typeof Package][] = [
   [/electr|gadget/i, Headphones],
@@ -72,36 +74,14 @@ export function categoryIcon(name: string): typeof Package {
 export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
   const [home, setHome] = useState<HomePayload | null>(null);
   const [failed, setFailed] = useState(false);
-  const [campaign, setCampaign] = useState<ActiveCampaign | null>(null);
 
   useEffect(() => {
     let alive = true;
-    fetchJson<HomePayload>("/api/market/home")
+    fetchMarketHome()
       .then((d) => alive && setHome(d))
       .catch(() => alive && setFailed(true));
     return () => {
       alive = false;
-    };
-  }, []);
-
-  // Task 10-e shopper theme layer — poll the active campaign (null = default
-  // look). Public endpoint, cheap; 60s cadence is plenty for the demo.
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      fetchEnvelope<ActiveCampaign | null>("/api/campaigns/active")
-        .then(({ data }) => {
-          if (!alive) return;
-          setCampaign(data && typeof data === "object" && "id" in data ? data : null);
-        })
-        .catch(() => {
-          /* campaign layer is decorative — never block the market home */
-        });
-    load();
-    const t = setInterval(load, 60_000);
-    return () => {
-      alive = false;
-      clearInterval(t);
     };
   }, []);
 
@@ -119,127 +99,216 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
     );
   }
 
-  return (
-    <div
-      className="flex-1"
-      style={
-        campaign
-          ? ({ "--campaign-accent": campaign.theme.accent, "--campaign-accent-soft": campaign.theme.accentSoft } as React.CSSProperties)
-          : undefined
+  const order: HomeSectionId[] = home?.sectionOrder ?? ["hero"];
+
+  // Hero + quick access carry their own containers; content sections share
+  // one page-width container with consistent vertical rhythm.
+  const WRAPPED = new Set<HomeSectionId>([
+    "showcase",
+    "flash_deals",
+    "categories",
+    "trending",
+    "featured",
+    "stores",
+    "new_arrivals",
+    "inline",
+  ]);
+
+  // Inline slots are assigned PURELY from position: the Nth "inline" entry in
+  // the order consumes the Nth live inline campaign (priority order). No
+  // render-phase mutation (react-hooks/immutability).
+  const renderSection = (id: HomeSectionId, index: number): React.ReactNode => {
+    switch (id) {
+      case "hero":
+        return <HomeHero slides={home?.hero ?? []} secondary={home?.heroSecondary ?? []} ctx={ctx} />;
+      case "quick_access":
+        return <HomeQuickAccess ctx={ctx} promoTiles={home?.promoTiles ?? []} />;
+      case "showcase":
+        return home && home.showcase.length > 0 ? <HomeShowcase cards={home.showcase} ctx={ctx} /> : null;
+      case "flash_deals":
+        return home && home.flashDeals.products.length > 0 ? (
+          <HomeFlashDeals products={home.flashDeals.products} campaign={home.flashDeals.campaign} ctx={ctx} />
+        ) : null;
+      case "categories":
+        return home ? <HomeCategoryGrid categories={home.categories} ctx={ctx} /> : <SectionSkeleton />;
+      case "trending":
+        return home && home.trending.length > 0 ? (
+          <HomeSectionRail
+            id="home-trending"
+            title="Trending now"
+            subtitle="What shoppers are actually buying — ranked by real sales"
+            icon={<Flame className="h-5 w-5 text-rose-500" />}
+            products={home.trending}
+            ctx={ctx}
+            viewAll={{ label: "View popular", onClick: () => ctx.nav({ name: "search", q: "", sort: "popular" }) }}
+          />
+        ) : null;
+      case "featured":
+        return home ? (
+          <HomeSectionGrid
+            title="Featured picks"
+            subtitle="Hand-selected by the NOMOFEE team"
+            icon={<Sparkles className="h-5 w-5 text-amber-500" />}
+            products={home.featured}
+            ctx={ctx}
+          />
+        ) : (
+          <SectionSkeleton />
+        );
+      case "stores":
+        return home ? <HomeStores stores={home.featuredStores} ctx={ctx} /> : <SectionSkeleton />;
+      case "new_arrivals":
+        return home ? (
+          <HomeSectionGrid
+            title="New arrivals"
+            subtitle="Fresh from our sellers"
+            icon={<ShoppingBag className="h-5 w-5 text-emerald-600" />}
+            products={home.latest}
+            ctx={ctx}
+          />
+        ) : (
+          <SectionSkeleton />
+        );
+      case "inline": {
+        // Nth inline slot → Nth live inline campaign (pure positional mapping).
+        const slotIdx = order.slice(0, index).filter((x) => x === "inline").length;
+        const mod = home?.inline[slotIdx] ?? null;
+        return mod ? <HomeInline mod={mod} ctx={ctx} /> : null;
       }
-    >
-      {home ? (
-        <HeroCarousel banners={home.banners} ctx={ctx} campaign={campaign} />
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="flex-1">
+      {order.map((id, i) => {
+        const content = renderSection(id, i);
+        if (content == null) return null;
+        if (WRAPPED.has(id)) {
+          return (
+            <div key={`${id}-${i}`} className="mx-auto w-full max-w-7xl px-4 py-6">
+              {content}
+            </div>
+          );
+        }
+        return (
+          <div key={`${id}-${i}`} className={id === "quick_access" ? "pt-6" : undefined}>
+            {content}
+          </div>
+        );
+      })}
+      <div className="pb-8" aria-hidden="true" />
+    </div>
+  );
+}
+
+function SectionSkeleton() {
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-8">
+      <div className="h-5 w-40 rounded bg-muted animate-pulse" />
+      <ProductGridSkeleton />
+    </div>
+  );
+}
+
+function HomeSectionGrid({
+  title,
+  subtitle,
+  icon,
+  products,
+  ctx,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  products: ProductCardT[];
+  ctx: ShopperCtx;
+}) {
+  return (
+    <SectionShell title={title} subtitle={subtitle} icon={icon}>
+      {products.length === 0 ? (
+        <EmptyState title="Nothing here yet" hint="Check back soon — the marketplace grows every day." />
       ) : (
-        <div className="mx-auto max-w-7xl px-4 pt-4">
-        <div className="h-40 sm:h-56 rounded-2xl bg-brand-gradient opacity-80 animate-pulse" />
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+          {products.map((p) => (
+            <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
+          ))}
         </div>
       )}
+    </SectionShell>
+  );
+}
 
-      {campaign ? <CampaignStrip campaign={campaign} ctx={ctx} /> : null}
+function HomeSectionRail({
+  id,
+  title,
+  subtitle,
+  icon,
+  products,
+  ctx,
+  viewAll,
+}: {
+  id?: string;
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  products: ProductCardT[];
+  ctx: ShopperCtx;
+  viewAll: { label: string; onClick: () => void };
+}) {
+  return (
+    <SectionShell id={id} title={title} subtitle={subtitle} icon={icon} viewAll={viewAll}>
+      <HomeProductRail products={products} ctx={ctx} ariaLabel={title} />
+    </SectionShell>
+  );
+}
 
-      <div className="mx-auto max-w-7xl px-4 pb-14 space-y-10">
-        {/* category chips */}
-        <section aria-label="Categories">
-          <div className="flex gap-2.5 overflow-x-auto pb-2 sm:grid sm:grid-cols-4 lg:grid-cols-8 sm:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(home?.categories ?? Array.from({ length: 8 })).map((c, i) => {
-              if (!home || !c) return <CategoryChipSkeleton key={i} />;
-              const cat = c as CategoryT;
-              const Icon = categoryIcon(cat.name);
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => ctx.nav({ name: "category", categorySlug: cat.slug, label: cat.name })}
-                  className="group flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card shadow-soft p-3 hover:border-teal-600/50 hover:shadow-md transition-all min-h-[44px]"
-                >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-50 text-teal-700 group-hover:bg-brand-gradient group-hover:text-white transition-all">
-                    <Icon className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="text-[11px] font-medium leading-tight text-center line-clamp-2">{cat.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* featured */}
-        <SectionBlock
-          title="Featured picks"
-          subtitle="Hand-selected by the NOMOFEE team"
-          icon={<Sparkles className="h-5 w-5 text-amber-500" />}
-        >
-          {home ? (
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-              {home.featured.map((p) => (
-                <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
-              ))}
-            </div>
-          ) : (
-            <ProductGridSkeleton />
-          )}
-        </SectionBlock>
-
-        {/* featured stores — Task 30: the old banner-style store list didn't
-            blend with the page, so stores now live in compact cards: 3 stores
-            per card, logo + name only (regular weight); overflow stores stack
-            into another card below. */}
-        <SectionBlock title="Featured stores" subtitle="Shops our team hand-picked" icon={<Store className="h-5 w-5 text-teal-700" />}>
-          {home ? (
-            home.featuredStores.length === 0 ? (
-              <EmptyState title="No featured stores yet" hint="Check back soon — shops are being curated." />
-            ) : (
-              <div className="space-y-3">
-                {chunkEvery(home.featuredStores, 3).map((group, gi) => (
-                  <div key={gi} className="overflow-hidden rounded-xl border bg-card shadow-soft">
-                    <ul className="divide-y">
-                      {group.map((s) => (
-                        <li key={s.id}>
-                          <button
-                            type="button"
-                            onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
-                            aria-label={`Visit ${s.name}`}
-                          >
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                              {s.logoUrl ? (
-                                <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
-                              ) : (
-                                <Store className="h-4 w-4 text-teal-700" />
-                              )}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-sm font-normal">{s.name}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+function HomeStores({ stores, ctx }: { stores: StoreCardT[]; ctx: ShopperCtx }) {
+  return (
+    <SectionShell
+      id="home-stores"
+      title="Featured stores"
+      subtitle="Shops our team hand-picked"
+      icon={<Store className="h-5 w-5 text-teal-700" />}
+    >
+      {stores.length === 0 ? (
+        <EmptyState title="No featured stores yet" hint="Check back soon — shops are being curated." />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {chunkEvery(stores, 3).map((group, gi) => (
+            <div key={gi} className="overflow-hidden rounded-xl border bg-card shadow-soft">
+              <ul className="divide-y">
+                {group.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => ctx.nav({ name: "storefront", slug: s.slug })}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+                      aria-label={`Visit ${s.name}`}
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                        {s.logoUrl ? (
+                          <img src={s.logoUrl} alt={`${s.name} logo`} loading="lazy" className="h-full w-full object-cover" />
+                        ) : (
+                          <Store className="h-4 w-4 text-teal-700" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{s.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {s.productCount} product{s.productCount === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
                 ))}
-              </div>
-            )
-          ) : (
-            <div className="space-y-3">
-              {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="h-[172px] rounded-xl bg-muted animate-pulse" />
-              ))}
+              </ul>
             </div>
-          )}
-        </SectionBlock>
-
-        {/* new arrivals */}
-        <SectionBlock title="New arrivals" subtitle="Fresh from our sellers" icon={<ShoppingBag className="h-5 w-5 text-emerald-600" />}>
-          {home ? (
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-              {home.latest.map((p) => (
-                <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
-              ))}
-            </div>
-          ) : (
-            <ProductGridSkeleton />
-          )}
-        </SectionBlock>
-      </div>
-    </div>
+          ))}
+        </div>
+      )}
+    </SectionShell>
   );
 }
 
@@ -250,220 +319,8 @@ function chunkEvery<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-function SectionBlock({
-  title,
-  subtitle,
-  icon,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-      className="space-y-4"
-    >
-      <div className="flex items-center gap-2.5">
-        {icon}
-        <div>
-          <h2 className="text-lg font-bold tracking-tight">{title}</h2>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
-        </div>
-      </div>
-      {children}
-    </motion.section>
-  );
-}
-
-function CategoryChipSkeleton() {
-  return (
-    <div className="flex min-w-[84px] flex-col items-center gap-2 rounded-xl border bg-card p-3">
-      <span className="h-7 w-7 rounded-full bg-muted animate-pulse" />
-      <span className="h-3 w-12 rounded bg-muted animate-pulse" />
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Hero banner carousel (auto-advance 5s)
-// ---------------------------------------------------------------------------
-
-function HeroCarousel({
-  banners,
-  ctx,
-  campaign,
-}: {
-  banners: HomePayload["banners"];
-  ctx: ShopperCtx;
-  campaign: ActiveCampaign | null;
-}) {
-  const [idx, setIdx] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const n = banners.length;
-
-  const go = useCallback(
-    (next: number) => {
-      if (n === 0) return;
-      setIdx(((next % n) + n) % n);
-    },
-    [n]
-  );
-
-  useEffect(() => {
-    if (n <= 1) return;
-    timer.current = setInterval(() => setIdx((i) => (i + 1) % n), 5000);
-    return () => {
-      if (timer.current) clearInterval(timer.current);
-    };
-  }, [n]);
-
-  if (n === 0) return null;
-
-  // Banner linkUrls are advisory in this sandbox — any banner taps into browse-all.
-  const openBanner = () => ctx.nav({ name: "search", q: "" });
-
-  return (
-    <div className="mx-auto max-w-7xl px-4 pt-4">
-      <div className="relative overflow-hidden rounded-2xl border bg-muted" aria-roledescription="carousel">
-        {campaign ? (
-          <span
-            className="absolute right-3 top-3 z-20 max-w-[45%] truncate rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold shadow-sm"
-            style={{ color: campaign.theme.accent }}
-          >
-            {campaign.theme.ornament} {campaign.name}
-          </span>
-        ) : null}
-        <div className="relative h-40 sm:h-56 lg:h-64" aria-live="polite">
-          {banners.map((b, i) => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => openBanner()}
-              aria-hidden={i !== idx}
-              tabIndex={i === idx ? 0 : -1}
-              className={cn(
-                "absolute inset-0 w-full text-left transition-opacity duration-700",
-                i === idx ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
-              )}
-            >
-              <img src={b.imageUrl} alt={b.title} className="h-full w-full object-cover" />
-              <span className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent" />
-              <span className="absolute inset-0 flex flex-col justify-center gap-1.5 p-5 sm:p-8 max-w-lg">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">NOMOFEE picks</span>
-                <span className="text-lg sm:text-2xl font-extrabold text-white leading-snug drop-shadow">{b.title}</span>
-                <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-teal-800 shadow-sm">
-                  Shop now <ChevronRight className="h-3.5 w-3.5" />
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {n > 1 ? (
-          <>
-            <button
-              type="button"
-              onClick={() => go(idx - 1)}
-              aria-label="Previous banner"
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 shadow hover:bg-background transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => go(idx + 1)}
-              aria-label="Next banner"
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 shadow hover:bg-background transition-colors"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
-              {banners.map((b, i) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => go(i)}
-                  aria-label={`Go to banner ${i + 1}`}
-                  className={cn("h-1.5 rounded-full transition-all", i === idx ? "w-6 bg-white" : "w-1.5 bg-white/60")}
-                />
-              ))}
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Campaign theme strip (Task 10-e) — festive layer driven by the active
-// campaign theme; renders nothing when no campaign is live (default look).
-// ---------------------------------------------------------------------------
-
-function CampaignStrip({ campaign, ctx }: { campaign: ActiveCampaign; ctx: ShopperCtx }) {
-  const t = campaign.theme;
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-      className="mx-auto max-w-7xl px-4 pt-3"
-      aria-label={`${campaign.name} campaign`}
-    >
-      <div
-        className="relative overflow-hidden rounded-2xl shadow-soft"
-        style={{ background: `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})` }}
-      >
-        {/* ornament decorations (emoji + soft CSS glows) */}
-        <span aria-hidden="true" className="pointer-events-none absolute -left-2 -top-3 select-none text-5xl opacity-20">
-          {t.ornament}
-        </span>
-        <span aria-hidden="true" className="pointer-events-none absolute -bottom-4 right-10 select-none text-6xl opacity-15">
-          {t.ornament}
-        </span>
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-6 top-1/2 h-24 w-24 -translate-y-1/2 rounded-full bg-white/15 blur-xl"
-        />
-        <div className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/75">{campaign.name}</p>
-            <p className="truncate text-lg font-extrabold leading-snug text-white sm:text-xl">{t.greeting}</p>
-            <p className="truncate text-xs text-white/85">
-              {t.tagline}
-              {t.greetingBm ? <span className="hidden text-white/70 sm:inline"> · {t.greetingBm}</span> : null}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold"
-              style={{ background: t.accentSoft, color: t.accent }}
-            >
-              {t.ornament} Ends in {campaign.daysLeft} day{campaign.daysLeft === 1 ? "" : "s"}
-            </span>
-            <Button
-              size="sm"
-              onClick={() => ctx.nav({ name: "search", q: "" })}
-              className="min-h-[44px] rounded-full bg-white/95 text-teal-900 shadow-sm hover:bg-white"
-              aria-label={`Shop the ${campaign.name} campaign`}
-            >
-              Shop now <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    </motion.section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Search / category results
+// Search / category / deals results
 // ---------------------------------------------------------------------------
 
 const SORTS = [
@@ -486,12 +343,14 @@ export function ResultsView({
   mode,
 }: {
   ctx: ShopperCtx;
-  mode: { kind: "search"; q: string } | { kind: "category"; categorySlug: string; label?: string };
+  mode:
+    | { kind: "search"; q: string; sort?: SortValue; deals?: boolean }
+    | { kind: "category"; categorySlug: string; label?: string };
 }) {
   // C2.2: a submitted search defaults to Best match (relevance); category
-  // browsing keeps Newest. The shell remounts ResultsView per submitted
-  // query/category (key includes q/slug), so each new search re-seeds this.
-  const [sort, setSort] = useState<SortValue>(mode.kind === "search" ? "relevance" : "newest");
+  // browsing keeps Newest. A sort provided by the view (quick-access
+  // shortcuts: popular / new arrivals) seeds the initial ordering.
+  const [sort, setSort] = useState<SortValue>(mode.kind === "search" ? (mode.sort ?? "relevance") : "newest");
   const [page, setPage] = useState(1);
   // completed-fetch state — loading is DERIVED (no sync setState in effects)
   const [done, setDone] = useState<{ key: string; items: ProductCardT[]; total: number }>({ key: "", items: [], total: 0 });
@@ -499,8 +358,9 @@ export function ResultsView({
   const [retry, setRetry] = useState(0);
 
   const search = mode.kind === "search" ? mode.q : "";
+  const deals = mode.kind === "search" ? Boolean(mode.deals) : false;
   const category = mode.kind === "category" ? mode.categorySlug : "";
-  const queryKey = `${search}|${category}|${sort}`;
+  const queryKey = `${search}|${category}|${sort}|${deals ? 1 : 0}`;
   const reqKey = `${queryKey}#${page}`;
   const loadingFirst = done.key === "" || done.key.split("#")[0] !== queryKey;
   const fetchingMore = !loadingFirst && done.key !== reqKey;
@@ -511,15 +371,16 @@ export function ResultsView({
   // /api/ and the sitemap lists only canonical storefront/product URLs) and
   // reset the default market meta on unmount.
   useEffect(() => {
-    setMeta(mode.kind === "search" ? `NOMOFEE — search results` : `NOMOFEE — category`, null, undefined, true);
+    setMeta(mode.kind === "search" ? (deals ? "NOMOFEE — all deals" : "NOMOFEE — search results") : "NOMOFEE — category", null, undefined, true);
     return () => setMeta("NOMOFEE — Multi-vendor Marketplace");
-  }, [mode.kind, search, category]);
+  }, [mode.kind, search, category, deals]);
 
   useEffect(() => {
     let alive = true;
     const params = new URLSearchParams({ sort, page: String(page), size: String(PAGE_SIZE), _r: String(retry) });
     if (search) params.set("search", search);
     if (category) params.set("category", category);
+    if (deals) params.set("onSale", "1");
     fetchEnvelope<ProductCardT[]>(`/api/market/products?${params.toString()}`)
       .then(({ data, meta }) => {
         if (!alive) return;
@@ -537,7 +398,7 @@ export function ResultsView({
     return () => {
       alive = false;
     };
-  }, [search, category, sort, page, retry, queryKey]);
+  }, [search, category, sort, page, retry, queryKey, deals]);
 
   if (failed) {
     return (
@@ -559,7 +420,14 @@ export function ResultsView({
     );
   }
 
-  const title = mode.kind === "search" ? (search ? `Results for “${search}”` : "All products") : mode.label ?? "Category";
+  const title =
+    mode.kind === "category"
+      ? mode.label ?? "Category"
+      : deals
+        ? "All deals"
+        : search
+          ? `Results for “${search}”`
+          : "All products";
   const items = done.items;
   const grandTotal = done.total;
   const hasMore = !loadingFirst && items.length < grandTotal;
@@ -574,7 +442,6 @@ export function ResultsView({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
           <Select value={sort} onValueChange={(v) => {
             // C2.2: a new ordering must restart pagination — otherwise page N of
             // the new sort gets APPENDED to the old sort's items.
@@ -602,7 +469,9 @@ export function ResultsView({
           title="No products found"
           hint={
             mode.kind === "search"
-              ? `Try a different keyword — or browse the categories from the menu.`
+              ? deals
+                ? "No products are on sale right now — check the homepage for current campaigns."
+                : `Try a different keyword — or browse the categories from the menu.`
               : "This category has no active listings yet. Check back soon!"
           }
           action={
@@ -627,7 +496,6 @@ export function ResultsView({
                 onClick={() => setPage((p) => p + 1)}
                 className="min-h-[44px] min-w-[180px] border-teal-700/40 text-teal-800 hover:bg-teal-50"
               >
-                {fetchingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {fetchingMore ? "Loading…" : `Load more (${grandTotal - items.length} left)`}
               </Button>
             </div>

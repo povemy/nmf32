@@ -96,6 +96,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // DEV-ONLY (ignored in production builds): allow the loopback IP as a dev
+  // origin. Next 16 blocks /_next/hmr + dev fonts for hosts it doesn't
+  // recognize (canonical is localhost) — browsing via 127.0.0.1:3000 (or the
+  // :81 gateway forwarding that Host) stalled client hydration with only a
+  // console warning. localhost always worked; this makes the IP form work
+  // too. Public/gateway hostnames are unaffected (same-origin page loads).
+  ...(isProd ? {} : { allowedDevOrigins: ["127.0.0.1", "localhost"] }),
   // PHASE 3 / STEP 4 (staging acceptance testing): when NEXT_DIST_DIR is set,
   // this process is the ISOLATED temporary staging instance (separate port,
   // separate database schema, per the authorized staging test plan). Two

@@ -39,6 +39,7 @@ import {
   Plus,
   Gift,
   HandCoins,
+  Heart,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ import {
   type ShopperView,
 } from "./ui-bits";
 import MarketHome, { ResultsView, categoryIcon } from "./market";
+import { fetchMarketHome } from "./market-home-client";
 import PdpView from "./pdp";
 import StorefrontView, { StorePageView } from "./storefront";
 import { CheckoutView, PayView, OrderStatusView, LookupView, OrdersView } from "./checkout";
@@ -201,6 +203,10 @@ export default function ShopperShell() {
   const setSurface = useApp((s) => s.setSurface);
   const activeStoreSlug = useApp((s) => s.activeStoreSlug);
   const setActiveStoreSlug = useApp((s) => s.setActiveStoreSlug);
+  // Footer destinations need the auth state (messages/vouchers open the
+  // sign-in dialog for guests — no dead ends).
+  const me = useApp((s) => s.me);
+  const openShopperAuth = useApp((s) => s.openShopperAuth);
 
   const [view, setView] = useState<ShopperView>({ name: "market" });
   const [ready, setReady] = useState(false);
@@ -473,7 +479,7 @@ export default function ShopperShell() {
 
       <AnimatePresence mode="wait">
         <motion.main
-          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? view.q : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" || view.name === "affiliate" ? view.tab ?? "" : ""}`}
+          key={`${view.name}:${"slug" in view ? view.slug : ""}:${"pSlug" in view ? view.pSlug : ""}:${"ref" in view ? view.ref : ""}:${view.name === "search" ? `${view.q}|${view.sort ?? ""}|${view.deals ? "deals" : ""}` : view.name === "category" ? view.categorySlug : view.name === "order-status" ? view.orderNumber : view.name === "store-page" ? view.pageSlug : view.name === "messages" ? view.threadId ?? "" : view.name === "me" || view.name === "affiliate" ? view.tab ?? "" : ""}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
@@ -483,7 +489,7 @@ export default function ShopperShell() {
           {claimLink ? null : (
             <>
               {view.name === "market" ? <MarketHome ctx={ctx} /> : null}
-              {view.name === "search" ? <ResultsView ctx={ctx} mode={{ kind: "search", q: view.q }} /> : null}
+              {view.name === "search" ? <ResultsView ctx={ctx} mode={{ kind: "search", q: view.q, sort: view.sort, deals: view.deals }} /> : null}
               {view.name === "category" ? (
                 <ResultsView ctx={ctx} mode={{ kind: "category", categorySlug: view.categorySlug, label: view.label }} />
               ) : null}
@@ -539,6 +545,10 @@ export default function ShopperShell() {
           onLookup={() => nav({ name: "lookup" })}
           onMarket={() => nav({ name: "market" })}
           onGenerate={() => nav({ name: "generate" })}
+          onVouchers={() => nav({ name: "me", tab: "vouchers" })}
+          onLikes={() => nav({ name: "me", tab: "likes" })}
+          onMessages={() => (me.loaded && me.shopper ? nav({ name: "messages" }) : openShopperAuth())}
+          onDeals={() => nav({ name: "search", q: "", deals: true })}
         />
       ) : null}
 
@@ -643,9 +653,11 @@ function MarketHeader({
   // Desktop keeps the full header everywhere.
   const isMe = view.name === "me";
 
+  // Work order 14: request-coalesced market-home fetch (shares ONE request
+  // with the homepage — the old code fired /api/market/home twice per load).
   useEffect(() => {
     let alive = true;
-    fetchJson<{ categories: CategoryT[] }>("/api/market/home")
+    fetchMarketHome()
       .then((d) => alive && setCategories(d.categories ?? []))
       .catch(() => alive && setCategories([]));
     return () => {
@@ -656,7 +668,52 @@ function MarketHeader({
   function submitSearch() {
     nav({ name: "search", q: search.trim() });
     setMobileOpen(false);
+    setSuggestOpen(false);
   }
+
+  // Work order 14 — search suggestions, wired to the EXISTING hardened
+  // /api/market/search/suggest endpoint (30 s server cache, 30/min/IP rate
+  // limit, normalized queries). Debounced 300 ms, ≥2 chars, submit-only
+  // semantics preserved (Enter still runs the full search; suggestions are
+  // shortcuts, never required).
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestData, setSuggestData] = useState<{ products: ProductCardT[]; stores: { name: string; slug: string; logoUrl: string }[] } | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    const q = debouncedSearch.trim();
+    if (q.length < 2) {
+      setSuggestData(null);
+      return;
+    }
+    let alive = true;
+    fetchEnvelope<{ products: ProductCardT[]; stores: { name: string; slug: string; logoUrl: string }[] }>(
+      `/api/market/search/suggest?q=${encodeURIComponent(q)}`
+    )
+      .then(({ data }) => alive && setSuggestData(data ?? { products: [], stores: [] }))
+      .catch(() => alive && setSuggestData(null));
+    return () => {
+      alive = false;
+    };
+  }, [debouncedSearch]);
+
+  const hasSuggestions =
+    suggestOpen && suggestData != null && (suggestData.products.length > 0 || suggestData.stores.length > 0);
+
+  const pickSuggestionProduct = (p: ProductCardT) => {
+    setSuggestOpen(false);
+    nav({ name: "pdp", slug: p.storeSlug, pSlug: p.slug });
+  };
+
+  const pickSuggestionStore = (slug: string) => {
+    setSuggestOpen(false);
+    nav({ name: "storefront", slug });
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -783,17 +840,82 @@ function MarketHeader({
         </DropdownMenu>
 
         {/* search — always visible (desktop + mobile), stretches into the space freed by hiding guest-only icons;
-            hidden on the Me page (mobile) which swaps to an account bar */}
+            hidden on the Me page (mobile) which swaps to an account bar.
+            Work order 14: live suggestions from the hardened public endpoint. */}
         <div className={cn("relative ml-auto min-w-0 flex-1 md:ml-0 md:max-w-md", isMe && "max-md:hidden")}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submitSearch()}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSuggestOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitSearch();
+              if (e.key === "Escape") setSuggestOpen(false);
+            }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => {
+              // Delay so clicking a suggestion fires before the blur close.
+              setTimeout(() => setSuggestOpen(false), 150);
+            }}
             placeholder="Search the marketplace…"
             className="pl-9 min-h-[44px] rounded-full"
             aria-label="Search the marketplace"
+            aria-expanded={hasSuggestions}
+            aria-autocomplete="list"
+            role="combobox"
           />
+          {hasSuggestions ? (
+            <div
+              role="listbox"
+              aria-label="Search suggestions"
+              className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-xl border bg-background shadow-lg"
+            >
+              {suggestData!.products.length > 0 ? (
+                <div className="border-b p-1.5">
+                  <p className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Products</p>
+                  {suggestData!.products.slice(0, 5).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickSuggestionProduct(p)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted"
+                    >
+                      <img src={p.imageUrl} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" loading="lazy" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium">{p.title}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{formatMinor(p.priceMinor)} · {p.storeName}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {suggestData!.stores.length > 0 ? (
+                <div className="p-1.5">
+                  <p className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Stores</p>
+                  {suggestData!.stores.map((s) => (
+                    <button
+                      key={s.slug}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickSuggestionStore(s.slug)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted"
+                    >
+                      <img src={s.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" loading="lazy" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium">{s.name}</span>
+                      <Store className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className={cn("ml-0 flex shrink-0 items-center gap-1.5", isMe && "max-md:hidden")}>
@@ -846,6 +968,21 @@ function MarketHeader({
             )}
           >
             <PackageSearch className="h-4 w-4" /> Track order
+          </button>
+
+          {/* wishlist — "My likes" (account feature; guests get the sign-in
+              dialog with intent resume — no dead icon) */}
+          <button
+            type="button"
+            onClick={() => (shopperSignedIn ? nav({ name: "me", tab: "likes" }) : openShopperAuth())}
+            aria-label="Wishlist — my liked products"
+            className={cn(
+              "inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              view.name === "me" && view.tab === "likes" && "text-teal-800 bg-teal-50"
+            )}
+          >
+            <Heart className="h-4 w-4" />
+            <span className="hidden lg:inline">Wishlist</span>
           </button>
 
           {/* cart */}
@@ -1741,62 +1878,98 @@ function ShopperFooter({
   onLookup,
   onMarket,
   onGenerate,
+  onVouchers,
+  onLikes,
+  onMessages,
+  onDeals,
 }: {
   onSeller: () => void;
   onLookup: () => void;
   onMarket: () => void;
   onGenerate: () => void;
+  onVouchers: () => void;
+  onLikes: () => void;
+  onMessages: () => void;
+  onDeals: () => void;
 }) {
+  // Work order 14 §10 — grouped footer. Every link is a REAL destination in
+  // this app (no dead links, no fictitious contact details, no fake socials —
+  // the sandbox has none). Account rows open the sign-in dialog for guests
+  // (handled by the shell callbacks).
+  const linkCls =
+    "inline-flex min-h-[36px] w-fit items-center rounded text-teal-100/80 transition-colors hover:text-white hover:underline underline-offset-2 text-xs sm:text-[13px]";
+
   return (
     <footer className="mt-auto border-t bg-gradient-to-br from-teal-950 via-teal-900 to-teal-700 text-teal-50">
       <div className="mx-auto max-w-7xl px-4 py-10">
-        <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-          <div className="space-y-2">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {/* About */}
+          <div className="space-y-3">
             <p className="flex items-center gap-2 text-lg font-extrabold tracking-tight">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50/10">
                 <ShoppingBag className="h-5 w-5 text-amber-300" />
               </span>
-              {/* single flex item — bare "NOMO" text + "FEE" span used to be two
-                  flex children, so the container's `gap-2` rendered "NOMO FEE" */}
               <span>
                 NOMO<span className="text-teal-200">FEE</span>
               </span>
             </p>
-            <p className="max-w-md text-xs text-teal-200/80">
+            <p className="max-w-xs text-xs leading-relaxed text-teal-200/80">
               The marketplace where independent Malaysian shops launch beautiful storefronts in minutes.
             </p>
+            <button type="button" onClick={onMarket} className={linkCls}>
+              About the marketplace
+            </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              type="button"
-              onClick={onMarket}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-teal-50/20 px-4 text-xs font-semibold text-teal-100 hover:bg-teal-50/10 transition-colors"
-            >
-              <Store className="h-3.5 w-3.5" /> Browse stores
+
+          {/* Shopping */}
+          <nav aria-label="Shopping" className="space-y-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Shopping</p>
+            <button type="button" onClick={onMarket} className={linkCls}>
+              All products
             </button>
-            <button
-              type="button"
-              onClick={onGenerate}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-teal-50/20 px-4 text-xs font-semibold text-teal-100 hover:bg-teal-50/10 transition-colors"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Generate your store from a marketplace link
+            <button type="button" onClick={onDeals} className={linkCls}>
+              Deals
             </button>
-            <button
-              type="button"
-              onClick={onLookup}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-teal-50/20 px-4 text-xs font-semibold text-teal-100 hover:bg-teal-50/10 transition-colors"
-            >
-              <PackageSearch className="h-3.5 w-3.5" /> Track order
+            <button type="button" onClick={onVouchers} className={linkCls}>
+              My vouchers
             </button>
-            <Button
-              onClick={onSeller}
-              className="min-h-[44px] shrink whitespace-normal rounded-full bg-amber-400 px-4 text-left text-teal-950 hover:bg-amber-300 font-bold"
-            >
-              Powered by NOMOFEE — launch your free store <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
+            <button type="button" onClick={onLikes} className={linkCls}>
+              Wishlist
+            </button>
+          </nav>
+
+          {/* Customer service */}
+          <nav aria-label="Customer service" className="space-y-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Customer service</p>
+            <button type="button" onClick={onLookup} className={linkCls}>
+              Track my order
+            </button>
+            <button type="button" onClick={onMessages} className={linkCls}>
+              Messages &amp; chat
+            </button>
+          </nav>
+
+          {/* Seller centre */}
+          <nav aria-label="Seller centre" className="space-y-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-teal-200/70">Seller centre</p>
+            <button type="button" onClick={onSeller} className={linkCls}>
+              Launch your free store
+            </button>
+            <button type="button" onClick={onGenerate} className={linkCls}>
+              Generate a store from a link
+            </button>
+          </nav>
         </div>
-        <p className="pt-8 text-center text-[11px] text-teal-200/60">© {new Date().getFullYear()} NOMOFEE v1 · Sandbox demo</p>
+
+        <div className="mt-8 flex flex-col items-start justify-between gap-4 border-t border-teal-50/10 pt-6 sm:flex-row sm:items-center">
+          <p className="text-[11px] text-teal-200/60">© {new Date().getFullYear()} NOMOFEE v1 · Sandbox demo</p>
+          <Button
+            onClick={onSeller}
+            className="min-h-[44px] shrink whitespace-normal rounded-full bg-amber-400 px-4 text-left text-teal-950 hover:bg-amber-300 font-bold"
+          >
+            Powered by NOMOFEE — launch your free store <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </footer>
   );

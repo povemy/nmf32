@@ -716,7 +716,38 @@ model Campaign {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // ---- Work order 14: homepage merchandising (banners/placements). The
+  // campaign table stays the SINGLE source of truth — these fields extend it;
+  // no second campaign system. Pricing/discount rules are deliberately NOT
+  // here: a homepage banner never alters product prices.
+  // Short description (hero subtext / showcase cards). ≤280 chars enforced at
+  // the API layer.
+  description      String?
+  // Homepage placement: hero | hero_secondary | promo_tile | showcase | inline
+  // (validated at the API layer; default showcase keeps legacy rows visible).
+  placement        String    @default("showcase")
+  // Within-placement ordering: priority DESC, then displayOrder ASC.
+  priority         Int       @default(0)
+  displayOrder     Int       @default(0)
+  // CTA copy + destination token (search / category:<slug> / store:<slug> /
+  // deals / vouchers / https URL) — validated on write, resolved on read.
+  ctaLabel         String?
+  ctaHref          String?
+  // Creative: desktop hero banner, mobile variant (falls back to desktop),
+  // and square-ish thumbnail for the showcase grid. URL strings (existing
+  // convention — /api/img placeholders, /uploads/campaigns uploads, https).
+  bannerDesktopUrl String?
+  bannerMobileUrl  String?
+  thumbnailUrl     String?
+  // Inline placement only: curates a real product shelf via the standard
+  // active-product search path. NEVER a price rule.
+  productQuery     String?
+  // Soft-archive: archived campaigns vanish from public placements and the
+  // default admin list (filter "archived" still lists them).
+  archivedAt       DateTime?
+
   @@index([isPublished, startAt, endAt])
+  @@index([placement, isPublished, archivedAt, startAt, endAt])
 }
 
 model OrderItem {

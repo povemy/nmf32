@@ -71,3 +71,7 @@ db/backup/
 db/*.db
 db/*.sqlite
 mini-services/*/state.json
+
+# Work order 14 — runtime campaign media uploads (dev-served; not source)
+public/uploads/campaigns/*
+!public/uploads/campaigns/.gitkeep

@@ -3,6 +3,8 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optDate, optBool } from "@/app/api/admin/_helpers";
+import { parseCampaignMerchFields, type CampaignMerchFields } from "@/app/api/admin/_campaign-merch";
+import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import {
   campaignStatusOf,
   daysUntil,
@@ -15,20 +17,29 @@ import {
 
 type Ctx = { params: Promise<{ id: string }> };
 
-type CampaignUpdateData = {
+type CampaignUpdateData = CampaignMerchFields & {
   isPublished?: boolean;
   name?: string;
   presetId?: string | null;
   startAt?: Date;
   endAt?: Date;
+  archivedAt?: Date | null;
   themeJson?: string;
 };
 
-// PATCH /api/admin/campaigns/[id] — publish/unpublish + edits
+function bustCampaignCaches(): void {
+  invalidateCampaignCache();
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.campaigns, PUBLIC_CACHE_TAGS.market);
+}
+
+// PATCH /api/admin/campaigns/[id] — publish/unpublish + edits + archive
 // (RBAC campaigns.manage).
 // Body: { publish?: bool, isPublished?: bool, name?, presetId?, startAt?,
-//         endAt?, theme? }. Theme JSON is validated server-side; the window
-//        stays valid (start < end) across combined edits.
+//         endAt?, theme?, archived?: bool, description?, placement?,
+//         priority?, displayOrder?, ctaLabel?, ctaHref?, bannerDesktopUrl?,
+//         bannerMobileUrl?, thumbnailUrl?, productQuery? }.
+// Theme JSON is validated server-side; the window stays valid (start < end)
+// across combined edits.
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
@@ -87,6 +98,16 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     data.themeJson = serializeCampaignTheme(verdict.theme);
   }
 
+  // Work order 14: merchandising fields (placement/priority/CTA/banners/…).
+  const merch = parseCampaignMerchFields(body);
+  Object.assign(data, merch);
+
+  // Work order 14: soft-archive. Archived campaigns vanish from public
+  // placements immediately (read-time filter) and from the default admin list.
+  const archived = optBool(body, "archived");
+  if (archived === true) data.archivedAt = new Date();
+  else if (archived === false) data.archivedAt = null;
+
   if (Object.keys(data).length === 0) throw new ApiError(400, "VALIDATION", "Nothing to update");
 
   const updated = await db.campaign.update({ where: { id }, data });
@@ -97,11 +118,22 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     action: "campaign.update",
     entityType: "campaign",
     entityId: id,
-    before: { name: campaign.name, presetId: campaign.presetId, isPublished: campaign.isPublished, startAt: campaign.startAt, endAt: campaign.endAt },
+    before: {
+      name: campaign.name,
+      presetId: campaign.presetId,
+      isPublished: campaign.isPublished,
+      placement: campaign.placement,
+      priority: campaign.priority,
+      displayOrder: campaign.displayOrder,
+      ctaHref: campaign.ctaHref,
+      archivedAt: campaign.archivedAt,
+      startAt: campaign.startAt,
+      endAt: campaign.endAt,
+    },
     after: data,
   });
 
-  invalidateCampaignCache();
+  bustCampaignCaches();
 
   return ok({
     ...updated,
@@ -112,7 +144,9 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   });
 });
 
-// DELETE /api/admin/campaigns/[id] (RBAC campaigns.manage).
+// DELETE /api/admin/campaigns/[id] (RBAC campaigns.manage) — hard delete.
+// Prefer archiving (PATCH { archived: true }) for ended campaigns: history is
+// preserved and the row disappears from every public surface the same way.
 export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
@@ -128,10 +162,10 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     action: "campaign.delete",
     entityType: "campaign",
     entityId: id,
-    before: { name: campaign.name, presetId: campaign.presetId, isPublished: campaign.isPublished },
+    before: { name: campaign.name, presetId: campaign.presetId, isPublished: campaign.isPublished, placement: campaign.placement },
     after: null,
   });
 
-  invalidateCampaignCache();
+  bustCampaignCaches();
   return ok({ deleted: true });
 });

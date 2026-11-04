@@ -80,9 +80,21 @@ function byRelevance(a: { p: RankableRow; s: number }, b: { p: RankableRow; s: n
 // unfiltered listing and mints no cache entry. The loader stays a PURE
 // function of its args, so the relevance branch is cache-safe too.
 const loadProducts = publicCache(
-  async (search: string, categorySlug: string, sort: string, page: number, size: number) => {
+  async (search: string, categorySlug: string, sort: string, page: number, size: number, onSale: boolean) => {
     const skip = (page - 1) * size;
     const where: Prisma.ProductWhereInput = { status: "active", store: liveStore };
+
+    // Work order 14: on-sale listing (the flash-deals “View all deals"
+    // destination). SQL-level superset — an active variant with a compare-at
+    // price set. Cross-field compareAt>price cannot be expressed in a Prisma
+    // where, so a legacy row with compareAt ≤ price can appear WITHOUT a
+    // discount badge (rare data shape); the homepage flash-deals section
+    // applies the strict compareAt>price filter on top of the same data.
+    // Prices/discounts are ALWAYS the seller's own variant data — this filter
+    // grants nothing.
+    if (onSale) {
+      where.variants = { some: { isActive: true, compareAtPriceMinor: { gt: 0 } } };
+    }
 
     // C2.2: tokenized, case-insensitive, multi-word search across title,
     // description, category name and store name (shared engine). No tokens
@@ -142,7 +154,7 @@ const loadProducts = publicCache(
   { ttl: 45, tags: [PUBLIC_CACHE_TAGS.products] }
 );
 
-// GET /api/market/products?search=&category=&sort=relevance|newest|price_asc|price_desc|popular&page=&size=
+// GET /api/market/products?search=&category=&sort=relevance|newest|price_asc|price_desc|popular&page=&size=&onSale=1
 // `search` remains SUBMIT-ONLY from the shopper UI (Enter / search button — no
 // per-keystroke requests); pagination, filters and sorting all reuse the
 // submitted keyword, exactly as before.
@@ -154,8 +166,9 @@ export const GET = handle(async (req: Request) => {
   const search = normalizeSearchQuery(url.searchParams.get("search"));
   const categorySlug = url.searchParams.get("category")?.trim() ?? "";
   const sort = url.searchParams.get("sort") ?? "newest";
+  const onSale = ["1", "true"].includes((url.searchParams.get("onSale") ?? "").toLowerCase());
 
-  const { rows, total } = await loadProducts(search, categorySlug, sort, page, size);
+  const { rows, total } = await loadProducts(search, categorySlug, sort, page, size, onSale);
 
   return okPaged(rows.map((p) => toProductCard(p as ProductWithRelations)), { page, size, total });
 });
