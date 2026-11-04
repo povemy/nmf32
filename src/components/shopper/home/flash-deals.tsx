@@ -88,13 +88,8 @@ export function HomeFlashDeals({
     <SectionShell
       id="home-flash-deals"
       title="Flash deals"
-      subtitle={
-        campaign
-          ? `${campaign.name} — limited-time offers while the campaign runs`
-          : "Limited-time offers from our sellers"
-      }
       icon={<Zap className="h-5 w-5 text-amber-500" />}
-      viewAll={{ label: "View all deals", onClick: () => ctx.nav({ name: "search", q: "", deals: true }) }}
+      viewAll={{ label: "view all", onClick: () => ctx.nav({ name: "search", q: "", deals: true }) }}
     >
       {campaign ? (
         <div className={cn("flex flex-wrap items-center gap-2 pb-1")}>

@@ -147,7 +147,7 @@ export function HomeHero({
   if (n === 0) {
     // No campaigns, no banners — the default branded slide (never empty).
     return (
-      <div className="mx-auto max-w-7xl px-4 pt-4">
+      <div className="mx-auto max-w-7xl px-3 pt-2.5 sm:px-4 sm:pt-4">
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <div className="relative h-40 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" aria-roledescription="banner">
             <DefaultSlide ctx={ctx} />
@@ -159,8 +159,8 @@ export function HomeHero({
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pt-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+    <div className="mx-auto max-w-7xl px-3 pt-2.5 sm:px-4 sm:pt-4">
+      <div className="grid gap-3 sm:gap-4 lg:grid-cols-[1fr_320px]">
         <div
           className="relative overflow-hidden rounded-2xl border bg-muted"
           aria-roledescription="carousel"
@@ -272,7 +272,7 @@ function SecondaryTiles({ tiles, ctx }: { tiles: HeroTileT[]; ctx: ShopperCtx })
   const solo = shown.length === 1;
   const tileCls = solo ? "col-span-2 lg:col-span-1" : "";
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-1">
       {shown.map((tile) => {
         const inner = (
           <>

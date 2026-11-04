@@ -65,11 +65,11 @@ export function HomeProductRail({
         ref={railRef}
         role="region"
         aria-label={ariaLabel}
-        className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-2.5 md:pb-2"
       >
         {products.map((p) => (
           <div key={p.id} className="w-[40%] shrink-0 snap-start sm:w-[30%] md:w-[23%] lg:w-[19%] xl:w-[15.5%]">
-            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} mobileActions={mobileActions} />
+            <ProductCard p={p} onOpen={(pp) => openProduct(ctx, pp)} quickActions={quickActions} showStore={showStore} mobileActions={mobileActions} homeMode />
           </div>
         ))}
       </div>

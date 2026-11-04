@@ -32,65 +32,65 @@ type Shortcut = {
   label: string;
   icon: typeof Zap;
   action: (ctx: ShopperCtx) => void;
-  /** Tinted circle (reference layout: coloured quick-entry circles) —
-   *  applied at BASE so mobile and desktop share the same accent families
-   *  (amber = deals, rose = popular, emerald = new, sky = stores, …). */
+  /** Vivid solid circle + WHITE glyph (reference icon style — filled app-icon
+   *  look). Categories keep the pastel style the reference uses there. */
   tint?: string;
 };
 
 // Permanent shortcuts — each maps to a real shopper view or homepage section.
-// Tints reuse the SAME accent families the homepage section icons already use
-// (amber = deals, rose = popular, emerald = new, sky = stores, …) so the
-// variety reads intentional, not random.
+// Icon restyle (reference layout): vivid single-colour circles with white
+// glyphs — the classic shopping-app quick-access band. Colour families stay
+// in the platform's warm/brand palette (teal, orange, rose, amber, cyan,
+// violet, emerald) so the variety reads intentional, not random.
 const SHORTCUTS: Shortcut[] = [
   {
     key: "categories",
     label: "Categories",
     icon: LayoutGrid,
     action: () => scrollHomeSection(HOME_SECTION_IDS.categories),
-    tint: "bg-teal-100 text-teal-700",
+    tint: "bg-teal-500 text-white",
   },
   {
     key: "deals",
     label: "Flash Deals",
     icon: Zap,
     action: () => scrollHomeSection(HOME_SECTION_IDS.flashDeals),
-    tint: "bg-amber-100 text-amber-600",
+    tint: "bg-orange-500 text-white",
   },
   {
     key: "popular",
     label: "Popular",
     icon: TrendingUp,
     action: (ctx) => ctx.nav({ name: "search", q: "", sort: "popular" }),
-    tint: "bg-rose-100 text-rose-600",
+    tint: "bg-rose-500 text-white",
   },
   {
     key: "new",
     label: "New Arrivals",
     icon: Sparkles,
     action: (ctx) => ctx.nav({ name: "search", q: "", sort: "newest" }),
-    tint: "bg-emerald-100 text-emerald-600",
+    tint: "bg-amber-500 text-white",
   },
   {
     key: "stores",
     label: "Featured Stores",
     icon: Store,
     action: () => scrollHomeSection(HOME_SECTION_IDS.stores),
-    tint: "bg-sky-100 text-sky-600",
+    tint: "bg-cyan-500 text-white",
   },
   {
     key: "vouchers",
     label: "Vouchers",
     icon: Ticket,
     action: (ctx) => ctx.nav({ name: "me", tab: "vouchers" }),
-    tint: "bg-violet-100 text-violet-600",
+    tint: "bg-violet-500 text-white",
   },
   {
     key: "track",
     label: "Track Order",
     icon: PackageSearch,
     action: (ctx) => ctx.nav({ name: "lookup" }),
-    tint: "bg-orange-100 text-orange-600",
+    tint: "bg-emerald-500 text-white",
   },
 ];
 
@@ -105,10 +105,10 @@ export function HomeQuickAccess({
   const tiles = promoTiles.slice(0, 2);
 
   return (
-    <section aria-label="Quick access" className="mx-auto max-w-7xl px-4">
+    <section aria-label="Quick access" className="mx-auto max-w-7xl px-3 sm:px-4">
       {/* Mobile (<md): single scrollable row inside one white card (reference
           quick-access band). Desktop (md+): the WO1 bare-circle grid. */}
-      <div className="flex snap-x gap-1 overflow-x-auto rounded-2xl border bg-card p-2.5 shadow-soft [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:snap-none md:grid-cols-8 md:gap-2.5 md:overflow-visible md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none lg:grid-cols-9">
+      <div className="flex snap-x gap-1 overflow-x-auto rounded-2xl border bg-card p-2 max-md:p-2 shadow-soft [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:snap-none md:grid-cols-8 md:gap-2.5 md:overflow-visible md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none lg:grid-cols-9">
         {SHORTCUTS.map(({ key, label, icon: Icon, action, tint }) => (
           <button
             key={key}
@@ -121,7 +121,7 @@ export function HomeQuickAccess({
           >
             <span
               className={cn(
-                "flex h-11 w-11 items-center justify-center rounded-full transition-all group-hover:bg-brand-gradient group-hover:text-white md:h-11 md:w-11",
+                "flex h-11 w-11 items-center justify-center rounded-full transition-all group-hover:brightness-110 md:h-11 md:w-11",
                 tint
               )}
             >

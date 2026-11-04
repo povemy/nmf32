@@ -131,17 +131,24 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
           <HomeFlashDeals products={home.flashDeals.products} campaign={home.flashDeals.campaign} ctx={ctx} />
         ) : null;
       case "categories":
-        return home ? <HomeCategoryGrid categories={home.categories} ctx={ctx} /> : <SectionSkeleton />;
+        // Mobile follow-up adjustment: categories live in the pinned header
+        // strip on mobile — this grid renders on md+ only.
+        return home ? (
+          <div className="hidden md:block">
+            <HomeCategoryGrid categories={home.categories} ctx={ctx} />
+          </div>
+        ) : (
+          <SectionSkeleton />
+        );
       case "trending":
         return home && home.trending.length > 0 ? (
           <HomeSectionRail
             id="home-trending"
             title="Trending now"
-            subtitle="What shoppers are actually buying — ranked by real sales"
             icon={<Flame className="h-5 w-5 text-rose-500" />}
             products={home.trending}
             ctx={ctx}
-            viewAll={{ label: "View popular", onClick: () => ctx.nav({ name: "search", q: "", sort: "popular" }) }}
+            viewAll={{ label: "view all", onClick: () => ctx.nav({ name: "search", q: "", sort: "popular" }) }}
             quickActions
             mobileActions="wishlist"
             showStore
@@ -151,7 +158,6 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         return home ? (
           <HomeSectionGrid
             title="Featured picks"
-            subtitle="Hand-selected by the NOMOFEE team"
             icon={<Sparkles className="h-5 w-5 text-amber-500" />}
             products={home.featured}
             ctx={ctx}
@@ -165,7 +171,6 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         return home ? (
           <HomeSectionGrid
             title="New arrivals"
-            subtitle="Fresh from our sellers"
             icon={<ShoppingBag className="h-5 w-5 text-emerald-600" />}
             products={home.latest}
             ctx={ctx}
@@ -191,18 +196,18 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
         if (content == null) return null;
         if (WRAPPED.has(id)) {
           return (
-            <div key={`${id}-${i}`} className="mx-auto w-full max-w-7xl px-4 py-4 md:py-6">
+            <div key={`${id}-${i}`} className="mx-auto w-full max-w-7xl px-3 py-2.5 sm:px-4 sm:py-4 md:py-6">
               {content}
             </div>
           );
         }
         return (
-          <div key={`${id}-${i}`} className={id === "quick_access" ? "pt-4 md:pt-6" : undefined}>
+          <div key={`${id}-${i}`} className={id === "quick_access" ? "pt-2.5 md:pt-6" : undefined}>
             {content}
           </div>
         );
       })}
-      <div className="pb-8" aria-hidden="true" />
+      <div className="pb-4 md:pb-8" aria-hidden="true" />
     </div>
   );
 }
@@ -218,25 +223,23 @@ function SectionSkeleton() {
 
 function HomeSectionGrid({
   title,
-  subtitle,
   icon,
   products,
   ctx,
 }: {
   title: string;
-  subtitle: string;
   icon: React.ReactNode;
   products: ProductCardT[];
   ctx: ShopperCtx;
 }) {
   return (
-    <SectionShell title={title} subtitle={subtitle} icon={icon}>
+    <SectionShell title={title} icon={icon}>
       {products.length === 0 ? (
         <EmptyState title="Nothing here yet" hint="Check back soon — the marketplace grows every day." />
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
           {products.map((p) => (
-            <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} />
+            <ProductCard key={p.id} p={p} onOpen={(pp) => openProduct(ctx, pp)} homeMode />
           ))}
         </div>
       )}
@@ -247,7 +250,6 @@ function HomeSectionGrid({
 function HomeSectionRail({
   id,
   title,
-  subtitle,
   icon,
   products,
   ctx,
@@ -258,7 +260,6 @@ function HomeSectionRail({
 }: {
   id?: string;
   title: string;
-  subtitle: string;
   icon: React.ReactNode;
   products: ProductCardT[];
   ctx: ShopperCtx;
@@ -272,7 +273,7 @@ function HomeSectionRail({
   showStore?: boolean;
 }) {
   return (
-    <SectionShell id={id} title={title} subtitle={subtitle} icon={icon} viewAll={viewAll}>
+    <SectionShell id={id} title={title} icon={icon} viewAll={viewAll}>
       <HomeProductRail products={products} ctx={ctx} ariaLabel={title} quickActions={quickActions} mobileActions={mobileActions} showStore={showStore} />
     </SectionShell>
   );
@@ -283,7 +284,6 @@ function HomeStores({ stores, ctx }: { stores: StoreCardT[]; ctx: ShopperCtx }) 
     <SectionShell
       id="home-stores"
       title="Our featured stores"
-      subtitle="Shops our team hand-picked"
       icon={<Store className="h-5 w-5 text-teal-700" />}
     >
       {stores.length === 0 ? (

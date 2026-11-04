@@ -33,7 +33,7 @@ export function HomeShowcase({ cards, ctx }: { cards: ShowcaseCardT[]; ctx: Shop
           fills the tile, text overlays a bottom scrim, CTA pill on white. When
           fewer campaigns are live the grid simply renders fewer cards (no
           fabricated padding banners). */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {cards.map((c, i) => {
           const days = daysUntil(c.endsAt);
           // Odd count below sm: the lone last banner spans full width instead

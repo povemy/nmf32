@@ -1,8 +1,12 @@
 "use client";
 // ============================================================================
-// Shared section shell — consistent header (icon + title + subtitle + view-all
-// destination) for every homepage section. Replaces the old SectionBlock
-// inside market.tsx so sections share one visual rhythm.
+// Shared section shell — consistent header (icon + title + optional subtitle
+// + view-all destination) for every homepage section. Replaces the old
+// SectionBlock inside market.tsx so sections share one visual rhythm.
+//
+// Follow-up adjustment pass: subtitle is now OPTIONAL (several homepage
+// sections dropped theirs) and the section's internal vertical rhythm is
+// tighter on mobile (max-md) — desktop keeps the original spacing.
 // ============================================================================
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
@@ -17,7 +21,7 @@ export function SectionShell({
 }: {
   id?: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   icon: React.ReactNode;
   viewAll?: { label: string; onClick: () => void };
   children: React.ReactNode;
@@ -29,14 +33,14 @@ export function SectionShell({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="space-y-4"
+      className="space-y-2.5 md:space-y-4"
     >
       <div className="flex items-end justify-between gap-3">
         <div className="flex items-center gap-2.5">
           {icon}
           <div>
             <h2 className="text-lg font-bold tracking-tight">{title}</h2>
-            <p className="text-xs text-muted-foreground">{subtitle}</p>
+            {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
           </div>
         </div>
         {viewAll ? (

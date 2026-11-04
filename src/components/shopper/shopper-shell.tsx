@@ -82,7 +82,8 @@ import {
   type ShopperCtx,
   type ShopperView,
 } from "./ui-bits";
-import MarketHome, { ResultsView } from "./market";
+import MarketHome, { ResultsView, categoryIcon } from "./market";
+import { CATEGORY_TINTS } from "./home/category-grid";
 import { UtilityBar, DesktopNavBar } from "./desktop-chrome";
 import { fetchMarketHome } from "./market-home-client";
 import PdpView from "./pdp";
@@ -729,8 +730,10 @@ function MarketHeader({
           row 1: hamburger + logo + account/wishlist/cart cluster (reference
           layout), row 2: full-width search pill. Desktop (md+) keeps the
           single-row layout via flex-nowrap + order reset. One search input /
-          suggestion dropdown — reflowed, never duplicated. */}
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 gap-y-2.5 px-4 py-3 sm:gap-x-4 md:flex-nowrap">
+          suggestion dropdown — reflowed, never duplicated.
+          Follow-up tightening pass: mobile paddings/gaps reduced, search
+          height -25% (44→33px). */}
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 gap-y-1.5 px-3 py-2 sm:gap-x-4 md:flex-nowrap md:px-4 md:py-3">
         {/* mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
@@ -830,7 +833,7 @@ function MarketHeader({
               setTimeout(() => setSuggestOpen(false), 150);
             }}
             placeholder="Search products, brands & more…"
-            className="pl-10 md:pl-9 md:pr-24 min-h-[44px] rounded-full"
+            className="pl-10 md:pl-9 md:pr-24 h-[33px]! rounded-full md:h-9 md:min-h-[44px]"
             aria-label="Search for products, brands and more"
             aria-expanded={hasSuggestions}
             aria-autocomplete="list"
@@ -1073,6 +1076,42 @@ function MarketHeader({
           </div>
         ) : null}
       </div>
+
+      {/* Mobile follow-up adjustment: the CATEGORIES strip now lives HERE —
+          pinned under the search row so it floats with the sticky header
+          (the homepage “Shop by category” grid becomes desktop-only). Same
+          live category tree the hamburger Sheet uses (one coalesced fetch,
+          shared with the homepage — no extra request). Compact sizing: 28px
+          pastel circles (-40% vs the old 48px grid icons) + 9px labels. */}
+      {!isMe ? (
+        <div
+          aria-label="Shop by category"
+          className="flex snap-x gap-2.5 overflow-x-auto px-3 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden"
+        >
+          {(categories ?? []).map((cat, i) => {
+            const Icon = categoryIcon(cat.name);
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => nav({ name: "category", categorySlug: cat.slug, label: cat.name })}
+                className="flex shrink-0 snap-start flex-col items-center gap-1 px-0.5"
+                aria-label={`Browse ${cat.name}`}
+              >
+                <span
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-full",
+                    CATEGORY_TINTS[i % CATEGORY_TINTS.length]
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+                <span className="whitespace-nowrap text-[9px] font-medium leading-none">{cat.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {/* Desktop homepage work order — prominent horizontal navigation bar
           (desktop/tablet only, `hidden md:block`): All Categories dropdown +

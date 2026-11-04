@@ -11,11 +11,16 @@ import { ArrowUpRight } from "lucide-react";
 import type { CampaignCta } from "@/lib/campaigns";
 import type { ShopperCtx } from "../ui-bits";
 
-/** Scroll a homepage section into view (sections carry stable DOM ids). */
+/** Scroll a homepage section into view (sections carry stable DOM ids).
+ *  Mobile follow-up adjustment: the categories GRID is desktop-only now —
+ *  on mobile the categories live in the pinned header strip, so a hidden or
+ *  missing target falls back to scrolling to the top where the strip floats
+ *  with the sticky header. */
 export function scrollHomeSection(id: string): void {
   if (typeof document === "undefined") return;
   const el = document.getElementById(id);
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (el && el.offsetParent !== null) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  else window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 /** Desktop chrome work order — reach a homepage section from ANY shopper

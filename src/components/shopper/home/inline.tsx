@@ -66,7 +66,7 @@ export function HomeInline({ mod, ctx }: { mod: InlineModuleT; ctx: ShopperCtx }
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="space-y-3"
+      className="space-y-2.5 sm:space-y-3"
       aria-label={`${mod.name} promotion`}
     >
       {isExternalCta(mod.cta) ? (

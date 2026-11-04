@@ -619,6 +619,7 @@ export function ProductCard({
   cardStyle,
   quickActions = false,
   mobileActions,
+  homeMode = false,
 }: {
   p: ProductCardT;
   onOpen: (p: ProductCardT) => void;
@@ -634,6 +635,10 @@ export function ProductCard({
    *  "full" = wishlist + add-to-cart (flash deals rail — reference layout);
    *  "wishlist" = heart only (trending rail). Requires quickActions. */
   mobileActions?: "full" | "wishlist";
+  /** Follow-up adjustment pass: HOMEPAGE presentation — hides the star-rating
+   *  row and reduces the price type by 20% (14→11px, compare-at 11→10px).
+   *  Search results, storefronts and PDP keep the full card (default off). */
+  homeMode?: boolean;
 }) {
   const discount =
     p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
@@ -664,19 +669,28 @@ export function ProductCard({
             </span>
           ) : null}
         </div>
-        <div className="p-2.5 space-y-0.5">
+        <div className="p-2.5 max-md:p-2 space-y-0.5">
           <h3 className="font-normal leading-snug line-clamp-2 min-h-[2rem] text-xs">{p.title}</h3>
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="font-bold text-teal-700 text-sm">{formatMinor(p.priceMinor)}</span>
+            <span className={cn("font-bold text-teal-700", homeMode ? "text-[11px]" : "text-sm")}>{formatMinor(p.priceMinor)}</span>
             {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
-              <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+              <span className={cn("text-muted-foreground line-through", homeMode ? "text-[10px]" : "text-[11px]")}>{formatMinor(p.compareAtPriceMinor)}</span>
             ) : null}
           </div>
           {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
-          <div className="flex items-center justify-between gap-1 pt-0.5">
-            <Stars rating={p.ratingAvg} />
-            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
-          </div>
+          {/* Follow-up adjustment: homepage cards drop the star rating; the
+              honest “sold” count stays (social proof without the rating
+              clutter — search/storefront cards keep the full row). */}
+          {!homeMode ? (
+            <div className="flex items-center justify-between gap-1 pt-0.5">
+              <Stars rating={p.ratingAvg} />
+              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+            </div>
+          ) : (
+            <div className="pt-0.5 text-right">
+              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+            </div>
+          )}
         </div>
         {/* full-card open hit-area (sits BELOW the quick-action buttons) */}
         <button
@@ -711,21 +725,27 @@ export function ProductCard({
           </span>
         ) : null}
       </div>
-      <div className="p-2.5 space-y-0.5">
+      <div className="p-2.5 max-md:p-2 space-y-0.5">
         <h3 className={cn("font-normal leading-snug line-clamp-2 min-h-[2rem]", !cardStyle && "text-xs")} style={nameCss}>{p.title}</h3>
         {!hidePrice ? (
           <div className="flex items-baseline gap-1.5 flex-wrap" style={cardStyle?.priceAlign === "center" ? { justifyContent: "center" } : cardStyle?.priceAlign === "right" ? { justifyContent: "flex-end" } : undefined}>
-            <span className={cn("font-bold text-teal-700", !cardStyle && "text-sm")} style={priceCss}>{formatMinor(p.priceMinor)}</span>
+            <span className={cn("font-bold text-teal-700", !cardStyle && (homeMode ? "text-[11px]" : "text-sm"))} style={priceCss}>{formatMinor(p.priceMinor)}</span>
             {p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor ? (
-              <span className="text-[11px] text-muted-foreground line-through">{formatMinor(p.compareAtPriceMinor)}</span>
+              <span className={cn("text-muted-foreground line-through", !cardStyle && (homeMode ? "text-[10px]" : "text-[11px]"))}>{formatMinor(p.compareAtPriceMinor)}</span>
             ) : null}
           </div>
         ) : null}
         {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
-        <div className="flex items-center justify-between gap-1 pt-0.5">
-          <Stars rating={p.ratingAvg} />
-          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
-        </div>
+        {!homeMode ? (
+          <div className="flex items-center justify-between gap-1 pt-0.5">
+            <Stars rating={p.ratingAvg} />
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+          </div>
+        ) : (
+          <div className="pt-0.5 text-right">
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+          </div>
+        )}
       </div>
     </button>
   );

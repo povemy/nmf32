@@ -25,8 +25,9 @@ const CAP = 12;
 
 // Rotating circle tints — applied at BASE (mobile row + desktop grid share
 // the same accent families: teal/amber/rose/emerald/sky/violet/orange) so the
-// variety reads intentional rather than random.
-const TINTS = [
+// variety reads intentional rather than random. Exported for the mobile
+// header category strip (same style family everywhere).
+export const CATEGORY_TINTS = [
   "bg-teal-100 text-teal-700",
   "bg-amber-100 text-amber-600",
   "bg-rose-100 text-rose-600",
@@ -76,7 +77,7 @@ export function HomeCategoryGrid({ categories, ctx }: { categories: CategoryT[];
               <span
                 className={cn(
                   "flex h-12 w-12 items-center justify-center rounded-full transition-all group-hover:bg-brand-gradient group-hover:text-white md:h-12 md:w-12",
-                  TINTS[i % TINTS.length]
+                  CATEGORY_TINTS[i % CATEGORY_TINTS.length]
                 )}
               >
                 <Icon className="h-6 w-6 md:h-6 md:w-6" />
