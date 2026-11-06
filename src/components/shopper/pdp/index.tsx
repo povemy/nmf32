@@ -373,6 +373,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             lowStock={lowStock}
             ratingAvg={product.ratingAvg}
             ratingCount={product.ratingCount}
+            viewCount={product.viewCount}
             onImageChange={onImageChange}
           />
         </div>
@@ -428,7 +429,8 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
                 size="lg"
                 disabled={adding || outOfStock}
                 onClick={handleAddToCart}
-                className="min-h-[48px] bg-teal-700 text-white hover:bg-teal-800"
+                className="min-h-[48px] border-teal-700/40 bg-card text-teal-800 hover:bg-teal-50"
+                variant="outline"
               >
                 <ShoppingCart className="h-4 w-4" aria-hidden="true" />
                 {outOfStock ? "Out of stock" : adding ? "Adding…" : requiresVariant && !variant ? "Select options" : "Add to cart"}
@@ -437,7 +439,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
                 size="lg"
                 disabled={adding || outOfStock}
                 onClick={() => void handleBuyNow()}
-                className="min-h-[48px] bg-amber-500 text-white hover:bg-amber-600"
+                className="min-h-[48px] bg-brand-gradient text-white shadow-md hover:brightness-110"
               >
                 <Zap className="h-4 w-4" aria-hidden="true" />
                 Buy now
@@ -514,18 +516,22 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
       />
 
       {/* TikTok-style product CTA bar (mobile only) — replaces the bottom
-          navigation on the PDP. Same server-validated handlers as the in-flow
-          controls: Shop → storefront, Chat → product-scoped thread (auth
-          intent-resume), Add to cart / Buy now → existing cart + checkout. */}
+          navigation on the PDP. Buyer work order: Chat REPLACED the Shop icon,
+          a compact −/+ quantity stepper sits next to Add to cart, and both
+          purchase buttons follow the platform theme colors. Same
+          server-validated handlers as the in-flow controls. */}
       <PdpCtaBar
         storeName={store.name}
         price={price}
         freeShipping={lineTotalMinor >= PDP_SHIPPING_DISPLAY.freeShipThresholdMinor}
+        qty={effectiveQty}
+        qtyMin={moq}
+        qtyMax={variant ? Math.max(moq, variant.stock) : 99}
+        onQtyChange={changeQty}
         chatBusy={chatBusy}
         adding={adding}
         disabled={outOfStock}
         actionLabel={requiresVariant && !variant ? "Choose an option first" : null}
-        onOpenStore={() => ctx.nav({ name: "storefront", slug: store.slug })}
         onChat={onMessageSeller}
         onAddToCart={handleAddToCart}
         onBuyNow={() => void handleBuyNow()}

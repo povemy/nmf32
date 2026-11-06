@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { isEligibleOrder, ELIGIBLE_CANDIDATE_STATUSES, reviewsSchemaReady } from "@/lib/reviews";
+import { sanitizeReviewTextForDisplay, wasReviewTextRemoved } from "@/lib/review-text";
 import { summarizeShopperRewards } from "@/lib/review-rewards";
 import { placeholderUrl } from "@/lib/placeholder";
 
@@ -144,8 +145,13 @@ export const GET = handle(async () => {
     submitted: myReviews.map((r) => ({
       id: r.id,
       rating: r.rating,
-      title: r.title,
-      body: r.body,
+      // Display-side guard: a payload-carrying text renders blank here too,
+      // with contentRemoved flags so the shopper sees WHY it is blank (the
+      // system removed it) instead of a silently disappeared review.
+      title: sanitizeReviewTextForDisplay(r.title),
+      body: sanitizeReviewTextForDisplay(r.body),
+      titleRemoved: wasReviewTextRemoved(r.title),
+      bodyRemoved: wasReviewTextRemoved(r.body),
       status: r.status,
       createdAt: r.createdAt,
       product: {

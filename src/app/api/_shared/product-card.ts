@@ -1,6 +1,7 @@
 // Shared product-card shaping for market + storefront APIs (Task 2-b scope).
 // ProductCard = {id, slug, title, priceMinor, compareAtPriceMinor, imageUrl,
-//                storeName, storeSlug, ratingAvg, ratingCount, salesCount, categoryName}
+//                storeName, storeSlug, ratingAvg, ratingCount, viewCount,
+//                salesCount, categoryName}
 import { parseJson } from "@/lib/json";
 import { db } from "@/lib/db";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
@@ -34,6 +35,8 @@ export type ProductWithRelations = {
   title: string;
   priceMinor: number;
   salesCount: number;
+  // Raw impressions counter (schema field — default 0 for legacy rows).
+  viewCount?: number;
   ratingAvg: number;
   ratingCount: number;
   images: { url: string; sortOrder: number }[];
@@ -72,6 +75,10 @@ export function toProductCard(p: ProductWithRelations) {
     ratingAvg: p.ratingAvg,
     ratingCount: p.ratingCount,
     salesCount: p.salesCount,
+    // Raw impressions (Eye-icon count on cards — replaces the "sold" figure
+    // in the shopper UI). Advisory display; the PDP route serves the exact
+    // post-increment value.
+    viewCount: p.viewCount ?? 0,
     categoryName: p.category?.name ?? null,
   };
 }

@@ -21,6 +21,7 @@ import {
   BadgeCheck,
   Ban,
   CircleDollarSign,
+  Eye,
   HandCoins,
   Info,
   LayoutDashboard,
@@ -44,7 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toMinor } from "@/lib/money";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
-import { EmptyState, type ShopperCtx } from "./ui-bits";
+import { EmptyState, formatViewCount, type ShopperCtx } from "./ui-bits";
 import {
   affGet,
   affPost,
@@ -1041,7 +1042,11 @@ function DiscoverCard({ p, onCreateLink }: { p: DiscoverProductT; onCreateLink: 
         <p className="truncate text-[11px] text-muted-foreground">{p.storeName}</p>
         <div className="flex items-baseline justify-between gap-1">
           <span className="text-sm font-bold text-teal-700">{money(p.priceMinor)}</span>
-          <span className="text-[10px] text-muted-foreground tabular-nums">{p.salesCount} sold</span>
+          {/* Buyer work order: Eye-icon impressions replace the sold figure. */}
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted-foreground tabular-nums" title={`${p.viewCount.toLocaleString("en-MY")} views`}>
+            <Eye className="h-3 w-3" aria-hidden="true" />
+            {formatViewCount(p.viewCount)}
+          </span>
         </div>
         <p className="text-[11px] font-semibold text-emerald-700">≈ {money(p.estimatedCommissionMinor)} / sale</p>
         <Button

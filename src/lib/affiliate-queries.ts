@@ -172,6 +172,8 @@ export type DiscoverProduct = {
   rateBps: number;
   estimatedCommissionMinor: number;
   salesCount: number;
+  // Raw impressions (Eye-icon count — replaces "sold" on affiliate cards).
+  viewCount: number;
   ratingAvg: number;
   isFeatured: boolean;
   addedAt: string | null;
@@ -241,6 +243,7 @@ export async function discoverProducts(opts: {
       rateBps,
       estimatedCommissionMinor: affiliatePoolMinor(p.priceMinor, rateBps),
       salesCount: p.salesCount,
+      viewCount: p.viewCount,
       ratingAvg: p.ratingAvg,
       isFeatured: p.isFeatured,
       addedAt: p.createdAt.toISOString(),

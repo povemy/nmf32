@@ -390,6 +390,12 @@ model Product {
   flagsJson                 String              @default("[]")
   reportsCount              Int                 @default(0)
   salesCount                Int                 @default(0)
+  // IMPRESSIONS counter (buyer work order): raw PDP view count — every GET of
+  // the product detail payload increments it (no per-session dedup: refreshing
+  // 100,000 times shows 100K). Distinct from the deduped product_view
+  // analytics events (Seller Insights), which stay authoritative for funnel
+  // metrics. Displayed to shoppers as the Eye-icon count on the PDP + cards.
+  viewCount                 Int                 @default(0)
   ratingAvg                 Float               @default(0)
   ratingCount               Int                 @default(0)
   isFeatured                Boolean             @default(false)

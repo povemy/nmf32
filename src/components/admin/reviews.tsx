@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Star, BadgeCheck, Coins, RotateCcw } from "lucide-react";
+import { Star, BadgeCheck, Coins, RotateCcw, ShieldAlert } from "lucide-react";
 import { useApi, apiSend } from "./use-api";
 import { qs } from "./nav";
 import { EmptyState, ErrorState, PageHeader, Pager, StatusChip, fmtDate } from "./ui-bits";
@@ -31,6 +31,9 @@ type AdminReviewRow = {
   orderId: string | null;
   customerName: string;
   rating: number;
+  // Flagged server-side when the text carries a script/HTML payload — the
+  // moderator still sees the RAW text (to judge/reject) plus this badge.
+  unsafeContent?: boolean;
   title: string | null;
   body: string | null;
   reply: string | null;
@@ -184,6 +187,12 @@ export function ReviewsModerationView() {
                           No order link (legacy)
                         </Badge>
                       )}
+                      {r.unsafeContent ? (
+                        <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-rose-600">
+                          <ShieldAlert className="h-3 w-3" aria-hidden="true" />
+                          Unsafe content — blanked publicly
+                        </Badge>
+                      ) : null}
                       {r.reward ? (
                         <Badge variant="outline" className={cn("gap-1", r.reward.reversed ? "border-rose-200 bg-rose-50 text-rose-600" : "border-teal-200 bg-teal-50 text-teal-700")}>
                           <Coins className="h-3 w-3" aria-hidden="true" />

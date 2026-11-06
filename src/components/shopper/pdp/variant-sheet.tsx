@@ -117,7 +117,7 @@ export function PdpVariantSheet({
                   {compareAt && compareAt > price ? (
                     <>
                       <span className="text-sm text-muted-foreground line-through">{formatMinor(compareAt)}</span>
-                      {off ? <Badge className="bg-[#FE2C55] hover:bg-[#FE2C55]">-{off}%</Badge> : null}
+                      {off ? <Badge className="bg-brand-gradient-deep hover:bg-brand-gradient-deep">-{off}%</Badge> : null}
                     </>
                   ) : null}
                 </div>
@@ -215,7 +215,7 @@ export function PdpVariantSheet({
             size="lg"
             disabled={adding || !variant || variant.stock <= 0}
             onClick={onBuyNow}
-            className="min-h-[48px] bg-amber-500 text-white hover:bg-amber-600"
+            className="min-h-[48px] bg-brand-gradient text-white shadow-md hover:brightness-110"
           >
             Buy now
           </Button>

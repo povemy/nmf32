@@ -17,7 +17,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ShoppingCart, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMinor } from "@/lib/money";
-import { cn } from "@/lib/utils";
 
 export function PdpStickyBar({
   anchorRef,
@@ -90,9 +89,9 @@ export function PdpStickyBar({
           <div className="mx-auto flex max-w-7xl items-center gap-3 px-3 py-2 md:px-4">
             <div className="min-w-0 shrink-0 leading-tight">
               <div className="flex items-baseline gap-1.5">
-                <span className={cn("text-lg font-extrabold tracking-tight", compareAt && compareAt > price ? "text-[#FE2C55]" : "text-teal-700")}>
-                  {formatMinor(price)}
-                </span>
+                {/* Buyer work order: pricing follows the platform theme (brand
+                    teal) instead of red — the discount case included. */}
+                <span className="text-lg font-extrabold tracking-tight text-teal-700">{formatMinor(price)}</span>
                 {compareAt && compareAt > price ? <span className="text-xs text-muted-foreground line-through">{formatMinor(compareAt)}</span> : null}
               </div>
               {selectedLabel ? (
@@ -118,7 +117,7 @@ export function PdpStickyBar({
                 size="lg"
                 disabled={adding || outOfStock}
                 onClick={onBuyNow}
-                className="h-11 min-h-[44px] min-w-[110px] gap-1.5 bg-amber-500 px-4 text-white hover:bg-amber-600 md:px-6"
+                className="h-11 min-h-[44px] min-w-[110px] gap-1.5 bg-brand-gradient px-4 text-white shadow-md hover:brightness-110 md:px-6"
                 aria-label={requiresVariant ? "Buy now — select options" : "Buy now"}
               >
                 <Zap className="h-4 w-4" aria-hidden="true" />

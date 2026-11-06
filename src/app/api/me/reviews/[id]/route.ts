@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
+import { detectReviewSubmissionThreat } from "@/lib/review-text";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ const MAX_EDITS = 2;
 //   • rewards: NO reward interaction whatsoever — the RM0.05-equivalent was
 //     credited exactly once at submission and an edit can never re-credit it
 //     (MembershipReward.reviewId is UNIQUE; this route never touches it).
+//   • unsafe content: same guard as submission (lib/review-text.ts) — edits
+//     are a re-submission vector, so scripts/HTML are rejected here too.
 //
 // The status flip race is closed with a CONDITIONAL updateMany on
 // status:"pending" — a moderator decision landing mid-edit converges on 409
@@ -59,6 +62,18 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     me.fullName
   );
   if (!merged.ok) throw new ApiError(400, "VALIDATION", merged.errors.join("; "));
+
+  // Unsafe-content guard — same rule as submission: scripts/HTML/event
+  // handlers are rejected with 400 UNSAFE_CONTENT so the dialog can show its
+  // warning popup. An edit is also a (re)submission vector for payloads.
+  const threat = detectReviewSubmissionThreat(merged.value);
+  if (threat) {
+    throw new ApiError(
+      400,
+      "UNSAFE_CONTENT",
+      `Reviews must be plain text — ${threat.pattern} are not allowed. Please remove them and submit plain text.`
+    );
+  }
 
   // Conditional write: only a still-pending, still-mine row can update.
   const res = await db.review.updateMany({

@@ -135,6 +135,8 @@ export type DiscoverProductT = {
   rateBps: number;
   estimatedCommissionMinor: number;
   salesCount: number;
+  /** Raw impressions — Eye-icon count (replaces "sold" on the card). */
+  viewCount: number;
   ratingAvg: number;
   isFeatured: boolean;
   addedAt: string | null;

@@ -10,13 +10,15 @@
 // asserts verified-purchase status itself — the badge comes from the backend.
 // ============================================================================
 import { useEffect, useState } from "react";
-import { Loader2, Star, BadgeCheck, Coins } from "lucide-react";
+import { Loader2, Star, BadgeCheck, Coins, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { detectReviewSubmissionThreat } from "@/lib/review-text";
 import { postJson, patchJson, ApiFail } from "./ui-bits";
 
 const STAR_LABELS = ["Very poor", "Poor", "Average", "Good", "Excellent"] as const;
@@ -59,6 +61,10 @@ export function ReviewFormDialog({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  // Unsafe-content warning (buyer work order): { pattern } when the client
+  // pre-check OR the server (UNSAFE_CONTENT) flagged scripts/HTML in the text.
+  // Rendered as a popup the shopper must acknowledge before retrying.
+  const [unsafe, setUnsafe] = useState<{ pattern: string } | null>(null);
 
   // Reset the form each time the dialog opens (edit mode hydrates its values).
   useEffect(() => {
@@ -68,6 +74,7 @@ export function ReviewFormDialog({
       setTitle(edit?.title ?? "");
       setBody(edit?.body ?? "");
       setBusy(false);
+      setUnsafe(null);
     }
   }, [open, edit]);
 
@@ -80,6 +87,14 @@ export function ReviewFormDialog({
     const trimmedBody = body.trim();
     if (trimmedBody.length > 0 && trimmedBody.length < 10) {
       toast.error("Review text is too short", { description: "Write at least 10 characters, or leave the text empty." });
+      return;
+    }
+    // ORCHESTRATOR PRE-CHECK (lib/review-text.ts — the SAME pure patterns the
+    // server routes run): detect script/HTML/event-handler payloads BEFORE the
+    // request and show the warning popup instead of storing anything.
+    const threat = detectReviewSubmissionThreat({ title: title.trim() || null, body: trimmedBody || null });
+    if (threat) {
+      setUnsafe({ pattern: threat.pattern });
       return;
     }
     setBusy(true);
@@ -106,6 +121,11 @@ export function ReviewFormDialog({
       onSubmitted?.();
     } catch (e) {
       if (e instanceof ApiFail) {
+        if (e.code === "UNSAFE_CONTENT") {
+          // Server-side orchestrator verdict — same popup as the pre-check.
+          setUnsafe({ pattern: "scripts or HTML code" });
+          return;
+        }
         if (e.code === "REVIEW_ALREADY_EXISTS") {
           toast.info("You already reviewed this product", { description: "One review per product per account." });
           onOpenChange(false);
@@ -245,6 +265,28 @@ export function ReviewFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Unsafe-content warning popup — client pre-check or server 400
+          UNSAFE_CONTENT. Acknowledge → back to the form with the text intact
+          so the shopper can strip the flagged markup and resubmit. */}
+      <AlertDialog open={unsafe != null} onOpenChange={(v) => !v && setUnsafe(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-left">
+              <ShieldAlert className="h-5 w-5 shrink-0 text-rose-600" aria-hidden="true" />
+              Reviews must be plain text
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-left">
+              We detected <strong>{unsafe?.pattern}</strong> in your review. Scripts and HTML code are not allowed — they are
+              automatically removed from published reviews. Please remove them and submit plain text describing your
+              experience with the product.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="min-h-[44px] bg-teal-700 text-white hover:bg-teal-800">Edit my review</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

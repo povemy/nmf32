@@ -4,6 +4,7 @@ import { handle, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { REVIEW_STATUSES, reviewsSchemaReady } from "@/lib/reviews";
+import { detectReviewThreat } from "@/lib/review-text";
 
 // GET /api/admin/reviews?status=pending|published|rejected&productId=&page=&size=
 // — the review moderation queue (Task B1). RBAC: reviews.moderate (same tier
@@ -54,6 +55,10 @@ export const GET = handle(async (req: NextRequest) => {
     orderId: r.orderId,
     customerName: r.customerName,
     rating: r.rating,
+    // Moderator context intentionally keeps the RAW text (the moderator must
+    // see what was attempted to reject it) but is flagged so the queue UI can
+    // badge it: detectReviewThreat === public display would auto-blank it.
+    unsafeContent: detectReviewThreat(r.title) != null || detectReviewThreat(r.body) != null,
     title: r.title,
     body: r.body,
     reply: r.reply,

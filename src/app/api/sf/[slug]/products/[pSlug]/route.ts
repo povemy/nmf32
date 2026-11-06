@@ -3,14 +3,16 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { productCardInclude, toProductCard, minVariant, cardStyleFor, type ProductWithRelations } from "../../../../_shared/product-card";
 import { trackProductView } from "@/lib/analytics/track";
 import { reviewsSchemaReady } from "@/lib/reviews";
+import { sanitizeReviewTextForDisplay } from "@/lib/review-text";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
 export const dynamic = "force-dynamic";
 
 // PHASE 2 / C: PDP payload — cached 30 s per (slug, pSlug); products/reviews/
 // stores tags busted on the corresponding mutations. The product-view TRACKER
-// (cookie write) stays OUTSIDE the cached loader. Displayed variant stock is
-// ADVISORY — checkout revalidates stock transactionally (CAS decrement).
+// (cookie write) and the raw IMPRESSIONS counter both stay OUTSIDE the cached
+// loader. Displayed variant stock is ADVISORY — checkout revalidates stock
+// transactionally (CAS decrement).
 const loadPdp = publicCache(
   async (slug: string, pSlug: string) => {
     // C1.3 (seller publication governance): store.status "live" alone is not
@@ -89,6 +91,23 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
   // are not product views. Deliberately OUTSIDE the cached loader (cookie write).
   await trackProductView(req, store.id, product.id);
 
+  // IMPRESSIONS counter (buyer work order): raw per-GET increment — no dedup
+  // by design ("refresh 100,000 times → 100K"). Also OUTSIDE the cached loader
+  // so cache hits still count, and the returned value is the post-increment
+  // count, exact for this render. A failed increment never breaks the PDP:
+  // the cached loader's copy of the field is the fallback.
+  let viewCount = product.viewCount;
+  try {
+    const bumped = await db.product.update({
+      where: { id: product.id },
+      data: { viewCount: { increment: 1 } },
+      select: { viewCount: true },
+    });
+    viewCount = bumped.viewCount;
+  } catch {
+    viewCount = (viewCount ?? 0) + 1; // advisory display — never fail the page
+  }
+
   const mv = minVariant(product.variants);
 
   return ok({
@@ -102,6 +121,8 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       ratingAvg: product.ratingAvg,
       ratingCount: product.ratingCount,
       salesCount: product.salesCount,
+      // Raw impressions (post-increment for THIS render — see above).
+      viewCount,
       categoryId: product.category?.id ?? null,
       categoryName: product.category?.name ?? null,
       images: product.images.map((i) => i.url),
@@ -136,9 +157,13 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       orderId: (r as { orderId?: string | null }).orderId ?? null,
       customerName: r.customerName,
       rating: r.rating,
-      title: r.title,
-      body: r.body,
-      reply: r.reply,
+      // Display-side guard: a stored text that still carries a script/HTML
+      // payload (legacy row, seeded fixture) is auto-blanked by the system —
+      // "shown blank" instead of the payload. React still escapes whatever
+      // remains; this is defense-in-depth, not the only barrier.
+      title: sanitizeReviewTextForDisplay(r.title),
+      body: sanitizeReviewTextForDisplay(r.body),
+      reply: sanitizeReviewTextForDisplay(r.reply),
       createdAt: r.createdAt,
     })),
     related: related.map((p) => toProductCard(p as ProductWithRelations)),

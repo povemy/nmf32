@@ -17,8 +17,9 @@
 //    becomes slide 1 (deduped) and the gallery auto-scrolls to it.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Star, ZoomOut } from "lucide-react";
+import { Eye, Star, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatViewCount } from "../ui-bits";
 
 const MAX_SCALE = 4;
 const TAP_SCALE = 2.5;
@@ -35,6 +36,7 @@ export function PdpGallery({
   lowStock,
   ratingAvg,
   ratingCount,
+  viewCount,
   onImageChange,
 }: {
   title: string;
@@ -49,6 +51,10 @@ export function PdpGallery({
   ratingAvg: number;
   /** REAL published review count. */
   ratingCount: number;
+  /** RAW impressions (buyer work order): post-increment count from the PDP
+   *  payload — every refresh counts (no dedup). Displayed below the photo,
+   *  right-aligned, as a small Eye-icon line. */
+  viewCount: number;
   /** Fires when the ACTIVE image changes (funnel: view_item_gallery). */
   onImageChange?: (index: number) => void;
 }) {
@@ -217,11 +223,12 @@ export function PdpGallery({
           </span>
         ) : null}
 
-        {/* top-left badge stack: real discount (coral — promo indicator
-            only) + real low-stock urgency (seller's own threshold) */}
+        {/* top-left badge stack: real discount (BRAND theme — pricing follows
+            the platform color per buyer work order) + real low-stock urgency
+            (seller's own threshold) */}
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5">
           {discountOff != null && discountOff > 0 ? (
-            <span className="flex items-baseline gap-0.5 rounded-lg bg-[#FE2C55] px-2 py-1 shadow-md">
+            <span className="flex items-baseline gap-0.5 rounded-lg bg-brand-gradient-deep px-2 py-1 shadow-md">
               <span className="text-sm font-extrabold leading-none text-white">-{discountOff}%</span>
               <span className="text-[9px] font-bold uppercase tracking-wider text-white/90">off</span>
             </span>
@@ -253,6 +260,21 @@ export function PdpGallery({
             <ZoomOut className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
+      </div>
+
+      {/* IMPRESSIONS line (buyer work order): below the photo, right-aligned —
+          raw per-GET count (refreshes count). A traffic signal for sellers to
+          put effort into attracting visitors. */}
+      <div className="flex items-center justify-end">
+        <span
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground"
+          aria-label={`${viewCount.toLocaleString("en-MY")} views`}
+          title={`${viewCount.toLocaleString("en-MY")} views`}
+        >
+          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="tabular-nums font-semibold">{formatViewCount(viewCount)}</span>
+          <span>views</span>
+        </span>
       </div>
 
       {/* thumbnails — desktop/tablet only (mobile swipes + 1/N pill) */}

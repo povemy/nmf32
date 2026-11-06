@@ -16,6 +16,7 @@ import {
   Bike,
   Camera,
   ClipboardCheck,
+  Eye,
   Heart,
   Home,
   Loader2,
@@ -92,9 +93,25 @@ export type ProductCardT = {
   storeSlug: string;
   ratingAvg: number;
   ratingCount: number;
+  /** Raw impressions (buyer work order — replaces the "sold" figure on
+   *  cards). Optional for legacy payloads; 0 renders as "0 views". */
+  viewCount?: number;
   salesCount: number;
   categoryName: string | null;
 };
+
+/** Compact impression count — 999 → "999", 1,200 → "1.2K", 100,000 → "100K",
+ *  1,500,000 → "1.5M" (buyer work order example: 100K eye-icon). */
+export function formatViewCount(n: number | null | undefined): string {
+  const v = Math.max(0, Math.floor(n ?? 0));
+  if (v < 1000) return String(v);
+  if (v < 1_000_000) {
+    const k = v / 1000;
+    return `${k >= 100 ? Math.round(k) : Math.round(k * 10) / 10}K`;
+  }
+  const m = v / 1_000_000;
+  return `${m >= 100 ? Math.round(m) : Math.round(m * 10) / 10}M`;
+}
 
 export type StoreCardT = {
   id: string;
@@ -622,6 +639,21 @@ function QuickCardActions({ p, mobileActions }: { p: ProductCardT; mobileActions
   );
 }
 
+/** Eye-icon impressions tag (buyer work order) — the card's traffic signal,
+ *  replacing the old “N sold” figure. Compact: 999 / 1.2K / 100K / 1.5M. */
+function ViewCountTag({ count }: { count: number | null | undefined }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted-foreground tabular-nums"
+      aria-label={`${count ?? 0} views`}
+      title={`${(count ?? 0).toLocaleString("en-MY")} views`}
+    >
+      <Eye className="h-3 w-3" aria-hidden="true" />
+      {formatViewCount(count)}
+    </span>
+  );
+}
+
 export function ProductCard({
   p,
   onOpen,
@@ -692,17 +724,17 @@ export function ProductCard({
             ) : null}
           </div>
           {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
-          {/* Follow-up adjustment: homepage cards drop the star rating; the
-              honest “sold” count stays (social proof without the rating
-              clutter — search/storefront cards keep the full row). */}
+          {/* Buyer work order: the Eye-icon VIEW count replaces the "sold"
+              figure — impressions (raw PDP loads), a magnet for sellers to
+              drive traffic, not a sales claim. */}
           {!homeMode ? (
             <div className="flex items-center justify-between gap-1 pt-0.5">
               <Stars rating={p.ratingAvg} />
-              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+              <ViewCountTag count={p.viewCount} />
             </div>
           ) : (
             <div className="pt-0.5 text-right">
-              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+              <ViewCountTag count={p.viewCount} />
             </div>
           )}
         </div>
@@ -753,11 +785,11 @@ export function ProductCard({
         {!homeMode ? (
           <div className="flex items-center justify-between gap-1 pt-0.5">
             <Stars rating={p.ratingAvg} />
-            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+            <ViewCountTag count={p.viewCount} />
           </div>
         ) : (
           <div className="pt-0.5 text-right">
-            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.salesCount} sold</span>
+            <ViewCountTag count={p.viewCount} />
           </div>
         )}
       </div>

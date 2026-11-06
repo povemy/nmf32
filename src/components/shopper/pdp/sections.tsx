@@ -17,6 +17,7 @@ import {
   Heart,
   Loader2,
   MessageCircle,
+  Pencil,
   Share2,
   ShieldCheck,
   Store,
@@ -36,8 +37,10 @@ import { ReviewFormDialog } from "../review-form-dialog";
 import type { PdpPayloadT } from "./types";
 
 // ---------------------------------------------------------------------------
-// 2.3 — price & promotion block (TikTok Shop reference: crimson hero price,
-// gradient discount badge, struck original — all numbers server-real)
+// 2.3 — price & promotion block. Buyer work order: the PRICING follows the
+// platform theme (brand teal) instead of red — hero price, discount badge
+// and savings line all ride the brand gradient. All numbers stay
+// server-real: no invented original prices, no fake countdowns.
 // ---------------------------------------------------------------------------
 export function PdpPriceBlock({
   price,
@@ -57,18 +60,18 @@ export function PdpPriceBlock({
         {off && compareAt && compareAt > price ? (
           <span
             aria-hidden="true"
-            className="mr-0.5 inline-flex items-baseline self-center rounded-lg bg-gradient-to-r from-rose-500 to-[#FE2C55] px-2 py-0.5 text-sm font-extrabold leading-none text-white shadow-sm"
+            className="mr-0.5 inline-flex items-baseline self-center rounded-lg bg-brand-gradient px-2 py-0.5 text-sm font-extrabold leading-none text-white shadow-sm"
           >
             -{off}%
           </span>
         ) : null}
-        <span className="text-[30px] font-extrabold leading-none tracking-tight text-rose-600 md:text-4xl">{formatMinor(price)}</span>
+        <span className="text-[30px] font-extrabold leading-none tracking-tight text-teal-700 md:text-4xl">{formatMinor(price)}</span>
         {compareAt && compareAt > price ? (
           <span className="text-sm text-muted-foreground line-through md:text-base">{formatMinor(compareAt)}</span>
         ) : null}
       </div>
       {savings > 0 ? (
-        <p className="mt-1.5 text-xs font-semibold text-rose-600">
+        <p className="mt-1.5 text-xs font-semibold text-teal-700">
           You save {formatMinor(savings)}
           {off ? <span className="ml-1 font-normal text-muted-foreground">({off}% off this option)</span> : null}
         </p>
@@ -586,17 +589,21 @@ export function PdpReviewsBlock({
         </div>
       </div>
 
-      {/* verified-buyer CTA — server-decided state, never client-asserted */}
+      {/* verified-buyer CTA — server-decided state, never client-asserted.
+          Buyer work order revamp: compact pill ("Write a review" + a small
+          +5 pts chip) instead of the long reward sentence. */}
       <div className="py-3">
         {eligibility.state === "eligible" ? (
-          <Button
+          <button
+            type="button"
             onClick={() => setFormOpen(true)}
-            className="min-h-[44px] w-full bg-brand-gradient text-white hover:brightness-110 sm:w-auto"
-            aria-label={`Write a review for ${productTitle}`}
+            className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:brightness-110 hover:shadow-lg active:scale-[0.98] sm:w-auto"
+            aria-label={`Write a review for ${productTitle} and earn 5 membership points`}
           >
-            <MessageCircle className="h-4 w-4" aria-hidden="true" />
-            Write a review — earn 5 points (≈ RM0.05)
-          </Button>
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+            Write a review
+            <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-extrabold leading-none">+5 pts</span>
+          </button>
         ) : eligibility.state === "already_reviewed" ? (
           <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-xs font-semibold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
             <BadgeCheck className="h-4 w-4 shrink-0" aria-hidden="true" />

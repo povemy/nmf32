@@ -46,6 +46,8 @@ export type PdpPayloadT = {
     ratingAvg: number;
     ratingCount: number;
     salesCount: number;
+    /** RAW impressions — post-increment per-GET count (buyer work order). */
+    viewCount: number;
     categoryId: string | null;
     categoryName: string | null;
     images: string[];

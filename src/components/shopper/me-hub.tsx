@@ -31,6 +31,7 @@ import {
   Loader2,
   MapPin,
   MessageSquareQuote,
+  Eye,
   Package,
   PackageCheck,
   Pencil,
@@ -38,6 +39,7 @@ import {
   Radio,
   RotateCcw,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
@@ -90,6 +92,7 @@ import {
   StatusBadge,
   Stars,
   dateShort,
+  formatViewCount,
   openProduct,
   statusLabel,
   type ProductCardT,
@@ -1804,6 +1807,10 @@ type ReviewSubmittedT = {
   rating: number;
   title: string | null;
   body: string | null;
+  // Display-guard flags: the system blanked a payload-carrying field (legacy
+  // row) — render a small "removed by the system" note instead of silence.
+  titleRemoved?: boolean;
+  bodyRemoved?: boolean;
   status: string;
   createdAt: string;
   product: { id: string; title: string; slug: string; imageUrl: string; store: { name: string; slug: string } };
@@ -2033,6 +2040,12 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
                         </div>
                         {r.title ? <p className="pt-1.5 text-xs font-semibold">{r.title}</p> : null}
                         {r.body ? <p className="whitespace-pre-line pt-0.5 text-xs text-slate-600">{r.body}</p> : null}
+                        {(r.titleRemoved || r.bodyRemoved) && (r.status === "published" || r.status === "pending") ? (
+                          <p className="inline-flex items-center gap-1 pt-1.5 text-[11px] font-medium text-rose-500">
+                            <ShieldAlert className="h-3 w-3" aria-hidden="true" />
+                            Some text was removed by the system — reviews must be plain text.
+                          </p>
+                        ) : null}
                         {r.status === "rejected" ? (
                           <p className="pt-1.5 text-[11px] text-rose-500">
                             This review was not published. {r.reward?.reversed ? "Its reward was reversed." : "Your reward for the submission is retained."}
@@ -2634,7 +2647,11 @@ function MeProductCard({ p, onOpen }: { p: RecProductT; onOpen: (p: RecProductT)
             <Star className="h-3 w-3 fill-amber-400 text-amber-400" aria-hidden="true" />
             {p.ratingAvg > 0 ? p.ratingAvg.toFixed(1) : "New"}
           </span>
-          <span className="text-[10px] text-slate-400 tabular-nums">{p.salesCount} sold</span>
+          {/* Buyer work order: Eye-icon impressions replace the sold figure. */}
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-400 tabular-nums" title={`${(p.viewCount ?? 0).toLocaleString("en-MY")} views`}>
+            <Eye className="h-3 w-3" aria-hidden="true" />
+            {formatViewCount(p.viewCount)}
+          </span>
         </div>
       </div>
     </button>

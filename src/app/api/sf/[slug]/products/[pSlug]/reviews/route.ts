@@ -4,7 +4,7 @@ import { handle, ok, okPaged, ApiError, logActivity } from "@/lib/api";
 import { requireShopper, type ShopperUserDTO } from "@/lib/auth";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { findEligibleOrderForReview, sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
-import { detectReviewSubmissionThreat } from "@/lib/review-text";
+import { detectReviewSubmissionThreat, sanitizeReviewTextForDisplay } from "@/lib/review-text";
 import { creditReviewReward, REVIEW_REWARD_POINTS, pointsToMinor } from "@/lib/review-rewards";
 
 export const dynamic = "force-dynamic";
@@ -107,9 +107,10 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
         orderId: r.orderId,
         customerName: r.customerName,
         rating: r.rating,
-        title: r.title,
-        body: r.body,
-        reply: r.reply,
+        // Display-side guard: legacy payload-carrying rows render blank.
+        title: sanitizeReviewTextForDisplay(r.title),
+        body: sanitizeReviewTextForDisplay(r.body),
+        reply: sanitizeReviewTextForDisplay(r.reply),
         createdAt: r.createdAt,
       })),
     },
