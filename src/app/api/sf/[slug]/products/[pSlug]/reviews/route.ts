@@ -4,6 +4,7 @@ import { handle, ok, okPaged, ApiError, logActivity } from "@/lib/api";
 import { requireShopper, type ShopperUserDTO } from "@/lib/auth";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { findEligibleOrderForReview, sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
+import { detectReviewSubmissionThreat } from "@/lib/review-text";
 import { creditReviewReward, REVIEW_REWARD_POINTS, pointsToMinor } from "@/lib/review-rewards";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export const dynamic = "force-dynamic";
 //   6. Duplicate review (409 REVIEW_ALREADY_EXISTS) — code-level check plus
 //      the DB @@unique([productId, shopperId]) as the race backstop (P2002).
 //   7. Input validation/sanitization (lib/reviews.ts — pure + unit-tested).
+//   7.5 Unsafe-content guard (lib/review-text.ts) — scripts/HTML/event
+//      handlers are rejected with 400 UNSAFE_CONTENT (never stored, never
+//      rewarded); leftover legacy payloads are blanked at display time.
 //   8. Identity rate limits: 3/hour/account, 10/hour/product.
 //   9. TRANSACTION: create review (pending) + credit reward ledger row.
 // ============================================================================
@@ -176,6 +180,20 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   // 7. Input validation + sanitization (customerName falls back to me.fullName).
   const parsed = sanitizeReviewInput(raw, me.fullName);
   if (!parsed.ok) throw new ApiError(400, "VALIDATION", parsed.errors.join("; "));
+
+  // 7.5 XSS/markup guard (buyer work order): detect script/HTML/event-handler
+  // payloads BEFORE anything is stored or rewarded — the orchestrator rejects
+  // with a dedicated code so the dialog can show its warning popup. Plain
+  // text always passes; the display path additionally blanks any legacy row
+  // that still carries a payload (lib/review-text.ts).
+  const threat = detectReviewSubmissionThreat(parsed.value);
+  if (threat) {
+    throw new ApiError(
+      400,
+      "UNSAFE_CONTENT",
+      `Reviews must be plain text — ${threat.pattern} are not allowed. Please remove them and submit plain text.`
+    );
+  }
 
   // 8. Identity-keyed rate limits (spread across IPs still throttles the
   //    account; a coordinated ring still throttles per product).
