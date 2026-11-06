@@ -276,7 +276,14 @@ function useMeData(enabled: boolean) {
 export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initialTab?: string }) {
   const meState = useApp((s) => s.me);
   const openShopperAuth = useApp((s) => s.openShopperAuth);
+  const setSurface = useApp((s) => s.setSurface);
   const shopper = meState.loaded ? meState.shopper : null;
+  // Portal sessions (seller/admin) browsing the buyer hub: the session is
+  // alive but there is no buyer profile, so the guest gate below would tell a
+  // SIGNED-IN seller to "sign in" — same confusion as the marketplace top-bar
+  // bug. Detect them so the gate can explain and offer the portal return.
+  const portalSeller = meState.loaded ? meState.seller : null;
+  const portalAdmin = meState.loaded ? meState.admin : null;
   const [sub, setSub] = useState<MeSub | null>((initialTab as MeSub) ?? null);
   const [purchaseTab, setPurchaseTab] = useState<string>(initialTab && initialTab.startsWith("bucket:") ? initialTab.slice(7) : "all");
   const data = useMeData(Boolean(shopper));
@@ -310,6 +317,10 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
   if (!shopper) {
     // Bubbly Cyan recipe 10 — white rounded-3xl envelope, gradient squircle
     // logo, extrabold heading, gradient CTA pill (openShopperAuth preserved).
+    // Portal sessions (seller/admin): the buyer features genuinely need a
+    // buyer account, but the user is NOT signed out — explain that and offer
+    // the way back to their own portal instead of a bare "sign in" wall.
+    const portal = portalSeller ? "seller" : portalAdmin ? "admin" : null;
     return (
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
         <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-card p-8 text-center shadow-soft-card sm:p-12">
@@ -329,6 +340,22 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
             >
               Sign in / Create account
             </Button>
+            {portal ? (
+              <>
+                <p className="max-w-md text-xs leading-relaxed text-slate-400">
+                  You are still signed in with your {portal === "seller" ? "seller" : "admin"} account — purchases, vouchers and
+                  likes live on a buyer account.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => setSurface(portal)}
+                  className="min-h-[44px] gap-2"
+                >
+                  {portal === "seller" ? <Store className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                  {portal === "seller" ? "Back to Seller Hub" : "Open Admin Console"}
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>

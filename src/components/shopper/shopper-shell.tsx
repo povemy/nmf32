@@ -1249,6 +1249,24 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
   const openShopperAuth = useApp((s) => s.openShopperAuth);
   const logout = useApp((s) => s.logout);
   const shopper = me.loaded ? me.shopper : null;
+  const seller = me.loaded ? me.seller : null;
+  const admin = me.loaded ? me.admin : null;
+
+  // Session probe in flight — same-sized neutral placeholder. Both the server
+  // render and the first client render paint this (me starts unloaded), so it
+  // is hydration-safe; it stops the header from FLASHING "Sign in" at a
+  // signed-in user (buyer, seller or admin) during the /api/auth/me round-trip.
+  if (!me.loaded) {
+    return <span className="inline-flex h-11 min-w-[3.5rem] items-center" aria-hidden="true" />;
+  }
+
+  // Seller/admin session browsing the marketplace. The session is alive — it
+  // just is not a BUYER profile, so me.shopper is null. Reported bug: the top
+  // bar rendered "Sign in" for a signed-in seller, looking like an automatic
+  // logout. Fix: show WHO is signed in, with a way back to their own portal
+  // and a real sign-out — no misleading "Sign in".
+  if (!shopper && seller) return <PortalAccountChip kind="seller" />;
+  if (!shopper && admin) return <PortalAccountChip kind="admin" />;
 
   if (!shopper) {
     return (
@@ -1298,6 +1316,84 @@ function AccountButton({ nav }: { nav: (v: ShopperView) => void }) {
             // Shared logout — clears identity, re-checks the session and
             // redirects to the marketplace homepage (view reset via the
             // signed-out event listener in ShopperShell).
+            await logout();
+            toast.success("Signed out");
+          }}
+        >
+          <LogOut className="h-4 w-4" /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// Portal (seller/admin) identity chip for the marketplace top bar — the
+// account IS signed in while browsing the shopper surface, just with a portal
+// profile instead of a buyer profile. Chip shape mirrors the shopper chip
+// (avatar + first name) plus a small role tag, so the signed-in state is
+// obvious at a glance. The dropdown offers the portal return, the seller's
+// own storefront, and the shared sign-out.
+function PortalAccountChip({ kind }: { kind: "seller" | "admin" }) {
+  const me = useApp((s) => s.me);
+  const logout = useApp((s) => s.logout);
+  const setSurface = useApp((s) => s.setSurface);
+  const setActiveStoreSlug = useApp((s) => s.setActiveStoreSlug);
+  // Guarded by the caller: one of these is non-null when this renders.
+  const seller = me.loaded ? me.seller : null;
+  const admin = me.loaded ? me.admin : null;
+
+  const name = kind === "seller" ? seller?.displayName || seller?.fullName || "Seller" : admin?.name || "Admin";
+  const email = kind === "seller" ? seller?.email ?? "" : admin?.email ?? "";
+  const storeSlug = kind === "seller" ? seller?.storeSlug ?? null : null;
+  const roleLabel = kind === "seller" ? "Seller" : "Admin";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50 transition-colors"
+          aria-label={`Signed in as ${name} — ${roleLabel.toLowerCase()} account`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-extrabold text-white">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="hidden sm:inline max-w-28 truncate">{name.split(" ")[0]}</span>
+          <span className="hidden md:inline-flex items-center rounded-full bg-teal-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-teal-700">
+            {roleLabel}
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <div className="px-3 py-2">
+          <p className="truncate text-sm font-semibold">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">{email}</p>
+          <p className="mt-1 text-[11px] font-medium text-teal-700">
+            {kind === "seller" ? "Browsing the marketplace with your seller account" : "Browsing the marketplace with your admin account"}
+          </p>
+        </div>
+        <Separator />
+        {kind === "seller" && storeSlug ? (
+          <DropdownMenuItem
+            className="min-h-[44px]"
+            onClick={() => {
+              // Shopper surface is already active — the activeStoreSlug effect
+              // in ShopperShell switches the view to this storefront.
+              setActiveStoreSlug(storeSlug);
+            }}
+          >
+            <Store className="h-4 w-4 text-teal-700" /> My storefront
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem className="min-h-[44px]" onClick={() => setSurface(kind === "seller" ? "seller" : "admin")}>
+          {kind === "seller" ? <Store className="h-4 w-4 text-teal-700" /> : <ShieldCheck className="h-4 w-4 text-teal-700" />}
+          {kind === "seller" ? "Back to Seller Hub" : "Open Admin Console"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="min-h-[44px] text-rose-600"
+          onClick={async () => {
+            // Shared logout — same flow as the shopper chip: clears identity,
+            // destroys the server session and re-checks the session state.
             await logout();
             toast.success("Signed out");
           }}
