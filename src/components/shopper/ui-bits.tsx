@@ -26,6 +26,7 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  ShoppingBag,
   ShoppingCart,
   Star,
   StarHalf,
@@ -654,6 +655,27 @@ function ViewCountTag({ count }: { count: number | null | undefined }) {
   );
 }
 
+/** Units-sold tag (seller store settings work order) — the seller's alternative
+ *  card badge when they choose “Show number of units sold” over views. Same
+ *  compact formatting as the views tag. */
+function SoldCountTag({ count }: { count: number | null | undefined }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted-foreground tabular-nums"
+      aria-label={`${count ?? 0} sold`}
+      title={`${(count ?? 0).toLocaleString("en-MY")} sold`}
+    >
+      <ShoppingBag className="h-3 w-3" aria-hidden="true" />
+      {formatViewCount(count)}
+    </span>
+  );
+}
+
+/** The card badge the caller configured — views (default) or units sold. */
+function CardMetricTag({ p, metric }: { p: ProductCardT; metric: "views" | "sold" }) {
+  return metric === "sold" ? <SoldCountTag count={p.salesCount} /> : <ViewCountTag count={p.viewCount} />;
+}
+
 export function ProductCard({
   p,
   onOpen,
@@ -666,6 +688,8 @@ export function ProductCard({
   quickActions = false,
   mobileActions,
   homeMode = false,
+  showStars = true,
+  metric = "views",
 }: {
   p: ProductCardT;
   onOpen: (p: ProductCardT) => void;
@@ -685,6 +709,13 @@ export function ProductCard({
    *  row and reduces the price type by 20% (14→11px, compare-at 11→10px).
    *  Search results, storefronts and PDP keep the full card (default off). */
   homeMode?: boolean;
+  /** Seller store settings work order — per-STORE toggle: rating stars on/off
+   *  on that store's product cards (storefront grids pass the store config;
+   *  every other surface keeps the platform default of showing stars). */
+  showStars?: boolean;
+  /** Seller store settings work order — which badge the card shows: "views"
+   *  (Eye icon, impressions — platform default) or "sold" (units sold). */
+  metric?: "views" | "sold";
 }) {
   const discount =
     p.compareAtPriceMinor && p.compareAtPriceMinor > p.priceMinor
@@ -696,6 +727,10 @@ export function ProductCard({
   const priceCss: React.CSSProperties = cardStyle
     ? { fontFamily: fontStack(cardStyle.priceFont), fontSize: `${priceSizePx(cardStyle.priceSize)}px`, textAlign: cardStyle.priceAlign as React.CSSProperties["textAlign"] }
     : {};
+  // Seller store settings work order — per-store card badge (views or sold)
+  // and optional star suppression; stars hidden → badge right-aligned.
+  const metricTag = <CardMetricTag p={p} metric={metric} />;
+  const ratingRow = !homeMode && showStars;
 
   // ---- quick mode (homepage flash deals / trending rails, md+) --------------
   if (quickActions) {
@@ -726,16 +761,15 @@ export function ProductCard({
           {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
           {/* Buyer work order: the Eye-icon VIEW count replaces the "sold"
               figure — impressions (raw PDP loads), a magnet for sellers to
-              drive traffic, not a sales claim. */}
-          {!homeMode ? (
+              drive traffic, not a sales claim. Seller store settings work
+              order: the store may swap the badge to units sold / hide stars. */}
+          {ratingRow ? (
             <div className="flex items-center justify-between gap-1 pt-0.5">
               <Stars rating={p.ratingAvg} />
-              <ViewCountTag count={p.viewCount} />
+              {metricTag}
             </div>
           ) : (
-            <div className="pt-0.5 text-right">
-              <ViewCountTag count={p.viewCount} />
-            </div>
+            <div className="pt-0.5 text-right">{metricTag}</div>
           )}
         </div>
         {/* full-card open hit-area (sits BELOW the quick-action buttons) */}
@@ -782,15 +816,13 @@ export function ProductCard({
           </div>
         ) : null}
         {showStore ? <p className="text-[11px] text-muted-foreground truncate">{p.storeName}</p> : null}
-        {!homeMode ? (
+        {ratingRow ? (
           <div className="flex items-center justify-between gap-1 pt-0.5">
             <Stars rating={p.ratingAvg} />
-            <ViewCountTag count={p.viewCount} />
+            {metricTag}
           </div>
         ) : (
-          <div className="pt-0.5 text-right">
-            <ViewCountTag count={p.viewCount} />
-          </div>
+          <div className="pt-0.5 text-right">{metricTag}</div>
         )}
       </div>
     </button>

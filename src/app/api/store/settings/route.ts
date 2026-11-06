@@ -52,6 +52,21 @@ export const PATCH = handle(async (req: Request) => {
   if (body.supportEmail !== undefined) data.supportEmail = body.supportEmail == null ? null : String(body.supportEmail);
   if (body.supportPhone !== undefined) data.supportPhone = body.supportPhone == null ? null : String(body.supportPhone);
   if (body.whatsapp !== undefined) data.whatsapp = body.whatsapp == null ? null : String(body.whatsapp);
+  // Storefront display + home organization (seller store settings work order):
+  // stars on/off + views-or-sold card badge, and the Featured / Fresh arrivals
+  // home section toggles + stacking order. Every seller configures these
+  // independently; /api/sf/[slug] consumes them for section assembly.
+  if (body.cardShowStars !== undefined) data.cardShowStars = !!body.cardShowStars;
+  if (body.cardMetric !== undefined) {
+    const metric = String(body.cardMetric);
+    if (metric !== "views" && metric !== "sold") {
+      throw new ApiError(400, "VALIDATION", 'cardMetric must be "views" or "sold"');
+    }
+    data.cardMetric = metric;
+  }
+  if (body.homeShowFeatured !== undefined) data.homeShowFeatured = !!body.homeShowFeatured;
+  if (body.homeShowFresh !== undefined) data.homeShowFresh = !!body.homeShowFresh;
+  if (body.homeFeaturedFirst !== undefined) data.homeFeaturedFirst = !!body.homeFeaturedFirst;
   // marketplaceOptIn lives on the Seller record (controls Market portal visibility), not the Store.
   if (body.marketplaceOptIn !== undefined) sellerData.marketplaceOptIn = !!body.marketplaceOptIn;
   // D2 — logoUrl/bannerUrl are seller-controlled URLs rendered on the shopper

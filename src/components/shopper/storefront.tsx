@@ -73,7 +73,14 @@ export type SfStore = {
   followers?: number | null;
   /** Seller-customized product-card typography (null = platform defaults). */
   cardStyle?: CardStyleTokens | null;
+  /** Seller store settings work order — the store's own categories (chip row
+   *  below the hero) + per-store card display config. */
+  categories?: SfCategoryT[];
+  display?: { showStars: boolean; metric: "views" | "sold" };
 };
+
+/** One of the store's own storefront categories (seller-defined). */
+export type SfCategoryT = { id: string; name: string; sortOrder: number };
 
 type SfHomePayload = { store: SfStore; page: { id: string; title: string; slug: string; sections: Section[]; publishedVersion: number } };
 type SfPagePayload = { store: SfStore; page: { id: string; title: string; slug: string; pageType?: string }; sections: Section[] };
@@ -166,6 +173,10 @@ type SfRenderCtx = {
   sfSearch: string;
   onSearch: (q: string) => void;
   productAnchorId: string | null;
+  /** Seller store settings work order — the selected storefront category chip
+   *  (null = “All products”, the default → Fresh arrivals layout). */
+  activeCategory: string | null;
+  onCategory: (id: string | null) => void;
 };
 
 function SectionRenderer({ sections, rctx }: { sections: Section[]; rctx: SfRenderCtx }) {
@@ -213,6 +224,10 @@ function SectionBody({ type, props, rctx }: { type: string; props: Record<string
       return <ImageBanner props={props} rctx={rctx} />;
     case "product_grid":
       return <ProductGridSection props={props} rctx={rctx} />;
+    case "store_categories":
+      // Seller store settings work order — system section injected by
+      // /api/sf/[slug]; renders nothing when the store has no categories.
+      return <StoreCategoryRow rctx={rctx} />;
     case "collection_list":
       // No public collections endpoint exists in this sandbox (only the
       // seller-scoped /api/store/collections) — hide gracefully per spec.
@@ -589,8 +604,55 @@ function ImageBanner({ props, rctx }: { props: Record<string, unknown>; rctx: Sf
 
 // --- 5. product_grid -----------------------------------------------------------
 
+// --- 4b. store_categories (system section — chip row below the hero) ------------
+
+/** Seller store settings work order — the inline category chips just below the
+ *  hero. Clicking a chip filters the store's product grids IMMEDIATELY (client
+ *  state → the grids refetch with ?category=<id>); the default “All products”
+ *  chip restores the Fresh arrivals layout. Styled with the store theme vars. */
+function StoreCategoryRow({ rctx }: { rctx: SfRenderCtx }) {
+  const { store, activeCategory, onCategory } = rctx;
+  const categories = store.categories ?? [];
+  if (categories.length === 0) return null;
+
+  const chip = (id: string | null, label: string) => {
+    const active = activeCategory === id;
+    return (
+      <button
+        key={id ?? "all"}
+        type="button"
+        role="tab"
+        aria-selected={active}
+        onClick={() => onCategory(id)}
+        className={cn(
+          "inline-flex min-h-[44px] shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1",
+          active ? "shadow-sm" : "bg-background text-foreground/80 hover:text-[var(--sf-primary)] hover:border-[var(--sf-primary)]"
+        )}
+        style={
+          active
+            ? { backgroundColor: "var(--sf-primary)", borderColor: "var(--sf-primary)", color: "#fff" }
+            : undefined
+        }
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <section className="border-b bg-muted/30" aria-label="Shop by category" style={{ fontFamily: "var(--sf-font-body)" }}>
+      <div className="mx-auto max-w-7xl px-4">
+        <div className="flex items-center gap-2 overflow-x-auto py-3" role="tablist" aria-label="Product categories">
+          {chip(null, "All products")}
+          {categories.map((c) => chip(c.id, c.name))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; rctx: SfRenderCtx }) {
-  const { store, sfSearch } = rctx;
+  const { store, sfSearch, activeCategory } = rctx;
   const nav = rctx.nav.nav; // ShopperCtx → nav function
   const source = str(props, "source", "latest");
   const collectionSlug = str(props, "collectionSlug");
@@ -602,12 +664,18 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  // Seller store settings work order — the category chips filter the
+  // SYSTEM-managed grids (latest/featured). Collection grids keep their
+  // curated membership untouched.
+  const categoryFilter = activeCategory && !collectionSlug ? activeCategory : null;
+
   useEffect(() => {
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
     setProducts(null);
     const params = new URLSearchParams({ source, limit: String(expanded ? 50 : limit) });
     if (collectionSlug) params.set("collection", collectionSlug);
+    if (categoryFilter) params.set("category", categoryFilter);
     if (sfSearch.trim()) params.set("search", sfSearch.trim());
     fetchJson<ProductCardT[]>(`/api/sf/${encodeURIComponent(store.slug)}/products?${params.toString()}`)
       .then((d) => alive && setProducts(Array.isArray(d) ? d : []))
@@ -615,7 +683,7 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
     return () => {
       alive = false;
     };
-  }, [store.slug, source, collectionSlug, limit, expanded, sfSearch]);
+  }, [store.slug, source, collectionSlug, limit, expanded, sfSearch, categoryFilter]);
 
   const title = str(props, "title");
   const colClass =
@@ -655,7 +723,16 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
       ) : (
         <div className={cn("grid gap-3 sm:gap-4", colClass)}>
           {products.map((p) => (
-            <ProductCard key={p.id} p={p} showStore={false} hidePrice={!showPrice} cardStyle={rctx.store.cardStyle} onOpen={(pp) => openProduct(rctx.nav, pp)} />
+            <ProductCard
+              key={p.id}
+              p={p}
+              showStore={false}
+              hidePrice={!showPrice}
+              cardStyle={rctx.store.cardStyle}
+              showStars={rctx.store.display?.showStars !== false}
+              metric={rctx.store.display?.metric ?? "views"}
+              onOpen={(pp) => openProduct(rctx.nav, pp)}
+            />
           ))}
         </div>
       )}
@@ -1196,6 +1273,10 @@ export default function StorefrontView({ ctx, slug }: { ctx: ShopperCtx; slug: s
   const [data, setData] = useState<SfHomePayload | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [sfSearch, setSfSearch] = useState("");
+  // Seller store settings work order — the storefront category chip selection.
+  // null = “All products” (default): the home layout renders Fresh arrivals
+  // (and Featured, when the seller enabled it) exactly as the seller arranged.
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1203,6 +1284,7 @@ export default function StorefrontView({ ctx, slug }: { ctx: ShopperCtx; slug: s
     setData(null);
     setNotFound(false);
     setSfSearch("");
+    setActiveCategory(null);
     fetchJson<SfHomePayload>(`/api/sf/${encodeURIComponent(slug)}`)
       .then((d) => alive && setData(d))
       .catch(() => alive && setNotFound(true));
@@ -1233,7 +1315,10 @@ export default function StorefrontView({ ctx, slug }: { ctx: ShopperCtx; slug: s
 
   return (
     <StorefrontChrome store={store} title={page.title} ctx={ctx}>
-      <SectionRenderer sections={page.sections} rctx={{ store, nav: ctx, openCart: ctx.openCart, sfSearch, onSearch: setSfSearch, productAnchorId }} />
+      <SectionRenderer
+        sections={page.sections}
+        rctx={{ store, nav: ctx, openCart: ctx.openCart, sfSearch, onSearch: setSfSearch, productAnchorId, activeCategory, onCategory: setActiveCategory }}
+      />
     </StorefrontChrome>
   );
 }
@@ -1277,7 +1362,10 @@ export function StorePageView({ ctx, slug, pageSlug }: { ctx: ShopperCtx; slug: 
 
   return (
     <StorefrontChrome store={store} title={page.title} ctx={ctx}>
-      <SectionRenderer sections={sections} rctx={{ store, nav: ctx, openCart: ctx.openCart, sfSearch, onSearch: setSfSearch, productAnchorId }} />
+      <SectionRenderer
+        sections={sections}
+        rctx={{ store, nav: ctx, openCart: ctx.openCart, sfSearch, onSearch: setSfSearch, productAnchorId, activeCategory: null, onCategory: () => {} }}
+      />
     </StorefrontChrome>
   );
 }

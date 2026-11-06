@@ -447,3 +447,72 @@ export function defaultPageSections(pageType: string, storeName: string): Sectio
       return [mk("announcement_bar"), mk("header"), mk("rich_text", { heading: pageType }), mk("footer")];
   }
 }
+
+// ----------------------------------------------------------------------------
+// Storefront home assembly (seller store settings work order)
+// ----------------------------------------------------------------------------
+
+/** Store settings that drive storefront home assembly. */
+export type StoreHomeOptions = {
+  homeShowFeatured: boolean;
+  homeShowFresh: boolean;
+  homeFeaturedFirst: boolean;
+  hasCategories: boolean;
+};
+
+/** System section ids — stable so #products anchors + React keys survive. */
+export const SYS_CATEGORY_SECTION_ID = "sys-store-categories";
+export const SYS_FEATURED_SECTION_ID = "sys-featured";
+export const SYS_FRESH_SECTION_ID = "sys-fresh";
+
+/** Seller store settings work order — assemble the storefront HOME sections:
+ *  1. seller-authored `product_grid` sections with a SYSTEM source
+ *     (latest/featured) are REPLACED by the toggle-controlled system sections,
+ *     so the settings toggles are the single source of truth (seller-curated
+ *     COLLECTION grids are kept untouched);
+ *  2. the inline category chip row (only when the store has categories) plus
+ *     the enabled system grids are injected right below the hero — or after
+ *     the leading chrome sections (announcement/header) when there is no hero.
+ *  Fresh arrivals is the default-on section; featured is opt-in. When both
+ *  are shown, homeFeaturedFirst decides which stacks on top. Pure data
+ *  shaping — consumed by /api/sf/[slug]. */
+export function assembleStorefrontSections(doc: PageDoc, opts: StoreHomeOptions): Section[] {
+  const kept = doc.sections.filter((s) => {
+    if (s.type !== "product_grid") return true;
+    const src = String((s.props as Record<string, unknown> | undefined)?.source ?? "latest");
+    return src !== "latest" && src !== "featured";
+  });
+
+  const mkGrid = (id: string, title: string, source: "latest" | "featured", limit: number): Section => ({
+    id,
+    type: "product_grid",
+    props: { title, source, limit, columns: 4, showPrice: true, showViewAll: true },
+  });
+  const featured = mkGrid(SYS_FEATURED_SECTION_ID, "Featured products", "featured", 8);
+  const fresh = mkGrid(SYS_FRESH_SECTION_ID, "Fresh arrivals", "latest", 12);
+
+  const grids: Section[] = [];
+  if (opts.homeShowFeatured && opts.homeShowFresh) {
+    grids.push(...(opts.homeFeaturedFirst ? [featured, fresh] : [fresh, featured]));
+  } else if (opts.homeShowFeatured) {
+    grids.push(featured);
+  } else if (opts.homeShowFresh) {
+    grids.push(fresh);
+  }
+
+  // The chip row only makes sense when there are grids to filter.
+  const injected: Section[] =
+    grids.length > 0 && opts.hasCategories
+      ? [{ id: SYS_CATEGORY_SECTION_ID, type: "store_categories", props: {} }, ...grids]
+      : grids;
+  if (injected.length === 0) return kept;
+
+  let idx = kept.findIndex((s) => s.type === "hero");
+  if (idx >= 0) {
+    idx += 1; // right below the hero, per the work order
+  } else {
+    const firstContent = kept.findIndex((s) => s.type !== "announcement_bar" && s.type !== "header");
+    idx = firstContent >= 0 ? firstContent : kept.length;
+  }
+  return [...kept.slice(0, idx), ...injected, ...kept.slice(idx)];
+}

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // collection, source, limit); products+stores tags busted on mutations.
 // Advisory listing data only — checkout revalidates transactionally.
 const loadSfProducts = publicCache(
-  async (slug: string, search: string, collectionSlug: string, source: string, limit: number) => {
+  async (slug: string, search: string, collectionSlug: string, source: string, limit: number, categoryId: string) => {
     // C1.3 (seller publication governance): store.status "live" alone is not
     // proof of eligibility — the store's seller must be admin-approved, so an
     // inactive seller's storefront listing 404s (fail closed).
@@ -55,6 +55,11 @@ const loadSfProducts = publicCache(
       where.isFeatured = true;
     }
 
+    // Seller store settings work order — storefront category chip filter (the
+    // store's OWN StoreCategory, not the global marketplace Category). The
+    // client sends it for the system-managed latest/featured grids.
+    if (categoryId) where.storeCategoryId = categoryId;
+
     // Mutable array type — `as const` (readonly) is not assignable to Prisma's
     // orderBy input, and the resulting generic poisoning stripped the include
     // types off the findMany result below.
@@ -77,7 +82,7 @@ const loadSfProducts = publicCache(
   { ttl: 45, tags: [PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.stores] }
 );
 
-// GET /api/sf/[slug]/products?search=&collection=&source=latest|featured&limit=
+// GET /api/sf/[slug]/products?search=&collection=&source=latest|featured&category=&limit=
 export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const { slug } = await ctx.params;
   const url = new URL(req.url);
@@ -87,9 +92,10 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
   const search = normalizeSearchQuery(url.searchParams.get("search"));
   const collectionSlug = url.searchParams.get("collection")?.trim() ?? "";
   const source = url.searchParams.get("source") ?? "latest";
+  const categoryId = url.searchParams.get("category")?.trim() ?? "";
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") ?? "8", 10) || 8));
 
-  const result = await loadSfProducts(slug, search, collectionSlug, source, limit);
+  const result = await loadSfProducts(slug, search, collectionSlug, source, limit, categoryId);
   if (result.notFound) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
   return ok(result.products.map((p) => toProductCard(p as ProductWithRelations)));
 });

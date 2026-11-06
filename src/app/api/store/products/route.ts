@@ -63,10 +63,22 @@ export const POST = handle(async (req: Request) => {
     if (!cat) throw new ApiError(400, "VALIDATION", "Category not found");
   }
 
+  // Storefront organization (seller store settings work order) — create-time
+  // category assignment + featured flag, same validation as the PATCH route.
+  const storeCategoryId =
+    body.storeCategoryId != null && String(body.storeCategoryId) !== "" ? String(body.storeCategoryId) : null;
+  if (storeCategoryId) {
+    const storeCat = await db.storeCategory.findFirst({ where: { id: storeCategoryId, storeId: store.id } });
+    if (!storeCat) throw new ApiError(400, "VALIDATION", "Category not found");
+  }
+  const isFeatured = !!body.isFeatured;
+
   const product = await db.product.create({
     data: {
       storeId: store.id,
       categoryId,
+      storeCategoryId,
+      isFeatured,
       title,
       slug,
       description,
@@ -94,6 +106,6 @@ export const POST = handle(async (req: Request) => {
     meta: { title, status, flags },
   });
 
-  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
+  bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market, PUBLIC_CACHE_TAGS.stores);
   return ok(product, { status: 201 });
 });

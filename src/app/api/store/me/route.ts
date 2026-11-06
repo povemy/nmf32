@@ -109,6 +109,13 @@ export const GET = handle(async () => {
       // marketplaceOptIn lives on the Seller record — surface it under store for the settings UI
       marketplaceOptIn: sellerRow?.marketplaceOptIn ?? true,
       theme: store.themeJson,
+      // Storefront display + home organization (seller store settings work
+      // order) — the Storefront settings tab hydrates from this payload.
+      cardShowStars: store.cardShowStars,
+      cardMetric: store.cardMetric,
+      homeShowFeatured: store.homeShowFeatured,
+      homeShowFresh: store.homeShowFresh,
+      homeFeaturedFirst: store.homeFeaturedFirst,
     },
     wallet,
     onboarding: { step, checklist },

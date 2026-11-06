@@ -40,6 +40,19 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     }
     data.categoryId = categoryId;
   }
+  // Storefront organization (seller store settings work order): assign the
+  // product to one of the store's OWN categories (chip row under the hero)
+  // and/or feature it in the home Featured section.
+  if (body.storeCategoryId !== undefined) {
+    const storeCategoryId =
+      body.storeCategoryId == null || body.storeCategoryId === "" ? null : String(body.storeCategoryId);
+    if (storeCategoryId) {
+      const cat = await db.storeCategory.findFirst({ where: { id: storeCategoryId, storeId: store.id } });
+      if (!cat) throw new ApiError(400, "VALIDATION", "Category not found");
+    }
+    data.storeCategoryId = storeCategoryId;
+  }
+  if (body.isFeatured !== undefined) data.isFeatured = !!body.isFeatured;
   if (Array.isArray(body.images)) {
     // D2 — every persisted image passes the URL guard (http(s) or site-relative).
     const images = sanitizeProductImages(body.images);
@@ -111,6 +124,11 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     },
   });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
+  // Storefront home assembly (sf-home payload) is tagged with the stores tag —
+  // a category re-assignment or featured toggle changes which sections render.
+  if (data.storeCategoryId !== undefined || data.isFeatured !== undefined) {
+    bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
+  }
   return ok(fresh);
 });
 

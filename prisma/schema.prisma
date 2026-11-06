@@ -299,6 +299,18 @@ model Store {
   whatsapp         String?
   socialJson       String                  @default("{}")
   templateKey      String                  @default("aurora")
+  // STOREFRONT DISPLAY + HOME ORGANIZATION (seller store settings work order):
+  // cardShowStars toggles the rating stars on this store's product cards;
+  // cardMetric picks the card badge metric — "views" (Eye icon, impressions)
+  // or "sold" (units sold). homeShowFeatured / homeShowFresh toggle the two
+  // system-managed home sections (Featured / Fresh arrivals); homeFeaturedFirst
+  // sets which renders on top when both are shown. Consumed by the /api/sf/[slug]
+  // section assembly — every seller organizes their own store independently.
+  cardShowStars     Boolean               @default(true)
+  cardMetric        String                @default("views") // "views" | "sold"
+  homeShowFeatured  Boolean               @default(false)
+  homeShowFresh     Boolean               @default(true)
+  homeFeaturedFirst Boolean               @default(false)
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   apiKeys          ApiKey[]
@@ -326,6 +338,24 @@ model Store {
   webhookEndpoints WebhookEndpoint[]
   cartSettings     CartSettings?
   cardStyle        ProductCardStyle?
+  categories       StoreCategory[]
+}
+
+// STOREFRONT CATEGORIES (seller store settings work order) — seller-defined
+// categories for their OWN products, rendered as the inline category chip row
+// below the storefront hero. Distinct from the global marketplace Category
+// model. Deleting a category keeps its products (storeCategoryId → null).
+model StoreCategory {
+  id        String    @id @default(cuid())
+  storeId   String
+  name      String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@index([storeId, sortOrder])
 }
 
 model StoreDomain {
@@ -424,6 +454,10 @@ model Product {
   orderItems                OrderItem[]
   affiliateCollectionItems  AffiliateCollectionItem[]
   category                  Category?           @relation(fields: [categoryId], references: [id])
+  // Seller-defined storefront category (chip row under the hero). SetNull on
+  // category delete — the product simply falls back to “All products”.
+  storeCategoryId           String?
+  storeCategory             StoreCategory?      @relation(fields: [storeCategoryId], references: [id], onDelete: SetNull)
   store                     Store               @relation(fields: [storeId], references: [id])
   images                    ProductImage[]
   variants                  ProductVariant[]

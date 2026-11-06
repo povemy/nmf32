@@ -64,6 +64,13 @@ export type StoreMe = {
     whatsapp: string | null;
     marketplaceOptIn: boolean;
     theme: string;
+    // Seller store settings work order — storefront display + home
+    // organization config (surfaced by /api/store/me for the Storefront tab).
+    cardShowStars: boolean;
+    cardMetric: "views" | "sold";
+    homeShowFeatured: boolean;
+    homeShowFresh: boolean;
+    homeFeaturedFirst: boolean;
   };
   wallet: SellerWallet | null;
   onboarding: { step: string; checklist: { profile: boolean; storeIdentity: boolean; kyc: boolean; bank: boolean; products: boolean } };
@@ -105,8 +112,9 @@ export type SellerViewName =
 export type WalletTab = "overview" | "pending";
 /** Page Builder tabs — "cards" = product card style, "cart" = cart experience. */
 export type BuilderTab = "pages" | "cards" | "cart";
-/** Store Settings tabs — "domains" = custom domain management (SD-09). */
-export type SettingsTab = "general" | "domains";
+/** Store Settings tabs — "domains" = custom domain management (SD-09),
+ *  "storefront" = display + home organization (seller store settings WO). */
+export type SettingsTab = "general" | "domains" | "storefront";
 /** Affiliate programme tabs — opt-in/rate, product enrollment, report. */
 export type AffiliateTab = "program" | "products" | "report";
 
