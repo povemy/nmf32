@@ -735,7 +735,8 @@ function MarketHeader({
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <>
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       {/* brand gradient strip */}
       <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
       {/* Mobile homepage work order 2: below md the header is TWO rows —
@@ -744,7 +745,16 @@ function MarketHeader({
           single-row layout via flex-nowrap + order reset. One search input /
           suggestion dropdown — reflowed, never duplicated.
           Follow-up tightening pass: mobile paddings/gaps reduced, search
-          height -25% (44→33px). */}
+          height -25% (44→33px).
+          Top-bar space fix (buyer feedback): row 1 must NEVER wrap into a
+          third row — when signed in the right cluster gains a Messages
+          button (~42px) which used to overflow at 320–389px and wrap the
+          cluster onto its own line (+50px of header). Two guarantees: the
+          logo wordmark now appears only from 400px up (icon-only below), and
+          the cluster's mobile button paddings are tightened, so the row fits
+          at every width ≥320px in BOTH login states — the top bar layout is
+          identical everywhere (homepage, PDP, search, …) and no longer
+          changes when you log in. */}
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 gap-y-1.5 px-3 py-2 sm:gap-x-4 md:flex-nowrap md:px-4 md:py-3">
         {/* mobile menu */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -799,7 +809,7 @@ function MarketHeader({
           </SheetContent>
         </Sheet>
 
-        {/* logo — hidden on the Me page (mobile) which becomes an account bar */}
+          {/* logo — hidden on the Me page (mobile) which becomes an account bar */}
         <button
           type="button"
           onClick={() => nav({ name: "market" })}
@@ -811,8 +821,13 @@ function MarketHeader({
           </span>
           {/* Mobile homepage work order 2: the wordmark shows from 360px up
               (reference header) — at the very narrow 320px the icon alone
-              keeps row 1 comfortable beside the right icon cluster. */}
-          <span className="hidden min-[360px]:inline text-base font-extrabold tracking-tight text-teal-900 sm:text-lg">
+              keeps row 1 comfortable beside the right icon cluster.
+              Top-bar space fix (buyer feedback): raised to 400px — with the
+              signed-in cluster (Messages + Wishlist + Cart + account) the
+              wordmark made row 1 overflow at 360–389px and wrap the cluster
+              onto a third header line. Icon-only below 400px keeps row 1 on
+              ONE line at every mobile width, logged in or out. */}
+          <span className="hidden min-[400px]:inline text-base font-extrabold tracking-tight text-teal-900 sm:text-lg">
             NOMO<span className="text-brand-gradient">FEE</span>
           </span>
         </button>
@@ -928,7 +943,7 @@ function MarketHeader({
               onClick={() => nav({ name: "messages" })}
               aria-label={`My messages${unreadChats > 0 ? `, ${unreadChats} unread` : ""}`}
               className={cn(
-                "relative inline-flex max-md:order-4 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+                "relative inline-flex max-md:order-4 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
                 view.name === "messages" && "text-teal-800 bg-teal-50"
               )}
             >
@@ -976,7 +991,7 @@ function MarketHeader({
             onClick={() => (shopperSignedIn ? nav({ name: "me", tab: "likes" }) : openShopperAuth())}
             aria-label="Wishlist — my liked products"
             className={cn(
-              "inline-flex max-md:order-2 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
+              "inline-flex max-md:order-2 min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2 sm:px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors",
               view.name === "me" && view.tab === "likes" && "text-teal-800 bg-teal-50"
             )}
           >
@@ -1089,12 +1104,26 @@ function MarketHeader({
         ) : null}
       </div>
 
-      {/* Mobile follow-up adjustment: the CATEGORIES strip now lives HERE —
-          pinned under the search row so it floats with the sticky header
-          (the homepage “Shop by category” grid becomes desktop-only). Same
-          live category tree the hamburger Sheet uses (one coalesced fetch,
-          shared with the homepage — no extra request). Compact sizing: 28px
-          pastel circles (-40% vs the old 48px grid icons) + 9px labels. */}
+      {/* Desktop homepage work order — prominent horizontal navigation bar
+          (desktop/tablet only, `hidden md:block`): All Categories dropdown +
+          real marketplace destinations. Mobile keeps the hamburger Sheet —
+          the mobile bottom navigation is NOT touched. */}
+      <DesktopNavBar view={view} nav={nav} categories={categories} />
+      </header>
+
+      {/* Mobile follow-up adjustment (top-bar space fix): the CATEGORIES
+          strip now lives BELOW the sticky header as in-flow page content —
+          it scrolls away with the page instead of pinning inside the sticky
+          chrome. Buyer feedback: with the strip pinned, the mobile sticky top
+          bar consumed 157–207px of every route (and wrapped to a 3rd row when
+          signed in at <390px); moving the chips into the scroll flow keeps
+          the persistent chrome at the two-row header (~103px) on every
+          standard page, matching the compact Me account bar much more
+          closely, while the quick-access entry points remain one tap away at
+          the top of the page. Same live category tree the hamburger Sheet
+          uses (one coalesced fetch, shared with the homepage — no extra
+          request). Compact sizing: 28px pastel circles (-40% vs the old 48px
+          grid icons) + 9px labels. */}
       {!isMe ? (
         <div
           aria-label="Shop by category"
@@ -1124,13 +1153,7 @@ function MarketHeader({
           })}
         </div>
       ) : null}
-
-      {/* Desktop homepage work order — prominent horizontal navigation bar
-          (desktop/tablet only, `hidden md:block`): All Categories dropdown +
-          real marketplace destinations. Mobile keeps the hamburger Sheet —
-          the mobile bottom navigation is NOT touched. */}
-      <DesktopNavBar view={view} nav={nav} categories={categories} />
-    </header>
+    </>
   );
 }
 
