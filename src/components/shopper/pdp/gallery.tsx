@@ -9,13 +9,15 @@
 //    pan-x/pan-y when at rest (browser owns swipe + page scroll) and none
 //    while zoomed (JS owns the pan).
 //  - Overlays: real discount badge (coral, promo indicator only), real
-//    low-stock chip, wishlist + share rail.
+//    low-stock chip, real rating pill (TikTok "reviews" overlay — only when
+//    the product actually has reviews). The wishlist heart + share moved to
+//    the TITLE ROW under the photo (buyer work order: TikTok puts the save/
+//    bookmark action beside the title, not over the image).
 //  - Per-variant imagery: when the selected SKU carries its own imageUrl it
 //    becomes slide 1 (deduped) and the gallery auto-scrolls to it.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Heart, Share2, ZoomOut } from "lucide-react";
-import { toast } from "sonner";
+import { Star, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MAX_SCALE = 4;
@@ -31,9 +33,8 @@ export function PdpGallery({
   variantImageUrl,
   discountOff,
   lowStock,
-  liked,
-  onToggleLike,
-  shareUrl,
+  ratingAvg,
+  ratingCount,
   onImageChange,
 }: {
   title: string;
@@ -44,10 +45,10 @@ export function PdpGallery({
   discountOff: number | null;
   /** Real stock when it is at/below the seller's threshold (else null). */
   lowStock: number | null;
-  liked: boolean;
-  onToggleLike: () => void;
-  /** Canonical deep link (/?sf=&sp=) — the SPA URL itself stays "/". */
-  shareUrl: string;
+  /** REAL aggregate rating (hidden entirely when there are no reviews). */
+  ratingAvg: number;
+  /** REAL published review count. */
+  ratingCount: number;
   /** Fires when the ACTIVE image changes (funnel: view_item_gallery). */
   onImageChange?: (index: number) => void;
 }) {
@@ -166,20 +167,6 @@ export function PdpGallery({
     if (pointers.current.size === 0 && zoom.scale > 1 && zoom.scale < 1.1) resetZoom();
   };
 
-  const onShare = async () => {
-    const data = { title, url: shareUrl };
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share(data);
-        return;
-      }
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success("Link copied", { description: "Share this product with anyone." });
-    } catch {
-      /* user dismissed the share sheet — not an error */
-    }
-  };
-
   const zoomed = zoom.scale > 1;
 
   return (
@@ -244,26 +231,16 @@ export function PdpGallery({
           ) : null}
         </div>
 
-        {/* wishlist + share rail */}
-        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={onToggleLike}
-            aria-pressed={liked}
-            aria-label={liked ? "Remove from My Likes" : "Save to My Likes"}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition-transform hover:scale-105 active:scale-95"
-          >
-            <Heart className={cn("h-5 w-5", liked ? "fill-rose-600 text-rose-600" : "text-neutral-600")} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => void onShare()}
-            aria-label="Share this product"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur-sm transition-transform hover:scale-105 active:scale-95"
-          >
-            <Share2 className="h-5 w-5 text-neutral-600" aria-hidden="true" />
-          </button>
-        </div>
+        {/* REAL rating pill (TikTok "reviews" overlay) — only when the
+            product has published reviews; tapping the title row's rating link
+            scrolls to the review section. */}
+        {ratingCount > 0 ? (
+          <span className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+            <Star className="h-3 w-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+            {ratingAvg.toFixed(1)}
+            <span className="font-medium text-white/85">({ratingCount.toLocaleString("en-MY")})</span>
+          </span>
+        ) : null}
 
         {/* zoom reset affordance while zoomed */}
         {zoomed ? (

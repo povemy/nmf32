@@ -32,7 +32,9 @@ import {
 } from "../ui-bits";
 import { pdpTrack, setPdpAnalyticsContext } from "./analytics";
 import { PdpGallery } from "./gallery";
+import { PdpCtaBar } from "./cta-bar";
 import { PdpStickyBar } from "./sticky-bar";
+import { PDP_SHIPPING_DISPLAY } from "@/lib/shipping-display";
 import {
   PdpDescriptionBlock,
   PdpIdentityBlock,
@@ -346,7 +348,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   const selectedLabel = variant ? `${optionLabel}: ${variant.optionValue ?? variant.name}` : null;
 
   return (
-    <div className="mx-auto w-full max-w-7xl flex-1 px-3 pb-24 md:px-4 md:py-6 md:pb-10">
+    <div className="mx-auto w-full max-w-7xl flex-1 px-3 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:px-4 md:py-6 md:pb-10">
       {/* breadcrumb (desktop — mobile keeps a clean shopping canvas) */}
       <nav aria-label="Breadcrumb" className="hidden items-center gap-1 pb-4 text-sm text-muted-foreground md:flex">
         <button type="button" className="flex min-h-[44px] items-center transition-colors hover:text-teal-700" onClick={() => ctx.nav({ name: "market" })}>
@@ -369,9 +371,8 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             variantImageUrl={variant?.imageUrl ?? null}
             discountOff={off}
             lowStock={lowStock}
-            liked={liked}
-            onToggleLike={onHeartTap}
-            shareUrl={shareUrl}
+            ratingAvg={product.ratingAvg}
+            ratingCount={product.ratingCount}
             onImageChange={onImageChange}
           />
         </div>
@@ -384,10 +385,13 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
             ratingAvg={product.ratingAvg}
             ratingCount={product.ratingCount}
             salesCount={product.salesCount}
+            liked={liked}
+            onToggleLike={onHeartTap}
+            shareUrl={shareUrl}
             onOpenReviews={() => reviewsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
           />
 
-          <PdpPriceBlock price={price} compareAt={compareAt} off={off} salesCount={product.salesCount} moq={moq} />
+          <PdpPriceBlock price={price} compareAt={compareAt} off={off} moq={moq} />
 
           {/* voucher centre — account-scoped (guests see no dead UI) */}
           <PdpVoucherCentre signedIn={Boolean(shopper)} storeSlug={store.slug} subtotalMinor={lineTotalMinor} />
@@ -489,7 +493,9 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
         onOosInteraction={onOosInteraction}
       />
 
-      {/* one persistent purchase bar (never a second sticky variant preview) */}
+      {/* one persistent purchase bar per breakpoint (never a second sticky
+          variant preview): mobile = the TikTok-style CTA bar below (fixed,
+          replaces BottomNav), desktop = the scroll-triggered sticky bar. */}
       <PdpStickyBar
         anchorRef={anchorRef}
         price={price}
@@ -501,13 +507,31 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
         onAddToCart={handleAddToCart}
         onBuyNow={() => void handleBuyNow()}
       />
+
+      {/* TikTok-style product CTA bar (mobile only) — replaces the bottom
+          navigation on the PDP. Same server-validated handlers as the in-flow
+          controls: Shop → storefront, Chat → product-scoped thread (auth
+          intent-resume), Add to cart / Buy now → existing cart + checkout. */}
+      <PdpCtaBar
+        storeName={store.name}
+        price={price}
+        freeShipping={lineTotalMinor >= PDP_SHIPPING_DISPLAY.freeShipThresholdMinor}
+        chatBusy={chatBusy}
+        adding={adding}
+        disabled={outOfStock}
+        actionLabel={requiresVariant && !variant ? "Choose an option first" : null}
+        onOpenStore={() => ctx.nav({ name: "storefront", slug: store.slug })}
+        onChat={onMessageSeller}
+        onAddToCart={handleAddToCart}
+        onBuyNow={() => void handleBuyNow()}
+      />
     </div>
   );
 }
 
 function PdpSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-7xl flex-1 px-3 pb-24 md:px-4 md:py-6 md:pb-10">
+    <div className="mx-auto w-full max-w-7xl flex-1 px-3 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:px-4 md:py-6 md:pb-10">
       <div className="lg:grid lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-start lg:gap-8">
         <div className="-mx-3 lg:mx-0">
           <Skeleton className="aspect-square rounded-none md:rounded-2xl" />

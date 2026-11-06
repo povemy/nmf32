@@ -104,36 +104,28 @@ export function PdpVoucherCentre({
 
   return (
     <>
-      {/* in-flow strip — best applicable voucher first (Phase 2.5) */}
+      {/* in-flow strip — best applicable voucher first (Phase 2.5).
+          Buyer work order (-45% height): compacted to a single TikTok-style
+          voucher pill row — one line of text, inline ticket icon, no circle
+          avatar, tightened paddings. Was ~64px (py-3 + 40px icon + 2 lines);
+          now ~36px (py-2 + one 16px line). Same real data + sheet behind it. */}
       <button
         type="button"
         onClick={() => setSheetOpen(true)}
-        className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-teal-700/40 bg-teal-50/50 px-4 py-3 text-left transition-colors hover:bg-teal-50"
+        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-rose-300/70 bg-rose-50/60 px-3 py-2 text-left transition-colors hover:bg-rose-50"
         aria-label={`Vouchers — ${relevant.length} available for this order`}
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700">
-          <Ticket className="h-5 w-5" aria-hidden="true" />
+        <Ticket className="h-4 w-4 shrink-0 text-rose-500" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-rose-700">
+          {best
+            ? best.e.freeshipping
+              ? `Free delivery voucher · ${best.v.title}`
+              : `Save ${formatMinor(best.e.estDiscountMinor)} · ${best.v.title}`
+            : `${rows.length} voucher${rows.length === 1 ? "" : "s"} for this order`}
         </span>
-        <span className="min-w-0 flex-1">
-          {best ? (
-            <>
-              <span className="block text-sm font-bold text-teal-900">
-                {best.e.freeshipping ? "Free delivery voucher" : `Save ${formatMinor(best.e.estDiscountMinor)}`}
-                <span className="ml-1.5 font-medium text-teal-700/80">— {best.v.title}</span>
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                {best.v.minSpendMinor > 0 ? `Min. spend ${formatMinor(best.v.minSpendMinor)} · ` : ""}
-                {best.held ? "In your wallet — applies at checkout" : "Claim & use at checkout"}
-              </span>
-            </>
-          ) : (
-            <span className="block text-sm font-bold text-teal-900">
-              {rows.length} voucher{rows.length === 1 ? "" : "s"} for this order
-            </span>
-          )}
-        </span>
-        <span className="flex shrink-0 items-center gap-0.5 text-xs font-bold text-teal-700">
-          {rows.length} <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-bold text-rose-600">
+          {best?.v.minSpendMinor ? null : rows.length > 0 ? `${rows.length} ` : null}
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
       </button>
 
@@ -245,7 +237,7 @@ function eligibility(v: PdpVoucherT, subtotalMinor: number): VoucherEligibility 
   };
 }
 
-/** Loading placeholder for the strip while the wallet fetches. */
+/** Loading placeholder for the strip while the wallet fetches (compact pill height). */
 export function VoucherStripSkeleton() {
-  return <Skeleton className="h-16 w-full rounded-2xl" />;
+  return <Skeleton className="h-9 w-full rounded-xl" />;
 }

@@ -6,9 +6,10 @@
 // out of the viewport (no arbitrary scroll thresholds), and hides again when
 // they return.
 //
-// Stacking contract: the mobile bottom navigation is fixed z-40 at the screen
-// bottom — this bar floats ABOVE it (bottom = nav height + safe-area inset),
-// never covering it; on md+ (no bottom nav) it docks to the viewport bottom.
+// TikTok Shop work order update: DESKTOP-ONLY now — on mobile the persistent
+// CTA bar (./cta-bar) replaced it (bottom bar belongs to the product actions,
+// so there is exactly ONE always-on purchase bar per breakpoint). Stacking
+// contract on md+ (no bottom navigation): docks to the viewport bottom.
 // Cart/sheet overlays (Radix z-50) always cover it.
 // ============================================================================
 import { useEffect, useRef, useState } from "react";
@@ -82,8 +83,7 @@ export function PdpStickyBar({
           animate={{ y: 0 }}
           exit={{ y: "110%" }}
           transition={{ type: "tween", duration: 0.22, ease: "easeOut" }}
-          className="fixed inset-x-0 z-40 border-t bg-background/95 shadow-[0_-4px_16px_rgb(0_0_0/0.08)] backdrop-blur supports-[backdrop-filter]:bg-background/85 md:bottom-0!"
-          style={{ bottom: "calc(4.25rem + env(safe-area-inset-bottom))" }}
+          className="fixed inset-x-0 bottom-0 z-40 hidden border-t bg-background/95 shadow-[0_-4px_16px_rgb(0_0_0/0.08)] backdrop-blur supports-[backdrop-filter]:bg-background/85 md:block"
           role="region"
           aria-label="Quick purchase"
         >

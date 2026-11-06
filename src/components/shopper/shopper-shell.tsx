@@ -17,6 +17,7 @@ import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
+  ChevronLeft,
   Loader2,
   Package,
   MessagesSquare,
@@ -465,24 +466,34 @@ export default function ShopperShell() {
   // marketplace pages.
   const isCheckoutFocus = view.name === "checkout" || view.name === "pay";
   const showChrome = !isStoreChrome(view) && !isCheckoutFocus;
+  // PDP IMMERSIVE MODE (TikTok Shop work order): on mobile the global top bar
+  // and the bottom navigation are REPLACED on the product page — MarketHeader
+  // self-hides below md (internal isPdp check) and PdpTopBar (slim TikTok-
+  // style: back + search pill + cart) takes over; PdpView renders the product
+  // CTA bar (Shop / Chat / Add to cart / Buy now) in place of BottomNav.
+  // Desktop (md+) keeps the full global header + footer unchanged — the
+  // immersive swap is strictly the mobile shopping-canvas experience.
+  const isPdpFocus = view.name === "pdp";
   // App-like bottom navigation — mobile only; hidden wherever the global
-  // chrome is hidden (checkout focus mode + store chrome).
-  const showBottomNav = showChrome;
-  // Admin-controlled global footer switch (default ON; hidden together with
-  // the rest of the global chrome — checkout never shows it, matching the
-  // original intent of the comment that the old condition failed to enforce).
+  // chrome is hidden (checkout focus mode + store chrome) and REPLACED by the
+  // product CTA bar on the PDP (bottom bar belongs to the product actions).
+  const showBottomNav = showChrome && !isPdpFocus;
+  // Footer: hidden with the global chrome (checkout) and on the immersive PDP
+  // (TikTok-style product canvas ends with recommendations, not site links).
   const footerVisible = useFooterVisible();
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
       <ShopperAuthDialog />
 
-      {showChrome ? (
+      {showChrome || isPdpFocus ? (
         <>
           {/* Desktop homepage work order — slim utility strip ABOVE the sticky
               header (desktop only; scrolls away with the page). Real
               destinations only — no invented policies. */}
           <UtilityBar nav={nav} />
+          {/* On the PDP this header self-hides below md (isPdp check inside
+              MarketHeader) — desktop keeps the full global header. */}
           <MarketHeader
             view={view}
             nav={nav}
@@ -492,6 +503,11 @@ export default function ShopperShell() {
           />
         </>
       ) : null}
+
+      {/* PDP immersive top bar (mobile only) — TikTok Shop reference: slim
+          white bar with back chevron, a search pill that jumps into the
+          marketplace search, and the cart with its live badge. */}
+      {isPdpFocus ? <PdpTopBar nav={nav} back={back} openCart={() => setCartOpen(true)} /> : null}
 
       <AnimatePresence mode="wait">
         <motion.main
@@ -555,7 +571,7 @@ export default function ShopperShell() {
         />
       ) : null}
 
-      {showChrome && footerVisible ? (
+      {showChrome && !isPdpFocus && footerVisible ? (
         <ShopperFooter
           onSeller={() => setSurface("seller")}
           onLookup={() => nav({ name: "lookup" })}
@@ -643,6 +659,72 @@ function BottomNav({ view, nav, openCart }: { view: ShopperView; nav: (v: Shoppe
 }
 
 // =============================================================================================
+// PDP immersive top bar (MOBILE ONLY) — TikTok Shop reference layout
+// =============================================================================================
+
+function PdpTopBar({
+  nav,
+  back,
+  openCart,
+}: {
+  nav: (v: ShopperView) => void;
+  back: () => void;
+  openCart: () => void;
+}) {
+  const { count } = useCart();
+  return (
+    <header
+      className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+      aria-label="Product toolbar"
+    >
+      {/* brand gradient hairline keeps the NOMOFEE identity on the immersive canvas */}
+      <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
+      <div className="mx-auto flex h-[52px] max-w-7xl items-center gap-2 px-3">
+        {/* back — shell history with market fallback (deep links land home) */}
+        <button
+          type="button"
+          onClick={back}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted"
+          aria-label="Go back"
+        >
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+
+        {/* search pill — jumps into the marketplace search view (the global
+            header with its live input takes over from there) */}
+        <button
+          type="button"
+          onClick={() => nav({ name: "search", q: "" })}
+          className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/70"
+          aria-label="Search products and more"
+        >
+          <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">Search products &amp; more</span>
+        </button>
+
+        {/* cart — the same global drawer, live count badge */}
+        <button
+          type="button"
+          onClick={openCart}
+          aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted"
+        >
+          <ShoppingCart className="h-5 w-5 text-teal-700" aria-hidden="true" />
+          {count > 0 ? (
+            <span
+              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-extrabold text-white shadow"
+              aria-hidden="true"
+            >
+              {count > 99 ? "99+" : count}
+            </span>
+          ) : null}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// =============================================================================================
 // Market header (global chrome for market/search/category/pdp/checkout/… views)
 // =============================================================================================
 
@@ -671,6 +753,10 @@ function MarketHeader({
   // no logo, no search — just quick actions (right→left: Me, Chat, Cart, Bell).
   // Desktop keeps the full header everywhere.
   const isMe = view.name === "me";
+  // PDP immersive mode (TikTok Shop work order): below md the WHOLE global
+  // header is hidden on the product page — PdpTopBar (shell-level) takes
+  // over with the slim back + search pill + cart bar. Desktop unchanged.
+  const isPdp = view.name === "pdp";
 
   // Work order 14: request-coalesced market-home fetch (shares ONE request
   // with the homepage — the old code fired /api/market/home twice per load).
@@ -736,7 +822,7 @@ function MarketHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <header className={cn("sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80", isPdp && "max-md:hidden")}>
       {/* brand gradient strip */}
       <div className="h-1 w-full bg-brand-gradient" aria-hidden="true" />
       {/* Mobile homepage work order 2: below md the header is TWO rows —
@@ -1112,19 +1198,16 @@ function MarketHeader({
       </header>
 
       {/* Mobile follow-up adjustment (top-bar space fix): the CATEGORIES
-          strip now lives BELOW the sticky header as in-flow page content —
-          it scrolls away with the page instead of pinning inside the sticky
-          chrome. Buyer feedback: with the strip pinned, the mobile sticky top
-          bar consumed 157–207px of every route (and wrapped to a 3rd row when
-          signed in at <390px); moving the chips into the scroll flow keeps
-          the persistent chrome at the two-row header (~103px) on every
-          standard page, matching the compact Me account bar much more
-          closely, while the quick-access entry points remain one tap away at
-          the top of the page. Same live category tree the hamburger Sheet
-          uses (one coalesced fetch, shared with the homepage — no extra
-          request). Compact sizing: 28px pastel circles (-40% vs the old 48px
-          grid icons) + 9px labels. */}
-      {!isMe ? (
+          strip lives BELOW the sticky header as in-flow page content — it
+          scrolls away with the page instead of pinning inside the sticky
+          chrome. Buyer work order (TikTok-style tidy-up): the strip is a
+          HOMEPAGE-ONLY affordance — every other route (PDP, search, category,
+          storefront, …) goes straight to its own content instead of paying
+          53px of category chips on every page. Same live category tree the
+          hamburger Sheet uses (one coalesced fetch, shared with the homepage
+          — no extra request). Compact sizing: 28px pastel circles (-40% vs
+          the old 48px grid icons) + 9px labels. */}
+      {view.name === "market" ? (
         <div
           aria-label="Shop by category"
           className="flex snap-x gap-2.5 overflow-x-auto px-3 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden"

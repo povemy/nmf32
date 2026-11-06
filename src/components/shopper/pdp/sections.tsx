@@ -5,19 +5,25 @@
 // authoritative pricing/stock/reviews) or the real checkout shipping card —
 // nothing is fabricated: no invented original prices, no fake countdowns,
 // no false urgency.
+// TikTok Shop styling pass (buyer work order): crimson hero price + gradient
+// discount badge, small heart + share actions in the title row, star-rating
+// pill row — all riding the SAME real data.
 // ============================================================================
 import { useState } from "react";
 import {
   BadgeCheck,
   ChevronDown,
   ChevronRight,
+  Heart,
   Loader2,
   MessageCircle,
+  Share2,
   ShieldCheck,
   Store,
   Truck,
   Zap,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dateShort, Stars } from "../ui-bits";
@@ -28,31 +34,35 @@ import type { ShopperCtx } from "../ui-bits";
 import type { PdpPayloadT } from "./types";
 
 // ---------------------------------------------------------------------------
-// 2.3 — price & promotion block (visually prominent purchase-value section)
+// 2.3 — price & promotion block (TikTok Shop reference: crimson hero price,
+// gradient discount badge, struck original — all numbers server-real)
 // ---------------------------------------------------------------------------
 export function PdpPriceBlock({
   price,
   compareAt,
   off,
-  salesCount,
   moq,
 }: {
   price: number;
   compareAt: number | null;
   off: number | null;
-  salesCount: number;
   moq: number;
 }) {
   const savings = compareAt != null && compareAt > price ? compareAt - price : 0;
   return (
     <section aria-label="Price" className="rounded-2xl border border-neutral-200/80 bg-[#F8F8F8] p-4 dark:bg-muted/40">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <span className="text-[26px] font-extrabold leading-none tracking-tight text-teal-700 md:text-3xl">{formatMinor(price)}</span>
+        {off && compareAt && compareAt > price ? (
+          <span
+            aria-hidden="true"
+            className="mr-0.5 inline-flex items-baseline self-center rounded-lg bg-gradient-to-r from-rose-500 to-[#FE2C55] px-2 py-0.5 text-sm font-extrabold leading-none text-white shadow-sm"
+          >
+            -{off}%
+          </span>
+        ) : null}
+        <span className="text-[30px] font-extrabold leading-none tracking-tight text-rose-600 md:text-4xl">{formatMinor(price)}</span>
         {compareAt && compareAt > price ? (
-          <>
-            <span className="text-sm text-muted-foreground line-through md:text-base">{formatMinor(compareAt)}</span>
-            {off ? <Badge className="bg-[#FE2C55] text-[11px] font-extrabold hover:bg-[#FE2C55]">-{off}% OFF</Badge> : null}
-          </>
+          <span className="text-sm text-muted-foreground line-through md:text-base">{formatMinor(compareAt)}</span>
         ) : null}
       </div>
       {savings > 0 ? (
@@ -61,16 +71,19 @@ export function PdpPriceBlock({
           {off ? <span className="ml-1 font-normal text-muted-foreground">({off}% off this option)</span> : null}
         </p>
       ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {salesCount > 0 ? <span className="font-semibold text-foreground/80">{salesCount.toLocaleString("en-MY")} sold</span> : null}
-        {moq > 1 ? <span>Min. order {moq}</span> : null}
-      </div>
+      {moq > 1 ? (
+        <p className="mt-1.5 text-xs text-muted-foreground">Min. order {moq}</p>
+      ) : null}
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 2.4 — product identity & social proof (2-line clamp + expand)
+// 2.4 — product identity & social proof (2-line clamp + expand).
+// TikTok reference: the save (heart) + share actions sit in the TITLE ROW —
+// small icons on the right — not over the photo. Both ride the EXISTING
+// backend: like = /api/me/activity LIKE toggle (auth-gated with intent
+// resume), share = Web Share API with clipboard fallback.
 // ---------------------------------------------------------------------------
 export function PdpIdentityBlock({
   title,
@@ -78,6 +91,9 @@ export function PdpIdentityBlock({
   ratingAvg,
   ratingCount,
   salesCount,
+  liked,
+  onToggleLike,
+  shareUrl,
   onOpenReviews,
 }: {
   title: string;
@@ -85,21 +101,63 @@ export function PdpIdentityBlock({
   ratingAvg: number;
   ratingCount: number;
   salesCount: number;
+  liked: boolean;
+  onToggleLike: () => void;
+  /** Canonical deep link (/?sf=&sp=) used by the native share sheet. */
+  shareUrl: string;
   onOpenReviews: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+
+  const onShare = async () => {
+    const data = { title, url: shareUrl };
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share(data);
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copied", { description: "Share this product with anyone." });
+    } catch {
+      /* user dismissed the share sheet — not an error */
+    }
+  };
+
   return (
     <section aria-label="Product details" className="space-y-2 px-1">
       <div className="flex flex-wrap items-center gap-2">
         {categoryName ? <Badge variant="outline" className="border-teal-700/30 text-[11px] text-teal-800">{categoryName}</Badge> : null}
       </div>
-      <h1
-        className={cn("cursor-pointer text-lg font-bold leading-snug tracking-tight md:text-xl", !expanded && "line-clamp-2")}
-        onClick={() => setExpanded((e) => !e)}
-        title="Tap to expand the full title"
-      >
-        {title}
-      </h1>
+      <div className="flex items-start gap-2">
+        <h1
+          className={cn("min-w-0 flex-1 cursor-pointer text-lg font-bold leading-snug tracking-tight md:text-xl", !expanded && "line-clamp-2")}
+          onClick={() => setExpanded((e) => !e)}
+          title="Tap to expand the full title"
+        >
+          {title}
+        </h1>
+        {/* small heart + share pair (buyer work order: TikTok save/bookmark
+            position, right of the title, BELOW the photo — not on the image) */}
+        <span className="flex shrink-0 items-center gap-1 pt-0.5">
+          <button
+            type="button"
+            onClick={onToggleLike}
+            aria-pressed={liked}
+            aria-label={liked ? "Remove from My Likes" : "Save to My Likes"}
+            className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted"
+          >
+            <Heart className={cn("h-4.5 w-4.5 transition-transform active:scale-90", liked ? "fill-rose-500 text-rose-500" : "text-muted-foreground")} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onShare()}
+            aria-label="Share this product"
+            className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted"
+          >
+            <Share2 className="h-4.5 w-4.5 text-muted-foreground transition-transform active:scale-90" aria-hidden="true" />
+          </button>
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         {ratingCount > 0 ? (
           <button type="button" onClick={onOpenReviews} className="inline-flex items-center gap-1.5 rounded hover:opacity-80" aria-label={`Rated ${ratingAvg.toFixed(1)} of 5 — see reviews`}>
@@ -110,7 +168,7 @@ export function PdpIdentityBlock({
         ) : (
           <span className="text-muted-foreground">No reviews yet</span>
         )}
-        {salesCount > 0 ? <span className="text-muted-foreground">· {salesCount.toLocaleString("en-MY")} sold</span> : null}
+        {salesCount > 0 ? <span className="text-muted-foreground">| {salesCount.toLocaleString("en-MY")} sold</span> : null}
       </div>
     </section>
   );
