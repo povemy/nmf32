@@ -21,6 +21,7 @@ import {
   LogOut,
   Megaphone,
   Menu,
+  MessageSquareQuote,
   PackageSearch,
   PartyPopper,
   Percent,
@@ -66,6 +67,7 @@ import { SellersView, KycQueueView } from "./sellers";
 import { SellerDetailView } from "./seller-detail";
 import { StoresView } from "./stores";
 import { ModerationView } from "./moderation";
+import { ReviewsModerationView } from "./reviews";
 import { CategoriesView } from "./categories";
 import { OrdersView, RefundsView, DisputesView } from "./orders";
 import { OrderDetailView } from "./order-detail";
@@ -112,6 +114,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Catalog",
     items: [
       { view: "moderation", label: "Product Moderation", icon: PackageSearch, caps: ["products.moderate"] },
+      { view: "reviews", label: "Review Moderation", icon: MessageSquareQuote, caps: ["reviews.moderate"] },
       { view: "categories", label: "Categories", icon: Tags },
     ],
   },
@@ -190,6 +193,7 @@ const VIEW_MAP: Record<string, ComponentType<{ nav: AdminNav }>> = {
   "kyc-queue": KycQueueView,
   stores: StoresView,
   moderation: ModerationView,
+  reviews: ReviewsModerationView,
   categories: CategoriesView,
   orders: OrdersView,
   refunds: RefundsView,

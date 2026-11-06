@@ -460,7 +460,12 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
           ratingCount={product.ratingCount}
           ratingDist={product.ratingDist}
           storeName={store.name}
+          storeSlug={store.slug}
+          productSlug={product.slug}
+          productTitle={product.title}
+          productImage={product.images[0] ?? null}
           sectionRef={reviewsRef}
+          onOpenAuth={openShopperAuth}
         />
         {data.related.length > 0 ? (
           <section aria-label="More from this seller" className="space-y-3">

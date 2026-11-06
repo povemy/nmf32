@@ -6,6 +6,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   ELIGIBLE_ORDER_STATUSES,
+  ELIGIBLE_CANDIDATE_STATUSES,
   REVIEW_STATUSES,
   REVIEW_LIMITS,
   isEligibleOrder,
@@ -27,6 +28,12 @@ describe("review status vocabulary", () => {
     // "received" does not exist in the order vocabulary — the buyer dashboard's
     // To Rate bucket is ["delivered"] and buyer confirmation lands on "completed".
     expect([...ELIGIBLE_ORDER_STATUSES]).toEqual(["delivered", "completed"]);
+  });
+
+  test("candidate statuses add partially_refunded for the refund-refined predicate", () => {
+    // Rewards work order: a delivered-but-partially-refunded order stays
+    // reviewable per-line; the pure predicate then checks receipt timestamps.
+    expect([...ELIGIBLE_CANDIDATE_STATUSES]).toEqual(["delivered", "completed", "partially_refunded"]);
   });
 });
 
@@ -62,7 +69,7 @@ const P_ID = "prod_1";
 const S_ID = "store_1";
 
 function order(overrides: Partial<EligibleOrderShape> & Pick<EligibleOrderShape, "status">): EligibleOrderShape {
-  return { storeId: S_ID, items: [{ productId: P_ID }], ...overrides };
+  return { storeId: S_ID, items: [{ productId: P_ID, refundedMinor: 0, lineSubtotalMinor: 1000 }], ...overrides };
 }
 
 describe("isEligibleOrder", () => {
@@ -72,7 +79,7 @@ describe("isEligibleOrder", () => {
   });
 
   test("non-terminal statuses are NOT eligible (goods not confirmed in hand)", () => {
-    for (const status of ["payment_pending", "paid", "processing", "shipped", "cancelled", "refunded", "refunding", "partially_refunded", "closed", "payment_expired"]) {
+    for (const status of ["payment_pending", "paid", "processing", "shipped", "cancelled", "refunded", "refunding", "closed", "payment_expired"]) {
       expect(isEligibleOrder(order({ status }), P_ID, S_ID)).toBe(false);
     }
   });
@@ -88,6 +95,42 @@ describe("isEligibleOrder", () => {
 
   test("multi-item order containing the product anywhere is eligible", () => {
     const multi = order({ status: "completed", items: [{ productId: "prod_other" }, { productId: P_ID }] });
+    expect(isEligibleOrder(multi, P_ID, S_ID)).toBe(true);
+  });
+
+  // ---- Rewards work order: partial-refund refinement -------------------------
+  test("partially_refunded WITH prior receipt (deliveredAt) is eligible", () => {
+    expect(isEligibleOrder(order({ status: "partially_refunded", deliveredAt: new Date() }), P_ID, S_ID)).toBe(true);
+    expect(isEligibleOrder(order({ status: "partially_refunded", completedAt: new Date() }), P_ID, S_ID)).toBe(true);
+  });
+
+  test("partially_refunded WITHOUT receipt evidence is NOT eligible (refund before delivery)", () => {
+    expect(isEligibleOrder(order({ status: "partially_refunded" }), P_ID, S_ID)).toBe(false);
+  });
+
+  test("a fully refunded line is NOT eligible even on a delivered order", () => {
+    expect(
+      isEligibleOrder(order({ status: "delivered", items: [{ productId: P_ID, refundedMinor: 1000, lineSubtotalMinor: 1000 }] }), P_ID, S_ID)
+    ).toBe(false);
+    expect(
+      isEligibleOrder(order({ status: "delivered", items: [{ productId: P_ID, refundedMinor: 1500, lineSubtotalMinor: 1000 }] }), P_ID, S_ID)
+    ).toBe(false);
+  });
+
+  test("a partially refunded line on a delivered order IS eligible (remaining unrefunded value)", () => {
+    expect(
+      isEligibleOrder(order({ status: "delivered", items: [{ productId: P_ID, refundedMinor: 400, lineSubtotalMinor: 1000 }] }), P_ID, S_ID)
+    ).toBe(true);
+  });
+
+  test("item refund check applies per-line — a refunded OTHER line does not block this product", () => {
+    const multi = order({
+      status: "delivered",
+      items: [
+        { productId: "prod_other", refundedMinor: 500, lineSubtotalMinor: 500 },
+        { productId: P_ID, refundedMinor: 0, lineSubtotalMinor: 1000 },
+      ],
+    });
     expect(isEligibleOrder(multi, P_ID, S_ID)).toBe(true);
   });
 });

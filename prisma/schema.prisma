@@ -486,6 +486,13 @@ model InventoryLog {
 /// shopperId = verified buyer (null = legacy rows); orderId = eligible
 /// completed/delivered order backing the review; status pending until an
 /// admin publishes; @@unique enforces one review per buyer per product.
+///
+/// REVIEW REWARDS work order: one review per buyer per PRODUCT (not per
+/// OrderItem) is a deliberate anti-farming choice — with a 5-point reward
+/// per review, per-OrderItem eligibility would let a buyer farm rewards by
+/// repeat-purchasing one cheap product. The frozen orderId still gives full
+/// purchase traceability. Indexes below serve the public listing API
+/// (productId + status, then rating for filters / createdAt for sort).
 model Review {
   id           String       @id @default(cuid())
   productId    String
@@ -501,8 +508,43 @@ model Review {
   product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   order        Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
   shopper      ShopperUser? @relation(fields: [shopperId], references: [id], onDelete: SetNull)
+  reward       MembershipReward?
 
   @@unique([productId, shopperId])
+  // Public listing: WHERE productId = ? AND status = 'published' (+ rating
+  // filter) ORDER BY createdAt | rating.
+  @@index([productId, status, createdAt])
+  @@index([productId, status, rating])
+}
+
+/// REVIEW REWARDS — membership ledger for verified-review incentives.
+/// RM0.05-equivalent per eligible review = 5 points at the established
+/// platform valuation (1 point ≈ RM0.01 — the same conversion the dormant
+/// Nomo Coins copy publishes). NOT credited to ShopperWallet.coinBalance:
+/// NOMO_FINANCE_ENABLED=false is a deliberate FSA 2013/BNM gate that this
+/// feature must not bypass, so points are ledger-visible but NOT spendable
+/// until the owner activates finance (then migrate 1:1 into coinBalance or
+/// another redemption path — owner decision, see final report).
+///
+/// Exactly-once: reviewId is UNIQUE and the reward row is created in the
+/// SAME transaction as the review — retries hit REVIEW_ALREADY_EXISTS (409)
+/// before a second row can exist. reversalReason/reversedAt carry the
+/// auditable fraud-reversal path (admin reject + reverseReward).
+/// shopperId is a plain string (ActivityLog pattern, no FK): the audit
+/// ledger must survive shopper deletion rather than cascade away.
+model MembershipReward {
+  id             String    @id @default(cuid())
+  shopperId      String
+  kind           String    @default("review")
+  reviewId       String?   @unique
+  points         Int
+  note           String?
+  createdAt      DateTime  @default(now())
+  reversedAt     DateTime?
+  reversalReason String?
+  review         Review?   @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+
+  @@index([shopperId, createdAt])
 }
 
 model Collection {

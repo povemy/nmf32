@@ -64,7 +64,7 @@ type SeedVariant = { name: string; optionName?: string; optionValue?: string; pr
 type SeedProduct = {
   title: string; slug: string; description: string; categorySlug: string;
   status?: string; price: number; compareAt?: number; stock?: number;
-  variants?: SeedVariant[]; sales?: number; rating?: [number, number]; featured?: boolean;
+  variants?: SeedVariant[]; sales?: number; featured?: boolean;
   imgSeeds: string[];
 };
 
@@ -79,8 +79,10 @@ async function seedProduct(storeId: string, p: SeedProduct, createdAt: Date) {
       priceMinor: p.price,
       isFeatured: p.featured ?? false,
       salesCount: p.sales ?? 0,
-      ratingAvg: p.rating?.[0] ?? 0,
-      ratingCount: p.rating?.[1] ?? 0,
+      // REVIEW REWARDS work order: ratingAvg/ratingCount are NEVER seeded —
+      // aggregates are computed from real PUBLISHED reviews only
+      // (lib/reviews.ts recomputeProductRating). A fresh seed starts at an
+      // honest 0/0 empty state.
       publishedAt: (p.status ?? "active") === "active" ? createdAt : null,
       createdAt,
       updatedAt: createdAt,
@@ -505,34 +507,34 @@ async function main() {
 
   // ------------------------------------------------ products
   const luminaProducts: SeedProduct[] = [
-    { title: "Aurora Ceramic Vase", slug: "aurora-ceramic-vase", description: "Hand-thrown stoneware vase with a matte glaze. Each piece is unique.", categorySlug: "home-living-decor", price: 8900, compareAt: 10900, stock: 32, sales: 41, rating: [4.8, 12], featured: true, imgSeeds: ["vase-1", "vase-2"] },
-    { title: "Linen Cushion Cover — Sand", slug: "linen-cushion-sand", description: "Stonewashed linen cushion cover, 45×45cm, hidden zip.", categorySlug: "home-living-decor", price: 4500, stock: 58, sales: 66, rating: [4.7, 24], imgSeeds: ["cushion-1"] },
-    { title: "Teak Serving Board", slug: "teak-serving-board", description: "Reclaimed teak serving board, food-safe oil finish.", categorySlug: "home-living-kitchen", price: 12900, stock: 14, sales: 22, rating: [4.9, 9], featured: true, imgSeeds: ["teak-1", "teak-2"] },
-    { title: "Soy Wax Candle — Neroli", slug: "candle-neroli", description: "40-hour burn, neroli & cedar. Poured in small batches.", categorySlug: "home-living-decor", price: 3900, stock: 4, sales: 88, rating: [4.6, 31], imgSeeds: ["candle-1"] },
-    { title: "Rattan Wall Mirror", slug: "rattan-wall-mirror", description: "60cm handwoven rattan mirror frame.", categorySlug: "home-living-decor", price: 15900, stock: 9, sales: 17, rating: [4.8, 7], imgSeeds: ["mirror-1"] },
-    { title: "Stoneware Mug Set (2)", slug: "stoneware-mug-set", description: "Two 300ml mugs, speckled glaze, dishwasher safe.", categorySlug: "home-living-kitchen", price: 6900, stock: 27, sales: 54, rating: [4.7, 19], imgSeeds: ["mug-1"] },
-    { title: "Waffle Hand Towel Set", slug: "waffle-towel-set", description: "Two waffle-weave cotton hand towels, quick dry.", categorySlug: "home-living-kitchen", price: 3500, stock: 73, sales: 39, rating: [4.5, 15], imgSeeds: ["towel-1"] },
-    { title: "Jute Storage Basket", slug: "jute-basket", description: "Handwoven jute basket with handles, 40cm.", categorySlug: "home-living-decor", price: 5900, stock: 21, sales: 28, rating: [4.6, 11], imgSeeds: ["basket-1"] },
-    { title: "Brass Incense Holder", slug: "brass-incense-holder", description: "Solid brass holder with ash catch tray.", categorySlug: "home-living-decor", price: 2900, stock: 45, sales: 47, rating: [4.4, 13], imgSeeds: ["incense-1"] },
-    { title: "Olive Wood Spoons (Set of 3)", slug: "olive-wood-spoons", description: "Carved olive wood kitchen utensil trio.", categorySlug: "home-living-kitchen", price: 4900, stock: 33, sales: 35, rating: [4.7, 10], imgSeeds: ["spoons-1"] },
+    { title: "Aurora Ceramic Vase", slug: "aurora-ceramic-vase", description: "Hand-thrown stoneware vase with a matte glaze. Each piece is unique.", categorySlug: "home-living-decor", price: 8900, compareAt: 10900, stock: 32, sales: 41, featured: true, imgSeeds: ["vase-1", "vase-2"] },
+    { title: "Linen Cushion Cover — Sand", slug: "linen-cushion-sand", description: "Stonewashed linen cushion cover, 45×45cm, hidden zip.", categorySlug: "home-living-decor", price: 4500, stock: 58, sales: 66, imgSeeds: ["cushion-1"] },
+    { title: "Teak Serving Board", slug: "teak-serving-board", description: "Reclaimed teak serving board, food-safe oil finish.", categorySlug: "home-living-kitchen", price: 12900, stock: 14, sales: 22, featured: true, imgSeeds: ["teak-1", "teak-2"] },
+    { title: "Soy Wax Candle — Neroli", slug: "candle-neroli", description: "40-hour burn, neroli & cedar. Poured in small batches.", categorySlug: "home-living-decor", price: 3900, stock: 4, sales: 88, imgSeeds: ["candle-1"] },
+    { title: "Rattan Wall Mirror", slug: "rattan-wall-mirror", description: "60cm handwoven rattan mirror frame.", categorySlug: "home-living-decor", price: 15900, stock: 9, sales: 17, imgSeeds: ["mirror-1"] },
+    { title: "Stoneware Mug Set (2)", slug: "stoneware-mug-set", description: "Two 300ml mugs, speckled glaze, dishwasher safe.", categorySlug: "home-living-kitchen", price: 6900, stock: 27, sales: 54, imgSeeds: ["mug-1"] },
+    { title: "Waffle Hand Towel Set", slug: "waffle-towel-set", description: "Two waffle-weave cotton hand towels, quick dry.", categorySlug: "home-living-kitchen", price: 3500, stock: 73, sales: 39, imgSeeds: ["towel-1"] },
+    { title: "Jute Storage Basket", slug: "jute-basket", description: "Handwoven jute basket with handles, 40cm.", categorySlug: "home-living-decor", price: 5900, stock: 21, sales: 28, imgSeeds: ["basket-1"] },
+    { title: "Brass Incense Holder", slug: "brass-incense-holder", description: "Solid brass holder with ash catch tray.", categorySlug: "home-living-decor", price: 2900, stock: 45, sales: 47, imgSeeds: ["incense-1"] },
+    { title: "Olive Wood Spoons (Set of 3)", slug: "olive-wood-spoons", description: "Carved olive wood kitchen utensil trio.", categorySlug: "home-living-kitchen", price: 4900, stock: 33, sales: 35, imgSeeds: ["spoons-1"] },
   ];
   const byteProducts: SeedProduct[] = [
-    { title: "Pulse ANC Earbuds", slug: "pulse-anc-earbuds", description: "Hybrid ANC earbuds, 28h battery, USB-C.", categorySlug: "electronics-audio", price: 19900, compareAt: 24900, stock: 61, sales: 132, rating: [4.5, 47], featured: true, imgSeeds: ["earbuds-1", "earbuds-2"] },
-    { title: "Mechanical Keyboard 65% — Tactile", slug: "mk65-tactile", description: "Gasket-mounted 65% board, hot-swap, tactile switches.", categorySlug: "electronics-gadgets", price: 29900, stock: 18, sales: 44, rating: [4.8, 21], featured: true, imgSeeds: ["keyboard-1"] },
-    { title: "USB-C Hub 8-in-1", slug: "usbc-hub-8in1", description: "HDMI 4K60, 100W PD, ethernet, SD/microSD.", categorySlug: "electronics-gadgets", price: 12900, stock: 40, sales: 77, rating: [4.4, 33], imgSeeds: ["hub-1"] },
-    { title: "Desk Mat — Felt & Cork", slug: "desk-mat-felt", description: "90×40cm natural felt desk mat with cork base.", categorySlug: "electronics-gadgets", price: 6900, stock: 52, sales: 61, rating: [4.6, 18], imgSeeds: ["deskmat-1"] },
-    { title: "Bluetooth Bookshelf Speakers", slug: "bt-bookshelf-speakers", description: "Pair of 4\" powered speakers with BT 5.3 & optical.", categorySlug: "electronics-audio", price: 44900, stock: 7, sales: 12, rating: [4.9, 8], imgSeeds: ["speakers-1"] },
-    { title: "4K Action Cam Lite", slug: "action-cam-lite", description: "4K30, waterproof case, 2 batteries included.", categorySlug: "electronics-gadgets", price: 24900, stock: 23, sales: 29, rating: [4.3, 14], imgSeeds: ["actioncam-1"] },
-    { title: "Smart RGB Light Bars (2)", slug: "rgb-light-bars", description: "Sync lighting bars, app + voice control.", categorySlug: "electronics-gadgets", price: 15900, stock: 35, sales: 48, rating: [4.5, 26], imgSeeds: ["lightbars-1"] },
-    { title: "Portable Espresso Maker", slug: "portable-espresso", description: "Manual 18-bar espresso maker for travel.", categorySlug: "electronics-gadgets", price: 21900, stock: 16, sales: 19, rating: [4.2, 9], imgSeeds: ["espresso-1"] },
+    { title: "Pulse ANC Earbuds", slug: "pulse-anc-earbuds", description: "Hybrid ANC earbuds, 28h battery, USB-C.", categorySlug: "electronics-audio", price: 19900, compareAt: 24900, stock: 61, sales: 132, featured: true, imgSeeds: ["earbuds-1", "earbuds-2"] },
+    { title: "Mechanical Keyboard 65% — Tactile", slug: "mk65-tactile", description: "Gasket-mounted 65% board, hot-swap, tactile switches.", categorySlug: "electronics-gadgets", price: 29900, stock: 18, sales: 44, featured: true, imgSeeds: ["keyboard-1"] },
+    { title: "USB-C Hub 8-in-1", slug: "usbc-hub-8in1", description: "HDMI 4K60, 100W PD, ethernet, SD/microSD.", categorySlug: "electronics-gadgets", price: 12900, stock: 40, sales: 77, imgSeeds: ["hub-1"] },
+    { title: "Desk Mat — Felt & Cork", slug: "desk-mat-felt", description: "90×40cm natural felt desk mat with cork base.", categorySlug: "electronics-gadgets", price: 6900, stock: 52, sales: 61, imgSeeds: ["deskmat-1"] },
+    { title: "Bluetooth Bookshelf Speakers", slug: "bt-bookshelf-speakers", description: "Pair of 4\" powered speakers with BT 5.3 & optical.", categorySlug: "electronics-audio", price: 44900, stock: 7, sales: 12, imgSeeds: ["speakers-1"] },
+    { title: "4K Action Cam Lite", slug: "action-cam-lite", description: "4K30, waterproof case, 2 batteries included.", categorySlug: "electronics-gadgets", price: 24900, stock: 23, sales: 29, imgSeeds: ["actioncam-1"] },
+    { title: "Smart RGB Light Bars (2)", slug: "rgb-light-bars", description: "Sync lighting bars, app + voice control.", categorySlug: "electronics-gadgets", price: 15900, stock: 35, sales: 48, imgSeeds: ["lightbars-1"] },
+    { title: "Portable Espresso Maker", slug: "portable-espresso", description: "Manual 18-bar espresso maker for travel.", categorySlug: "electronics-gadgets", price: 21900, stock: 16, sales: 19, imgSeeds: ["espresso-1"] },
   ];
   const glowProducts: SeedProduct[] = [
-    { title: "Barrier Repair Serum 30ml", slug: "barrier-repair-serum", description: "Ceramide + panthenol serum for compromised skin.", categorySlug: "beauty", price: 15900, compareAt: 18900, stock: 44, sales: 92, rating: [4.9, 58], featured: true, imgSeeds: ["serum-1", "serum-2"] },
-    { title: "Gentle Gel Cleanser 150ml", slug: "gentle-gel-cleanser", description: "pH 5.5 daily cleanser, sulfate-free.", categorySlug: "beauty", price: 7900, stock: 66, sales: 121, rating: [4.8, 71], imgSeeds: ["cleanser-1"] },
-    { title: "Mineral SPF50 Sunscreen", slug: "mineral-spf50", description: "Non-greasy zinc oxide sunscreen, no white cast.", categorySlug: "beauty", price: 11900, stock: 58, sales: 140, rating: [4.7, 66], featured: true, imgSeeds: ["sunscreen-1"] },
-    { title: "Hydrating Sheet Mask (5)", slug: "sheet-mask-5", description: "Five bio-cellulose masks with hyaluronic acid.", categorySlug: "beauty", price: 4500, stock: 90, sales: 210, rating: [4.6, 88], imgSeeds: ["mask-1"] },
-    { title: "Overnight Sleeping Mask", slug: "sleeping-mask", description: "Gel-cream sleeping mask with squalane.", categorySlug: "beauty", price: 9900, stock: 37, sales: 44, rating: [4.7, 22], imgSeeds: ["sleepmask-1"] },
-    { title: "Vitamin C Brightening Ampoules", slug: "vitc-ampoules", description: "7-day brightening course, 5% THD ascorbate.", categorySlug: "beauty", price: 13900, stock: 25, sales: 30, rating: [4.5, 17], imgSeeds: ["vitc-1"] },
+    { title: "Barrier Repair Serum 30ml", slug: "barrier-repair-serum", description: "Ceramide + panthenol serum for compromised skin.", categorySlug: "beauty", price: 15900, compareAt: 18900, stock: 44, sales: 92, featured: true, imgSeeds: ["serum-1", "serum-2"] },
+    { title: "Gentle Gel Cleanser 150ml", slug: "gentle-gel-cleanser", description: "pH 5.5 daily cleanser, sulfate-free.", categorySlug: "beauty", price: 7900, stock: 66, sales: 121, imgSeeds: ["cleanser-1"] },
+    { title: "Mineral SPF50 Sunscreen", slug: "mineral-spf50", description: "Non-greasy zinc oxide sunscreen, no white cast.", categorySlug: "beauty", price: 11900, stock: 58, sales: 140, featured: true, imgSeeds: ["sunscreen-1"] },
+    { title: "Hydrating Sheet Mask (5)", slug: "sheet-mask-5", description: "Five bio-cellulose masks with hyaluronic acid.", categorySlug: "beauty", price: 4500, stock: 90, sales: 210, imgSeeds: ["mask-1"] },
+    { title: "Overnight Sleeping Mask", slug: "sleeping-mask", description: "Gel-cream sleeping mask with squalane.", categorySlug: "beauty", price: 9900, stock: 37, sales: 44, imgSeeds: ["sleepmask-1"] },
+    { title: "Vitamin C Brightening Ampoules", slug: "vitc-ampoules", description: "7-day brightening course, 5% THD ascorbate.", categorySlug: "beauty", price: 13900, stock: 25, sales: 30, imgSeeds: ["vitc-1"] },
   ];
 
   const pMap: Record<string, { product: { id: string; title: string; categoryId: string | null }; variants: { id: string; name: string; priceMinor: number }[] }> = {};
@@ -574,20 +576,13 @@ async function main() {
   // Warung products get pending_review status
   await db.product.updateMany({ where: { storeId: warung.store.id }, data: { status: "pending_review" } });
 
-  // reviews
-  const luminaDbProducts = await db.product.findMany({ where: { storeId: lumina.store.id }, include: { variants: true } });
-  for (const [i, p] of luminaDbProducts.slice(0, 5).entries()) {
-    await db.review.create({
-      data: {
-        productId: p.id,
-        customerName: ["Aina", "Daniel", "Farah", "Jun", "Melati"][i],
-        rating: [5, 4, 5, 5, 4][i],
-        title: ["Lovely quality", "Good buy", "Beautiful", "Exceeded expectations", "Solid"][i],
-        body: "Arrived quickly and the packaging was gorgeous. Would recommend to friends.",
-        createdAt: daysAgo(6 + i),
-      },
-    });
-  }
+  // REVIEWS — deliberately NOT seeded (review rewards work order). The review
+  // system is live and honest: reviews arrive only through the real
+  // verified-purchase submission API (POST /api/sf/[slug]/products/[pSlug]/
+  // reviews) and become public only via admin moderation. Seeding fabricated
+  // customer reviews would violate the "never display invented ratings as
+  // genuine customer feedback" invariant. Staging test fixtures live in
+  // scripts/staging/review-fixtures.ts (guarded, clearly marked, no rewards).
 
   // ------------------------------------------------ orders + ledger
   const pick = (key: string, variantIdx = 0, qty = 1): SeedOrderItem => {

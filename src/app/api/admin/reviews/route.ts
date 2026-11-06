@@ -39,6 +39,7 @@ export const GET = handle(async (req: NextRequest) => {
         product: { select: { id: true, title: true, slug: true, store: { select: { id: true, name: true, slug: true } } } },
         shopper: { select: { id: true, email: true, fullName: true } },
         order: { select: { id: true, orderNumber: true, status: true } },
+        reward: { select: { id: true, points: true, reversedAt: true, reversalReason: true } },
       },
       orderBy: { createdAt: "desc" },
       skip,
@@ -66,6 +67,9 @@ export const GET = handle(async (req: NextRequest) => {
     },
     shopper: r.shopper ? { id: r.shopper.id, email: r.shopper.email, fullName: r.shopper.fullName } : null,
     order: r.order ? { id: r.order.id, orderNumber: r.order.orderNumber, status: r.order.status } : null,
+    reward: r.reward
+      ? { id: r.reward.id, points: r.reward.points, reversed: r.reward.reversedAt != null, reversalReason: r.reward.reversalReason }
+      : null,
   }));
   return okPaged(data, { page, size, total });
 });

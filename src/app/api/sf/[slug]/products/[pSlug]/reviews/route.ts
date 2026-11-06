@@ -1,18 +1,24 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { handle, ok, ApiError } from "@/lib/api";
+import { handle, ok, okPaged, ApiError, logActivity } from "@/lib/api";
 import { requireShopper, type ShopperUserDTO } from "@/lib/auth";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { findEligibleOrderForReview, sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
+import { creditReviewReward, REVIEW_REWARD_POINTS, pointsToMinor } from "@/lib/review-rewards";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/sf/[slug]/products/[pSlug]/reviews — VERIFIED-PURCHASE submission (Task B1).
-// {customerName?, rating 1..5, title?, body?} → review is created "pending";
-// it only becomes public (and only then feeds product aggregates) after admin
-// moderation approves it (POST /api/admin/reviews/[id]).
+// ============================================================================
+// /api/sf/[slug]/products/[pSlug]/reviews — the verified-purchase review API.
 //
-// Gate order (each step before the next):
+//   GET  — PUBLIC listing with server-side filtering / sorting / pagination
+//          (approved reviews only; pending/rejected can never appear).
+//   POST — VERIFIED-PURCHASE submission (Task B1) + membership reward credit
+//          (rewards work order): review + MembershipReward ledger row are
+//          created in ONE transaction, so the RM0.05-equivalent reward is
+//          credited exactly once per review, atomically.
+//
+// POST gate order (each step before the next):
 //   1. IP rate limit (5/min) — cheapest check first, before any DB work.
 //   2. Shopper login (401) — runs BEFORE any new-column DB access, so the
 //      anonymous path keeps working even before the Review migration is applied.
@@ -25,8 +31,91 @@ export const dynamic = "force-dynamic";
 //      the DB @@unique([productId, shopperId]) as the race backstop (P2002).
 //   7. Input validation/sanitization (lib/reviews.ts — pure + unit-tested).
 //   8. Identity rate limits: 3/hour/account, 10/hour/product.
-//   9. Create with status "pending" — 201, no aggregates in the response
-//      (nothing is published yet, so there is nothing to report).
+//   9. TRANSACTION: create review (pending) + credit reward ledger row.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// GET — public, published-only listing.
+//   ?star=1..5     filter by exact star level
+//   ?sort=recent|highest|lowest   (default recent)
+//   ?page=&size=   server-side pagination (default 10, max 50)
+// Pending and rejected reviews are structurally excluded (where status) and
+// can therefore never appear publicly or influence totals.
+// ---------------------------------------------------------------------------
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
+  const { slug, pSlug } = await ctx.params;
+  const url = new URL(req.url);
+
+  // Resolve the product the same fail-closed way as the PDP route.
+  const store = await db.store.findFirst({ where: { slug, status: "live", seller: { is: { status: "active" } } } });
+  if (!store) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
+  const product = await db.product.findFirst({ where: { slug: pSlug, storeId: store.id }, select: { id: true } });
+  if (!product) throw new ApiError(404, "PRODUCT_NOT_FOUND", "Product not found");
+
+  const starParam = url.searchParams.get("star");
+  if (starParam != null && !["1", "2", "3", "4", "5"].includes(starParam)) {
+    throw new ApiError(400, "VALIDATION", "star must be an integer between 1 and 5");
+  }
+  const sortParam = url.searchParams.get("sort") ?? "recent";
+  if (!["recent", "highest", "lowest"].includes(sortParam)) {
+    throw new ApiError(400, "VALIDATION", "sort must be one of: recent, highest, lowest");
+  }
+  // Server-side pagination (default 10, max 50) — the client never loads the
+  // full review set.
+  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const size = Math.min(50, Math.max(1, parseInt(url.searchParams.get("size") ?? "10", 10) || 10));
+  const skip = (page - 1) * size;
+
+  const where: Prisma.ReviewWhereInput = {
+    productId: product.id,
+    status: "published",
+    ...(starParam ? { rating: Number(starParam) } : {}),
+  };
+  const orderBy: Prisma.ReviewOrderByWithRelationInput =
+    sortParam === "highest" ? [{ rating: "desc" as const }, { createdAt: "desc" as const }] : sortParam === "lowest" ? [{ rating: "asc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" };
+
+  const [rows, total] = await Promise.all([
+    db.review.findMany({
+      where,
+      orderBy,
+      skip,
+      take: size,
+      select: {
+        id: true,
+        orderId: true,
+        customerName: true,
+        rating: true,
+        title: true,
+        body: true,
+        reply: true,
+        createdAt: true,
+      },
+    }),
+    db.review.count({ where }),
+  ]);
+
+  return okPaged(
+    {
+      reviews: rows.map((r) => ({
+        id: r.id,
+        // orderId != null ⇒ verified purchase (B1) — server-derived, never a
+        // client-submitted flag. shopperId/email are never exposed publicly.
+        orderId: r.orderId,
+        customerName: r.customerName,
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        reply: r.reply,
+        createdAt: r.createdAt,
+      })),
+    },
+    { page, size, total }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// POST — verified-purchase submission (+ exactly-once reward credit).
+// ---------------------------------------------------------------------------
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
   rateLimit(req, "sf-review", 5); // 5/min/IP — first, before any DB access
 
@@ -70,7 +159,8 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   }
 
   // 5. Verified purchase: most recent eligible order of THIS shopper for THIS
-  //    product in THIS store (delivered/completed — see lib/reviews.ts).
+  //    product in THIS store (delivered/completed + refined refund rules —
+  //    see lib/reviews.ts).
   const eligibleOrder = await findEligibleOrderForReview(me.id, product.id, store.id);
   if (!eligibleOrder) {
     throw new ApiError(403, "VERIFIED_PURCHASE_REQUIRED", "You can review after your order is delivered");
@@ -92,23 +182,62 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   rateLimitKey(me.id, "sf-review-acct", 3, 3600_000); // 3/hour/account
   rateLimitKey(product.id, "sf-review-product", 10, 3600_000); // 10/hour/product
 
-  // 9. Create as pending — moderation publishes it (and recomputes aggregates).
+  // 9. TRANSACTION: create the pending review AND credit the membership
+  //    reward in one atomic unit. A failure in either write rolls both back;
+  //    a client retry after a committed response hits the duplicate check (409)
+  //    before a second reward could ever exist (reviewId is UNIQUE anyway).
   try {
-    const review = await db.review.create({
-      data: {
-        productId: product.id,
+    const created = await db.$transaction(async (tx) => {
+      const review = await tx.review.create({
+        data: {
+          productId: product.id,
+          shopperId: me.id,
+          orderId: eligibleOrder.id,
+          customerName: parsed.value.customerName,
+          rating: parsed.value.rating,
+          title: parsed.value.title,
+          body: parsed.value.body,
+          status: "pending",
+        },
+        select: { id: true },
+      });
+      const reward = await creditReviewReward(tx, {
         shopperId: me.id,
-        orderId: eligibleOrder.id,
-        customerName: parsed.value.customerName,
-        rating: parsed.value.rating,
-        title: parsed.value.title,
-        body: parsed.value.body,
-        status: "pending",
-      },
-      select: { id: true },
+        reviewId: review.id,
+        productTitle: product.title,
+      });
+      return { review, reward };
     });
+
+    // Audit the submission + reward credit (outside the transaction — the
+    // ActivityLog is an append-only trail, not a business invariant).
+    await logActivity({
+      actorType: "shopper",
+      actorId: me.id,
+      actorLabel: me.email,
+      action: "shopper.review.submitted",
+      entityType: "review",
+      entityId: created.review.id,
+      meta: {
+        productId: product.id,
+        orderId: eligibleOrder.id,
+        rating: parsed.value.rating,
+        rewardId: created.reward.id,
+        rewardPoints: REVIEW_REWARD_POINTS,
+      },
+    });
+
     return ok(
-      { id: review.id, status: "pending", message: "Thanks! Your review is pending approval." },
+      {
+        id: created.review.id,
+        status: "pending",
+        reward: {
+          credited: true,
+          points: REVIEW_REWARD_POINTS,
+          minorEquivalent: pointsToMinor(REVIEW_REWARD_POINTS),
+        },
+        message: `Thanks! Your review is pending approval. ${REVIEW_REWARD_POINTS} membership points (≈ RM0.05) were added to your rewards.`,
+      },
       { status: 201 }
     );
   } catch (e) {

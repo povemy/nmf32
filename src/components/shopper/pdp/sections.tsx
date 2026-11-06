@@ -9,7 +9,7 @@
 // discount badge, small heart + share actions in the title row, star-rating
 // pill row — all riding the SAME real data.
 // ============================================================================
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BadgeCheck,
   ChevronDown,
@@ -26,11 +26,13 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { dateShort, Stars } from "../ui-bits";
+import { dateShort, Stars, fetchJson, fetchEnvelope } from "../ui-bits";
+import { useApp } from "@/lib/app-store";
 import { formatMinor } from "@/lib/money";
 import { PDP_SHIPPING_DISPLAY } from "@/lib/shipping-display";
 import { cn } from "@/lib/utils";
 import type { ShopperCtx } from "../ui-bits";
+import { ReviewFormDialog } from "../review-form-dialog";
 import type { PdpPayloadT } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -368,23 +370,138 @@ export function PdpDescriptionBlock({ description }: { description: string | nul
 
 // ---------------------------------------------------------------------------
 // 5.2 — reviews: average + REAL distribution (all published, server groupBy)
+// + verified-buyer submission CTA + server-side filter / sort / pagination
+// (rewards work order §6). The initial list rides the PDP payload (recent,
+// take 20); any filter/sort/load-more goes through the REAL listing endpoint
+// GET /api/sf/{store}/products/{product}/reviews — pending/rejected reviews
+// can never appear here, and an empty product shows an honest empty state.
 // ---------------------------------------------------------------------------
+type EligibilityT =
+  | { state: "anonymous" }
+  | { state: "eligible" }
+  | { state: "already_reviewed"; reviewStatus: string }
+  | { state: "ineligible" };
+
 export function PdpReviewsBlock({
   reviews,
   ratingAvg,
   ratingCount,
   ratingDist,
   storeName,
+  storeSlug,
+  productSlug,
+  productTitle,
+  productImage,
   sectionRef,
+  onOpenAuth,
 }: {
   reviews: PdpPayloadT["reviews"];
   ratingAvg: number;
   ratingCount: number;
   ratingDist: number[];
   storeName: string;
+  storeSlug: string;
+  productSlug: string;
+  productTitle: string;
+  productImage?: string | null;
   sectionRef?: React.RefObject<HTMLElement | null>;
+  /** Opens the shopper auth sheet (anonymous visitors tapping "sign in to review"). */
+  onOpenAuth: () => void;
 }) {
   const maxBar = Math.max(1, ...ratingDist);
+
+  // ---- filter / sort / pagination (server-backed) ---------------------------
+  const [star, setStar] = useState<number | null>(null);
+  const [sort, setSort] = useState<"recent" | "highest" | "lowest">("recent");
+  // server mode engages on any filter/sort interaction or load-more
+  const [serverItems, setServerItems] = useState<PdpPayloadT["reviews"] | null>(null);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverPage, setServerPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 20; // matches the PDP payload's embedded take — continuity
+
+  // ---- verified-buyer eligibility probe (auth-varying → separate endpoint) --
+  // Only fires for signed-in shoppers — anonymous visitors get the sign-in CTA
+  // without a guaranteed-401 request.
+  const meState = useApp((s) => s.me);
+  const signedIn = Boolean(meState.loaded && meState.shopper);
+  const [eligibility, setEligibility] = useState<EligibilityT>({ state: "anonymous" });
+  const [formOpen, setFormOpen] = useState(false);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setEligibility({ state: "anonymous" });
+      return;
+    }
+    let alive = true;
+    setEligibility({ state: "ineligible" }); // probe pending — no CTA flash
+    fetchJson<{ eligible: boolean; reason: string; review?: { status: string } }>(
+      `/api/sf/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}/reviews/eligibility`
+    )
+      .then((d) => {
+        if (!alive) return;
+        if (d.eligible) setEligibility({ state: "eligible" });
+        else if (d.reason === "already_reviewed") setEligibility({ state: "already_reviewed", reviewStatus: d.review?.status ?? "pending" });
+        else setEligibility({ state: "ineligible" });
+      })
+      .catch(() => {
+        if (alive) setEligibility({ state: "ineligible" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [signedIn, storeSlug, productSlug]);
+
+  // NOTE: no reset-on-change effect here — changeFilter/changeSort manage
+  // server mode directly with EXPLICIT params. An effect on [star, sort]
+  // would race the fetch that immediately follows it (cleared list vs.
+  // resolved fetch ordering), and reading `star`/`sort` inside a callback
+  // captured one render earlier would filter with the PREVIOUS value
+  // (stale-closure bug, caught in browser E2E). The fetch therefore takes
+  // the intended filter/sort as ARGUMENTS, never from closure state.
+  const fetchPage = useCallback(
+    async (page: number, replace: boolean, fStar: number | null, fSort: "recent" | "highest" | "lowest") => {
+      setLoadingMore(true);
+      try {
+        const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE), sort: fSort });
+        if (fStar != null) params.set("star", String(fStar));
+        const res = await fetchEnvelope<{ reviews: PdpPayloadT["reviews"] }>(
+          `/api/sf/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}/reviews?${params.toString()}`
+        );
+        setServerTotal(res.meta?.total ?? 0);
+        setServerItems((prev) => (replace || page === 1 ? res.data.reviews : [...(prev ?? []), ...res.data.reviews]));
+        setServerPage(page);
+      } catch {
+        toast.error("Could not load reviews", { description: "Check your connection and try again." });
+      } finally {
+        setLoadingMore(false);
+      }
+    },
+    [storeSlug, productSlug]
+  );
+
+  const serverMode = serverItems != null;
+  const list = serverMode ? serverItems! : reviews;
+  // Embedded total = ratingCount (published count) — same population the
+  // endpoint counts with no filter + recent sort.
+  const total = serverMode ? serverTotal : ratingCount;
+
+  const changeFilter = (next: number | null) => {
+    setStar(next);
+    // any non-default combination requires the server list
+    if (next != null || sort !== "recent") void fetchPage(1, true, next, sort);
+    else setServerItems(null); // back to embedded default view
+  };
+  const changeSort = (next: "recent" | "highest" | "lowest") => {
+    setSort(next);
+    if (next !== "recent" || star != null) void fetchPage(1, true, star, next);
+    else setServerItems(null);
+  };
+  const loadMore = () => {
+    // from embedded mode, page 2 continues the same (recent, unfiltered) list
+    void fetchPage(serverMode ? serverPage + 1 : 2, false, star, sort);
+  };
+
   return (
     <section ref={sectionRef} aria-label="Customer reviews" className="scroll-mt-24 rounded-2xl border bg-card p-4 md:p-5">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b pb-4">
@@ -398,27 +515,121 @@ export function PdpReviewsBlock({
         {/* distribution over ALL published reviews (ratingDist server groupBy) */}
         {ratingCount > 0 ? (
           <div className="min-w-[180px] flex-1 space-y-1">
-            {[5, 4, 3, 2, 1].map((star) => {
-              const count = ratingDist[star - 1] ?? 0;
+            {[5, 4, 3, 2, 1].map((s) => {
+              const count = ratingDist[s - 1] ?? 0;
+              const pct = ratingCount > 0 ? Math.round((count / ratingCount) * 100) : 0;
               return (
-                <div key={star} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span className="w-3 text-right font-semibold">{star}</span>
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => changeFilter(star === s ? null : s)}
+                  aria-pressed={star === s}
+                  aria-label={`Filter by ${s} star reviews — ${count} reviews, ${pct}%`}
+                  className="flex w-full items-center gap-2 text-[11px] text-muted-foreground transition-opacity hover:opacity-80"
+                >
+                  <span className="w-3 text-right font-semibold">{s}</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-muted">
-                    <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.round((count / maxBar) * 100)}%` }} />
+                    <div
+                      className={cn("h-full rounded-full", star === s ? "bg-teal-600" : "bg-amber-400")}
+                      style={{ width: `${Math.round((count / maxBar) * 100)}%` }}
+                    />
                   </div>
-                  <span className="w-8 text-right tabular-nums">{count}</span>
-                </div>
+                  <span className="w-14 text-right tabular-nums">
+                    {count} <span className="opacity-70">({pct}%)</span>
+                  </span>
+                </button>
               );
             })}
           </div>
         ) : null}
       </div>
 
-      {reviews.length === 0 ? (
-        <p className="pt-4 text-sm text-muted-foreground">No reviews yet — be the first after you purchase.</p>
+      {/* toolbar: filter chips + sort + eligibility CTA */}
+      <div className="flex flex-wrap items-center gap-2 border-b py-3">
+        {[
+          { v: null, label: "All" },
+          { v: 5, label: "5★" },
+          { v: 4, label: "4★" },
+          { v: 3, label: "3★" },
+          { v: 2, label: "2★" },
+          { v: 1, label: "1★" },
+        ].map((f) => (
+          <button
+            key={String(f.v)}
+            type="button"
+            onClick={() => changeFilter(f.v)}
+            aria-pressed={star === f.v}
+            className={cn(
+              "min-h-[32px] rounded-full border px-3 text-xs font-bold transition-all",
+              star === f.v
+                ? "border-transparent bg-teal-700 text-white"
+                : "border-slate-200 bg-card text-slate-500 hover:border-teal-300 hover:text-teal-800"
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-1.5">
+          <label htmlFor="review-sort" className="sr-only">
+            Sort reviews
+          </label>
+          <select
+            id="review-sort"
+            value={sort}
+            onChange={(e) => changeSort(e.target.value as "recent" | "highest" | "lowest")}
+            className="h-8 rounded-lg border bg-card px-2 text-xs font-semibold text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600"
+          >
+            <option value="recent">Most recent</option>
+            <option value="highest">Highest rating</option>
+            <option value="lowest">Lowest rating</option>
+          </select>
+        </div>
+      </div>
+
+      {/* verified-buyer CTA — server-decided state, never client-asserted */}
+      <div className="py-3">
+        {eligibility.state === "eligible" ? (
+          <Button
+            onClick={() => setFormOpen(true)}
+            className="min-h-[44px] w-full bg-brand-gradient text-white hover:brightness-110 sm:w-auto"
+            aria-label={`Write a review for ${productTitle}`}
+          >
+            <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            Write a review — earn 5 points (≈ RM0.05)
+          </Button>
+        ) : eligibility.state === "already_reviewed" ? (
+          <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-xs font-semibold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+            <BadgeCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {eligibility.reviewStatus === "published"
+              ? "Your review is published — thank you!"
+              : eligibility.reviewStatus === "rejected"
+                ? "Your review was not approved for publication."
+                : "Your review is pending approval — thank you!"}
+          </div>
+        ) : eligibility.state === "ineligible" ? null : (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-teal-300 bg-teal-50/50 px-3 text-xs font-semibold text-teal-800 transition-colors hover:bg-teal-50 sm:w-auto dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-300"
+          >
+            <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+            Bought this? Sign in to review as a verified buyer
+          </button>
+        )}
+      </div>
+
+      {/* listing — honest empty state per filter */}
+      {list.length === 0 ? (
+        <p className="pt-2 text-sm text-muted-foreground">
+          {star != null
+            ? `No ${star}-star reviews yet.`
+            : ratingCount === 0
+              ? "No reviews yet. Be the first verified buyer to review this product."
+              : "No reviews match this view yet."}
+        </p>
       ) : (
-        <ul className="space-y-4 pt-4">
-          {reviews.map((r) => (
+        <ul className="space-y-4 pt-2">
+          {list.map((r) => (
             <li key={r.id} className="space-y-1.5 border-b pb-4 last:border-b-0 last:pb-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -437,7 +648,7 @@ export function PdpReviewsBlock({
               </div>
               <Stars rating={r.rating} />
               {r.title ? <p className="text-sm font-medium">{r.title}</p> : null}
-              {r.body ? <p className="text-sm text-foreground/85">{r.body}</p> : null}
+              {r.body ? <p className="whitespace-pre-line text-sm text-foreground/85">{r.body}</p> : null}
               {r.reply ? (
                 <div className="rounded-lg border-l-2 border-teal-600 bg-muted/60 p-2.5 text-xs">
                   <span className="font-semibold text-teal-800">{storeName} replied:</span> {r.reply}
@@ -447,6 +658,27 @@ export function PdpReviewsBlock({
           ))}
         </ul>
       )}
+
+      {/* server-side pagination — Load more while the page is short of total */}
+      {list.length < total ? (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" disabled={loadingMore} onClick={loadMore} className="min-h-[44px]">
+            {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            Load more reviews ({total - list.length} more)
+          </Button>
+        </div>
+      ) : null}
+
+      {/* the REAL submission dialog (verified-purchase + reward server-side) */}
+      <ReviewFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        storeSlug={storeSlug}
+        productSlug={productSlug}
+        productTitle={productTitle}
+        productImage={productImage ?? null}
+        onSubmitted={() => setEligibility({ state: "already_reviewed", reviewStatus: "pending" })}
+      />
     </section>
   );
 }

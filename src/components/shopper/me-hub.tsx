@@ -10,11 +10,15 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  BadgeCheck,
   BadgePercent,
   Bell,
   BellRing,
   Check,
   ChevronRight,
+  CircleCheck,
+  CircleX,
+  Clock,
   Coins,
   CreditCard,
   Crown,
@@ -26,6 +30,7 @@ import {
   LifeBuoy,
   Loader2,
   MapPin,
+  MessageSquareQuote,
   Package,
   PackageCheck,
   Pencil,
@@ -59,6 +64,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatMinor } from "@/lib/money";
 import AffiliateHubView from "./affiliate-hub";
+import { ReviewFormDialog, type EditableReviewT } from "./review-form-dialog";
 import { cn } from "@/lib/utils";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
 import { useApp } from "@/lib/app-store";
@@ -82,7 +88,9 @@ import {
   notifyCartUpdated,
   EmptyState,
   StatusBadge,
+  Stars,
   dateShort,
+  openProduct,
   statusLabel,
   type ProductCardT,
   type ShopperCtx,
@@ -199,7 +207,7 @@ type AddressT = {
   updatedAt: string;
 };
 
-type MeSub = "purchases" | "wallet" | "vouchers" | "likes" | "viewed" | "addresses" | "affiliate";
+type MeSub = "purchases" | "wallet" | "vouchers" | "likes" | "viewed" | "addresses" | "affiliate" | "reviews";
 
 const PURCHASE_BUCKETS: { key: string; label: string; icon: typeof Package }[] = [
   { key: "to_pay", label: "To Pay", icon: Wallet },
@@ -334,7 +342,7 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
     const back = () => setSub(null);
     switch (sub) {
       case "purchases":
-        content = <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} />;
+        content = <PurchasesView ctx={ctx} onBack={back} initialTab={purchaseTab} onGoReviews={() => setSub("reviews")} />;
         break;
       case "wallet":
         // DORMANT SCAFFOLD — NOMO FINANCE: WalletView is kept intact for the
@@ -362,6 +370,11 @@ export default function MeHubView({ ctx, initialTab }: { ctx: ShopperCtx; initia
         // Task 2-A — the affiliate hub is a full surface; the Me hub embeds it
         // as a sub-view with its own back affordance.
         content = <AffiliateHubView ctx={ctx} onBack={back} />;
+        break;
+      case "reviews":
+        // Rewards work order — verified-review management: to-review queue,
+        // submitted reviews with moderation status, membership reward ledger.
+        content = <ReviewsView ctx={ctx} onBack={back} />;
         break;
       default:
         content = null;
@@ -460,6 +473,7 @@ function DashboardSidebar({
           onClick={() => (activeSub === null ? window.scrollTo({ top: 0, behavior: "smooth" }) : onNav(null))}
         />
         <SideItem icon={Package} label="My Purchases" active={activeSub === "purchases"} onClick={() => onNav("purchases")} />
+        <SideItem icon={Star} label="My Reviews" active={activeSub === "reviews"} onClick={() => onNav("reviews")} />
         {NOMO_FINANCE_ENABLED ? <SideItem icon={Wallet} label="My Wallet" active={activeSub === "wallet"} onClick={() => onNav("wallet")} /> : null}
         <SideItem icon={Ticket} label="My Vouchers" active={activeSub === "vouchers"} onClick={() => onNav("vouchers")} />
         <SideItem icon={MapPin} label="Delivery Addresses" active={activeSub === "addresses"} onClick={() => onNav("addresses")} />
@@ -834,6 +848,7 @@ function Dashboard({
               <h2 className="pb-3 text-sm font-extrabold text-slate-900">More Activities</h2>
               <div className="grid grid-cols-3 gap-2">
                 <ActivityTile icon={Heart} label="My Likes" badge={data.likeCount} onClick={() => onSub("likes")} />
+                <ActivityTile icon={Star} label="My Reviews" onClick={() => onSub("reviews")} />
                 <ActivityTile icon={History} label="Recently Viewed" onClick={() => onSub("viewed")} />
                 <ActivityTile icon={Store} label="Start Selling" onClick={() => setSurface("seller")} />
                 {/* Sell / Generate — shortcut into the market's generate-store flow. */}
@@ -1472,7 +1487,7 @@ function SubHeader({ title, onBack, action }: { title: string; onBack: () => voi
   );
 }
 
-function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: () => void; initialTab?: string }) {
+function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperCtx; onBack: () => void; initialTab?: string; onGoReviews: () => void }) {
   const [tab, setTab] = useState(initialTab ?? "all");
   const [orders, setOrders] = useState<OrderRowT[] | null>(null);
   const [page, setPage] = useState(1);
@@ -1617,6 +1632,7 @@ function PurchasesView({ ctx, onBack, initialTab }: { ctx: ShopperCtx; onBack: (
               onOpen={() => ctx.nav({ name: "order-status", orderNumber: o.orderNumber })}
               onReceive={() => void receive(o.orderNumber)}
               onReorder={() => void buyAgain(o.orderNumber)}
+              onReview={onGoReviews}
             />
           ))}
         </ul>
@@ -1644,14 +1660,20 @@ function PurchasesOrderCard({
   onOpen,
   onReceive,
   onReorder,
+  onReview,
 }: {
   o: OrderRowT;
   busy: boolean;
   onOpen: () => void;
   onReceive: () => void;
   onReorder: () => void;
+  /** Navigates to My Reviews — the server certifies which items are reviewable. */
+  onReview: () => void;
 }) {
   const canReceive = o.status === "shipped" || o.status === "delivered";
+  // Review affordance on receipt-confirmed purchases (the Reviews view itself
+  // is server-gated per product — this is only the entry point).
+  const canReview = o.status === "delivered" || o.status === "completed" || o.status === "partially_refunded";
   const shipLabel = shipmentStatusLabel(o.shipmentStatus);
   const shipTone =
     o.shipmentStatus === "DELIVERED"
@@ -1746,8 +1768,341 @@ function PurchasesOrderCard({
             Order received
           </Button>
         ) : null}
+        {canReview ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onReview}
+            className="min-h-[36px] gap-1.5"
+            aria-label={`Review products from order ${o.orderNumber}`}
+          >
+            <Star className="h-3.5 w-3.5" aria-hidden="true" /> Review
+          </Button>
+        ) : null}
       </div>
     </li>
+  );
+}
+
+// =============================================================================================
+// My Reviews view (rewards work order §7) — to-review queue, submitted reviews
+// with moderation status, and the membership reward ledger. All server-derived
+// from GET /api/me/reviews; submission/editing ride the REAL verified-purchase
+// endpoints (the review button can never appear for an ineligible purchase).
+// =============================================================================================
+
+type ReviewToReviewT = {
+  orderNumber: string;
+  orderStatus: string;
+  purchasedAt: string;
+  store: { id: string; name: string; slug: string };
+  product: { id: string; title: string; slug: string; imageUrl: string };
+};
+
+type ReviewSubmittedT = {
+  id: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  status: string;
+  createdAt: string;
+  product: { id: string; title: string; slug: string; imageUrl: string; store: { name: string; slug: string } };
+  reward: { points: number; reversed: boolean; reversalReason: string | null } | null;
+  editable: boolean;
+  editCount: number;
+};
+
+type ReviewsMgmtT = {
+  toReview: ReviewToReviewT[];
+  submitted: ReviewSubmittedT[];
+  rewards: {
+    activePoints: number;
+    activeCount: number;
+    reversedCount: number;
+    reversedPoints: number;
+    minorEquivalent: number;
+    recent: { id: string; kind: string; points: number; note: string | null; createdAt: string; reversedAt: string | null; reversalReason: string | null }[];
+  };
+  policy: { pointsPerReview: number; minorPerPoint: number; maxEdits: number };
+};
+
+function ReviewStatusBadge({ status }: { status: string }) {
+  if (status === "published") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+        <CircleCheck className="h-3 w-3" aria-hidden="true" /> Published
+      </span>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">
+        <CircleX className="h-3 w-3" aria-hidden="true" /> Not approved
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+      <Clock className="h-3 w-3" aria-hidden="true" /> Pending approval
+    </span>
+  );
+}
+
+function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
+  const [data, setData] = useState<ReviewsMgmtT | null>(null);
+  const [failed, setFailed] = useState(false);
+  // dialog targets
+  const [formFor, setFormFor] = useState<ReviewToReviewT | null>(null);
+  const [editFor, setEditFor] = useState<ReviewSubmittedT | null>(null);
+
+  const load = useCallback(async () => {
+    setFailed(false);
+    try {
+      const d = await fetchJson<ReviewsMgmtT>("/api/me/reviews");
+      setData(d);
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const rewards = data?.rewards;
+
+  return (
+    <div className="mx-auto w-full max-w-3xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
+      <SubHeader
+        title="My Reviews"
+        onBack={onBack}
+        action={
+          data ? (
+            <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+              {data.toReview.length} to review
+            </span>
+          ) : null
+        }
+      />
+
+      {failed ? (
+        <EmptyState
+          icon={MessageSquareQuote}
+          title="Could not load your reviews"
+          hint="Check your connection and try again."
+          action={
+            <Button onClick={() => void load()} className="min-h-[44px] bg-brand-gradient-deep hover:brightness-110">
+              Retry
+            </Button>
+          }
+        />
+      ) : !data ? (
+        <div className="space-y-3">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* ---- membership rewards summary (real ledger aggregate) ---------- */}
+          <section className="relative overflow-hidden rounded-xl bg-brand-gradient p-5 text-white shadow-glow-cyan" aria-labelledby="me-review-rewards">
+            <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl pointer-events-none" aria-hidden="true" />
+            <div className="relative">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-white/80">Review rewards</p>
+              <p className="pt-1 text-2xl font-extrabold tracking-tight tabular-nums lg:text-3xl">
+                {rewards?.activePoints ?? 0} points
+                <span className="pl-2 text-sm font-bold text-white/80">≈ {formatMinor(rewards?.minorEquivalent ?? 0)}</span>
+              </p>
+              <p className="pt-1 text-xs text-white/85">
+                Earned from {rewards?.activeCount ?? 0} verified review{rewards?.activeCount === 1 ? "" : "s"}
+                {rewards && rewards.reversedCount > 0 ? ` · ${rewards.reversedCount} reversed (fraud)` : ""} · 1 point ≈ RM0.01
+              </p>
+              <p className="pt-2 text-[11px] leading-relaxed text-white/70">
+                Rewards are membership benefits — redemption activates with Nomo Finance. Every honest review earns the same
+                reward, regardless of star level.
+              </p>
+            </div>
+          </section>
+
+          {/* ---- to review: server-certified eligible purchases -------------- */}
+          <section aria-labelledby="me-reviews-toreview" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+            <h2 id="me-reviews-toreview" className="pb-3 text-sm font-extrabold text-slate-900">
+              To review{" "}
+              <span className="font-bold text-slate-400">
+                ({data.toReview.length} item{data.toReview.length === 1 ? "" : "s"})
+              </span>
+            </h2>
+            {data.toReview.length === 0 ? (
+              <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+                Nothing to review right now — delivered and completed purchases appear here.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {data.toReview.map((t) => (
+                  <li key={t.product.id} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3">
+                    <button
+                      type="button"
+                      onClick={() => openProduct(ctx, { storeSlug: t.store.slug, slug: t.product.slug })}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      aria-label={`View ${t.product.title}`}
+                    >
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100" aria-hidden="true">
+                        {t.product.imageUrl ? <img src={t.product.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-muted-foreground" />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="line-clamp-1 block text-[13px] font-semibold">{t.product.title}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {t.store.name} · {t.orderNumber} · {statusLabel(t.orderStatus)}
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+                          <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Verified purchase — earns 5 points
+                        </span>
+                      </span>
+                    </button>
+                    <Button
+                      size="sm"
+                      onClick={() => setFormFor(t)}
+                      className="min-h-[36px] shrink-0 bg-brand-gradient text-white hover:brightness-110"
+                      aria-label={`Write a review for ${t.product.title}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Review
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* ---- submitted reviews with moderation status --------------------- */}
+          <section aria-labelledby="me-reviews-submitted" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+            <h2 id="me-reviews-submitted" className="pb-3 text-sm font-extrabold text-slate-900">
+              My submitted reviews{" "}
+              <span className="font-bold text-slate-400">
+                ({data.submitted.length})
+              </span>
+            </h2>
+            {data.submitted.length === 0 ? (
+              <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+                You haven&apos;t reviewed any products yet. Approved reviews help other buyers shop with confidence.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {data.submitted.map((r) => (
+                  <li key={r.id} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openProduct(ctx, { storeSlug: r.product.store.slug, slug: r.product.slug })}
+                        className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100"
+                        aria-label={`View ${r.product.title}`}
+                      >
+                        {r.product.imageUrl ? <img src={r.product.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-muted-foreground" />}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="line-clamp-1 text-[13px] font-semibold">{r.product.title}</p>
+                          <ReviewStatusBadge status={r.status} />
+                        </div>
+                        <p className="pt-0.5 text-[11px] text-muted-foreground">
+                          {r.product.store.name} · {dateShort(r.createdAt)}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                          <Stars rating={r.rating} numeric={false} />
+                          {r.reward ? (
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                r.reward.reversed ? "bg-rose-50 text-rose-600" : "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
+                              )}
+                              title={r.reward.reversed ? r.reward.reversalReason ?? "Reward reversed" : "Membership reward credited"}
+                            >
+                              <Coins className="h-3 w-3" aria-hidden="true" />
+                              {r.reward.reversed ? `+${r.reward.points} pts reversed` : `+${r.reward.points} pts earned`}
+                            </span>
+                          ) : null}
+                          {r.editable ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditFor(r)}
+                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800"
+                              aria-label={`Edit your pending review of ${r.product.title}`}
+                            >
+                              <Pencil className="h-3 w-3" aria-hidden="true" /> Edit ({data.policy.maxEdits - r.editCount} left)
+                            </button>
+                          ) : null}
+                        </div>
+                        {r.title ? <p className="pt-1.5 text-xs font-semibold">{r.title}</p> : null}
+                        {r.body ? <p className="whitespace-pre-line pt-0.5 text-xs text-slate-600">{r.body}</p> : null}
+                        {r.status === "rejected" ? (
+                          <p className="pt-1.5 text-[11px] text-rose-500">
+                            This review was not published. {r.reward?.reversed ? "Its reward was reversed." : "Your reward for the submission is retained."}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* ---- reward ledger history (auditable) --------------------------- */}
+          {rewards && rewards.recent.length > 0 ? (
+            <section aria-labelledby="me-rewards-ledger" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+              <h2 id="me-rewards-ledger" className="pb-3 text-sm font-extrabold text-slate-900">
+                Reward history
+              </h2>
+              <ul className="max-h-96 space-y-2.5 overflow-y-auto pr-1 [scrollbar-width:thin]" aria-label="Membership reward ledger entries">
+                {rewards.recent.map((e) => (
+                  <li key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold">{e.note ?? "Membership reward"}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {dateShort(e.createdAt)}
+                        {e.reversedAt ? " · reversed" : ""}
+                        {e.reversalReason ? ` — ${e.reversalReason.slice(0, 80)}` : ""}
+                      </p>
+                    </div>
+                    <span className={cn("shrink-0 text-sm font-extrabold tabular-nums", e.reversedAt ? "text-slate-400 line-through" : "text-teal-700")}>
+                      {e.reversedAt ? "+" : "+"}
+                      {e.points} pts
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      )}
+
+      {/* the REAL submission dialog — eligibility + reward enforced server-side */}
+      {formFor ? (
+        <ReviewFormDialog
+          open
+          onOpenChange={(v) => !v && setFormFor(null)}
+          storeSlug={formFor.store.slug}
+          productSlug={formFor.product.slug}
+          productTitle={formFor.product.title}
+          productImage={formFor.product.imageUrl}
+          orderNumber={formFor.orderNumber}
+          onSubmitted={() => void load()}
+        />
+      ) : null}
+
+      {/* pending-edit dialog — PATCH /api/me/reviews/[id], rewards untouched */}
+      {editFor ? (
+        <ReviewFormDialog
+          open
+          onOpenChange={(v) => !v && setEditFor(null)}
+          storeSlug={editFor.product.store.slug}
+          productSlug={editFor.product.slug}
+          productTitle={editFor.product.title}
+          productImage={editFor.product.imageUrl}
+          edit={{ id: editFor.id, rating: editFor.rating, title: editFor.title, body: editFor.body } satisfies EditableReviewT}
+          onSubmitted={() => void load()}
+        />
+      ) : null}
+    </div>
   );
 }
 

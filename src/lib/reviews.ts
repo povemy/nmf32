@@ -39,7 +39,20 @@ import { db } from "./db";
 // and "completed" (buyer-confirmed receipt via
 // /api/me/orders/[orderNumber]/receive, or the 14-day auto-complete sweep in
 // lib/order-completion.ts). Those two are review-eligible.
+//
+// REVIEW REWARDS work order — partial refunds: a PARTIALLY refunded order can
+// still be delivered (buyer kept the goods; only part of the money came back),
+// so it stays review-eligible ONLY when receipt was already established
+// (deliveredAt/completedAt set) AND the specific line still has unrefunded
+// value (OrderItem.refundedMinor < lineSubtotalMinor). Fully refunded
+// ("refunded"), cancelled, unpaid ("payment_pending") and expired
+// ("payment_expired") orders are NEVER eligible.
 export const ELIGIBLE_ORDER_STATUSES = ["delivered", "completed"] as const;
+
+/** Statuses whose orders we fetch as CANDIDATES before the precise predicate
+ * (partially_refunded rows are included as candidates, then timestamp- and
+ * refund-checked by isEligibleOrder — see REVIEW_REFINEMENT below). */
+export const ELIGIBLE_CANDIDATE_STATUSES = ["delivered", "completed", "partially_refunded"] as const;
 
 // ----------------------------------------------------------------------------
 // Review status lifecycle
@@ -74,42 +87,72 @@ export function reviewTransitionAllowed(from: string, to: string): boolean {
 export type EligibleOrderShape = {
   storeId: string;
   status: string;
-  items: ReadonlyArray<{ productId: string }>;
+  deliveredAt?: Date | null;
+  completedAt?: Date | null;
+  items: ReadonlyArray<{ productId: string; refundedMinor?: number; lineSubtotalMinor?: number }>;
 };
 
-/** Pure eligibility predicate: the order belongs to the product's store, is in
- *  a terminal-success status, and contains an item for THIS product.
+/** Pure eligibility predicate:
+ *   • the order belongs to the product's store (multi-seller orders are
+ *     separate Order rows — one seller's completion never unlocks another's);
+ *   • the order is in a terminal-success status: delivered | completed, or
+ *     partially_refunded WITH prior receipt (deliveredAt/completedAt set);
+ *   • it contains an item for THIS product that still has unrefunded value
+ *     (refundedMinor < lineSubtotalMinor — a fully refunded line is not a
+ *     purchase the shopper meaningfully paid for).
  *  Shopper ownership is NOT checked here — it is enforced by the query in
  *  findEligibleOrderForReview (shopperId scope). */
 export function isEligibleOrder(order: EligibleOrderShape, productId: string, storeId: string): boolean {
-  return (
-    order.storeId === storeId &&
-    (ELIGIBLE_ORDER_STATUSES as readonly string[]).includes(order.status) &&
-    order.items.some((i) => i.productId === productId)
-  );
+  if (order.storeId !== storeId) return false;
+  const terminalSuccess =
+    (ELIGIBLE_ORDER_STATUSES as readonly string[]).includes(order.status) ||
+    (order.status === "partially_refunded" && (order.deliveredAt != null || order.completedAt != null));
+  if (!terminalSuccess) return false;
+  return order.items.some((i) => {
+    if (i.productId !== productId) return false;
+    const refunded = i.refundedMinor ?? 0;
+    // Real OrderItem rows always carry lineSubtotalMinor; a shape without it
+    // (legacy projections, test fixtures) is treated as refund-free.
+    if (i.lineSubtotalMinor == null) return refunded === 0;
+    return refunded < i.lineSubtotalMinor;
+  });
 }
 
 /**
  * Most recent order of THIS shopper that qualifies the shopper to review the
- * given product: same store, terminal-success status, contains the product.
- * Single findFirst (items matched relationally, newest first) — returns the
- * order id to freeze onto the review, or null when no eligible order exists.
+ * given product: same store, terminal-success status (incl. the refined
+ * partial-refund rule), contains the product with unrefunded value.
+ * Fetches candidate orders newest-first with the product's items, then applies
+ * the pure predicate — the per-line refundedMinor < lineSubtotalMinor
+ * comparison is not expressible as a Prisma where clause, and the candidate
+ * set per shopper is small by construction. Returns the order id to freeze
+ * onto the review, or null when no eligible order exists.
  */
 export async function findEligibleOrderForReview(
   shopperId: string,
   productId: string,
   storeId: string
 ): Promise<{ id: string } | null> {
-  return db.order.findFirst({
+  const candidates = await db.order.findMany({
     where: {
       shopperId,
       storeId,
-      status: { in: [...ELIGIBLE_ORDER_STATUSES] },
+      status: { in: [...ELIGIBLE_CANDIDATE_STATUSES] },
       items: { some: { productId } },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      storeId: true,
+      status: true,
+      deliveredAt: true,
+      completedAt: true,
+      items: { where: { productId }, select: { productId: true, refundedMinor: true, lineSubtotalMinor: true } },
+    },
     orderBy: { createdAt: "desc" },
+    take: 10,
   });
+  const eligible = candidates.find((o) => isEligibleOrder(o, productId, storeId));
+  return eligible ? { id: eligible.id } : null;
 }
 
 // ----------------------------------------------------------------------------

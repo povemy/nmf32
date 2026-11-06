@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { handle, ok, ApiError, transitionOrder } from "@/lib/api";
+import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { fastForwardDelivery, mockPodUrl } from "@/lib/shipping";
 import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
@@ -8,10 +8,24 @@ export const dynamic = "force-dynamic";
 
 // POST /api/me/orders/[orderNumber]/receive — buyer confirms receipt.
 // Allowed from "shipped" OR "delivered" → status "completed", completedAt now,
-// OrderStatusHistory {actor:"shopper"}. Repeat → 409 VALIDATION; unpaid → 409.
-// Scoped by session shopperId (404 otherwise). If a platform shipment is still
+// OrderStatusHistory {actor:"shopper"}. Repeat → idempotent success (the
+// already-completed state is returned; NO second history row, NO second
+// financial event). Unpaid → 409; any other state → 409.
+//
+// Scoped by session shopperId (404 otherwise — another buyer's order number
+// is indistinguishable from "not found"). If a platform shipment is still
 // mid-flight it is fast-forwarded to DELIVERED first so the timeline never
 // shows the parcel travelling after the buyer already has it.
+//
+// RACE SAFETY (rewards work order §3.C): the status flip is a CONDITIONAL
+// updateMany on status IN (shipped, delivered) — two concurrent taps converge
+// on ONE completed transition (the loser re-reads "completed" and returns the
+// idempotent success envelope). The history row is written only when the
+// conditional flip actually changed a row, so repeat clicks can never
+// duplicate receipt events. Settlement maturity is untouched: payouts mature
+// days_after_paid (CommissionSetting), so confirming receipt neither releases
+// nor duplicates seller funds; the affiliate approval is itself a conditional
+// (status:"pending") update — idempotent under repeats and races.
 export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderNumber: string }> }) => {
   const me = await requireShopper();
   const { orderNumber } = await ctx.params;
@@ -25,6 +39,21 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
   if (order.status === "payment_pending") {
     throw new ApiError(409, "INVALID_STATUS", "This order is not paid yet — complete payment before confirming receipt");
   }
+  if (order.status === "completed") {
+    // Idempotent repeat: the receipt was already confirmed (this session or a
+    // concurrent one) — return the settled state, no duplicate history/event.
+    const done = await db.order.findUnique({
+      where: { id: order.id },
+      select: { id: true, orderNumber: true, status: true, completedAt: true },
+    });
+    return ok({
+      id: done!.id,
+      orderNumber: done!.orderNumber,
+      status: done!.status,
+      completedAt: done!.completedAt,
+      alreadyConfirmed: true,
+    });
+  }
   if (!["shipped", "delivered"].includes(order.status)) {
     throw new ApiError(409, "VALIDATION", `Order receipt cannot be confirmed from status '${order.status}'`);
   }
@@ -36,14 +65,31 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
   }
 
   // AFFILIATE — completed is an authoritative completion state (see deliver).
+  // Conditional + idempotent: repeat calls find no "pending" commissions.
   try { await approveAffiliateCommissionsForOrder(order.id); } catch { /* best-effort */ }
-  await transitionOrder({
-    orderId: order.id,
-    toStatus: "completed",
-    actor: "shopper",
-    note: "Confirmed receipt by buyer",
-    timestamps: { completedAt: new Date() },
+
+  // CONDITIONAL flip: exactly one of N concurrent/racing requests transitions
+  // shipped|delivered → completed; the rest see count 0 and converge on the
+  // idempotent envelope below.
+  const flipped = await db.order.updateMany({
+    where: { id: order.id, status: { in: ["shipped", "delivered"] } },
+    data: { status: "completed", completedAt: new Date() },
   });
+
+  if (flipped.count > 0) {
+    // Receipt-confirmation history — written ONLY by the request that won the
+    // conditional flip, so repeat clicks never duplicate the event.
+    await db.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        fromStatus: order.status,
+        toStatus: "completed",
+        actor: "shopper",
+        note: "Confirmed receipt by buyer",
+      },
+    });
+  }
+
   const completed = await db.order.findUnique({
     where: { id: order.id },
     select: { id: true, orderNumber: true, status: true, completedAt: true },
