@@ -16,7 +16,29 @@ import type { Prisma } from "@prisma/client";
 
 export type AnalyticsEventInput = {
   dedupKey: string;
-  eventType: "store_view" | "product_view" | "view_cart" | "add_to_cart" | "remove_from_cart";
+  eventType:
+    | "store_view"
+    | "product_view"
+    | "view_cart"
+    | "add_to_cart"
+    | "remove_from_cart"
+    // PDP makeover (Phase 7) — conversion-funnel micro events beamed from the
+    // product page via POST /api/analytics/pdp-event. They ride the SAME queue
+    // and table as the seller-insights events (no second analytics system);
+    // queries.ts simply doesn't aggregate them yet. purchase stays DERIVED from
+    // Order records (metric-definitions.md) — never an event row.
+    | "view_item_gallery"
+    | "select_variant"
+    | "variant_modal_open"
+    | "variant_modal_dismiss"
+    | "invalid_variant_attempt"
+    | "oos_option_interaction"
+    | "qty_changed"
+    | "add_to_cart_failure"
+    | "buy_now_initiated"
+    | "begin_checkout"
+    | "claim_voucher"
+    | "voucher_claim_failure";
   storeId: string;
   productId?: string | null;
   variantId?: string | null;

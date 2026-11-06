@@ -455,10 +455,22 @@ export default function ShopperShell() {
     onActivity: () => window.dispatchEvent(new Event("nomofee:chat-sync")),
   });
 
-  const showChrome = !isStoreChrome(view);
-  // App-like bottom navigation — mobile only, hidden during checkout focus mode.
-  const showBottomNav = showChrome && view.name !== "checkout" && view.name !== "pay";
-  // Admin-controlled global footer switch (default ON; checkout never shows it).
+  // PDP makeover Phase 1.2 — CHECKOUT FOCUS MODE: the global NOMOFEE top bar
+  // (utility strip + MarketHeader) is COMPLETELY hidden throughout the
+  // checkout process — the checkout and payment views carry their own minimal
+  // navigation (checkout.tsx back bar + Stepper / PayView gateway chrome).
+  // The view-state machine is the clean exclusion point (no pathname
+  // sniffing). Storefront/store-page keep their own store-branded chrome
+  // (isStoreChrome) by design — they are seller surfaces, not standard
+  // marketplace pages.
+  const isCheckoutFocus = view.name === "checkout" || view.name === "pay";
+  const showChrome = !isStoreChrome(view) && !isCheckoutFocus;
+  // App-like bottom navigation — mobile only; hidden wherever the global
+  // chrome is hidden (checkout focus mode + store chrome).
+  const showBottomNav = showChrome;
+  // Admin-controlled global footer switch (default ON; hidden together with
+  // the rest of the global chrome — checkout never shows it, matching the
+  // original intent of the comment that the old condition failed to enforce).
   const footerVisible = useFooterVisible();
 
   return (

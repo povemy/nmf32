@@ -55,8 +55,18 @@ const loadPdp = publicCache(
       take: 6,
     });
 
+    // PDP makeover: accurate rating DISTRIBUTION over ALL published reviews
+    // (the loaded list is capped at 20 — a client-side histogram would lie
+    // whenever ratingCount > 20). Same reviews cache tag as the list above.
+    const distRows = await db.review.groupBy({
+      by: ["rating"],
+      where: { productId: product.id, status: "published" },
+      _count: { _all: true },
+    });
+    const ratingDist = [1, 2, 3, 4, 5].map((star) => distRows.find((r) => r.rating === star)?._count._all ?? 0);
+
     const cardStyle = await cardStyleFor(store.id);
-    return { ok: true as const, store, product, related, cardStyle };
+    return { ok: true as const, store, product, related, ratingDist, cardStyle };
   },
   ["sf-pdp"],
   { ttl: 30, tags: [PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.reviews, PUBLIC_CACHE_TAGS.stores] }
@@ -72,7 +82,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       ? new ApiError(404, "STORE_NOT_FOUND", "Store not found")
       : new ApiError(404, "PRODUCT_NOT_FOUND", "Product not found");
   }
-  const { store, product, related, cardStyle } = result;
+  const { store, product, related, ratingDist, cardStyle } = result;
 
   // Seller Insights — product_view (once per session per product per hour).
   // Only THIS route counts: catalogue grids and the related-products payload below
@@ -95,6 +105,9 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       categoryId: product.category?.id ?? null,
       categoryName: product.category?.name ?? null,
       images: product.images.map((i) => i.url),
+      // index i = star (i+1); counts of ALL published reviews (not just the
+      // latest 20 loaded below) — powers the honest rating histogram.
+      ratingDist,
       variants: product.variants.map((v) => ({
         id: v.id,
         name: v.name,
@@ -106,6 +119,11 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
         moq: Math.max(1, v.moq),
         sku: v.sku,
         isActive: v.isActive,
+        // PDP makeover: seller-uploaded per-variant imagery (schema field —
+        // null when unset, in which case the gallery stays product-level)
+        // and the seller's real low-stock threshold for urgency display.
+        imageUrl: v.imageUrl ?? null,
+        lowStockThreshold: v.lowStockThreshold,
       })),
     },
     reviews: product.reviews.map((r) => ({

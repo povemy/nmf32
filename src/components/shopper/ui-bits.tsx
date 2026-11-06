@@ -475,7 +475,19 @@ export function ensureFontsLoaded(ids: (string | null | undefined)[]) {
 // Stars
 // ---------------------------------------------------------------------------
 
-export function Stars({ rating, count, className }: { rating: number; count?: number; className?: string }) {
+export function Stars({
+  rating,
+  count,
+  className,
+  numeric = true,
+}: {
+  rating: number;
+  count?: number;
+  className?: string;
+  /** PDP makeover: call sites that show their OWN styled rating number
+   *  (identity block, reviews header) pass false to avoid a duplicate. */
+  numeric?: boolean;
+}) {
   const full = Math.floor(rating);
   const half = rating - full >= 0.25 && rating - full < 0.75;
   const rounded = rating - full >= 0.75 ? full + 1 : full;
@@ -493,10 +505,12 @@ export function Stars({ rating, count, className }: { rating: number; count?: nu
           <Star key={i} className="h-3.5 w-3.5 text-muted-foreground/40" />
         )
       )}
-      <span className="text-xs text-muted-foreground ml-1 tabular-nums">
-        {rating > 0 ? rating.toFixed(1) : "New"}
-        {typeof count === "number" && count > 0 ? ` (${count})` : ""}
-      </span>
+      {numeric ? (
+        <span className="text-xs text-muted-foreground ml-1 tabular-nums">
+          {rating > 0 ? rating.toFixed(1) : "New"}
+          {typeof count === "number" && count > 0 ? ` (${count})` : ""}
+        </span>
+      ) : null}
     </span>
   );
 }

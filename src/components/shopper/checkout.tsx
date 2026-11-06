@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Star,
   LogIn,
+  Lock,
   Store,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1104,7 +1105,18 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   );
 
   return (
-    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
+    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:py-8">
+      {/* PDP makeover Phase 1.2 — checkout focus chrome: the global top bar is
+          hidden during checkout, so this MINIMAL bar keeps back navigation
+          (pops the shell's view stack — cart, PDP or market, wherever the
+          shopper came from) plus payment reassurance. No duplicated global
+          header, no empty spacer. */}
+      <div className="flex items-center justify-between gap-3 pb-2">
+        <BackBar onBack={() => ctx.back()} />
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          <Lock className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> Secure checkout
+        </span>
+      </div>
       <h1 className="text-2xl font-extrabold tracking-tight">Checkout</h1>
       <p className="text-sm text-muted-foreground">
         {quote?.groups && quote.groups.length > 1 ? (

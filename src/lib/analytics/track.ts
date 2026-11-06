@@ -206,3 +206,67 @@ export async function trackRemoveFromCart(input: {
     });
   } catch { /* never break the host request */ }
 }
+
+// ---------------------------------------------------------------------------
+// PDP conversion-funnel micro events (PDP makeover Phase 7)
+// ---------------------------------------------------------------------------
+// Client beacons (POST /api/analytics/pdp-event) land here and ride the SAME
+// queue/table as the seller-insights events — an extension of the existing
+// system, not a second one. purchase is still DERIVED from Order records;
+// begin_checkout is a view-level signal the server cannot see on its own, so
+// it is beamed at the moment the shopper enters the checkout funnel.
+export const PDP_EVENT_TYPES = [
+  "view_item_gallery",
+  "select_variant",
+  "variant_modal_open",
+  "variant_modal_dismiss",
+  "invalid_variant_attempt",
+  "oos_option_interaction",
+  "qty_changed",
+  "add_to_cart_failure",
+  "buy_now_initiated",
+  "begin_checkout",
+  "claim_voucher",
+  "voucher_claim_failure",
+] as const;
+export type PdpEventType = (typeof PDP_EVENT_TYPES)[number];
+
+export function isPdpEventType(v: unknown): v is PdpEventType {
+  return typeof v === "string" && (PDP_EVENT_TYPES as readonly string[]).includes(v);
+}
+
+/** One PDP funnel interaction (gallery swipe, variant pick, modal open,
+ *  qty change, buy-now intent, voucher claim …). Minute-bucket dedup keeps
+ *  beacon retries and rapid repeat interactions from double-counting while
+ *  still distinguishing different products/variants. */
+export async function trackPdpEvent(
+  req: Request,
+  input: {
+    eventType: PdpEventType;
+    storeId: string;
+    productId?: string | null;
+    variantId?: string | null;
+    qty?: number | null;
+    shopperId?: string | null;
+  }
+): Promise<void> {
+  try {
+    const b = await base(req, { shopperId: input.shopperId ?? null });
+    enqueueAnalyticsEvent({
+      dedupKey: `pe:${b.sessionId}:${input.eventType}:${input.productId ?? "-"}:${input.variantId ?? "-"}:${input.qty ?? "-"}:${minuteBucket()}`,
+      eventType: input.eventType,
+      storeId: input.storeId,
+      productId: input.productId ?? null,
+      variantId: input.variantId ?? null,
+      shopperId: b.shopperId,
+      visitorId: b.visitorId,
+      sessionId: b.sessionId,
+      qty: input.qty ?? null,
+      referrerHost: b.referrerHost,
+      channel: b.channel,
+      ...attrFields(b.attr),
+      affiliateId: b.affiliate.affiliateId,
+      affiliateLinkId: b.affiliate.linkId,
+    });
+  } catch { /* never break the host request */ }
+}
