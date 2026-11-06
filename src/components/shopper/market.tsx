@@ -100,6 +100,14 @@ export default function MarketHome({ ctx }: { ctx: ShopperCtx }) {
     );
   }
 
+  // Follow-up adjustment: while /api/market/home resolves we used to paint
+  // the hero's default "Discover the marketplace" slide — a branded flash
+  // that swapped out the moment real data landed. Render a neutral skeleton
+  // instead so the page settles straight into its real content.
+  if (!home) {
+    return <HomeLoadingSkeleton />;
+  }
+
   const order: HomeSectionId[] = home?.sectionOrder ?? ["hero"];
 
   // Hero + quick access carry their own containers; content sections share
@@ -217,6 +225,33 @@ function SectionSkeleton() {
     <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="h-5 w-40 rounded bg-muted animate-pulse" />
       <ProductGridSkeleton />
+    </div>
+  );
+}
+
+// Neutral loading skeleton for the market home — replaces the old default
+// hero slide ("Discover the marketplace") that flashed before real data
+// arrived. Footprint mirrors the hero + quick-access strip + first rail so
+// the layout doesn't jump when data lands.
+function HomeLoadingSkeleton() {
+  return (
+    <div className="flex-1" aria-busy="true" aria-label="Loading marketplace">
+      <div className="mx-auto max-w-7xl px-3 pt-2.5 sm:px-4 sm:pt-4">
+        <div className="grid gap-3 sm:gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="h-40 animate-pulse rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" />
+          <div className="hidden gap-4 lg:grid lg:grid-cols-1">
+            <div className="min-h-[8.5rem] animate-pulse rounded-2xl border bg-muted" />
+            <div className="min-h-[8.5rem] animate-pulse rounded-2xl border bg-muted" />
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto w-full max-w-7xl px-3 pt-4 sm:px-4 md:pt-6">
+        <div className="h-[4.5rem] animate-pulse rounded-2xl border bg-card md:h-24" />
+      </div>
+      <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:py-6">
+        <div className="mb-3 h-5 w-40 animate-pulse rounded bg-muted" />
+        <ProductGridSkeleton />
+      </div>
     </div>
   );
 }

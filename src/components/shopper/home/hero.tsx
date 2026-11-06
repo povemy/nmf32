@@ -2,15 +2,16 @@
 // ============================================================================
 // HomeHero — the main promotional area (work order 14 §2). Campaign slides
 // come from the Admin Campaign system (placement "hero"); legacy
-// MarketplaceBanners pad the carousel; when neither exists a default branded
-// slide renders (never an empty section). Desktop/mobile image variants,
-// CTA per slide, autoplay with pause controls + reduced-motion respect,
-// touch swipe, dots + arrows. Secondary promo tiles (placement
-// "hero_secondary") sit beside the carousel on desktop.
+// MarketplaceBanners pad the carousel; when neither exists the hero
+// auto-hides (the homepage loads straight into content — the old default
+// "Discover the marketplace" slide was removed on request). Desktop/mobile
+// image variants, CTA per slide, autoplay with pause controls +
+// reduced-motion respect, touch swipe, dots + arrows. Secondary promo tiles
+// (placement "hero_secondary") sit beside the carousel on desktop.
 // ============================================================================
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ChevronLeft, ChevronRight, ShoppingBag } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ShopperCtx } from "../ui-bits";
 import { ExternalCtaLink, isExternalCta, useCampaignNav } from "./cta";
@@ -18,28 +19,6 @@ import type { HeroSlideT, HeroTileT } from "./types";
 
 const AUTOPLAY_MS = 6000;
 const SWIPE_THRESHOLD_PX = 44;
-
-function DefaultSlide({ ctx }: { ctx: ShopperCtx }) {
-  return (
-    <button
-      type="button"
-      onClick={() => ctx.nav({ name: "search", q: "" })}
-      className="absolute inset-0 flex w-full flex-col items-center justify-center gap-2 bg-brand-gradient p-5 text-center"
-      aria-label="Browse all NOMOFEE products"
-    >
-      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
-        <ShoppingBag className="h-6 w-6 text-white" aria-hidden="true" />
-      </span>
-      <span className="text-lg font-extrabold text-white sm:text-2xl lg:text-4xl">Discover the marketplace</span>
-      <span className="max-w-md text-xs text-white/85 sm:text-sm lg:max-w-xl lg:text-base">
-        Thousands of products from independent Malaysian shops — fresh finds every day.
-      </span>
-      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-4 py-1.5 text-xs font-semibold text-teal-800 shadow-sm lg:px-5 lg:py-2 lg:text-sm">
-        Start shopping <ChevronRight className="h-3.5 w-3.5 lg:h-4 lg:w-4" aria-hidden="true" />
-      </span>
-    </button>
-  );
-}
 
 function SlideBody({
   slide,
@@ -145,15 +124,13 @@ export function HomeHero({
   }, [n, paused, reducedMotion]);
 
   if (n === 0) {
-    // No campaigns, no banners — the default branded slide (never empty).
+    // Follow-up adjustment: the default "Discover the marketplace" slide is
+    // removed — with no hero campaigns/banners the hero auto-hides (consistent
+    // with every other data-less section). Lone secondary tiles still render.
+    if (secondary.length === 0) return null;
     return (
       <div className="mx-auto max-w-7xl px-3 pt-2.5 sm:px-4 sm:pt-4">
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <div className="relative h-40 overflow-hidden rounded-2xl border bg-muted sm:h-56 lg:h-[360px] xl:h-[400px]" aria-roledescription="banner">
-            <DefaultSlide ctx={ctx} />
-          </div>
-          <SecondaryTiles tiles={secondary} ctx={ctx} />
-        </div>
+        <SecondaryTiles tiles={secondary} ctx={ctx} />
       </div>
     );
   }
