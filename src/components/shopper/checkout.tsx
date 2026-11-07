@@ -2183,6 +2183,14 @@ function orderHero(d: OrderDetailT): { Icon: typeof Clock; title: string; blurb:
         title: "Parcel delivered",
         blurb: d.deliveredAt ? `Delivered on ${dateShort(d.deliveredAt)} — confirm receipt below.` : "Delivered — confirm receipt below.",
       };
+    case "received":
+      return {
+        Icon: BadgeCheck,
+        title: "Order received — rate it",
+        blurb: d.receivedAt
+          ? `Receipt confirmed ${dateShort(d.receivedAt)} — rate your items within 30 days to complete this order.`
+          : "Rate your items within 30 days to complete this order.",
+      };
     case "completed":
       return { Icon: BadgeCheck, title: "Order completed", blurb: `Thanks for shopping with ${d.storeName} — we hope to see you again soon.` };
     case "cancelled":
@@ -2316,15 +2324,17 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
   }
 
   // POST /api/me/orders/[orderNumber]/receive — buyer confirms receipt
-  // (shipped|delivered → completed; the platform also fast-forwards a
-  // mid-flight shipment to DELIVERED so the timeline never trails the buyer).
+  // (ORDER-FLOW CORRECTION: shipped|delivered → "received" / To Rate — the
+  // platform also fast-forwards a mid-flight shipment to DELIVERED so the
+  // timeline never trails the buyer; completion comes from the rating or the
+  // 30-day window).
   async function confirmReceipt() {
     if (receiveBusy) return;
     setReceiveBusy(true);
     try {
       const res = await postJson<{ orderNumber: string; status: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}/receive`, {});
       toast.success("Order received — thank you!", {
-        description: `Order ${res.orderNumber} is now ${res.status === "completed" ? "completed" : res.status}.`,
+        description: `Order ${res.orderNumber} moved to To Rate — rate it within 30 days to complete it.`,
       });
       await load();
     } catch (e) {
@@ -2409,6 +2419,9 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
           const isDetail = typeof d.subtotalMinor === "number";
           const Hero = orderHero(d);
           const canReceive = isDetail && (d.status === "shipped" || d.status === "delivered");
+          // ORDER-FLOW CORRECTION: received = To Rate — offer the rating entry
+          // point right here (My Reviews certifies reviewability server-side).
+          const canRate = isDetail && d.status === "received";
           const shipmentLive = !!d.shipment && d.shipment.status !== "DELIVERED" && d.shipment.status !== "RETURNED";
           const eddLabel = shipmentLive ? eddFromShipment(d.shipment?.etaFrom, d.shipment?.etaTo) : null;
 
@@ -2676,6 +2689,16 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
                   >
                     {receiveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                     Order received
+                  </Button>
+                ) : null}
+                {canRate ? (
+                  <Button
+                    onClick={() => ctx.nav({ name: "me", tab: "reviews" })}
+                    className="min-h-[44px] gap-2 bg-brand-gradient-deep text-white hover:brightness-110"
+                    title="Rate this purchase within 30 days"
+                  >
+                    <Star className="h-4 w-4" aria-hidden="true" />
+                    Rate your purchase
                   </Button>
                 ) : null}
                 <Button variant="outline" onClick={buyAgain} disabled={reorderBusy} className="min-h-[44px] gap-2" title="Add these items to your cart again">

@@ -242,13 +242,15 @@ export function CommissionSettingsView() {
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">Grace days after delivered</Label>
                   {/* F-10: honest labelling — this field is stored but NOT enforced
-                      (auto-complete uses a fixed 14-day window; see
+                      (the receipt/completion windows are fixed: delivered orders
+                      auto-confirm receipt after 14 days, then complete 30 days
+                      after receipt confirmation; see
                       /api/cron/order-maintenance — the old lib/order-completion.ts
                       sweep was removed in Phase 2.4 as dead code). */}
                   <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300">Not enforced</Badge>
                 </div>
                 <Input inputMode="numeric" value={form.graceDays} onChange={(e) => setForm({ ...form, graceDays: e.target.value })} className="min-h-[44px]" />
-                <p className="text-[11px] leading-snug text-muted-foreground">Delivered orders currently auto-complete after a fixed 14-day window — this value is stored for future use but does not change that.</p>
+                <p className="text-[11px] leading-snug text-muted-foreground">Delivered orders auto-confirm receipt after a fixed 14-day window, then complete 30 days after receipt confirmation (or immediately once the buyer rates the order) — this value is stored for future use but does not change that.</p>
               </div>
               <div className="flex items-end gap-3 pb-1.5">
                 <Switch id="ship" checked={form.appliesToShipping} onCheckedChange={(v) => setForm({ ...form, appliesToShipping: v })} />

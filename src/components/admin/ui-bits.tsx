@@ -51,7 +51,7 @@ export const TONE_CLASS: Record<Tone, string> = {
 };
 
 const EMERALD_STATUSES = new Set([
-  "active", "live", "paid", "approved", "verified", "completed", "delivered", "success",
+  "active", "live", "paid", "approved", "verified", "completed", "delivered", "received", "success",
   "succeeded", "sent", "processed", "resolved", "issued", "ok", "done", "match",
 ]);
 const AMBER_STATUSES = new Set([

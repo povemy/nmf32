@@ -7,11 +7,17 @@ export const dynamic = "force-dynamic";
 
 // Purchase-hub buckets — NOMOFEE order statuses mapped onto the marketplace
 // funnel the buyer dashboard uses (To Pay / To Ship / To Receive / To Rate).
+// ORDER-FLOW CORRECTION (buyer-confirmed receipt): the courier's DELIVERED
+// event no longer moves an order out of To Receive — "delivered" stays there
+// until the buyer taps "Order received" (→ status "received", To Rate) or the
+// 14-day auto-receipt sweep confirms for them. "received" (To Rate) then
+// completes on the buyer's rating (review submission) or after the 30-day
+// rating window (order-maintenance cron, stage 2).
 export const BUCKETS: Record<string, string[]> = {
   to_pay: ["payment_pending"],
   to_ship: ["paid", "processing"],
-  to_receive: ["shipped"],
-  to_rate: ["delivered"],
+  to_receive: ["shipped", "delivered"],
+  to_rate: ["received"],
   completed: ["completed"],
   cancelled: ["cancelled", "refunding", "partially_refunded", "refunded", "closed"],
 };
@@ -52,7 +58,7 @@ export const GET = handle(async (req: Request) => {
       take,
       select: {
         id: true, orderNumber: true, status: true, totalMinor: true, createdAt: true,
-        paymentProvider: true, trackingNumber: true,
+        paymentProvider: true, trackingNumber: true, receivedAt: true,
         store: { select: { id: true, name: true, slug: true } },
         shipment: { select: { status: true, courierName: true, awbNumber: true } },
         items: {
@@ -79,6 +85,7 @@ export const GET = handle(async (req: Request) => {
         status: o.status,
         totalMinor: o.totalMinor,
         createdAt: o.createdAt,
+        receivedAt: o.receivedAt,
         paymentProvider: o.paymentProvider,
         trackingNumber: o.trackingNumber ?? o.shipment?.awbNumber ?? null,
         shipmentStatus: o.shipment?.status ?? null,

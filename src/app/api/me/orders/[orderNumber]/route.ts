@@ -26,7 +26,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
       subtotalMinor: true, discountMinor: true, shippingMinor: true, taxMinor: true, totalMinor: true,
       customerName: true, customerEmail: true, customerPhone: true, customerNote: true,
       shippingAddressJson: true,
-      paymentProvider: true, paidAt: true, shippedAt: true, deliveredAt: true, completedAt: true,
+      paymentProvider: true, paidAt: true, shippedAt: true, deliveredAt: true, receivedAt: true, completedAt: true,
       trackingNumber: true, createdAt: true,
       store: { select: { id: true, name: true, slug: true } },
       items: {
@@ -60,7 +60,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
         subtotalMinor: true, discountMinor: true, shippingMinor: true, taxMinor: true, totalMinor: true,
         customerName: true, customerEmail: true, customerPhone: true, customerNote: true,
         shippingAddressJson: true,
-        paymentProvider: true, paidAt: true, shippedAt: true, deliveredAt: true, completedAt: true,
+        paymentProvider: true, paidAt: true, shippedAt: true, deliveredAt: true, receivedAt: true, completedAt: true,
         trackingNumber: true, createdAt: true,
         store: { select: { id: true, name: true, slug: true } },
         items: {
@@ -100,6 +100,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
     paidAt: order.paidAt,
     shippedAt: order.shippedAt,
     deliveredAt: order.deliveredAt,
+    receivedAt: order.receivedAt,
     completedAt: order.completedAt,
     trackingNumber: order.trackingNumber ?? shipment?.awbNumber ?? null,
     storeName: order.store.name,

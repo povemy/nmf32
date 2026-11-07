@@ -122,6 +122,7 @@ type OrderRowT = {
   status: string;
   totalMinor: number;
   createdAt: string;
+  receivedAt?: string | null;
   paymentProvider?: string | null;
   trackingNumber: string | null;
   shipmentStatus?: string | null;
@@ -1548,8 +1549,8 @@ function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperC
   }, [tab, load]);
 
   // Task 11 live-refresh: parcel states advance server-side (mock courier ticks
-  // + seller deliveries + the 14-day auto-complete sweep), so refetch whenever
-  // the browser tab regains focus or becomes visible.
+  // + seller deliveries + the auto-receipt/auto-complete maintenance sweeps),
+  // so refetch whenever the browser tab regains focus or becomes visible.
   useEffect(() => {
     const refetch = () => void load(tab, 1, true);
     const onVis = () => {
@@ -1563,12 +1564,14 @@ function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperC
     };
   }, [tab, load]);
 
-  // "Order received" — buyer confirms receipt (shipped | delivered → completed).
+  // "Order received" — buyer confirms receipt. ORDER-FLOW CORRECTION: this now
+  // moves the order to the To Rate bucket (status "received") — completion
+  // happens on the buyer's rating or after the 30-day rating window.
   const receive = async (orderNumber: string) => {
     setBusyOrder(orderNumber);
     try {
       await postJson<{ status: string }>(`/api/me/orders/${orderNumber}/receive`, {});
-      toast.success("Order received", { description: `${orderNumber} is marked completed — thank you for shopping!` });
+      toast.success("Order received", { description: `${orderNumber} moved to To Rate — rate it within 30 days to complete it.` });
       await load(tab, 1, true);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not confirm receipt");
@@ -1702,8 +1705,15 @@ function PurchasesOrderCard({
 }) {
   const canReceive = o.status === "shipped" || o.status === "delivered";
   // Review affordance on receipt-confirmed purchases (the Reviews view itself
-  // is server-gated per product — this is only the entry point).
-  const canReview = o.status === "delivered" || o.status === "completed" || o.status === "partially_refunded";
+  // is server-gated per product — this is only the entry point). ORDER-FLOW
+  // CORRECTION: "received" (To Rate) is the rating window; courier-delivered
+  // orders still await the buyer's receipt confirmation, so no Review CTA yet.
+  const canReview = o.status === "received" || o.status === "completed" || o.status === "partially_refunded";
+  // 30-day rating window countdown (To Rate) — server-supplied receivedAt.
+  const rateDaysLeft =
+    o.status === "received" && o.receivedAt
+      ? Math.max(0, Math.ceil((new Date(o.receivedAt).getTime() + 30 * 86_400_000 - Date.now()) / 86_400_000))
+      : null;
   const shipLabel = shipmentStatusLabel(o.shipmentStatus);
   const shipTone =
     o.shipmentStatus === "DELIVERED"
@@ -1728,7 +1738,7 @@ function PurchasesOrderCard({
         </div>
 
         {o.trackingNumber ? (
-          <div className="pt-2">
+          <div className="flex flex-wrap items-center gap-1.5 pt-2">
             <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold", shipTone)}>
               <Truck className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="truncate">
@@ -1736,6 +1746,30 @@ function PurchasesOrderCard({
                 {shipLabel || o.trackingNumber}
                 {shipLabel ? <span className="hidden font-mono text-[10px] opacity-80 sm:inline"> · {o.trackingNumber}</span> : null}
               </span>
+            </span>
+            {o.status === "delivered" ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                Confirm receipt to continue
+              </span>
+            ) : null}
+            {rateDaysLeft != null ? (
+              <span className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                rateDaysLeft > 7 ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"
+              )}>
+                <Star className="h-3 w-3 shrink-0" aria-hidden="true" />
+                {rateDaysLeft > 0 ? `Rate within ${rateDaysLeft} day${rateDaysLeft === 1 ? "" : "s"}` : "Rating window closing"}
+              </span>
+            ) : null}
+          </div>
+        ) : rateDaysLeft != null ? (
+          <div className="pt-2">
+            <span className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+              rateDaysLeft > 7 ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"
+            )}>
+              <Star className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {rateDaysLeft > 0 ? `Rate within ${rateDaysLeft} day${rateDaysLeft === 1 ? "" : "s"}` : "Rating window closing"}
             </span>
           </div>
         ) : null}
@@ -1968,7 +2002,7 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
             </h2>
             {data.toReview.length === 0 ? (
               <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
-                Nothing to review right now — delivered and completed purchases appear here.
+                Nothing to review right now — purchases you have confirmed receiving appear here (To Rate).
               </p>
             ) : (
               <ul className="space-y-3">

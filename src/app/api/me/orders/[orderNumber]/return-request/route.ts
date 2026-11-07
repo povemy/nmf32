@@ -37,7 +37,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ orderNu
   if (openDispute || order.disputedFlag) {
     throw new ApiError(409, "DISPUTE_EXISTS", "There is already an open after-sales request for this order");
   }
-  if (!["paid", "processing", "shipped", "delivered", "completed"].includes(order.status)) {
+  if (!["paid", "processing", "shipped", "delivered", "received", "completed"].includes(order.status)) {
     throw new ApiError(409, "INVALID_STATUS", `After-sales requests are not available for orders in status '${order.status}'`);
   }
 

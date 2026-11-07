@@ -12,7 +12,7 @@ export const TIER_THRESHOLDS_MINOR: Record<MembershipTier, number> = {
 };
 
 /** Order statuses that count as real spend for membership + wallet stats. */
-export const PAID_ORDER_STATUSES = ["paid", "processing", "shipped", "delivered", "completed"];
+export const PAID_ORDER_STATUSES = ["paid", "processing", "shipped", "delivered", "received", "completed"];
 
 export function tierForSpend(lifetimeSpendMinor: number): MembershipTier {
   if (lifetimeSpendMinor >= TIER_THRESHOLDS_MINOR.PLATINUM) return "PLATINUM";

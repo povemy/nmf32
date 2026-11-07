@@ -667,6 +667,12 @@ model Order {
   fulfilledAt         DateTime?
   shippedAt           DateTime?
   deliveredAt         DateTime?
+  // BUYER-CONFIRMED receipt timestamp (order-flow fix): courier "delivered"
+  // alone no longer advances the order — the buyer's "Order received" tap
+  // (or the auto-receipt sweep 14 days after delivery) writes receivedAt and
+  // flips status to "received" (the buyer dashboard's To Rate bucket). The
+  // 30-day rating window runs FROM THIS TIMESTAMP (rate or auto-complete).
+  receivedAt          DateTime?
   completedAt         DateTime?
   cancelledAt         DateTime?
   trackingNumber      String?
@@ -716,9 +722,13 @@ model Order {
   // (unpaid / to_fulfill / shipped / done / refunds) — the primary seller
   // workflow query (store/orders route: WHERE storeId = ? AND status IN (...)).
   @@index([storeId, status])
-  // PHASE 2 / B: order-maintenance auto-complete sweep (cron, 30 s cadence):
-  // WHERE status = 'delivered' AND deliveredAt < cutoff ORDER BY deliveredAt ASC.
+  // PHASE 2 / B: order-maintenance sweeps (cron, 30 s cadence):
+  //   stage 1 — WHERE status = 'delivered' AND deliveredAt < cutoff (14-day
+  //              buyer-protection window without a receipt confirmation).
+  //   stage 2 — WHERE status = 'received' AND receivedAt < cutoff (30-day
+  //              rating window after receipt confirmation).
   @@index([status, deliveredAt])
+  @@index([status, receivedAt])
   reviews      Review[]
 }
 

@@ -284,7 +284,7 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
   const canFulfill = order.status === "paid" || order.status === "processing";
   const canShip = order.status === "paid" || order.status === "processing";
   const canDeliver = order.status === "shipped";
-  const canRefund = ["paid", "processing", "shipped", "delivered", "completed"].includes(order.status);
+  const canRefund = ["paid", "processing", "shipped", "delivered", "received", "completed"].includes(order.status);
 
   const fulfill = async () => {
     const ok = await runMutation(() => apiSend("POST", `/api/store/orders/${order.id}/fulfill`), `Order ${order.orderNumber} marked fulfilled`);

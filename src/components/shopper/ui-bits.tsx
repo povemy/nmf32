@@ -232,6 +232,7 @@ export type OrderDetailT = LookupResultT & {
   paidAt?: string | null;
   shippedAt?: string | null;
   deliveredAt?: string | null;
+  receivedAt?: string | null;
   completedAt?: string | null;
   trackingNumber?: string | null;
   shipment?: ShipmentT | null;
@@ -1066,7 +1067,7 @@ export function StatusTimeline({ events, className }: { events: ShipmentEventT[]
 // shipment-event log above.
 // ---------------------------------------------------------------------------
 
-const FLOW = ["payment_pending", "paid", "processing", "shipped", "delivered"];
+const FLOW = ["payment_pending", "paid", "processing", "shipped", "delivered", "received", "completed"];
 
 const STATUS_LABEL: Record<string, string> = {
   payment_pending: "Awaiting payment",
@@ -1074,6 +1075,7 @@ const STATUS_LABEL: Record<string, string> = {
   processing: "Being prepared",
   shipped: "Shipped",
   delivered: "Delivered",
+  received: "Received",
   completed: "Completed",
   cancelled: "Cancelled",
   refunded: "Refunded",
@@ -1086,7 +1088,7 @@ export function statusLabel(s: string): string {
 
 export function StatusBadge({ status }: { status: string }) {
   const tone =
-    status === "delivered" || status === "completed"
+    status === "received" || status === "delivered" || status === "completed"
       ? "bg-emerald-100 text-emerald-800 border-emerald-200"
       : status === "cancelled" || status === "refunded"
         ? "bg-rose-100 text-rose-800 border-rose-200"
@@ -1105,7 +1107,8 @@ export function OrderFlowTimeline({ history, current }: { history: { toStatus: s
   const reachedAt = new Map<string, string>();
   for (const h of history) reachedAt.set(h.toStatus, h.createdAt);
   const flow = special ? [] : FLOW;
-  const currentIdx = flow.indexOf(current === "completed" ? "delivered" : current);
+  // "received"/"completed" are real flow steps now — no index remapping needed.
+  const currentIdx = flow.indexOf(current);
 
   return (
     <ol className="space-y-0" aria-label="Order status timeline">

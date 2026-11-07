@@ -228,6 +228,29 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
       return { review, reward };
     });
 
+    // ORDER-FLOW CORRECTION — rating closes the To Rate window: the frozen
+    // order (received = buyer-confirmed receipt, rating window open) completes
+    // the moment the buyer rates it. Conditional updateMany on status
+    // "received" keeps this idempotent and race-safe (the 30-day cron sweep is
+    // the only other writer of this transition, and it filters on the same
+    // status). The history row is written ONLY by the request that won the
+    // conditional flip.
+    const completed = await db.order.updateMany({
+      where: { id: eligibleOrder.id, status: "received" },
+      data: { status: "completed", completedAt: new Date() },
+    });
+    if (completed.count > 0) {
+      await db.orderStatusHistory.create({
+        data: {
+          orderId: eligibleOrder.id,
+          fromStatus: "received",
+          toStatus: "completed",
+          actor: "shopper",
+          note: "Completed after buyer rating",
+        },
+      });
+    }
+
     // Audit the submission + reward credit (outside the transaction — the
     // ActivityLog is an append-only trail, not a business invariant).
     await logActivity({
@@ -250,6 +273,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
       {
         id: created.review.id,
         status: "pending",
+        orderCompleted: completed.count > 0,
         reward: {
           credited: true,
           points: REVIEW_REWARD_POINTS,

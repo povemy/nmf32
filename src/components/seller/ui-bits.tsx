@@ -316,6 +316,7 @@ const STATUS_STYLES: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
   completed: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
   delivered: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
+  received: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
   approved: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
   verified: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
   issued: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
@@ -354,6 +355,7 @@ const STATUS_LABELS: Record<string, string> = {
   payment_pending: "Unpaid",
   pending_review: "In review",
   partially_refunded: "Partly refunded",
+  received: "Buyer received",
 };
 
 export function StatusChip({ status, className }: { status: string | null | undefined; className?: string }) {

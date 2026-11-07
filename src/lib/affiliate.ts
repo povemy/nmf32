@@ -524,13 +524,13 @@ export async function approveAffiliateCommissionsForOrder(orderId: string, tx?: 
   return approved;
 }
 
-/** Batch sweep (cron): approve commissions on delivered/completed orders +
- *  mature approved entries whose review window elapsed. Bounded batches. */
+/** Batch sweep (cron): approve commissions on delivered/received/completed
+ *  orders + mature approved entries whose review window elapsed. Bounded batches. */
 export async function sweepAffiliateLifecycle(): Promise<{ approved: number; matured: number }> {
   const settings = await getAffiliateSettings();
   if (!settings.enabled) return { approved: 0, matured: 0 };
 
-  // 1) Orders delivered/completed with pending commissions → approve.
+  // 1) Orders delivered/received/completed with pending commissions → approve.
   const pendingCommissions = await db.affiliateCommission.findMany({
     where: { status: "pending" },
     select: { orderId: true },
@@ -541,7 +541,7 @@ export async function sweepAffiliateLifecycle(): Promise<{ approved: number; mat
   if (pendingCommissions.length > 0) {
     const orderIds = pendingCommissions.map((c) => c.orderId);
     const eligible = await db.order.findMany({
-      where: { id: { in: orderIds }, status: { in: ["delivered", "completed"] } },
+      where: { id: { in: orderIds }, status: { in: ["delivered", "received", "completed"] } },
       select: { id: true },
     });
     for (const o of eligible) {

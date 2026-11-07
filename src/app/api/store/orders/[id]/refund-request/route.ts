@@ -21,7 +21,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   });
   if (!order) throw new ApiError(404, "NOT_FOUND", "Order not found");
 
-  const refundableStatuses = ["paid", "processing", "shipped", "delivered", "completed"];
+  const refundableStatuses = ["paid", "processing", "shipped", "delivered", "received", "completed"];
   if (!refundableStatuses.includes(order.status)) {
     throw new ApiError(409, "INVALID_STATUS", `Cannot request refund for order in status '${order.status}'`);
   }

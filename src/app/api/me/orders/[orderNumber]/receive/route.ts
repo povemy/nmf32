@@ -7,10 +7,13 @@ import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
 export const dynamic = "force-dynamic";
 
 // POST /api/me/orders/[orderNumber]/receive — buyer confirms receipt.
-// Allowed from "shipped" OR "delivered" → status "completed", completedAt now,
-// OrderStatusHistory {actor:"shopper"}. Repeat → idempotent success (the
-// already-completed state is returned; NO second history row, NO second
-// financial event). Unpaid → 409; any other state → 409.
+// ORDER-FLOW CORRECTION: "Order received" now transitions shipped|delivered →
+// "received" (the buyer dashboard's To Rate bucket) with receivedAt now — it
+// NO LONGER jumps straight to "completed". Completion happens later, on the
+// buyer's rating (review submission flips received → completed) or after the
+// 30-day rating window (order-maintenance cron, stage 2). Repeat → idempotent
+// success (the already-received state is returned; NO second history row, NO
+// second financial event). Unpaid → 409; any other state → 409.
 //
 // Scoped by session shopperId (404 otherwise — another buyer's order number
 // is indistinguishable from "not found"). If a platform shipment is still
@@ -19,7 +22,7 @@ export const dynamic = "force-dynamic";
 //
 // RACE SAFETY (rewards work order §3.C): the status flip is a CONDITIONAL
 // updateMany on status IN (shipped, delivered) — two concurrent taps converge
-// on ONE completed transition (the loser re-reads "completed" and returns the
+// on ONE received transition (the loser re-reads "received" and returns the
 // idempotent success envelope). The history row is written only when the
 // conditional flip actually changed a row, so repeat clicks can never
 // duplicate receipt events. Settlement maturity is untouched: payouts mature
@@ -39,17 +42,34 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
   if (order.status === "payment_pending") {
     throw new ApiError(409, "INVALID_STATUS", "This order is not paid yet — complete payment before confirming receipt");
   }
-  if (order.status === "completed") {
+  if (order.status === "received") {
     // Idempotent repeat: the receipt was already confirmed (this session or a
     // concurrent one) — return the settled state, no duplicate history/event.
     const done = await db.order.findUnique({
       where: { id: order.id },
-      select: { id: true, orderNumber: true, status: true, completedAt: true },
+      select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
     });
     return ok({
       id: done!.id,
       orderNumber: done!.orderNumber,
       status: done!.status,
+      receivedAt: done!.receivedAt,
+      completedAt: done!.completedAt,
+      alreadyConfirmed: true,
+    });
+  }
+  if (order.status === "completed") {
+    // Post-window repeat (order already completed by rating or the 30-day
+    // sweep) — same idempotent envelope, nothing to do.
+    const done = await db.order.findUnique({
+      where: { id: order.id },
+      select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
+    });
+    return ok({
+      id: done!.id,
+      orderNumber: done!.orderNumber,
+      status: done!.status,
+      receivedAt: done!.receivedAt,
       completedAt: done!.completedAt,
       alreadyConfirmed: true,
     });
@@ -64,16 +84,18 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
     await fastForwardDelivery(order.id, new Date(), mockPodUrl(shipment.awbNumber ?? order.orderNumber));
   }
 
-  // AFFILIATE — completed is an authoritative completion state (see deliver).
-  // Conditional + idempotent: repeat calls find no "pending" commissions.
+  // AFFILIATE — receipt is an authoritative completion state (as with deliver;
+  // commissions were already approved at courier-delivery — this is the
+  // idempotent belt-and-braces pass). Conditional + idempotent: repeat calls
+  // find no "pending" commissions.
   try { await approveAffiliateCommissionsForOrder(order.id); } catch { /* best-effort */ }
 
   // CONDITIONAL flip: exactly one of N concurrent/racing requests transitions
-  // shipped|delivered → completed; the rest see count 0 and converge on the
-  // idempotent envelope below.
+  // shipped|delivered → received; the rest see count 0 and converge on the
+  // idempotent envelope above. receivedAt starts the 30-day rating window.
   const flipped = await db.order.updateMany({
     where: { id: order.id, status: { in: ["shipped", "delivered"] } },
-    data: { status: "completed", completedAt: new Date() },
+    data: { status: "received", receivedAt: new Date() },
   });
 
   if (flipped.count > 0) {
@@ -83,22 +105,23 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
       data: {
         orderId: order.id,
         fromStatus: order.status,
-        toStatus: "completed",
+        toStatus: "received",
         actor: "shopper",
-        note: "Confirmed receipt by buyer",
+        note: "Confirmed receipt by buyer — rate within 30 days",
       },
     });
   }
 
-  const completed = await db.order.findUnique({
+  const received = await db.order.findUnique({
     where: { id: order.id },
-    select: { id: true, orderNumber: true, status: true, completedAt: true },
+    select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
   });
 
   return ok({
-    id: completed!.id,
-    orderNumber: completed!.orderNumber,
-    status: completed!.status,
-    completedAt: completed!.completedAt,
+    id: received!.id,
+    orderNumber: received!.orderNumber,
+    status: received!.status,
+    receivedAt: received!.receivedAt,
+    completedAt: received!.completedAt,
   });
 });

@@ -26,33 +26,37 @@ import { db } from "./db";
 // ----------------------------------------------------------------------------
 // Order-status vocabulary (investigated, not assumed)
 // ----------------------------------------------------------------------------
-// The spec suggested ["delivered", "completed", "received"], but "received"
-// does NOT exist in this codebase. The real Order.status vocabulary is
-// (single source: /api/me/orders BUCKETS + every transitionOrder call site):
+// The Order.status vocabulary now includes "received" (ORDER-FLOW CORRECTION:
+// buyer-confirmed receipt — the buyer dashboard's To Rate bucket is exactly
+// ["received"] since the courier's DELIVERED no longer advances an order out
+// of To Receive). The full vocabulary (single source: /api/me/orders BUCKETS
+// + every transitionOrder call site):
 //
-//   payment_pending · paid · processing · shipped · delivered · completed
-//   cancelled · refunding · partially_refunded · refunded · closed
+//   payment_pending · paid · processing · shipped · delivered · received
+//   completed · cancelled · refunding · partially_refunded · refunded · closed
 //   payment_expired
 //
 // The terminal-success states — the shopper demonstrably HAS the goods — are
-// "delivered" (the buyer dashboard's "To Rate" bucket is exactly ["delivered"])
-// and "completed" (buyer-confirmed receipt via
-// /api/me/orders/[orderNumber]/receive, or the 14-day auto-complete sweep in
-// lib/order-completion.ts). Those two are review-eligible.
+// "received" (buyer confirmed receipt via /api/me/orders/[orderNumber]/receive
+// or the 14-day auto-receipt sweep; the rating window is open) and "completed"
+// (rated by the buyer, or 30 days past receipt confirmation — see
+// lib/order-completion.ts). Those two are review-eligible. "delivered" alone
+// is NOT: the courier saying "delivered" is not the buyer confirming they
+// have the parcel.
 //
 // REVIEW REWARDS work order — partial refunds: a PARTIALLY refunded order can
 // still be delivered (buyer kept the goods; only part of the money came back),
 // so it stays review-eligible ONLY when receipt was already established
-// (deliveredAt/completedAt set) AND the specific line still has unrefunded
-// value (OrderItem.refundedMinor < lineSubtotalMinor). Fully refunded
-// ("refunded"), cancelled, unpaid ("payment_pending") and expired
+// (deliveredAt/receivedAt/completedAt set) AND the specific line still has
+// unrefunded value (OrderItem.refundedMinor < lineSubtotalMinor). Fully
+// refunded ("refunded"), cancelled, unpaid ("payment_pending") and expired
 // ("payment_expired") orders are NEVER eligible.
-export const ELIGIBLE_ORDER_STATUSES = ["delivered", "completed"] as const;
+export const ELIGIBLE_ORDER_STATUSES = ["received", "completed"] as const;
 
 /** Statuses whose orders we fetch as CANDIDATES before the precise predicate
  * (partially_refunded rows are included as candidates, then timestamp- and
  * refund-checked by isEligibleOrder — see REVIEW_REFINEMENT below). */
-export const ELIGIBLE_CANDIDATE_STATUSES = ["delivered", "completed", "partially_refunded"] as const;
+export const ELIGIBLE_CANDIDATE_STATUSES = ["received", "completed", "partially_refunded"] as const;
 
 // ----------------------------------------------------------------------------
 // Review status lifecycle
@@ -88,6 +92,7 @@ export type EligibleOrderShape = {
   storeId: string;
   status: string;
   deliveredAt?: Date | null;
+  receivedAt?: Date | null;
   completedAt?: Date | null;
   items: ReadonlyArray<{ productId: string; refundedMinor?: number; lineSubtotalMinor?: number }>;
 };
@@ -95,8 +100,9 @@ export type EligibleOrderShape = {
 /** Pure eligibility predicate:
  *   • the order belongs to the product's store (multi-seller orders are
  *     separate Order rows — one seller's completion never unlocks another's);
- *   • the order is in a terminal-success status: delivered | completed, or
- *     partially_refunded WITH prior receipt (deliveredAt/completedAt set);
+ *   • the order is in a terminal-success status: received | completed, or
+ *     partially_refunded WITH prior receipt (deliveredAt/receivedAt/completedAt
+ *     set);
  *   • it contains an item for THIS product that still has unrefunded value
  *     (refundedMinor < lineSubtotalMinor — a fully refunded line is not a
  *     purchase the shopper meaningfully paid for).
@@ -106,7 +112,8 @@ export function isEligibleOrder(order: EligibleOrderShape, productId: string, st
   if (order.storeId !== storeId) return false;
   const terminalSuccess =
     (ELIGIBLE_ORDER_STATUSES as readonly string[]).includes(order.status) ||
-    (order.status === "partially_refunded" && (order.deliveredAt != null || order.completedAt != null));
+    (order.status === "partially_refunded" &&
+      (order.deliveredAt != null || order.receivedAt != null || order.completedAt != null));
   if (!terminalSuccess) return false;
   return order.items.some((i) => {
     if (i.productId !== productId) return false;
@@ -145,6 +152,7 @@ export async function findEligibleOrderForReview(
       storeId: true,
       status: true,
       deliveredAt: true,
+      receivedAt: true,
       completedAt: true,
       items: { where: { productId }, select: { productId: true, refundedMinor: true, lineSubtotalMinor: true } },
     },

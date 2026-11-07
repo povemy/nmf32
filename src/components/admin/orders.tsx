@@ -35,7 +35,7 @@ import {
 } from "./ui-bits";
 
 const ORDER_STATUSES = [
-  "payment_pending", "paid", "processing", "shipped", "delivered", "completed",
+  "payment_pending", "paid", "processing", "shipped", "delivered", "received", "completed",
   "cancelled", "refunding", "partially_refunded", "refunded", "closed",
 ];
 

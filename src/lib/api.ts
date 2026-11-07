@@ -261,7 +261,7 @@ export async function transitionOrder(input: {
   toStatus: string;
   actor?: string;
   note?: string;
-  timestamps?: Partial<Record<"paidAt" | "fulfilledAt" | "shippedAt" | "deliveredAt" | "completedAt" | "cancelledAt", Date>>;
+  timestamps?: Partial<Record<"paidAt" | "fulfilledAt" | "shippedAt" | "deliveredAt" | "receivedAt" | "completedAt" | "cancelledAt", Date>>;
   tx?: Prisma.TransactionClient;
 }) {
   const client = input.tx ?? db;

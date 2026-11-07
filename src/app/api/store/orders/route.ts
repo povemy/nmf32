@@ -14,7 +14,9 @@ export function statusGroup(group: string): string[] {
     case "shipped":
       return ["shipped"];
     case "done":
-      return ["delivered", "completed"];
+      // "received" = buyer-confirmed receipt (awaiting rating) — the seller's
+      // fulfilment job ended at delivered, so it lands here with the rest.
+      return ["delivered", "received", "completed"];
     case "refunds":
       return ["refunding", "partially_refunded", "refunded"];
     case "cancelled":
