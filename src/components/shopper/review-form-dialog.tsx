@@ -1,6 +1,6 @@
 "use client";
 // ============================================================================
-// Shopper — REVIEW FORM DIALOG (rewards work order §4).
+// Shopper — REVIEW FORM DIALOG.
 // Shared by the PDP ("Write a review" CTA for eligible verified buyers) and
 // the Me-hub review management view (to-review list). Submits through the
 // REAL verified-purchase endpoint
@@ -8,12 +8,19 @@
 // which enforces eligibility, dedupe, sanitization and the exactly-once
 // RM0.05-equivalent membership reward server-side. This component NEVER
 // asserts verified-purchase status itself — the badge comes from the backend.
+//
+// Layout (buyer work order): mobile-first card layout modelled on the Shopee
+// "Rate Product" screen — header bar, reward strip, product card, star-rating
+// card, review-text card and a docked action bar. Fully responsive: the star
+// row uses flex-1 buttons (never a fixed 330px min-width), so the dialog can
+// no longer overflow a 360px phone screen. All accents ride the NOMOFEE
+// brand palette (brand gradient CTA, gold stars).
 // ============================================================================
 import { useEffect, useState } from "react";
-import { Loader2, Star, BadgeCheck, Coins, ShieldAlert } from "lucide-react";
+import { Loader2, Star, BadgeCheck, Coins, ShieldAlert, Package, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -149,42 +156,76 @@ export function ReviewFormDialog({
     }
   };
 
+  const starLabel = hover || rating ? STAR_LABELS[(hover || rating) - 1] : "";
+
   return (
     <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-left">{edit ? "Edit your review" : "Write a review"}</DialogTitle>
-          <DialogDescription className="text-left">
-            {edit
-              ? "Pending reviews can be edited before moderation — your reward is unaffected."
-              : "Honest feedback helps other buyers — every star level earns the same reward."}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[92dvh] gap-0 overflow-y-auto overflow-x-hidden rounded-2xl p-0 sm:max-w-lg"
+      >
+        {/* ---- header bar ---------------------------------------------- */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3.5 sm:px-5">
+          <div className="min-w-0">
+            <DialogTitle className="truncate text-left text-base font-bold text-slate-900 dark:text-slate-100">
+              {edit ? "Edit your review" : "Rate product"}
+            </DialogTitle>
+            <DialogDescription className="pt-0.5 text-left text-xs">
+              {edit
+                ? "Pending reviews can be edited before moderation — your reward is unaffected."
+                : "Honest feedback helps other buyers — every star level earns the same reward."}
+            </DialogDescription>
+          </div>
+          <button
+            type="button"
+            onClick={() => !busy && onOpenChange(false)}
+            aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
 
-        <div className="space-y-4">
-          {/* product context */}
-          <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-3">
-            {productImage ? (
-              <img src={productImage} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" loading="lazy" />
-            ) : null}
-            <div className="min-w-0">
-              <p className="line-clamp-1 text-sm font-semibold">{productTitle}</p>
-              {orderNumber ? (
-                <p className="text-xs text-muted-foreground">Purchase {orderNumber} · verified buyer</p>
+        <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4">
+          {/* ---- reward strip (submission only — edits never re-credit) -- */}
+          {edit ? null : (
+            <div className="flex items-center gap-2.5 rounded-xl bg-brand-gradient-soft px-3.5 py-2.5 text-xs leading-snug font-semibold text-teal-800 dark:text-teal-300">
+              <Coins className="h-5 w-5 shrink-0 text-teal-600 dark:text-teal-400" aria-hidden="true" />
+              <span>
+                Earn <strong>{REWARD_POINTS} membership points (≈ RM0.05)</strong> for this review — same reward for any
+                star level, credited once accepted.
+              </span>
+            </div>
+          )}
+
+          {/* ---- product card ------------------------------------------- */}
+          <div className="rounded-xl border border-slate-200/80 bg-card p-3 shadow-soft">
+            <div className="flex items-center gap-3">
+              {productImage ? (
+                <img src={productImage} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-slate-200/70 object-cover" loading="lazy" />
               ) : (
-                <p className="flex items-center gap-1 text-xs text-emerald-600">
-                  <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Verified purchase
-                </p>
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted" aria-hidden="true">
+                  <Package className="h-5 w-5 text-muted-foreground" />
+                </span>
               )}
+              <div className="min-w-0">
+                <p className="line-clamp-2 text-sm font-bold leading-snug">{productTitle}</p>
+                <p className="flex items-center gap-1 pt-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <BadgeCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  Verified purchase{orderNumber ? ` · ${orderNumber}` : ""}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* star picker — REQUIRED */}
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold">
-              Your rating <span className="text-rose-500" aria-hidden="true">*</span>
-            </legend>
-            <div className="flex items-center gap-1" role="radiogroup" aria-label="Star rating">
+          {/* ---- star rating card (REQUIRED) ---------------------------- */}
+          <div className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft">
+            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Rate product <span className="text-rose-500" aria-hidden="true">*</span>
+            </p>
+            {/* flex-1 star buttons: the row always fits the dialog width (no
+                fixed min-width → no horizontal scrollbar on 360px screens). */}
+            <div className="flex justify-center gap-1 pt-2" role="radiogroup" aria-label="Star rating">
               {[1, 2, 3, 4, 5].map((n) => {
                 const active = (hover || rating) >= n;
                 return (
@@ -197,73 +238,76 @@ export function ReviewFormDialog({
                     onMouseEnter={() => setHover(n)}
                     onMouseLeave={() => setHover(0)}
                     onClick={() => setRating(n)}
-                    className="flex h-11 w-11 items-center justify-center rounded-lg transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                    className="flex h-11 max-w-14 flex-1 touch-manipulation items-center justify-center rounded-lg transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
                   >
                     <Star
-                      className={cn("h-7 w-7 transition-colors", active ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40")}
+                      className={cn("h-8 w-8 transition-colors sm:h-9 sm:w-9", active ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40")}
                       aria-hidden="true"
                     />
                   </button>
                 );
               })}
-              <span className="ml-2 min-w-[86px] text-sm font-medium text-muted-foreground" aria-live="polite">
-                {hover || rating ? STAR_LABELS[(hover || rating) - 1] : ""}
-              </span>
             </div>
-          </fieldset>
-
-          {/* optional title */}
-          <div className="space-y-1.5">
-            <label htmlFor="review-title" className="text-sm font-semibold">
-              Title <span className="font-normal text-muted-foreground">(optional)</span>
-            </label>
-            <Input
-              id="review-title"
-              maxLength={120}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Sum it up in a few words"
-              autoComplete="off"
-            />
+            <p className="min-h-4 pt-1.5 text-center text-xs font-medium text-muted-foreground" aria-live="polite">
+              {starLabel}
+            </p>
           </div>
 
-          {/* optional body */}
-          <div className="space-y-1.5">
-            <label htmlFor="review-body" className="text-sm font-semibold">
-              Your review <span className="font-normal text-muted-foreground">(optional)</span>
-            </label>
-            <Textarea
-              id="review-body"
-              maxLength={2000}
-              rows={4}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="What did you like or dislike? How was the quality and delivery?"
-            />
-            <p className="text-right text-[11px] text-muted-foreground">{body.length}/2000</p>
-          </div>
-
-          {/* reward disclosure (submission only — edits never re-credit) */}
-          {edit ? null : (
-            <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-              <Coins className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>
-                Earn <strong>{REWARD_POINTS} membership points (≈ RM0.05)</strong> for this review — same reward for any star
-                level, added once your submission is accepted.
-              </span>
+          {/* ---- review text card --------------------------------------- */}
+          <div className="space-y-3 rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft">
+            <div className="space-y-1.5">
+              <label htmlFor="review-title" className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Title <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <Input
+                id="review-title"
+                maxLength={120}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Sum it up in a few words"
+                autoComplete="off"
+              />
             </div>
-          )}
+
+            <div className="space-y-1.5">
+              <label htmlFor="review-body" className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Your review <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <Textarea
+                id="review-body"
+                maxLength={2000}
+                rows={6}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder={"Share your experience with this product…\n\nQuality: How was it?\nValue: Worth the price?"}
+                className="resize-none rounded-xl border-0 bg-muted/60 text-sm placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-teal-500/50 dark:bg-muted/30"
+              />
+              <p className="text-right text-[11px] tabular-nums text-muted-foreground">{body.length}/2000</p>
+            </div>
+          </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)} className="min-h-[44px]">
-            Cancel
-          </Button>
-          <Button onClick={() => void submit()} disabled={busy || rating === 0} className="min-h-[44px] bg-brand-gradient text-white hover:brightness-110">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-            {edit ? "Save changes" : "Submit review"}
-          </Button>
-        </DialogFooter>
+        {/* ---- docked action bar ---------------------------------------- */}
+        <div className="sticky bottom-0 border-t border-slate-200/70 bg-background/95 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:px-5">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
+              className="min-h-[44px] flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submit()}
+              disabled={busy || rating === 0}
+              className="min-h-[44px] flex-[2] bg-brand-gradient-deep text-base font-bold text-white hover:brightness-110"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              {edit ? "Save changes" : "Submit"}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
 
       {/* Unsafe-content warning popup — client pre-check or server 400

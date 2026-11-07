@@ -9,7 +9,9 @@ import { placeholderUrl } from "@/lib/placeholder";
 export const dynamic = "force-dynamic";
 
 const EDIT_LOG_ACTION = "shopper.review.edited";
-const MAX_EDITS = 2;
+// Buyer work order: a submitted review can be amended exactly ONCE while
+// pending — the Me-hub "Edit (N left)" chip is driven by this policy field.
+const MAX_EDITS = 1;
 
 // GET /api/me/reviews — the shopper's review-management surface:
 //   • toReview  — eligible purchased products NOT yet reviewed (delivered /

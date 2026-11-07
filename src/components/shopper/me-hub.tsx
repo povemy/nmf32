@@ -64,6 +64,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatMinor } from "@/lib/money";
 import AffiliateHubView from "./affiliate-hub";
 import { ReviewFormDialog, type EditableReviewT } from "./review-form-dialog";
@@ -1919,6 +1920,10 @@ function ReviewStatusBadge({ status }: { status: string }) {
 function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
   const [data, setData] = useState<ReviewsMgmtT | null>(null);
   const [failed, setFailed] = useState(false);
+  // Buyer work order: tabbed organisation — "To Review" (eligible purchases
+  // awaiting a review) vs "Submitted Reviews" (everything already written,
+  // moderation status + reward ledger). Defaults to the actionable tab.
+  const [tab, setTab] = useState<string>("toreview");
   // dialog targets
   const [formFor, setFormFor] = useState<ReviewToReviewT | null>(null);
   const [editFor, setEditFor] = useState<ReviewSubmittedT | null>(null);
@@ -1941,17 +1946,7 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
-      <SubHeader
-        title="My Reviews"
-        onBack={onBack}
-        action={
-          data ? (
-            <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-              {data.toReview.length} to review
-            </span>
-          ) : null
-        }
-      />
+      <SubHeader title="My Reviews" onBack={onBack} />
 
       {failed ? (
         <EmptyState
@@ -1992,63 +1987,89 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
             </div>
           </section>
 
-          {/* ---- to review: server-certified eligible purchases -------------- */}
-          <section aria-labelledby="me-reviews-toreview" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
-            <h2 id="me-reviews-toreview" className="pb-3 text-sm font-extrabold text-slate-900">
-              To review{" "}
-              <span className="font-bold text-slate-400">
-                ({data.toReview.length} item{data.toReview.length === 1 ? "" : "s"})
-              </span>
-            </h2>
-            {data.toReview.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
-                Nothing to review right now — purchases you have confirmed receiving appear here (To Rate).
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {data.toReview.map((t) => (
-                  <li key={t.product.id} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3">
-                    <button
-                      type="button"
-                      onClick={() => openProduct(ctx, { storeSlug: t.store.slug, slug: t.product.slug })}
-                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                      aria-label={`View ${t.product.title}`}
-                    >
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100" aria-hidden="true">
-                        {t.product.imageUrl ? <img src={t.product.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-muted-foreground" />}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="line-clamp-1 block text-[13px] font-semibold">{t.product.title}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {t.store.name} · {t.orderNumber} · {statusLabel(t.orderStatus)}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-emerald-600">
-                          <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Verified purchase — earns 5 points
-                        </span>
-                      </span>
-                    </button>
-                    <Button
-                      size="sm"
-                      onClick={() => setFormFor(t)}
-                      className="min-h-[36px] shrink-0 bg-brand-gradient text-white hover:brightness-110"
-                      aria-label={`Write a review for ${t.product.title}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Review
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {/* ---- tabbed organisation: To Review / Submitted Reviews ------- */}
+          <Tabs value={tab} onValueChange={setTab} className="gap-3">
+            <TabsList className="h-auto w-full grid-cols-2 rounded-xl p-1">
+              <TabsTrigger
+                value="toreview"
+                className="min-h-[40px] gap-1.5 rounded-lg px-2 text-xs font-semibold sm:text-sm"
+              >
+                To Review
+                <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-teal-800">
+                  {data.toReview.length}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="submitted"
+                className="min-h-[40px] gap-1.5 rounded-lg px-2 text-xs font-semibold sm:text-sm"
+              >
+                Submitted<span className="hidden sm:inline"> Reviews</span>
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-600">
+                  {data.submitted.length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
 
-          {/* ---- submitted reviews with moderation status --------------------- */}
-          <section aria-labelledby="me-reviews-submitted" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
-            <h2 id="me-reviews-submitted" className="pb-3 text-sm font-extrabold text-slate-900">
-              My submitted reviews{" "}
-              <span className="font-bold text-slate-400">
-                ({data.submitted.length})
-              </span>
-            </h2>
+            {/* ---- TAB 1: to review — server-certified eligible purchases -- */}
+            <TabsContent value="toreview" className="space-y-3">
+              <section aria-labelledby="me-reviews-toreview" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+                <h2 id="me-reviews-toreview" className="pb-3 text-sm font-extrabold text-slate-900">
+                  Awaiting your review{" "}
+                  <span className="font-bold text-slate-400">
+                    ({data.toReview.length} item{data.toReview.length === 1 ? "" : "s"})
+                  </span>
+                </h2>
+                {data.toReview.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+                    Nothing to review right now — purchases you have confirmed receiving appear here.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {data.toReview.map((t) => (
+                      <li key={t.product.id} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3">
+                        <button
+                          type="button"
+                          onClick={() => openProduct(ctx, { storeSlug: t.store.slug, slug: t.product.slug })}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                          aria-label={`View ${t.product.title}`}
+                        >
+                          <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100" aria-hidden="true">
+                            {t.product.imageUrl ? <img src={t.product.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-muted-foreground" />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="line-clamp-1 block text-[13px] font-semibold">{t.product.title}</span>
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {t.store.name} · {t.orderNumber} · {statusLabel(t.orderStatus)}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+                              <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Verified purchase — earns 5 points
+                            </span>
+                          </span>
+                        </button>
+                        <Button
+                          size="sm"
+                          onClick={() => setFormFor(t)}
+                          className="min-h-[36px] shrink-0 bg-brand-gradient text-white hover:brightness-110"
+                          aria-label={`Write a review for ${t.product.title}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Review
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </TabsContent>
+
+            {/* ---- TAB 2: submitted reviews + reward ledger ---------------- */}
+            <TabsContent value="submitted" className="space-y-3">
+              <section aria-labelledby="me-reviews-submitted" className="rounded-xl border border-slate-200/80 bg-card p-4 shadow-soft-card">
+                <h2 id="me-reviews-submitted" className="pb-3 text-sm font-extrabold text-slate-900">
+                  My submitted reviews{" "}
+                  <span className="font-bold text-slate-400">
+                    ({data.submitted.length})
+                  </span>
+                </h2>
             {data.submitted.length === 0 ? (
               <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
                 You haven&apos;t reviewed any products yet. Approved reviews help other buyers shop with confidence.
@@ -2146,10 +2167,15 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
               </ul>
             </section>
           ) : null}
+            </TabsContent>
+          </Tabs>
         </div>
       )}
 
-      {/* the REAL submission dialog — eligibility + reward enforced server-side */}
+      {/* the REAL submission dialog — eligibility + reward enforced server-side.
+          After a successful submission the view jumps to the Submitted tab so
+          the shopper immediately sees the new pending review (with its one
+          remaining edit) land in the organised list. */}
       {formFor ? (
         <ReviewFormDialog
           open
@@ -2159,7 +2185,10 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
           productTitle={formFor.product.title}
           productImage={formFor.product.imageUrl}
           orderNumber={formFor.orderNumber}
-          onSubmitted={() => void load()}
+          onSubmitted={() => {
+            void load();
+            setTab("submitted");
+          }}
         />
       ) : null}
 

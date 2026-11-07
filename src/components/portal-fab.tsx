@@ -175,7 +175,12 @@ export default function PortalFab() {
   else menuStyle.top = pos.y + FAB + GAP;
 
   return (
-    <div className="print:hidden" style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 90 }}>
+    // z-45: above page furniture (sticky bars / bottom nav, z-40) but BELOW
+    // Radix overlays (dialogs, drawers, sheets — z-50). The FAB used to ride
+    // at z-90, which left it floating ON TOP of every open dialog where it
+    // could obstruct the dialog's action buttons on small screens. At z-45
+    // the dimmed dialog backdrop simply covers it while a modal is open.
+    <div className="print:hidden" style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 45 }}>
       {/* click-away layer while the menu is open */}
       {open ? (
         <div

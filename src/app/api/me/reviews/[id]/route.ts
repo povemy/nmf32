@@ -7,7 +7,10 @@ import { detectReviewSubmissionThreat } from "@/lib/review-text";
 export const dynamic = "force-dynamic";
 
 const EDIT_LOG_ACTION = "shopper.review.edited";
-const MAX_EDITS = 2;
+// Buyer work order: a submitted review can be amended exactly ONCE while it
+// is still pending moderation (the Me-hub chip shows "1 left" before the
+// first edit, then the review freezes until moderation completes).
+const MAX_EDITS = 1;
 
 // PATCH /api/me/reviews/[id] — edit MY OWN review while it is still PENDING.
 //
@@ -47,7 +50,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
 
   const edits = await db.activityLog.count({ where: { action: EDIT_LOG_ACTION, entityId: review.id } });
   if (edits >= MAX_EDITS) {
-    throw new ApiError(409, "EDIT_LIMIT", `A review can be edited at most ${MAX_EDITS} times while pending`);
+    throw new ApiError(409, "EDIT_LIMIT", `A review can be edited at most ${MAX_EDITS} time${MAX_EDITS === 1 ? "" : "s"} while pending`);
   }
 
   // Merge semantics: omitted fields keep their current values; the same
