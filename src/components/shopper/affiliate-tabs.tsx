@@ -1484,16 +1484,144 @@ export function PayoutsTab() {
 
   return (
     <div className="space-y-4">
+      {/* how you get paid — lifecycle explainer (Payouts work order) */}
+      <section className="rounded-xl border border-teal-200/70 bg-brand-gradient-soft p-4">
+        <h3 className="text-sm font-extrabold text-slate-900">How you get paid</h3>
+        <ol className="space-y-1.5 pt-2 text-[11px] leading-relaxed text-slate-700">
+          <li>
+            <strong>1 · Click</strong> — someone opens your link and buys within the 30-day attribution window (their
+            account, not yours — self-purchases never earn commission).
+          </li>
+          <li>
+            <strong>2 · Paid</strong> — when their order is paid, the commission posts as <em>Pending</em>.
+          </li>
+          <li>
+            <strong>3 · Delivered</strong> — once the order is delivered or receipt-confirmed, it becomes <em>Approved</em>{" "}
+            and the 14-day review window starts (fraud &amp; refund protection).
+          </li>
+          <li>
+            <strong>4 · Requestable</strong> — after the window elapses the money is matured. At RM 10.00+ you can press
+            Request payout.
+          </li>
+          <li>
+            <strong>5 · Transfer</strong> — finance reviews and executes the bank transfer manually (no automated
+            transfer is claimed) — the status is tracked in Payout history below.
+          </li>
+        </ol>
+      </section>
+
       <SectionCard title="Balances" badge={<Badge variant="outline" className="border-teal-200 bg-teal-50 text-[10px] font-semibold text-teal-800">Ledger-authoritative</Badge>}>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Requestable now" value={money(b.requestableMinor)} hint="Matured, unclaimed" tone="brand" />
-            <StatCard label="Payout in flight" value={money(b.payoutInFlightMinor)} hint="Claimed by open requests" />
-            <StatCard label="Pending + approved" value={money(b.pendingMinor + b.approvedMinor)} hint="Maturing" tone="warn" />
-            <StatCard label="Paid out" value={money(b.paidMinor)} hint="Lifetime settled" />
-            <StatCard label="Held" value={money(b.heldMinor)} hint="Under review" />
-            <StatCard label="Recovery" value={money(b.recoveryMinor)} hint="Late refunds after payout" tone={b.recoveryMinor > 0 ? "danger" : "default"} />
-            <StatCard label="Reversed" value={money(b.reversedMinor)} hint="Refund clawbacks" tone={b.reversedMinor > 0 ? "danger" : "default"} />
+            <StatCard
+              label="Requestable now"
+              value={money(b.requestableMinor)}
+              hint="Matured, unclaimed"
+              tone="brand"
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Commission that is fully matured and unclaimed.</p>
+                  <p className="pt-1">
+                    The referred order was paid <strong>and</strong> delivered/receipt-confirmed <strong>and</strong> the
+                    14-day review window has fully elapsed. This is the only balance you can withdraw — the Request
+                    payout button unlocks once it reaches the RM 10.00 minimum.
+                  </p>
+                  <p className="pt-1 text-muted-foreground">It also nets off any Recovery balance first.</p>
+                </>
+              }
+            />
+            <StatCard
+              label="Payout in flight"
+              value={money(b.payoutInFlightMinor)}
+              hint="Claimed by open requests"
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Money claimed by a payout request you already submitted.</p>
+                  <p className="pt-1">
+                    While a request is <em>requested</em> or <em>processing</em>, its amount is locked here — it cannot be
+                    re-requested. One open request is allowed at a time. It moves to <strong>Paid out</strong> once
+                    finance completes the transfer.
+                  </p>
+                </>
+              }
+            />
+            <StatCard
+              label="Pending + approved"
+              value={money(b.pendingMinor + b.approvedMinor)}
+              hint="Maturing"
+              tone="warn"
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Commission already earned but still maturing.</p>
+                  <p className="pt-1">
+                    <strong>Pending</strong> — the referred order was paid, but is not yet delivered or receipt-confirmed.
+                  </p>
+                  <p>
+                    <strong>Approved</strong> — the order is delivered, but the 14-day review window (fraud &amp; refund
+                    protection) is still running.
+                  </p>
+                  <p className="pt-1">Both move to Requestable now automatically — nothing for you to do.</p>
+                </>
+              }
+            />
+            <StatCard
+              label="Paid out"
+              value={money(b.paidMinor)}
+              hint="Lifetime settled"
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Lifetime total successfully transferred to your bank account.</p>
+                  <p className="pt-1">
+                    Only completed payouts count. This figure never decreases — refunds that arrive after a payout are
+                    handled through the Recovery card instead of rewriting your payout history.
+                  </p>
+                </>
+              }
+            />
+            <StatCard
+              label="Held"
+              value={money(b.heldMinor)}
+              hint="Under review"
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Commission withheld during a review.</p>
+                  <p className="pt-1">
+                    For example, a related affiliate account (such as your sponsor) is under investigation. Held money is
+                    released into the normal lifecycle when the review clears, or reversed if fraud is confirmed.
+                  </p>
+                </>
+              }
+            />
+            <StatCard
+              label="Recovery"
+              value={money(b.recoveryMinor)}
+              hint="Late refunds after payout"
+              tone={b.recoveryMinor > 0 ? "danger" : "default"}
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Refunds that happened AFTER your commission was already paid out.</p>
+                  <p className="pt-1">
+                    This amount is netted against your future earnings until fully recovered — your past payout history
+                    is never rewritten, and you are never asked to return money you already received.
+                  </p>
+                </>
+              }
+            />
+            <StatCard
+              label="Reversed"
+              value={money(b.reversedMinor)}
+              hint="Refund clawbacks"
+              tone={b.reversedMinor > 0 ? "danger" : "default"}
+              tooltip={
+                <>
+                  <p className="font-bold text-slate-900">Commission cancelled by refunds that happened BEFORE payout.</p>
+                  <p className="pt-1">
+                    The buyer was refunded, so the seller&rsquo;s commission pool for that item returns to the seller — the
+                    amount is permanently not payable to you.
+                  </p>
+                </>
+              }
+            />
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:w-56">
             <p className="text-center text-[11px] text-muted-foreground">

@@ -18,12 +18,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Copy, Loader2, TriangleAlert } from "lucide-react";
+import { Copy, Info, Loader2, TriangleAlert } from "lucide-react";
 import { formatMinor } from "@/lib/money";
 import { authHeaders } from "@/lib/session-client";
 import { fetchJson, postJson, EmptyState } from "./ui-bits";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -435,11 +436,15 @@ export function StatCard({
   value,
   hint,
   tone = "default",
+  tooltip,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   tone?: "default" | "brand" | "warn" | "danger";
+  /** Detailed "what does this card mean" explanation (Payouts tab work
+   *  order) — renders the tap/click InfoTip beside the card label. */
+  tooltip?: React.ReactNode;
 }) {
   return (
     <div
@@ -450,10 +455,42 @@ export function StatCard({
         tone === "danger" && "border-rose-200 bg-rose-50/60"
       )}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="min-w-0">{label}</span>
+        {tooltip ? <InfoTip>{tooltip}</InfoTip> : null}
+      </p>
       <p className="pt-1 text-lg font-extrabold tracking-tight text-slate-900 tabular-nums sm:text-xl">{value}</p>
       {hint ? <p className="pt-0.5 text-[11px] leading-snug text-muted-foreground">{hint}</p> : null}
     </div>
+  );
+}
+
+/** Tap/click-to-open info tip (Payouts work order). Radix Tooltip is
+ *  hover-only and unreliable on touch, so this uses a Popover on an info
+ *  icon button: desktop click, mobile tap AND keyboard (Enter/Space) all
+ *  open the same detailed explanation. */
+export function InfoTip({ children, label = "What does this mean?" }: { children: React.ReactNode; label?: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          title={label}
+          className="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-600"
+        >
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-72 max-w-[calc(100vw-2rem)] rounded-xl border-slate-200 p-3 text-xs leading-relaxed text-slate-700 shadow-lg"
+        aria-label={label}
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
