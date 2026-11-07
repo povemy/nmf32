@@ -513,10 +513,20 @@ export const POST = handle(async (req: Request) => {
             if (redeemed.count === 0) {
               throw new ApiError(409, "VOUCHER_ALREADY_USED", "One of your selected vouchers has just been used — please review your voucher selection");
             }
+            // Quota guard — claimedCount is an INT4 column, so the "unlimited"
+            // fallback MUST stay within 32-bit range. Number.MAX_SAFE_INTEGER
+            // (9007199254740991) here made the Postgres connector abort with
+            // "Unable to fit integer value ... into an INT4" for every voucher
+            // with quota NULL (unlimited pool) — checkout creation failed
+            // BEFORE any payment step. Int32 max is the largest value the
+            // column can hold, so `claimedCount < 2147483647` is "always
+            // true" for unlimited vouchers and the atomic OR-guard semantics
+            // (concurrent admin quota edits still handled) are preserved.
+            const INT4_MAX = 2_147_483_647;
             const quotaGuard = await tx.voucher.updateMany({
               where: {
                 id: uvRow.voucher.id,
-                OR: [{ quota: null }, { claimedCount: { lt: uvRow.voucher.quota ?? Number.MAX_SAFE_INTEGER } }],
+                OR: [{ quota: null }, { claimedCount: { lt: uvRow.voucher.quota ?? INT4_MAX } }],
               },
               data: { claimedCount: { increment: 1 } },
             });

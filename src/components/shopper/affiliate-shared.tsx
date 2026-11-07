@@ -155,7 +155,7 @@ export type LinkRowT = {
   lastClickAt: string | null;
   createdAt: string;
   target:
-    | { kind: "product"; title: string; slug: string | null; storeSlug: string | null }
+    | { kind: "product"; title: string; slug: string | null; storeSlug: string | null; storeName?: string | null; image?: string | null }
     | { kind: "store"; title: string; slug: string | null }
     | { kind: "collection"; title: string; slug: string | null; status: string | null }
     | { kind: "showcase"; title: string; slug: string | null };

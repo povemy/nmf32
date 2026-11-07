@@ -137,6 +137,12 @@ export default function AffiliateHubView({
   // Cross-tab "create a link for this product" hand-off from Discover.
   const [linkDraft, setLinkDraft] = useState<DiscoverProductT | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  // Links-list revision — bumped the moment a link creation succeeds so the
+  // Links tab (which stays MOUNTED while the shared create-dialog is open)
+  // refetches in place and the new link is visible instantly. Without this,
+  // the freshly generated link only appeared after a reload or a tab switch
+  // away-and-back (the reported bug).
+  const [linksRev, setLinksRev] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!shopper) {
@@ -271,7 +277,7 @@ export default function AffiliateHubView({
           ) : activeTab === "discover" ? (
             <DiscoverTab onCreateLink={(p) => openLinkDialog(p)} />
           ) : activeTab === "links" ? (
-            <LinksTab onCreate={() => openLinkDialog(null)} />
+            <LinksTab onCreate={() => openLinkDialog(null)} refreshKey={linksRev} />
           ) : activeTab === "collections" ? (
             <CollectionsTab ctx={ctx} />
           ) : activeTab === "showcase" ? (
@@ -285,7 +291,12 @@ export default function AffiliateHubView({
           )}
         </div>
 
-        {/* link creation dialog — shared by Links tab + Discover cards */}
+        {/* link creation dialog — shared by Links tab + Discover cards.
+            onCreated: bump the links revision FIRST (in-place refetch when the
+            Links tab is already mounted — AJAX-style instant visibility), then
+            switch to the Links tab when the creation started elsewhere (a
+            remount refetch there, so the flow lands on the fresh list either
+            way). */}
         <LinkCreateDialog
           open={linkOpen}
           onOpenChange={setLinkOpen}
@@ -293,6 +304,7 @@ export default function AffiliateHubView({
           collectionsEnabled={collectionsEnabled}
           showcaseEnabled={showcaseEnabled}
           onCreated={() => {
+            setLinksRev((v) => v + 1);
             if (activeTab !== "links") switchTab("links");
           }}
         />

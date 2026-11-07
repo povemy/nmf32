@@ -18,14 +18,21 @@ export const GET = handle(async () => {
   });
   // Target titles for display (resolved in one pass, no N+1). The empty-list
   // branches carry explicit row types so the maps below stay correctly typed.
+  // Product rows also carry the hero image + store name so the hub's Links
+  // cards can render a rich thumbnail without a second round-trip.
   const productIds = links.filter((l) => l.productId).map((l) => l.productId!);
   const storeIds = links.filter((l) => l.storeId).map((l) => l.storeId!);
   const collectionIds = links.filter((l) => l.collectionId).map((l) => l.collectionId!);
-  type ProductRow = { id: string; title: string; slug: string; store: { slug: string } };
+  type ProductRow = { id: string; title: string; slug: string; images: { url: string }[]; store: { slug: string; name: string } };
   type StoreRow = { id: string; name: string; slug: string };
   type CollectionRow = { id: string; title: string; slug: string; status: string };
   const [products, stores, collections]: [ProductRow[], StoreRow[], CollectionRow[]] = await Promise.all([
-    productIds.length ? db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, title: true, slug: true, store: { select: { slug: true } } } }) : ([] as ProductRow[]),
+    productIds.length
+      ? db.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, title: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } }, store: { select: { slug: true, name: true } } },
+        })
+      : ([] as ProductRow[]),
     storeIds.length ? db.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, slug: true } }) : ([] as StoreRow[]),
     collectionIds.length ? db.affiliateCollection.findMany({ where: { id: { in: collectionIds } }, select: { id: true, title: true, slug: true, status: true } }) : ([] as CollectionRow[]),
   ]);
@@ -39,7 +46,14 @@ export const GET = handle(async () => {
       status: l.status, clicks: l.clicks, lastClickAt: l.lastClickAt?.toISOString() ?? null,
       createdAt: l.createdAt.toISOString(),
       target: l.productId
-        ? { kind: "product", title: productMap.get(l.productId)?.title ?? "Product", slug: productMap.get(l.productId)?.slug ?? null, storeSlug: productMap.get(l.productId)?.store.slug ?? null }
+        ? {
+            kind: "product",
+            title: productMap.get(l.productId)?.title ?? "Product",
+            slug: productMap.get(l.productId)?.slug ?? null,
+            storeSlug: productMap.get(l.productId)?.store.slug ?? null,
+            storeName: productMap.get(l.productId)?.store.name ?? null,
+            image: productMap.get(l.productId)?.images[0]?.url ?? null,
+          }
         : l.storeId
           ? { kind: "store", title: storeMap.get(l.storeId)?.name ?? "Store", slug: storeMap.get(l.storeId)?.slug ?? null }
           : l.collectionId

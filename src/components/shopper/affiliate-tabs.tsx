@@ -12,11 +12,17 @@ import {
   ArchiveRestore,
   ArrowDown,
   ArrowUp,
+  CalendarDays,
   Check,
+  Clock3,
   ExternalLink,
   Eye,
   Info,
+  LayoutGrid,
   Link2,
+  Megaphone,
+  MousePointerClick,
+  Package,
   Plus,
   Search,
   Share2,
@@ -86,7 +92,7 @@ import {
 // LINKS TAB
 // ============================================================================
 
-export function LinksTab({ onCreate }: { onCreate: () => void }) {
+export function LinksTab({ onCreate, refreshKey = 0 }: { onCreate: () => void; refreshKey?: number }) {
   const [links, setLinks] = useState<LinkRowT[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -102,9 +108,15 @@ export function LinksTab({ onCreate }: { onCreate: () => void }) {
     }
   }, []);
 
+  // Mount + every parent refresh bump. The link-create dialog is rendered by
+  // the hub ROOT, so creating a link while this tab stays mounted never
+  // unmounted/refetched it — the new link only appeared after a tab switch or
+  // reload (the reported bug). The parent bumps `refreshKey` the moment a
+  // create succeeds, so this AJAX-style in-place refetch shows the new link
+  // immediately (fetch keeps the old list painted — no flicker, no skeleton).
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const toggleStatus = async (link: LinkRowT) => {
     const next = link.status === "active" ? "archived" : "active";
@@ -165,57 +177,132 @@ export function LinksTab({ onCreate }: { onCreate: () => void }) {
             }
           />
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {visible.map((l) => (
-              <li key={l.id} className="rounded-xl border bg-background/60 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="border-teal-200 bg-teal-50 text-[10px] font-bold text-teal-800">
-                    {LINK_TYPE_LABEL[l.type] ?? l.type}
-                  </Badge>
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{l.target.title}</p>
-                  <StatusChip status={l.status} />
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                    {CHANNEL_LABEL[l.channel] ?? l.channel}
-                  </span>
-                  {l.label ? <span className="truncate text-[11px] text-muted-foreground">“{l.label}”</span> : null}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 text-[11px] text-slate-600" title={promoLinkUrl(l.code)}>
-                    {promoLinkUrl(l.code)}
-                  </code>
-                  <CopyButton text={promoLinkUrl(l.code)} label="Copy link" />
-                </div>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] text-muted-foreground tabular-nums">
-                    {l.clicks.toLocaleString()} click{l.clicks === 1 ? "" : "s"} · last click {l.lastClickAt ? dateShort(l.lastClickAt) : "never"} · created {dateShort(l.createdAt)}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="min-h-[36px] gap-1 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
-                    disabled={busyId === l.id}
-                    onClick={() => void toggleStatus(l)}
-                  >
-                    {l.status === "active" ? (
-                      <>
-                        <Archive className="h-3.5 w-3.5" aria-hidden /> Archive
-                      </>
-                    ) : (
-                      <>
-                        <ArchiveRestore className="h-3.5 w-3.5" aria-hidden /> Reactivate
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </li>
+              <LinkCard key={l.id} l={l} busy={busyId === l.id} onToggle={() => void toggleStatus(l)} />
             ))}
           </ul>
         )}
       </SectionCard>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link card — compact rich card: thumbnail, type badge, title + store, the
+// share URL in a tinted copy row, and a stats/footer band. At-a-glance
+// everything an affiliate needs: what it points at, where to share it, how
+// it is performing.
+// ---------------------------------------------------------------------------
+
+function LinkCard({ l, busy, onToggle }: { l: LinkRowT; busy: boolean; onToggle: () => void }) {
+  const url = promoLinkUrl(l.code);
+  const isProduct = l.target.kind === "product";
+  const subtitle =
+    isProduct && l.target.storeName
+      ? l.target.storeName
+      : isProduct && l.target.storeSlug
+        ? `@${l.target.storeSlug}`
+        : l.target.kind === "store"
+          ? "Whole store"
+          : l.target.kind === "collection"
+            ? "Curated collection"
+            : "Your showcase page";
+
+  return (
+    <li
+      className={cn(
+        "flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-soft-card transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-glow-cyan-sm",
+        l.status === "archived" && "opacity-75"
+      )}
+    >
+      {/* header — thumbnail + type + title */}
+      <div className="flex items-start gap-3 p-3.5 pb-3">
+        <LinkThumb l={l} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-[10px] font-bold text-teal-800">
+              {LINK_TYPE_LABEL[l.type] ?? l.type}
+            </Badge>
+            {l.label ? (
+              <span className="max-w-full truncate text-[10px] font-medium text-muted-foreground">“{l.label}”</span>
+            ) : null}
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm font-extrabold leading-snug text-slate-900">{l.target.title}</p>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {subtitle} · {CHANNEL_LABEL[l.channel] ?? l.channel}
+          </p>
+        </div>
+        <StatusChip status={l.status} className="shrink-0" />
+      </div>
+
+      {/* share URL — the card's centrepiece, tinted + always one tap from copy */}
+      <div className="mx-3.5 flex items-center gap-1.5 rounded-xl border border-teal-100 bg-teal-50/60 px-2.5 py-2">
+        <Link2 className="h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
+        <code className="min-w-0 flex-1 truncate text-[11px] font-semibold text-teal-900" title={url}>
+          {url}
+        </code>
+        <CopyButton text={url} label="" className="h-7 min-h-[28px] w-7 justify-center border-teal-200 bg-white px-0 text-teal-800 hover:bg-teal-100" />
+      </div>
+
+      {/* stats + archive footer */}
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-3 py-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10.5px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 font-bold text-slate-700 tabular-nums">
+            <MousePointerClick className="h-3.5 w-3.5 text-teal-700" aria-hidden="true" />
+            {l.clicks.toLocaleString()} click{l.clicks === 1 ? "" : "s"}
+          </span>
+          <span className="inline-flex items-center gap-1 tabular-nums">
+            <Clock3 className="h-3 w-3" aria-hidden="true" />
+            {l.lastClickAt ? dateShort(l.lastClickAt) : "no clicks yet"}
+          </span>
+          <span className="hidden items-center gap-1 tabular-nums sm:inline-flex">
+            <CalendarDays className="h-3 w-3" aria-hidden="true" />
+            {dateShort(l.createdAt)}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 min-h-[32px] shrink-0 gap-1 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+          disabled={busy}
+          onClick={onToggle}
+          aria-label={l.status === "active" ? `Archive link to ${l.target.title}` : `Reactivate link to ${l.target.title}`}
+        >
+          {l.status === "active" ? (
+            <>
+              <Archive className="h-3.5 w-3.5" aria-hidden /> Archive
+            </>
+          ) : (
+            <>
+              <ArchiveRestore className="h-3.5 w-3.5" aria-hidden /> Reactivate
+            </>
+          )}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+/** Type-aware card thumbnail — product hero image when there is one, otherwise
+ *  a gradient squircle with the target-type icon. */
+function LinkThumb({ l }: { l: LinkRowT }) {
+  if (l.target.kind === "product" && l.target.image) {
+    return (
+      <img
+        src={l.target.image}
+        alt=""
+        loading="lazy"
+        className="h-12 w-12 shrink-0 rounded-xl border border-slate-200/80 object-cover"
+      />
+    );
+  }
+  const Icon = l.type === "store" ? Store : l.type === "collection" ? LayoutGrid : l.type === "showcase" ? Megaphone : Package;
+  return (
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-glow-cyan-sm" aria-hidden="true">
+      <Icon className="h-5 w-5" />
+    </span>
   );
 }
 
