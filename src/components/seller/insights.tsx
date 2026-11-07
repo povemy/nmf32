@@ -148,6 +148,75 @@ type OverviewData = {
   observations: { kind: string; text: string }[];
 };
 
+// ---------------------------------------------------------------- product traffic
+// Contract mirror of /api/store/insights/product-traffic — the Top viewed
+// products card's OWN Daily/Weekly/Monthly/Yearly filter + drill-down modal.
+
+type ProductTrafficViewKey = "daily" | "weekly" | "monthly" | "yearly";
+
+const PT_WINDOW_PARAM: Record<ProductTrafficViewKey, string> = {
+  daily: "today",
+  weekly: "7d",
+  monthly: "30d",
+  yearly: "1y",
+};
+
+const PT_VIEW_LABELS: Record<ProductTrafficViewKey, string> = {
+  daily: "Today",
+  weekly: "Last 7 days",
+  monthly: "Last 30 days",
+  yearly: "Last 12 months",
+};
+
+type ProductTrafficTotals = {
+  views: number;
+  uniqueViewers: number;
+  cartAddTimes: number;
+  cartAddUnits: number;
+  cartRemoveTimes: number;
+  cartRemoveUnits: number;
+  purchaseOrders: number;
+  purchaseUnits: number;
+};
+
+type ProductTrafficRow = ProductTrafficTotals & {
+  productId: string;
+  title: string;
+  slug: string;
+  imageUrl: string | null;
+};
+
+type ProductTrafficListData = {
+  window: InsightsWindowInfo;
+  generatedAt: string;
+  topViewedProducts: ProductTrafficRow[];
+  truncated: boolean;
+};
+
+type ProductTrafficDetailData = {
+  window: InsightsWindowInfo;
+  generatedAt: string;
+  product: { id: string; title: string; slug: string; imageUrl: string | null };
+  totals: ProductTrafficTotals;
+  channels: { channel: string; views: number; sessions: number }[];
+  referrers: { host: string; views: number }[];
+  byDay: { day: string; views: number }[];
+  truncated: boolean;
+  notes?: string[] | null;
+};
+
+/** Fixed display order + plain-language labels for the five channels a view
+ *  can be classified into (server values: direct/search/social/internal/other). */
+const PT_CHANNEL_ORDER = ["internal", "direct", "search", "social", "other"] as const;
+
+const PT_CHANNEL_META: Record<string, { label: string; hint: string }> = {
+  internal: { label: "Marketplace / internal", hint: "Navigation inside NOMOFEE — marketplace home, category and storefront pages, in-app search." },
+  direct: { label: "Direct link", hint: "Typed URLs, bookmarks, in-app browsers and apps that strip referrers." },
+  search: { label: "Search engines", hint: "Google, Bing, DuckDuckGo and other search sites." },
+  social: { label: "Social media", hint: "Facebook, Instagram, TikTok, X, YouTube, WhatsApp and other social platforms." },
+  other: { label: "Other sites", hint: "Links from sites that are neither search engines nor social networks." },
+};
+
 type CartData = {
   window: InsightsWindowInfo;
   generatedAt: string;
@@ -988,6 +1057,10 @@ function OverviewSection({
         onProduct={onFunnelProduct}
       />
 
+      {/* top viewed products — own Daily/Weekly/Monthly/Yearly filter + traffic
+          source drill-down modal (moved below the funnel per seller feedback) */}
+      <TopViewedProductsCard onNavigate={onNavigate} />
+
       <div className="grid gap-4 lg:grid-cols-5">
         {/* traffic trend */}
         <Card className="gap-3 lg:col-span-3">
@@ -1124,44 +1197,6 @@ function OverviewSection({
         </Card>
       </div>
 
-      {/* top viewed products */}
-      <Card className="gap-3">
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-0">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Eye className="h-4 w-4 text-primary" /> Top viewed products
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Views in this window{traffic.truncated ? " · list truncated" : ""}
-            </CardDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 gap-1 text-xs"
-            onClick={() => onNavigate({ view: "products" })}
-          >
-            View all <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {traffic.topViewedProducts.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No product views in this window yet.</p>
-          ) : (
-            <ul className={cn("space-y-2 pr-1", SCROLLY)}>
-              {traffic.topViewedProducts.map((p) => (
-                <li key={p.productId} className="flex items-center gap-3 rounded-xl border p-2.5">
-                  <ProductThumb imageUrl={p.imageUrl} title={p.title} />
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium">{p.title}</p>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtInt(p.views)}</span>
-                  <span className="sr-only">views</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          </CardContent>
-        </Card>
-
       {/* observations — server-gated, rendered verbatim */}
       {observations.length > 0 ? (
         <section aria-label="Observations" className="grid gap-3 sm:grid-cols-2">
@@ -1174,6 +1209,284 @@ function OverviewSection({
         </section>
       ) : null}
     </div>
+  );
+}
+
+// ------------------------------------------- top viewed products card + modal
+
+/** Top viewed products — the seller's per-product traffic card with its OWN
+ *  Daily/Weekly/Monthly/Yearly filter (independent of the page window, like
+ *  the funnel diagram) and a click-through drill-down modal showing where
+ *  each product's viewers came from plus cart/purchase movement. */
+function TopViewedProductsCard({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
+  const [view, setView] = useState<ProductTrafficViewKey>("monthly");
+  const [selected, setSelected] = useState<ProductTrafficRow | null>(null);
+  const list = useApi<ProductTrafficListData>(`/api/store/insights/product-traffic?window=${PT_WINDOW_PARAM[view]}`);
+  const rows = list.data?.topViewedProducts ?? [];
+
+  return (
+    <Card className="gap-3">
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Eye className="h-4 w-4 text-primary" /> Top viewed products
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Views in the selected filter{list.data?.truncated ? " · list truncated" : ""} · click a product for its traffic sources
+          </CardDescription>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Select value={view} onValueChange={(v) => setView(v as ProductTrafficViewKey)}>
+            <SelectTrigger className="h-9 w-[122px] text-xs" aria-label="Top viewed products filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
+              <SelectItem value="yearly">Yearly</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" className="hidden h-9 gap-1 text-xs sm:inline-flex" onClick={() => onNavigate({ view: "products" })}>
+            View all <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {list.error ? (
+          <ErrorPanel message={list.error} onRetry={list.refetch} />
+        ) : list.loading ? (
+          <RowsSkeleton rows={5} />
+        ) : rows.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No product views in this filter yet.</p>
+        ) : (
+          <ul className={cn("space-y-2 pr-1", SCROLLY)}>
+            {rows.map((p) => (
+              <li key={p.productId}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(p)}
+                  className="flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:hover:border-teal-800 dark:hover:bg-teal-950/30"
+                  aria-label={`Traffic detail for ${p.title}`}
+                >
+                  <ProductThumb imageUrl={p.imageUrl} title={p.title} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{p.title}</span>
+                    <span className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-3 w-3" aria-hidden="true" /> {fmtInt(p.uniqueViewers)} viewers
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <ShoppingCart className="h-3 w-3 text-emerald-600" aria-hidden="true" /> {fmtInt(p.cartAddUnits)} added
+                      </span>
+                      {p.purchaseUnits > 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <ReceiptText className="h-3 w-3 text-teal-600" aria-hidden="true" /> {fmtInt(p.purchaseUnits)} purchased
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block text-sm font-semibold tabular-nums">{fmtInt(p.views)}</span>
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">views</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+      <ProductTrafficDialog product={selected} view={view} onClose={() => setSelected(null)} />
+    </Card>
+  );
+}
+
+/** One KPI tile for the drill-down modal. */
+function PtKpi({ icon, label, value, sub, tone }: { icon: React.ReactNode; label: string; value: string; sub?: string; tone?: "emerald" | "rose" | "teal" }) {
+  return (
+    <div className="rounded-xl border bg-muted/30 p-3">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        {icon} {label}
+      </p>
+      <p
+        className={cn(
+          "mt-1 text-lg font-semibold tabular-nums leading-none",
+          tone === "emerald" && "text-emerald-600 dark:text-emerald-400",
+          tone === "rose" && "text-rose-600 dark:text-rose-400",
+          tone === "teal" && "text-teal-700 dark:text-teal-300"
+        )}
+      >
+        {value}
+      </p>
+      {sub ? <p className="mt-1 text-[10px] text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
+}
+
+/** Traffic-source drill-down modal for ONE product — channel breakdown with
+ *  bars, a by-day view trend, top referrer hosts and cart/purchase movement,
+ *  all scoped to the card's current filter. */
+function ProductTrafficDialog({
+  product,
+  view,
+  onClose,
+}: {
+  product: ProductTrafficRow | null;
+  view: ProductTrafficViewKey;
+  onClose: () => void;
+}) {
+  const url = product ? `/api/store/insights/product-traffic?window=${PT_WINDOW_PARAM[view]}&productId=${encodeURIComponent(product.productId)}` : null;
+  const detail = useApi<ProductTrafficDetailData>(url);
+  const d = detail.data;
+
+  const channels = PT_CHANNEL_ORDER.map((ch) => {
+    const found = d?.channels.find((c) => c.channel === ch);
+    return { channel: ch, views: found?.views ?? 0, sessions: found?.sessions ?? 0 };
+  });
+  const maxChViews = Math.max(1, ...channels.map((c) => c.views));
+  const hasViews = (d?.totals.views ?? 0) > 0;
+
+  return (
+    <Dialog open={product != null} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl [scrollbar-width:thin]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3 pr-8 text-left">
+            <ProductThumb imageUrl={product?.imageUrl ?? null} title={product?.title ?? ""} size={44} />
+            <span className="min-w-0">
+              <span className="block truncate text-base font-semibold leading-tight">{product?.title}</span>
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">Traffic detail · {PT_VIEW_LABELS[view]}</span>
+            </span>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Where this product&apos;s viewers came from and how they moved through the cart in the selected period.
+          </DialogDescription>
+        </DialogHeader>
+
+        {detail.error ? (
+          <ErrorPanel message={detail.error} onRetry={detail.refetch} />
+        ) : detail.loading || !d ? (
+          <div className="space-y-3">
+            <RowsSkeleton rows={4} />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* movement KPIs */}
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+              <PtKpi icon={<Eye className="h-3.5 w-3.5" aria-hidden="true" />} label="Views" value={fmtInt(d.totals.views)} sub={`${fmtInt(d.totals.uniqueViewers)} unique viewers`} />
+              <PtKpi icon={<ShoppingCart className="h-3.5 w-3.5" aria-hidden="true" />} label="Added to cart" value={fmtInt(d.totals.cartAddUnits)} sub={`${fmtInt(d.totals.cartAddTimes)} times`} tone="emerald" />
+              <PtKpi icon={<ShoppingBasket className="h-3.5 w-3.5" aria-hidden="true" />} label="Removed from cart" value={fmtInt(d.totals.cartRemoveUnits)} sub={`${fmtInt(d.totals.cartRemoveTimes)} times`} tone="rose" />
+              <PtKpi icon={<ReceiptText className="h-3.5 w-3.5" aria-hidden="true" />} label="Purchased" value={fmtInt(d.totals.purchaseUnits)} sub={`${fmtInt(d.totals.purchaseOrders)} paid orders`} tone="teal" />
+              <PtKpi icon={<MousePointerClick className="h-3.5 w-3.5" aria-hidden="true" />} label="View → cart" value={fmtPct(d.totals.views > 0 ? Math.round((d.totals.cartAddUnits / d.totals.views) * 1000) / 10 : null)} sub="units per 100 views" />
+            </div>
+
+            {/* where viewers came from */}
+            <section aria-label="Where viewers came from">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="flex items-center gap-1.5 text-sm font-medium">
+                  <Globe className="h-4 w-4 text-primary" aria-hidden="true" /> Where viewers came from
+                </h4>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1 px-2 text-[11px] text-muted-foreground" aria-label="How channel detection works">
+                      <Info className="h-3.5 w-3.5" aria-hidden="true" /> How?
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 text-xs leading-relaxed">
+                    <p className="text-sm font-medium">How we know where a view came from</p>
+                    <ul className="mt-2 space-y-2">
+                      <li>
+                        <span className="font-medium">1 · Campaign links — most reliable.</span> Links shared from the Campaigns tab carry UTM tags plus a
+                        store token; the source (e.g. utm_source=instagram → Social media) is stamped on every tracked view.
+                      </li>
+                      <li>
+                        <span className="font-medium">2 · Referrer header.</span> Untagged views use the browser&apos;s standard Referer hostname: known
+                        search engines → Search engines, known social networks → Social media, other sites → Other sites.
+                      </li>
+                      <li>
+                        <span className="font-medium">3 · Direct link.</span> No referrer and no campaign tag — typed URLs, bookmarks and referrer-stripping
+                        apps land here.
+                      </li>
+                    </ul>
+                    <p className="mt-2 text-muted-foreground">Marketplace / internal = the viewer was already browsing NOMOFEE (marketplace pages, storefronts, in-app search). Last-touch, first-party measurement — associated with the view, never claimed to cause a sale.</p>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {!hasViews ? (
+                <p className="py-3 text-center text-sm text-muted-foreground">No views in this filter yet.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {channels.map((c) => {
+                    const meta = PT_CHANNEL_META[c.channel];
+                    return (
+                      <div key={c.channel}>
+                        <div className="mb-1 flex items-baseline justify-between gap-2">
+                          <span className="text-sm font-medium">{meta?.label ?? c.channel}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {fmtInt(c.views)} views · {fmtInt(c.sessions)} viewers
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-muted" aria-hidden="true">
+                          <div className="h-full rounded-full bg-teal-600" style={{ width: `${(c.views / maxChViews) * 100}%` }} />
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground/80">{meta?.hint}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* views by day */}
+            {d.byDay.length > 1 ? (
+              <section aria-label="Views by day">
+                <h4 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                  <TrendingUp className="h-4 w-4 text-primary" aria-hidden="true" /> Views by day
+                  {d.truncated ? <span className="text-[10px] font-normal text-amber-600">· event data truncated</span> : null}
+                </h4>
+                <div className="h-[160px] w-full" role="img" aria-label="Daily product views chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={d.byDay} margin={CHART_MARGIN}>
+                      <defs>
+                        <linearGradient id="ptViewsFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={TEAL} stopOpacity={0.3} />
+                          <stop offset="100%" stopColor={TEAL} stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" vertical={false} />
+                      <XAxis dataKey="day" tickFormatter={bucketTick} fontSize={11} tickLine={false} axisLine={false} minTickGap={24} stroke="currentColor" className="text-muted-foreground" />
+                      <YAxis tickFormatter={(v) => fmtInt(Number(v))} fontSize={11} tickLine={false} axisLine={false} width={40} allowDecimals={false} stroke="currentColor" className="text-muted-foreground" />
+                      <Tooltip formatter={(v) => [fmtInt(Number(v)), "Views"]} labelFormatter={(l) => `Date: ${l}`} contentStyle={tooltipStyle} />
+                      <Area type="monotone" dataKey="views" name="Views" stroke={TEAL} strokeWidth={2} fill="url(#ptViewsFill)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            ) : null}
+
+            {/* top referring sites — the exact hosts behind Other/Internal */}
+            {d.referrers.length > 0 ? (
+              <section aria-label="Top referring sites">
+                <h4 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                  <Link2 className="h-4 w-4 text-primary" aria-hidden="true" /> Top referring sites
+                </h4>
+                <div className="space-y-1.5">
+                  {d.referrers.map((r) => (
+                    <div key={r.host} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
+                      <span className="min-w-0 truncate font-mono text-xs">{r.host}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{fmtInt(r.views)} views</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[10px] text-muted-foreground/80">Hostnames of referring pages (privacy-aware — full URLs are never stored). Direct and campaign visits do not appear here.</p>
+              </section>
+            ) : null}
+
+            <NotesCollapsible title="How these numbers are calculated" notes={d.notes} />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

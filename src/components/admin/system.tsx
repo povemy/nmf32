@@ -5,10 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity as ActivityIcon,
+  ArrowDown,
+  ArrowUp,
   Banknote,
   Check,
   CheckCircle2,
+  ChevronDown,
   CreditCard,
+  EyeOff,
   HeartPulse,
   Loader2,
   Mail,
@@ -27,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -40,9 +45,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/app-store";
+import {
+  HOME_SECTIONS,
+  sectionOrderFromSetting,
+  type HomeSectionId,
+} from "@/lib/home-layout";
 import {
   SETTING_GROUPS,
   settingMetaFor,
@@ -196,6 +207,219 @@ function NumberInput({
         }}
         className={cn("min-h-[44px] sm:min-h-[36px]", prefix && "pl-8")}
       />
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- friendly JSON */
+
+/** Split a camelCase JSON key into a readable label ("durationMs" → "Duration ms"). */
+function jsonKeyLabel(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/** One friendly value cell: timestamps → readable date-time, durations →
+ *  seconds, booleans → Yes/No, numbers → grouped digits, null → em dash. */
+function JsonValue({ v }: { v: unknown }) {
+  if (v === null || v === undefined) return <span className="text-muted-foreground/60">—</span>;
+  if (typeof v === "boolean") {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          "text-[10px] font-semibold",
+          v ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300" : "border-muted-foreground/30 bg-muted text-muted-foreground"
+        )}
+      >
+        {v ? "Yes" : "No"}
+      </Badge>
+    );
+  }
+  if (typeof v === "number") {
+    const label = v >= 10_000 && Number.isInteger(v) ? v.toLocaleString("en-MY") : String(v);
+    return <span className="tabular-nums">{label}</span>;
+  }
+  if (typeof v === "string") {
+    if (ISO_RE.test(v)) return <span>{new Date(v).toLocaleString("en-MY", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>;
+    return <span className="break-all">{v}</span>;
+  }
+  return <span className="break-all font-mono text-[11px]">{JSON.stringify(v)}</span>;
+}
+
+/** Friendly renderer for system-written JSON settings (cron last-run blobs,
+ *  id lists) — key/value rows in plain language instead of a raw JSON blob.
+ *  The raw payload stays one toggle away for debugging. */
+function SystemStateView({ valueJson }: { valueJson: string }) {
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(valueJson) as unknown;
+    } catch {
+      return undefined;
+    }
+  }, [valueJson]);
+
+  if (parsed === undefined) {
+    return (
+      <pre className="max-h-32 w-full overflow-auto rounded-lg bg-muted p-3 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]">{valueJson}</pre>
+    );
+  }
+
+  const rows: Array<{ label: string; value: unknown }> = [];
+  if (Array.isArray(parsed)) {
+    rows.push({ label: "Items", value: parsed.length });
+    for (const [i, item] of parsed.slice(0, 6).entries()) rows.push({ label: `#${i + 1}`, value: item });
+    if (parsed.length > 6) rows.push({ label: "Remaining", value: `${parsed.length - 6} more…` });
+  } else if (parsed !== null && typeof parsed === "object") {
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      rows.push({ label: k === "durationMs" ? "Duration" : k === "at" || k === "ranAt" ? "Ran at" : jsonKeyLabel(k), value: v });
+    }
+  } else {
+    rows.push({ label: "Value", value: parsed });
+  }
+
+  return (
+    <div className="w-full space-y-2">
+      <div className="rounded-lg border bg-muted/40 p-0">
+        <dl className="divide-y [&>div]:flex [&>div]:items-baseline [&>div]:justify-between [&>div]:gap-4 [&>div]:px-3 [&>div]:py-1.5">
+          {rows.map((r) => {
+            const isDur = /duration/i.test(r.label);
+            return (
+              <div key={r.label}>
+                <dt className="text-xs text-muted-foreground">{r.label}</dt>
+                <dd className="text-right text-xs font-medium">
+                  {isDur && typeof r.value === "number" ? `${(r.value / 1000).toFixed(2)} s` : <JsonValue v={r.value} />}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      </div>
+      <Collapsible>
+        <CollapsibleTrigger className="group flex min-h-[36px] items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <ChevronDown className="h-3 w-3 shrink-0 transition-transform group-data-[state=open]:rotate-180" /> Raw JSON
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <pre className="max-h-40 w-full overflow-auto rounded-lg bg-muted p-3 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]">{prettyJson(valueJson)}</pre>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
+/* ------------------------------------------------- homepage order editor */
+
+const SECTION_LABEL: Record<HomeSectionId, string> = HOME_SECTIONS.reduce(
+  (acc, s) => ({ ...acc, [s.id]: s.label }),
+  {} as Record<HomeSectionId, string>
+);
+
+/** Friendly editor for Setting `home.section_order` — an ordered list with
+ *  up/down/hide controls plus an add-back shelf, serialising to the same JSON
+ *  array the homepage reads. Replaces the raw-JSON textarea for newbies. */
+function SectionOrderEditor({
+  valueJson,
+  disabled,
+  onChange,
+}: {
+  valueJson: string;
+  disabled?: boolean;
+  onChange: (nextJson: string) => void;
+}) {
+  const order = useMemo(() => sectionOrderFromSetting(valueJson), [valueJson]);
+  const inlineCount = order.filter((s) => s === "inline").length;
+  const available = HOME_SECTIONS.filter((s) => {
+    if (s.id === "hero") return false; // hero is mandatory — always in the list
+    if (s.id === "inline") return inlineCount < 3;
+    return !order.includes(s.id);
+  });
+
+  const move = (i: number, dir: -1 | 1) => {
+    const next = [...order];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    // Hero is pinned to slot 0 — nothing may move above it.
+    if (next[j] === "hero") return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(JSON.stringify(next));
+  };
+  const hide = (i: number) => {
+    const next = [...order];
+    if (next[i] === "hero") return; // hero cannot be hidden
+    next.splice(i, 1);
+    onChange(JSON.stringify(next));
+  };
+  const add = (id: HomeSectionId) => {
+    const next = [...order, id];
+    if (id === "hero") {
+      // defensive: normalize would pin hero first anyway
+      next.splice(next.indexOf("hero"), 1);
+      next.unshift("hero");
+    }
+    onChange(JSON.stringify(next));
+  };
+
+  const Row = ({ id, i }: { id: HomeSectionId; i: number }) => {
+    const isHero = id === "hero";
+    const meta = HOME_SECTIONS.find((s) => s.id === id);
+    return (
+      <li className="flex min-h-[44px] items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-600/10 text-[11px] font-semibold text-teal-700 dark:text-teal-300" aria-hidden="true">
+          {i + 1}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{SECTION_LABEL[id]}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{meta?.description}</p>
+        </div>
+        {isHero ? (
+          <Badge variant="outline" className="shrink-0 border-teal-200 bg-teal-50 text-[10px] font-semibold text-teal-800 dark:border-teal-900 dark:bg-teal-950/60 dark:text-teal-300">
+            Always first
+          </Badge>
+        ) : (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Move ${SECTION_LABEL[id]} up`} disabled={disabled || order[i - 1] === "hero"} onClick={() => move(i, -1)}>
+              <ArrowUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Move ${SECTION_LABEL[id]} down`} disabled={disabled || i === order.length - 1} onClick={() => move(i, 1)}>
+              <ArrowDown className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700" aria-label={`Hide ${SECTION_LABEL[id]} from the homepage`} disabled={disabled} onClick={() => hide(i)}>
+              <EyeOff className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+      </li>
+    );
+  };
+
+  return (
+    <div className="w-full space-y-3">
+      <ol className="space-y-1.5" aria-label="Homepage section order">
+        {order.map((id, i) => (
+          <Row key={`${id}-${i}`} id={id} i={i} />
+        ))}
+      </ol>
+      {available.length > 0 ? (
+        <div className="rounded-lg border border-dashed p-2.5">
+          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Hidden sections — click to add back to the homepage</p>
+          <div className="flex flex-wrap gap-1.5">
+            {available.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => add(s.id)}
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-full border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-teal-300 hover:bg-teal-50 hover:text-teal-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:border-teal-800 dark:hover:bg-teal-950/60 dark:hover:text-teal-200"
+              >
+                <Plus className="h-3 w-3" /> {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <p className="text-[11px] text-muted-foreground">Sections render top-to-bottom in this order. Hiding a section here removes it from the homepage immediately (within the 60 s cache).</p>
     </div>
   );
 }
@@ -411,14 +635,15 @@ export function SettingsView() {
         );
       }
       case "readonly": {
-        return (
-          <pre className="max-h-32 w-full overflow-auto rounded-lg bg-muted p-3 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]">
-            {prettyJson(valueJson)}
-          </pre>
-        );
+        return <SystemStateView valueJson={valueJson} />;
       }
       case "json":
       default: {
+        // The homepage section order gets the friendly reorder editor — raw
+        // JSON stays only for genuinely unknown Advanced keys.
+        if (r.key === "home.section_order") {
+          return <SectionOrderEditor valueJson={valueJson} disabled={!canEdit || savingKeys.includes(r.key)} onChange={(next) => setValue(r, next)} />;
+        }
         return (
           <div className="w-full space-y-1.5">
             <Textarea
@@ -477,6 +702,57 @@ export function SettingsView() {
 
   /* ---- view -------------------------------------------------------------- */
 
+  // Tabbed groups — one tab per settings group. The first group with rows is
+  // the default tab. A small amber dot marks tabs with unsaved changes so a
+  // newbie can never lose track of where their edits live.
+  const defaultTab = groupsWithRows[0]?.id ?? "storefront";
+
+  const renderGroupCard = (group: (typeof SETTING_GROUPS)[number]) => {
+    const groupRows = grouped.get(group.id)!;
+    const dirty = groupRows.filter(isDirty);
+    const hasError = dirty.some((r) => draftError(r) !== null);
+    const Icon = GROUP_ICON[group.icon] ?? Wrench;
+    return (
+      <Card key={group.id} className="py-0">
+        <CardHeader className="px-4 pb-0 pt-4 sm:px-6 sm:pt-5">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Icon className="h-4 w-4 text-teal-600 dark:text-teal-400" /> {group.label}
+          </CardTitle>
+          <CardDescription>{group.description}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y">{groupRows.map(renderRow)}</div>
+          {dirty.length > 0 ? (
+            <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-xs text-muted-foreground">
+                {dirty.length} unsaved {dirty.length === 1 ? "change" : "changes"}
+                {hasError ? " · fix the highlighted error first" : ""}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-[44px] sm:min-h-0"
+                  onClick={() => groupRows.forEach((r) => isDirty(r) && resetRow(r.key))}
+                >
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  className="min-h-[44px] sm:min-h-0"
+                  disabled={!canEdit || hasError}
+                  onClick={() => void saveKeys(groupRows)}
+                >
+                  {savingKeys.some((k) => dirty.some((d) => d.key === k)) ? "Saving…" : `Save ${dirty.length > 1 ? `all ${dirty.length}` : ""}`}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -516,51 +792,37 @@ export function SettingsView() {
           </CardContent>
         </Card>
       ) : (
-        groupsWithRows.map((group) => {
-          const groupRows = grouped.get(group.id)!;
-          const dirty = groupRows.filter(isDirty);
-          const hasError = dirty.some((r) => draftError(r) !== null);
-          const Icon = GROUP_ICON[group.icon] ?? Wrench;
-          return (
-            <Card key={group.id} className="py-0">
-              <CardHeader className="px-4 pb-0 pt-4 sm:px-6 sm:pt-5">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Icon className="h-4 w-4 text-teal-600 dark:text-teal-400" /> {group.label}
-                </CardTitle>
-                <CardDescription>{group.description}</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y">{groupRows.map(renderRow)}</div>
-                {dirty.length > 0 ? (
-                  <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                    <p className="text-xs text-muted-foreground">
-                      {dirty.length} unsaved {dirty.length === 1 ? "change" : "changes"}
-                      {hasError ? " · fix the highlighted error first" : ""}
-                    </p>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="min-h-[44px] sm:min-h-0"
-                        onClick={() => groupRows.forEach((r) => isDirty(r) && resetRow(r.key))}
-                      >
-                        Discard
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="min-h-[44px] sm:min-h-0"
-                        disabled={!canEdit || hasError}
-                        onClick={() => void saveKeys(groupRows)}
-                      >
-                        {savingKeys.some((k) => dirty.some((d) => d.key === k)) ? "Saving…" : `Save ${dirty.length > 1 ? `all ${dirty.length}` : ""}`}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          );
-        })
+        <Tabs defaultValue={defaultTab}>
+          <TabsList className="h-auto w-full flex-wrap sm:w-fit">
+            {groupsWithRows.map((group) => {
+              const dirtyCount = (grouped.get(group.id) ?? []).filter(isDirty).length;
+              const Icon = GROUP_ICON[group.icon] ?? Wrench;
+              return (
+                <TabsTrigger
+                  key={group.id}
+                  value={group.id}
+                  className="min-h-[44px] gap-1.5 px-3 text-xs sm:px-4 sm:text-sm"
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="whitespace-nowrap">{group.label}</span>
+                  {dirtyCount > 0 ? (
+                    <span
+                      className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white"
+                      aria-label={`${dirtyCount} unsaved changes`}
+                    >
+                      {dirtyCount}
+                    </span>
+                  ) : null}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+          {groupsWithRows.map((group) => (
+            <TabsContent key={group.id} value={group.id} className="mt-4">
+              {renderGroupCard(group)}
+            </TabsContent>
+          ))}
+        </Tabs>
       )}
     </div>
   );

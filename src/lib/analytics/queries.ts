@@ -130,13 +130,13 @@ function rate(num: number, den: number): number | null {
   return Math.round((num / den) * 1000) / 10;
 }
 
-type EventRow = { eventType: string; sessionId: string | null; visitorId: string | null; shopperId: string | null; productId: string | null; qty: number | null; channel: string | null; createdAt: Date };
+type EventRow = { eventType: string; sessionId: string | null; visitorId: string | null; shopperId: string | null; productId: string | null; qty: number | null; channel: string | null; referrerHost: string | null; createdAt: Date };
 
 /** Bounded event fetch for a store window (≤ 20k rows; sets `truncated` if hit). */
 async function eventsFor(storeId: string, from: Date, to: Date): Promise<{ rows: EventRow[]; truncated: boolean }> {
   const rows = await db.analyticsEvent.findMany({
     where: { storeId, createdAt: { gte: from, lt: to } },
-    select: { eventType: true, sessionId: true, visitorId: true, shopperId: true, productId: true, qty: true, channel: true, createdAt: true },
+    select: { eventType: true, sessionId: true, visitorId: true, shopperId: true, productId: true, qty: true, channel: true, referrerHost: true, createdAt: true },
     orderBy: { createdAt: "asc" },
     take: 20_001,
   });
@@ -308,6 +308,176 @@ export async function trafficSummary(storeId: string, win: InsightsWindow): Prom
       })
       .filter((x): x is NonNullable<typeof x> => Boolean(x)),
     truncated: cur.truncated || prev.truncated,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Product traffic — per-product view sources + cart/purchase movement.
+// Powers the Overview "Top viewed products" card (own D/W/M/Y window) and its
+// drill-down modal (channels, referrer hosts, by-day views, cart movement).
+// Same honesty rules as the rest of Seller Insights: views/cart come from the (HMR ping)
+// bounded event pull; purchases come from authoritative paid-order items.
+// ---------------------------------------------------------------------------
+
+export type ProductTrafficTotals = {
+  views: number;
+  uniqueViewers: number;
+  cartAddTimes: number;
+  cartAddUnits: number;
+  cartRemoveTimes: number;
+  cartRemoveUnits: number;
+  purchaseOrders: number;
+  purchaseUnits: number;
+};
+
+export type ProductTrafficRow = ProductTrafficTotals & {
+  productId: string;
+  title: string;
+  slug: string;
+  imageUrl: string | null;
+};
+
+export type ProductTrafficDetail = {
+  product: { id: string; title: string; slug: string; imageUrl: string | null };
+  totals: ProductTrafficTotals;
+  channels: Array<{ channel: string; views: number; sessions: number }>;
+  referrers: Array<{ host: string; views: number }>;
+  byDay: Array<{ day: string; views: number }>;
+  truncated: boolean;
+};
+
+/** Cart add/remove movement per productId from an event pull. */
+function cartMovementMap(rows: EventRow[]): Map<string, { times: number; units: number }[]> {
+  const out = new Map<string, { times: number; units: number }[]>();
+  for (const e of rows) {
+    if (!e.productId) continue;
+    if (e.eventType !== "add_to_cart" && e.eventType !== "remove_from_cart") continue;
+    const slot = out.get(e.productId) ?? [ { times: 0, units: 0 }, { times: 0, units: 0 } ];
+    const idx = e.eventType === "add_to_cart" ? 0 : 1;
+    slot[idx]!.times += 1;
+    slot[idx]!.units += e.qty ?? 1;
+    out.set(e.productId, slot);
+  }
+  return out;
+}
+
+/** Purchased orders + units per productId from a paid-order pull (authoritative). */
+function purchaseMap(paid: PaidOrderRow[]): Map<string, { orders: Set<string>; units: number }> {
+  const out = new Map<string, { orders: Set<string>; units: number }>();
+  for (const o of paid) {
+    for (const it of o.items) {
+      if (!it.productId) continue;
+      const slot = out.get(it.productId) ?? { orders: new Set<string>(), units: 0 };
+      slot.orders.add(o.id);
+      slot.units += it.qty;
+      out.set(it.productId, slot);
+    }
+  }
+  return out;
+}
+
+export async function productTrafficTop(storeId: string, win: InsightsWindow): Promise<{ topViewedProducts: ProductTrafficRow[]; truncated: boolean }> {
+  const [cur, paid] = await Promise.all([eventsFor(storeId, win.from, win.to), paidOrdersFor(storeId, win.from, win.to)]);
+
+  const views = new Map<string, number>();
+  const viewers = new Map<string, Set<string>>();
+  for (const e of cur.rows) {
+    if (e.eventType !== "product_view" || !e.productId) continue;
+    views.set(e.productId, (views.get(e.productId) ?? 0) + 1);
+    const sk = sessionKey(e);
+    if (sk) {
+      const set = viewers.get(e.productId) ?? new Set<string>();
+      set.add(sk);
+      viewers.set(e.productId, set);
+    }
+  }
+  const carts = cartMovementMap(cur.rows);
+  const purchases = purchaseMap(paid);
+
+  const topIds = [...views.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id]) => id);
+  const products = topIds.length
+    ? await db.product.findMany({ where: { id: { in: topIds }, storeId }, select: { id: true, title: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } } } })
+    : [];
+  const byId = new Map(products.map((p) => [p.id, p]));
+
+  return {
+    topViewedProducts: topIds
+      .map((id) => {
+        const p = byId.get(id);
+        if (!p) return null;
+        const cart = carts.get(id) ?? [ { times: 0, units: 0 }, { times: 0, units: 0 } ];
+        const pur = purchases.get(id);
+        return {
+          productId: id,
+          title: p.title,
+          slug: p.slug,
+          imageUrl: p.images[0]?.url ?? null,
+          views: views.get(id) ?? 0,
+          uniqueViewers: viewers.get(id)?.size ?? 0,
+          cartAddTimes: cart[0]!.times,
+          cartAddUnits: cart[0]!.units,
+          cartRemoveTimes: cart[1]!.times,
+          cartRemoveUnits: cart[1]!.units,
+          purchaseOrders: pur?.orders.size ?? 0,
+          purchaseUnits: pur?.units ?? 0,
+        } satisfies ProductTrafficRow;
+      })
+      .filter((x): x is ProductTrafficRow => x !== null),
+    truncated: cur.truncated,
+  };
+}
+
+export async function productTrafficDetail(storeId: string, productId: string, win: InsightsWindow): Promise<ProductTrafficDetail | null> {
+  // Ownership check: the product must belong to the SESSION's store — a foreign
+  // id answers 404, never a data leak.
+  const product = await db.product.findFirst({
+    where: { id: productId, storeId },
+    select: { id: true, title: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } } },
+  });
+  if (!product) return null;
+
+  const [cur, paid] = await Promise.all([eventsFor(storeId, win.from, win.to), paidOrdersFor(storeId, win.from, win.to)]);
+
+  // Day buckets seeded across the whole window (same convention as byDay in
+  // trafficSummary — KL wall-clock days, zero-filled).
+  const dayMap = new Map<string, number>();
+  for (let d = new Date(win.from); d < win.to; d = new Date(d.getTime() + 86_400_000)) dayMap.set(klDayKey(d), 0);
+
+  const pviews = cur.rows.filter((e) => e.eventType === "product_view" && e.productId === productId);
+  const viewers = new Set<string>();
+  const chanMap = new Map<string, { views: number; sessions: Set<string> }>();
+  const refMap = new Map<string, number>();
+  for (const e of pviews) {
+    dayMap.set(klDayKey(e.createdAt), (dayMap.get(klDayKey(e.createdAt)) ?? 0) + 1);
+    const sk = sessionKey(e);
+    if (sk) viewers.add(sk);
+    const ch = e.channel ?? "direct";
+    const slot = chanMap.get(ch) ?? { views: 0, sessions: new Set<string>() };
+    slot.views += 1;
+    if (sk) slot.sessions.add(sk);
+    chanMap.set(ch, slot);
+    if (e.referrerHost) refMap.set(e.referrerHost, (refMap.get(e.referrerHost) ?? 0) + 1);
+  }
+
+  const carts = cartMovementMap(cur.rows).get(productId) ?? [ { times: 0, units: 0 }, { times: 0, units: 0 } ];
+  const pur = purchaseMap(paid).get(productId);
+
+  return {
+    product: { id: product.id, title: product.title, slug: product.slug, imageUrl: product.images[0]?.url ?? null },
+    totals: {
+      views: pviews.length,
+      uniqueViewers: viewers.size,
+      cartAddTimes: carts[0]!.times,
+      cartAddUnits: carts[0]!.units,
+      cartRemoveTimes: carts[1]!.times,
+      cartRemoveUnits: carts[1]!.units,
+      purchaseOrders: pur?.orders.size ?? 0,
+      purchaseUnits: pur?.units ?? 0,
+    },
+    channels: [...chanMap.entries()].map(([channel, v]) => ({ channel, views: v.views, sessions: v.sessions.size })).sort((a, b) => b.views - a.views),
+    referrers: [...refMap.entries()].map(([host, views]) => ({ host, views })).sort((a, b) => b.views - a.views).slice(0, 6),
+    byDay: [...dayMap.entries()].map(([day, views]) => ({ day, views })),
+    truncated: cur.truncated,
   };
 }
 
