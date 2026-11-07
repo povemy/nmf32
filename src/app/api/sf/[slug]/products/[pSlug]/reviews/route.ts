@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 //          credited exactly once per review, atomically.
 //
 // POST gate order (each step before the next):
-//   1. IP rate limit (5/min) — cheapest check first, before any DB work.
+//   1. IP rate limit (10 per 10s) — cheapest check first, before any DB work.
 //   2. Shopper login (401) — runs BEFORE any new-column DB access, so the
 //      anonymous path keeps working even before the Review migration is applied.
 //   3. Store (live) + product (active) resolution — one findFirst that also
@@ -34,7 +34,11 @@ export const dynamic = "force-dynamic";
 //   7.5 Unsafe-content guard (lib/review-text.ts) — scripts/HTML/event
 //      handlers are rejected with 400 UNSAFE_CONTENT (never stored, never
 //      rewarded); leftover legacy payloads are blanked at display time.
-//   8. Identity rate limits: 3/hour/account, 10/hour/product.
+//   8. Identity rate limits (burst-only short windows): 3 per 5s/account,
+//      10 per 5s/product — demo-friendly tuning so a buyer rapidly rating
+//      several delivered orders never waits more than ~5s. Fraud backstops
+//      are structural, not time-based: verified-purchase gate, one-review-
+//      per-product unique index, exactly-once reward credit.
 //   9. TRANSACTION: create review (pending) + credit reward ledger row.
 // ============================================================================
 
@@ -122,7 +126,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
 // POST — verified-purchase submission (+ exactly-once reward credit).
 // ---------------------------------------------------------------------------
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
-  rateLimit(req, "sf-review", 5); // 5/min/IP — first, before any DB access
+  rateLimit(req, "sf-review", 10, 10_000); // 10 per 10s/IP — first, before any DB access
 
   // 2. Login gate (uniform message; requireShopper's own 401 is re-wrapped so
   // the API contract is stable regardless of which sub-check fired).
@@ -196,10 +200,13 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
     );
   }
 
-  // 8. Identity-keyed rate limits (spread across IPs still throttles the
-  //    account; a coordinated ring still throttles per product).
-  rateLimitKey(me.id, "sf-review-acct", 3, 3600_000); // 3/hour/account
-  rateLimitKey(product.id, "sf-review-product", 10, 3600_000); // 10/hour/product
+  // 8. Identity-keyed rate limits — burst-only short windows (demo-friendly:
+  //    worst-case retry ~5s, not an hour). Spread across IPs still throttles
+  //    the account; a coordinated ring still throttles per product; the
+  //    verified-purchase gate + one-review-per-product unique index stay the
+  //    real anti-fraud backstops.
+  rateLimitKey(me.id, "sf-review-acct", 3, 5_000); // 3 per 5s/account
+  rateLimitKey(product.id, "sf-review-product", 10, 5_000); // 10 per 5s/product
 
   // 9. TRANSACTION: create the pending review AND credit the membership
   //    reward in one atomic unit. A failure in either write rolls both back;
