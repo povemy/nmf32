@@ -126,7 +126,10 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
 // POST — verified-purchase submission (+ exactly-once reward credit).
 // ---------------------------------------------------------------------------
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
-  rateLimit(req, "sf-review", 10, 10_000); // 10 per 10s/IP — first, before any DB access
+  // "-v2" bucket names orphan any in-flight buckets created under the old
+  // 1-hour windows (pre-retune) — combined with the store's stale-window reset
+  // this guarantees no old long-window bucket can ever bite again.
+  rateLimit(req, "sf-review-v2", 10, 10_000); // 10 per 10s/IP — first, before any DB access
 
   // 2. Login gate (uniform message; requireShopper's own 401 is re-wrapped so
   // the API contract is stable regardless of which sub-check fired).
@@ -205,8 +208,8 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   //    the account; a coordinated ring still throttles per product; the
   //    verified-purchase gate + one-review-per-product unique index stay the
   //    real anti-fraud backstops.
-  rateLimitKey(me.id, "sf-review-acct", 3, 5_000); // 3 per 5s/account
-  rateLimitKey(product.id, "sf-review-product", 10, 5_000); // 10 per 5s/product
+  rateLimitKey(me.id, "sf-review-acct-v2", 3, 5_000); // 3 per 5s/account
+  rateLimitKey(product.id, "sf-review-product-v2", 10, 5_000); // 10 per 5s/product
 
   // 9. TRANSACTION: create the pending review AND credit the membership
   //    reward in one atomic unit. A failure in either write rolls both back;

@@ -35,6 +35,10 @@ export interface RateLimitStore {
   hit(key: string, windowMs: number): RateLimitHit;
 }
 
+/** Internal bucket — carries the windowMs it was created under so a retuned
+ *  limit can never be held hostage by a stale longer-window bucket. */
+type Bucket = RateLimitHit & { windowMs: number };
+
 /** Default store: the original single-instance fixed-window Map (+ sweep).
  *  PHASE 2 / D1: hard capacity bound added. The lazy sweep (≤1/min) already
  *  removed expired buckets, but between sweeps a randomized-identity attack
@@ -49,7 +53,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   private static readonly MAX_BUCKETS = 150_000;
   /** Eviction headroom — one eviction pass frees this many slots. */
   private static readonly EVICT_BATCH = 15_000;
-  private buckets = new Map<string, RateLimitHit>();
+  private buckets = new Map<string, Bucket>();
   private lastSweepAt = Date.now();
   private lastEvictAt = 0;
 
@@ -87,8 +91,12 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     this.sweep(now);
     this.evictIfFull(now);
     const b = this.buckets.get(key);
-    if (!b || b.resetAt <= now) {
-      const fresh = { count: 1, resetAt: now + windowMs };
+    // STALE-WINDOW RESET: a bucket created under a DIFFERENT windowMs (the
+    // limit was retuned — e.g. 3/hour → 3/5s — while the process kept running)
+    // must never keep enforcing the old, possibly much longer, window. Treat
+    // it as expired and start a fresh bucket under the current window.
+    if (!b || b.resetAt <= now || b.windowMs !== windowMs) {
+      const fresh: Bucket = { count: 1, resetAt: now + windowMs, windowMs };
       this.buckets.set(key, fresh);
       return fresh;
     }
