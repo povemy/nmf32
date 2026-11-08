@@ -7,6 +7,7 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
+    "test:e2e": "node node_modules/@playwright/test/cli.js test",
     "db:push": "bun run scripts/ensure-env.ts && prisma db push --accept-data-loss",
     "db:generate": "bun run scripts/ensure-env.ts && prisma generate",
     "db:migrate": "bun run scripts/ensure-env.ts && prisma migrate dev",
@@ -74,6 +75,7 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "1.57.0",
     "@tailwindcss/postcss": "^4",
     "@types/bun": "^1.4.4",
     "@types/node": "^26.6.5",
