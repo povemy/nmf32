@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { sealSecret } from "@/lib/secretbox";
+import type { BankAccountPublic, BankAccountBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -55,13 +56,14 @@ export const GET = handle(async () => {
     // full number are NEVER part of a GET response.
     select: { ...BANK_ACCOUNT_PUBLIC_SELECT },
   });
-  return ok(accounts);
+  const payload: BankAccountPublic[] = accounts.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() }));
+  return ok(payload);
 });
 
 // POST /api/store/bank-accounts {holderName, bankName, accountNumber}
 export const POST = handle(async (req: Request) => {
   const { me } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as BankAccountBody;
 
   const holderName = String(body.holderName ?? "").trim();
   const bankName = String(body.bankName ?? "").trim();
@@ -109,5 +111,6 @@ export const POST = handle(async (req: Request) => {
     meta: { bankName, masked: account.accountNumberMasked },
   });
 
-  return ok(account, { status: 201 });
+  const payload: BankAccountPublic = { ...account, createdAt: account.createdAt.toISOString() };
+  return ok(payload, { status: 201 });
 });

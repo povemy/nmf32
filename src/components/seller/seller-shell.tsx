@@ -16,12 +16,19 @@ import {
   ageOf,
   fmtCommissionPercent,
   runMutation,
-  StoreMe,
-  SellerNav,
   StatusChip,
   fmtDateTime,
-  PlatformTerms,
+  type PlatformTerms,
+  type SellerNav,
+  type StoreMe,
 } from "./ui-bits";
+import type {
+  ChatUnreadData,
+  PlatformTermsData,
+  RegisterBody,
+  RegisterData,
+  SellerNotificationsData,
+} from "@/lib/types/api-contract";
 import OnboardingWizard from "./onboarding";
 import SellerDashboard from "./dashboard";
 import SellerInsights from "./insights";
@@ -330,10 +337,6 @@ export default function SellerShell() {
 // (FIN-2-a/FIN-3-b). The shopper bell is a different subsystem (Notification
 // model via /api/me/notifications) and is intentionally untouched.
 
-type SellerNotificationRow = { id: string; subject: string; createdAt: string; event: string };
-
-type SellerNotificationsPayload = { notifications: SellerNotificationRow[]; recentCount: number };
-
 /** House scrollbar style (same treatment as the shopper bell panel). */
 const SELLER_BELL_SCROLL =
   "max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent";
@@ -345,14 +348,14 @@ const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function SellerNotificationBell() {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<SellerNotificationsPayload | null>(null);
+  const [data, setData] = useState<SellerNotificationsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [errored, setErrored] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await apiGet<SellerNotificationsPayload>("/api/store/notifications");
+      const d = await apiGet<SellerNotificationsData>("/api/store/notifications");
       setData(d);
       setErrored(false);
     } catch (e) {
@@ -470,7 +473,7 @@ function useSellerChatUnread(active: SellerNav["view"]) {
   useEffect(() => {
     let alive = true;
     const load = () =>
-      apiGet<{ total: number }>("/api/store/chat/unread")
+      apiGet<ChatUnreadData>("/api/store/chat/unread")
         .then((d) => alive && setUnread(d.total ?? 0))
         .catch(() => {});
     load();
@@ -484,7 +487,7 @@ function useSellerChatUnread(active: SellerNav["view"]) {
   // dispatches "nomofee:chat-sync" instead of prop-drilling a callback)
   useEffect(() => {
     const sync = () =>
-      apiGet<{ total: number }>("/api/store/chat/unread")
+      apiGet<ChatUnreadData>("/api/store/chat/unread")
         .then((d) => setUnread(d.total ?? 0))
         .catch(() => {});
     window.addEventListener("nomofee:chat-sync", sync);
@@ -651,7 +654,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
   const [publicTerms, setPublicTerms] = useState<PlatformTerms | null>(null);
   useEffect(() => {
     let alive = true;
-    apiGet<PlatformTerms>("/api/platform/terms")
+    apiGet<PlatformTermsData>("/api/platform/terms")
       .then((d) => {
         if (alive) setPublicTerms(d);
       })
@@ -691,7 +694,7 @@ function AuthScreen({ onAuthed }: { onAuthed: () => Promise<void> }) {
     }
     setBusy(true);
     const ok = await runMutation(async () => {
-      const body = await apiSend<{ token?: string }>("POST", "/api/auth/register", reg);
+      const body = await apiSend<RegisterData>("POST", "/api/auth/register", reg satisfies RegisterBody);
       setSessionToken(body?.token); // localStorage bridge for cookie-less contexts
     }, "Store created — let's set it up!");
     setBusy(false);

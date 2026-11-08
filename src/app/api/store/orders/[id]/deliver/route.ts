@@ -3,6 +3,7 @@ import { handle, ok, ApiError, transitionOrder, dispatchStoreWebhooks, notify, l
 import { requireActiveSellerStore } from "@/lib/auth";
 import { fastForwardDelivery, mockPodUrl, validateProofDataUrl } from "@/lib/shipping";
 import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
+import type { DeliverBody, DeliverData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as DeliverBody;
   const proof = validateProofDataUrl(body.proof ?? null);
   const note = body.note != null ? String(body.note).trim().slice(0, 500) : "";
 
@@ -98,11 +99,14 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     });
   }
 
-  return ok({
+  // deliveredAt: Date | null on the Prisma row vs contract string — always
+  // non-null here because both delivery paths stamped it above.
+  const payload: DeliverData = {
     id: fresh!.id,
     orderNumber: fresh!.orderNumber,
     status: fresh!.status,
-    deliveredAt: fresh!.deliveredAt,
+    deliveredAt: fresh!.deliveredAt ? fresh!.deliveredAt.toISOString() : null,
     shipmentStatus: shipment ? "DELIVERED" : null,
-  });
+  } as DeliverData;
+  return ok(payload);
 });

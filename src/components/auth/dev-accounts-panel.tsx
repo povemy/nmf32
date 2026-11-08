@@ -16,17 +16,12 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { DevAccountsData, DevAccountsResponse } from "@/lib/types/api-contract";
 import { webHeaders } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 
-type DevAccount = {
-  type: "admin" | "seller" | "buyer" | "affiliate";
-  label: string;
-  email: string;
-  password: string;
-  role: string | null;
-  status: string | null;
-};
+/** One credential row of GET /api/auth/dev-accounts (contract payload). */
+type DevAccount = DevAccountsData["accounts"][number];
 
 const TYPE_LABEL: Record<DevAccount["type"], string> = {
   admin: "Admin",
@@ -111,7 +106,7 @@ export function DevAccountsPanel() {
       .then(async (res) => {
         // 404 (production dual-gate) or any failure → no panel, ever.
         if (!res.ok) return null;
-        const body = (await res.json().catch(() => null)) as { data?: { accounts?: DevAccount[] } } | null;
+        const body = (await res.json().catch(() => null)) as DevAccountsResponse | null;
         const list = Array.isArray(body?.data?.accounts) ? body.data!.accounts! : [];
         return list.length > 0 ? list : null;
       })

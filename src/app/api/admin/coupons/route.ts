@@ -4,20 +4,65 @@ import { handle, ok, okPaged, getPagination, ApiError, auditAdmin } from "@/lib/
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, str, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { AdminCouponDetail, AdminCouponRow, AdminCouponsQuery, CouponCreateBody } from "@/lib/types/api-contract";
+
+type CouponRecord = {
+  id: string;
+  scope: string;
+  storeId: string | null;
+  code: string;
+  description: string | null;
+  type: string;
+  percent: number | null;
+  amountMinor: number | null;
+  minSpendMinor: number;
+  maxRedemptions: number | null;
+  perCustomerLimit: number;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  isActive: boolean;
+  timesUsed: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+/** Coupon DB row → contract AdminCouponDetail (Dates → ISO strings). */
+function serializeCoupon(c: CouponRecord): AdminCouponDetail {
+  return {
+    id: c.id,
+    scope: c.scope,
+    storeId: c.storeId,
+    code: c.code,
+    description: c.description,
+    type: c.type,
+    percent: c.percent,
+    amountMinor: c.amountMinor,
+    minSpendMinor: c.minSpendMinor,
+    maxRedemptions: c.maxRedemptions,
+    perCustomerLimit: c.perCustomerLimit,
+    startsAt: c.startsAt ? c.startsAt.toISOString() : null,
+    endsAt: c.endsAt ? c.endsAt.toISOString() : null,
+    isActive: c.isActive,
+    timesUsed: c.timesUsed,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  };
+}
 
 // GET /api/admin/coupons
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url);
-  const scope = url.searchParams.get("scope");
+  const scope: AdminCouponsQuery["scope"] = url.searchParams.get("scope") ?? undefined;
 
   const where: Prisma.CouponWhereInput = scope && scope !== "all" ? { scope } : {};
   const [rows, total] = await Promise.all([
     db.coupon.findMany({ where, include: { store: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, skip, take }),
     db.coupon.count({ where }),
   ]);
-  return okPaged(rows, { page, size, total });
+  const data: AdminCouponRow[] = rows.map((r) => ({ ...serializeCoupon(r), store: r.store }));
+  return okPaged(data, { page, size, total });
 });
 
 // POST /api/admin/coupons
@@ -26,7 +71,7 @@ export const GET = handle(async (req: NextRequest) => {
 // `campaigns.manage` (superadmin | ops). Reads (GET above) stay admin-wide.
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireCap("campaigns.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CouponCreateBody & Record<string, unknown>;
 
   const code = reqStr(body, "code", "code").toUpperCase();
   const exists = await db.coupon.findUnique({ where: { code } });
@@ -74,5 +119,6 @@ export const POST = handle(async (req: NextRequest) => {
     after: { code, type, percent, amountMinor, scope: created.scope },
   });
 
-  return ok(created);
+  const payload: AdminCouponDetail = serializeCoupon(created);
+  return ok(payload);
 });

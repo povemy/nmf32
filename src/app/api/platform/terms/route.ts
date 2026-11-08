@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { getPlatformTermsPublic } from "@/lib/seller-terms";
+import type { PlatformTermsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,5 +12,8 @@ export const dynamic = "force-dynamic";
 // no seller-specific data. Backed by a 60 s TTL cache; rate-limited per IP.
 export const GET = handle(async (req: Request) => {
   rateLimit(req, "platform-terms", 120, 60_000);
-  return ok(await getPlatformTermsPublic());
+  // Lib PlatformTerms widens commissionSource/holdSource to "seller_override" | "global_default";
+  // this public route always serializes the "global_default" variant per the contract.
+  const payload = (await getPlatformTermsPublic()) as PlatformTermsData;
+  return ok(payload);
 });

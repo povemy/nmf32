@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import type { SellerOrderDetailData, SellerShippingQuoteData, ShipBody, ShipData } from "@/lib/types/api-contract";
 import {
   CheckCircle2,
   Clock3,
@@ -29,41 +30,6 @@ import {
 } from "lucide-react";
 
 // ---------------------------------------------------------------- types
-
-type QuoteRate = {
-  rateId: string;
-  providerId: string;
-  courierName: string;
-  serviceLevel: string;
-  priceMinor: number;
-  etaFromDays: number;
-  etaToDays: number;
-};
-
-type QuoteData = {
-  orderId: string;
-  orderNumber: string;
-  orderStatus: string;
-  shipment: { status: string; awbNumber: string | null; courierName: string | null; etaFrom: string | null; etaTo: string | null } | null;
-  destination: { state: string; city: string | null; zone: string };
-  parcel: { weightGrams: number; itemCount: number };
-  rates: QuoteRate[];
-};
-
-type ShipResult = {
-  id: string;
-  status: string;
-  trackingNumber: string | null;
-  trackingProvider: string | null;
-  shipmentStatus: string | null;
-  shipment: {
-    awbNumber: string;
-    courierName: string;
-    etaFrom: string | null;
-    etaTo: string | null;
-    labelUrl: string | null;
-  } | null;
-};
 
 export function etaDaysText(fromDays: number, toDays: number): string {
   if (fromDays === toDays) return `${fromDays} working day${fromDays === 1 ? "" : "s"}`;
@@ -84,11 +50,11 @@ export default function ShipOrderDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  order: { id: string; orderNumber: string };
+  order: Pick<SellerOrderDetailData, "id" | "orderNumber">;
   onDone: () => void;
 }) {
   const [mode, setMode] = useState<"platform" | "manual">("platform");
-  const [result, setResult] = useState<ShipResult | null>(null);
+  const [result, setResult] = useState<ShipData | null>(null);
   const [selectedRateId, setSelectedRateId] = useState<string | null>(null);
   const [provider, setProvider] = useState("");
   const [tracking, setTracking] = useState("");
@@ -96,7 +62,7 @@ export default function ShipOrderDialog({
   const [labelBusy, setLabelBusy] = useState(false);
 
   const quoteUrl = open && mode === "platform" && !result ? `/api/store/shipping/quote?orderId=${order.id}` : null;
-  const { data: quote, loading: quoteLoading, error: quoteError } = useApi<QuoteData>(quoteUrl);
+  const { data: quote, loading: quoteLoading, error: quoteError } = useApi<SellerShippingQuoteData>(quoteUrl);
 
   // Fresh state every time the dialog opens (per-order instance, kept mounted).
   useEffect(() => {
@@ -116,10 +82,11 @@ export default function ShipOrderDialog({
     }
     setBusy(true);
     try {
-      const res = await apiSend<ShipResult>("POST", `/api/store/orders/${order.id}/ship`, {
+      const body: ShipBody = {
         mode: "platform",
         rateId: selectedRateId,
-      });
+      };
+      const res = await apiSend<ShipData>("POST", `/api/store/orders/${order.id}/ship`, body);
       setResult(res);
       toast.success(`${order.orderNumber} shipped — ${res.shipment?.courierName ?? "courier"} booked`);
     } catch (err) {
@@ -136,11 +103,12 @@ export default function ShipOrderDialog({
     }
     setBusy(true);
     try {
-      const res = await apiSend<ShipResult>("POST", `/api/store/orders/${order.id}/ship`, {
+      const body: ShipBody = {
         mode: "manual",
         provider: provider.trim(),
         trackingNumber: tracking.trim(),
-      });
+      };
+      const res = await apiSend<ShipData>("POST", `/api/store/orders/${order.id}/ship`, body);
       setResult(res);
       toast.success(`${order.orderNumber} marked shipped — customer notified`);
     } catch (err) {
@@ -247,7 +215,7 @@ function PlatformBookingPanel({
   busy,
   onBook,
 }: {
-  quote: QuoteData | null;
+  quote: SellerShippingQuoteData | null;
   loading: boolean;
   error: string | null;
   selectedRateId: string | null;
@@ -357,7 +325,7 @@ function SuccessView({
   onDownloadLabel,
   onDone,
 }: {
-  result: ShipResult;
+  result: ShipData;
   labelBusy: boolean;
   onDownloadLabel: () => void;
   onDone: () => void;

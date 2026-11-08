@@ -4,6 +4,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { requireEmailChannel, type TransactionalEmailChannel } from "@/lib/email-provider";
 import { assertEmailOtpStorage, issueEmailOtp, PASSWORD_RESET_OTP_TTL_MS } from "@/lib/guest-otp";
 import { normalizeRecoveryEmail, burnAccountNotFoundDelay } from "@/lib/password-recovery";
+import type { ForgotPasswordBody, ForgotPasswordData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ const MESSAGE =
 
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "auth-forgot-password", 5);
-  const body = (await req.json().catch(() => ({}))) as { email?: string };
+  const body = (await req.json().catch(() => ({}))) as ForgotPasswordBody;
   const email = normalizeRecoveryEmail(body.email);
   if (!email) {
     throw new ApiError(400, "VALIDATION", "A valid email address is required");
@@ -98,5 +99,6 @@ export const POST = handle(async (req: Request) => {
     meta: { issued, suppressed },
   }).catch(() => undefined);
 
-  return ok({ sent: true, message: MESSAGE });
+  const payload: ForgotPasswordData = { sent: true, message: MESSAGE };
+  return ok(payload);
 });

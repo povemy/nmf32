@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { RefundRequestBody, RefundRequestData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as RefundRequestBody;
 
   const amountMinor = Math.round(Number(body.amountMinor));
   if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
@@ -58,5 +59,11 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     meta: { orderNumber: order.orderNumber, amountMinor },
   });
 
-  return ok(refund, { status: 201 });
+  const payload: RefundRequestData = {
+    ...refund,
+    processedAt: refund.processedAt ? refund.processedAt.toISOString() : null,
+    createdAt: refund.createdAt.toISOString(),
+    updatedAt: refund.updatedAt.toISOString(),
+  };
+  return ok(payload, { status: 201 });
 });

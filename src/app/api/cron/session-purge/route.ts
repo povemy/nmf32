@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
+import type { SessionPurgeRunData, SessionPurgeStatusData, SessionPurgeThrottledData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,8 @@ export const POST = handle(async (req: Request) => {
   const last = typeof g.__sessionPurgeAt === "number" ? (g.__sessionPurgeAt as number) : 0;
   const now = Date.now();
   if (now - last < PURGE_THROTTLE_MS) {
-    return ok({ throttled: true, purged: 0, auth: auth.mode });
+    const throttled: SessionPurgeThrottledData = { throttled: true, purged: 0, auth: auth.mode };
+    return ok(throttled);
   }
   g.__sessionPurgeAt = now;
 
@@ -52,7 +54,7 @@ export const POST = handle(async (req: Request) => {
     // Migration 20261104000000 not applied yet — nothing to sweep.
     otpPurged = 0;
   }
-  const outcome = {
+  const outcome: SessionPurgeRunData = {
     purged: res.count,
     otpChallengesPurged: otpPurged,
     durationMs: Math.round(performance.now() - t0),
@@ -76,9 +78,10 @@ export const GET = handle(async (req: Request) => {
     db.session.count({ where: { expiresAt: { lt: new Date() } } }),
     db.setting.findUnique({ where: { key: "cron.session_purge.last" } }),
   ]);
-  return ok({
+  const payload: SessionPurgeStatusData = {
     expiredBacklog,
-    lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
+    lastRun: lastSetting ? (JSON.parse(lastSetting.valueJson) as SessionPurgeRunData) : null,
     auth: auth.mode,
-  });
+  };
+  return ok(payload);
 });

@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { getSellerTerms } from "@/lib/seller-terms";
+import type { TermsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +14,6 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: Request) => {
   rateLimit(req, "seller-terms", 60, 60_000);
   const { me } = await requireActiveSellerStore();
-  return ok(await getSellerTerms(me.id));
+  const payload: TermsData = await getSellerTerms(me.id);
+  return ok(payload);
 });

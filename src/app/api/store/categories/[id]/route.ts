@@ -2,6 +2,11 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type {
+  StoreCategoryPatchBody,
+  StoreCategoryPatchData,
+  StoreCategoryDeleteData,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +25,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const category = await ownCategory(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as StoreCategoryPatchBody;
 
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) {
@@ -70,7 +75,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     meta: { name: updated.name },
   });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market);
-  return ok({ id: updated.id, name: updated.name, sortOrder: updated.sortOrder });
+  const payload: StoreCategoryPatchData = { id: updated.id, name: updated.name, sortOrder: updated.sortOrder };
+  return ok(payload);
 });
 
 // DELETE /api/store/categories/[id] — products survive (category unassigned).
@@ -91,5 +97,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   // sf-home payload (stores tag) shows the chip row; sf-products listings
   // (products tag) may have filtered on this category until now.
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market, PUBLIC_CACHE_TAGS.products);
-  return ok({ id: category.id, deleted: true });
+  const payload: StoreCategoryDeleteData = { id: category.id, deleted: true };
+  return ok(payload);
 });

@@ -11,6 +11,7 @@ import {
   type LiveCampaignRow,
 } from "@/lib/campaigns";
 import { FEATURED_STORES_KEY, HOME_SECTION_ORDER_KEY, idListFromSetting, sectionOrderFromSetting } from "@/lib/home-layout";
+import type { MarketHomeData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -421,7 +422,7 @@ export const GET = handle(async () => {
     };
   });
 
-  return ok({
+  const payload: MarketHomeData = {
     banners: home.banners.map((b) => ({ id: b.id, title: b.title, imageUrl: b.imageUrl, linkUrl: b.linkUrl })),
     categories,
     featured: home.featuredSlots.map((fs) => toProductCard(fs.product as unknown as ProductWithRelations)),
@@ -449,5 +450,6 @@ export const GET = handle(async () => {
       campaign: home.flashCampaign,
     },
     trending: home.trending,
-  });
+  };
+  return ok(payload);
 });

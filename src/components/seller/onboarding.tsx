@@ -5,7 +5,17 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { motion } from "framer-motion";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
-import { apiGet, apiSend, runMutation, StoreMe, BankAccount, StatusChip, useSellerTerms } from "./ui-bits";
+import { apiGet, apiSend, runMutation, StatusChip, useSellerTerms, type BankAccount, type StoreMe } from "./ui-bits";
+import type {
+  BankAccountBody,
+  BankAccountPublic,
+  OnboardingBody,
+  OnboardingData,
+  SellerSettingsBody,
+  SellerSettingsData,
+  ThemeBody,
+  ThemeData,
+} from "@/lib/types/api-contract";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +76,7 @@ export default function OnboardingWizard({ onStatusChanged }: { onStatusChanged:
     try {
       const d = await apiGet<StoreMe>("/api/store/me");
       setStoreMe(d);
-      setAccounts(await apiGet<BankAccount[]>("/api/store/bank-accounts").catch(() => []));
+      setAccounts(await apiGet<BankAccountPublic[]>("/api/store/bank-accounts").catch(() => []));
       return d;
     } catch {
       return null;
@@ -101,14 +111,14 @@ export default function OnboardingWizard({ onStatusChanged }: { onStatusChanged:
     const ok = await runMutation(async () => {
       const slugSeed = identity.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "logo";
       const logoUrl = identity.logoUrl || `/api/img/${slugSeed}-logo?w=200&h=200&label=${encodeURIComponent(identity.name.trim())}`;
-      await apiSend("PATCH", "/api/store/settings", {
+      await apiSend<SellerSettingsData>("PATCH", "/api/store/settings", {
         name: identity.name.trim(),
         tagline: identity.tagline.trim(),
         description: identity.description,
         whatsapp: identity.whatsapp,
         logoUrl,
-      });
-      await apiSend("PUT", "/api/store/theme", { theme: { primaryColor } });
+      } satisfies SellerSettingsBody);
+      await apiSend<ThemeData>("PUT", "/api/store/theme", { theme: { primaryColor } } satisfies ThemeBody);
     }, "Store identity saved");
     setBusy(false);
     return ok;
@@ -120,8 +130,8 @@ export default function OnboardingWizard({ onStatusChanged }: { onStatusChanged:
       return runMutation(() => Promise.reject(new Error("Fill holder name, bank and account number (min 4 digits)")), "");
     }
     return runMutation(async () => {
-      await apiSend("POST", "/api/store/bank-accounts", bank);
-      setAccounts(await apiGet<BankAccount[]>("/api/store/bank-accounts"));
+      await apiSend<BankAccountPublic>("POST", "/api/store/bank-accounts", bank satisfies BankAccountBody);
+      setAccounts(await apiGet<BankAccountPublic[]>("/api/store/bank-accounts"));
       setBank({ holderName: "", bankName: "", accountNumber: "" });
     }, "Bank account added — admin will verify it");
   };
@@ -129,7 +139,7 @@ export default function OnboardingWizard({ onStatusChanged }: { onStatusChanged:
   const submitForReview = async () => {
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("POST", "/api/store/onboarding", { action: "submit" }),
+      () => apiSend<OnboardingData>("POST", "/api/store/onboarding", { action: "submit" } satisfies OnboardingBody),
       "Submitted! Our team will review your store shortly."
     );
     setBusy(false);

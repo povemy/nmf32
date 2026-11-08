@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { parseJson, toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { sweepAffiliateLifecycle } from "@/lib/affiliate";
+import type { AffiliateTickData, AffiliateTickStatusData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const POST = handle(async (req: Request) => {
   const remainingPending = await db.affiliateCommission.count({ where: { status: "pending" } });
 
   const durationMs = Math.round(performance.now() - t0);
-  const payload = {
+  const payload: AffiliateTickData = {
     approved: outcome.approved,
     matured: outcome.matured,
     remainingPending,
@@ -56,5 +57,8 @@ export const POST = handle(async (req: Request) => {
 export const GET = handle(async (req: Request) => {
   assertCronAuth(req); // same posture as the other tick routes — no unauthenticated ops telemetry
   const row = await db.setting.findUnique({ where: { key: LAST_RUN_KEY } });
-  return ok({ last: parseJson<Record<string, unknown> | null>(row?.valueJson ?? null, null) });
+  const status: AffiliateTickStatusData = {
+    last: parseJson<AffiliateTickData | null>(row?.valueJson ?? null, null),
+  };
+  return ok(status);
 });

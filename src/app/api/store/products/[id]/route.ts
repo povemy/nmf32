@@ -5,6 +5,11 @@ import { requireActiveSellerStore } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
 import { matchFlags, ownProduct, recomputePrice, sanitizeProductImages, uniqueSlug, validateVariants } from "../helpers";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type {
+  SellerProductFull,
+  SellerProductPatchBody,
+  SellerProductDeleteData,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +18,68 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
   const { store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const product = await ownProduct(store.id, id);
-  return ok(product);
+  const payload: Omit<SellerProductFull, "category"> = {
+    id: product.id,
+    storeId: product.storeId,
+    categoryId: product.categoryId,
+    title: product.title,
+    slug: product.slug,
+    description: product.description,
+    status: product.status,
+    rejectReason: product.rejectReason,
+    priceMinor: product.priceMinor,
+    commissionPercentOverride: product.commissionPercentOverride,
+    flagsJson: product.flagsJson,
+    reportsCount: product.reportsCount,
+    salesCount: product.salesCount,
+    viewCount: product.viewCount,
+    ratingAvg: product.ratingAvg,
+    ratingCount: product.ratingCount,
+    isFeatured: product.isFeatured,
+    publishedAt: product.publishedAt ? product.publishedAt.toISOString() : null,
+    storeCategoryId: product.storeCategoryId,
+    isFixture: product.isFixture,
+    sourcePlatform: product.sourcePlatform,
+    sourceShopId: product.sourceShopId,
+    sourceProductId: product.sourceProductId,
+    sourceUrl: product.sourceUrl,
+    sourceBrand: product.sourceBrand,
+    sourceStatus: product.sourceStatus,
+    lastSyncedAt: product.lastSyncedAt ? product.lastSyncedAt.toISOString() : null,
+    overridesJson: product.overridesJson,
+    affiliateEnabled: product.affiliateEnabled,
+    affiliateRateBps: product.affiliateRateBps,
+    seoTitle: product.seoTitle,
+    seoDescription: product.seoDescription,
+    createdAt: product.createdAt.toISOString(),
+    updatedAt: product.updatedAt.toISOString(),
+    images: product.images.map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      url: i.url,
+      sortOrder: i.sortOrder,
+      alt: i.alt,
+    })),
+    variants: product.variants.map((v) => ({
+      id: v.id,
+      productId: v.productId,
+      name: v.name,
+      optionName: v.optionName,
+      optionValue: v.optionValue,
+      priceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor,
+      stock: v.stock,
+      moq: v.moq,
+      lowStockThreshold: v.lowStockThreshold,
+      sku: v.sku,
+      isActive: v.isActive,
+      imageUrl: v.imageUrl,
+      sourceModelId: v.sourceModelId,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    })),
+  };
+  return ok(payload);
 });
 
 // PATCH /api/store/products/[id] — update fields; status stays unless resubmitted.
@@ -21,7 +87,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const product = await ownProduct(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerProductPatchBody;
 
   const data: Record<string, unknown> = {};
   if (body.title !== undefined) {
@@ -129,7 +195,72 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (data.storeCategoryId !== undefined || data.isFeatured !== undefined) {
     bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
   }
-  return ok(fresh);
+  // Post-update re-read: the row was just updated above, so findUnique's
+  // null branch is unreachable here.
+  const row = fresh!;
+  const payload: SellerProductFull = {
+    id: row.id,
+    storeId: row.storeId,
+    categoryId: row.categoryId,
+    title: row.title,
+    slug: row.slug,
+    description: row.description,
+    status: row.status,
+    rejectReason: row.rejectReason,
+    priceMinor: row.priceMinor,
+    commissionPercentOverride: row.commissionPercentOverride,
+    flagsJson: row.flagsJson,
+    reportsCount: row.reportsCount,
+    salesCount: row.salesCount,
+    viewCount: row.viewCount,
+    ratingAvg: row.ratingAvg,
+    ratingCount: row.ratingCount,
+    isFeatured: row.isFeatured,
+    publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+    storeCategoryId: row.storeCategoryId,
+    isFixture: row.isFixture,
+    sourcePlatform: row.sourcePlatform,
+    sourceShopId: row.sourceShopId,
+    sourceProductId: row.sourceProductId,
+    sourceUrl: row.sourceUrl,
+    sourceBrand: row.sourceBrand,
+    sourceStatus: row.sourceStatus,
+    lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
+    overridesJson: row.overridesJson,
+    affiliateEnabled: row.affiliateEnabled,
+    affiliateRateBps: row.affiliateRateBps,
+    seoTitle: row.seoTitle,
+    seoDescription: row.seoDescription,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    images: row.images.map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      url: i.url,
+      sortOrder: i.sortOrder,
+      alt: i.alt,
+    })),
+    variants: row.variants.map((v) => ({
+      id: v.id,
+      productId: v.productId,
+      name: v.name,
+      optionName: v.optionName,
+      optionValue: v.optionValue,
+      priceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor,
+      stock: v.stock,
+      moq: v.moq,
+      lowStockThreshold: v.lowStockThreshold,
+      sku: v.sku,
+      isActive: v.isActive,
+      imageUrl: v.imageUrl,
+      sourceModelId: v.sourceModelId,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    })),
+    category: row.category,
+  };
+  return ok(payload);
 });
 
 // DELETE /api/store/products/[id] — soft archive.
@@ -148,5 +279,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
     meta: { title: product.title },
   });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market);
-  return ok({ id: updated.id, status: updated.status });
+  const payload: SellerProductDeleteData = { id: updated.id, status: updated.status };
+  return ok(payload);
 });

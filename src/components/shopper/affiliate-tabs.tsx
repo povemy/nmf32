@@ -52,6 +52,26 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { EmptyState, type ShopperCtx } from "./ui-bits";
+import type {
+  ArchiveCollectionData,
+  CollectionsData,
+  CreateCollectionBody,
+  CreateCollectionData,
+  CreateLinkBody,
+  CreateLinkData,
+  DiscoverData,
+  EarningsData,
+  LinksData,
+  MarketStoreCard,
+  NetworkData,
+  OverviewData,
+  PayoutRequestData,
+  PayoutsData,
+  UpdateCollectionBody,
+  UpdateCollectionData,
+  UpdateLinkBody,
+  UpdateLinkData,
+} from "@/lib/types/api-contract";
 import {
   affGet,
   affPost,
@@ -100,7 +120,7 @@ export function LinksTab({ onCreate, refreshKey = 0 }: { onCreate: () => void; r
 
   const load = useCallback(async () => {
     try {
-      const d = await affGet<{ links: LinkRowT[] }>("/api/affiliate/links");
+      const d = await affGet<LinksData>("/api/affiliate/links");
       setLinks(d.links ?? []);
       setErr(null);
     } catch (e) {
@@ -122,7 +142,8 @@ export function LinksTab({ onCreate, refreshKey = 0 }: { onCreate: () => void; r
     const next = link.status === "active" ? "archived" : "active";
     setBusyId(link.id);
     try {
-      await affPatch(`/api/affiliate/links/${link.id}`, { status: next });
+      const body: UpdateLinkBody = { status: next };
+      await affPatch<UpdateLinkData>(`/api/affiliate/links/${link.id}`, body);
       toast.success(next === "archived" ? "Link archived" : "Link reactivated");
       await load();
     } catch (e) {
@@ -198,11 +219,16 @@ export function LinksTab({ onCreate, refreshKey = 0 }: { onCreate: () => void; r
 function LinkCard({ l, busy, onToggle }: { l: LinkRowT; busy: boolean; onToggle: () => void }) {
   const url = promoLinkUrl(l.code);
   const isProduct = l.target.kind === "product";
+  // Compile-time-only narrowing: TS cannot narrow `l.target` through the
+  // `isProduct` boolean alias, and storeName/storeSlug exist only on the
+  // "product" member of the contract's AffiliateLinkTarget union — the route
+  // always populates them for product links, so rendering is unchanged.
+  const productTarget = l.target as Extract<LinkRowT["target"], { kind: "product" }>;
   const subtitle =
-    isProduct && l.target.storeName
-      ? l.target.storeName
-      : isProduct && l.target.storeSlug
-        ? `@${l.target.storeSlug}`
+    isProduct && productTarget.storeName
+      ? productTarget.storeName
+      : isProduct && productTarget.storeSlug
+        ? `@${productTarget.storeSlug}`
         : l.target.kind === "store"
           ? "Whole store"
           : l.target.kind === "collection"
@@ -373,8 +399,8 @@ export function LinkCreateDialog({
       void (async () => {
         try {
           const [dir, disc] = await Promise.all([
-            affGet<{ id: string; name: string; slug: string }[]>("/api/market/stores"),
-            affGet<{ rows: DiscoverProductT[] }>("/api/affiliate/discover?size=48"),
+            affGet<MarketStoreCard[]>("/api/market/stores"),
+            affGet<DiscoverData>("/api/affiliate/discover?size=48"),
           ]);
           if (!alive) return;
           const participating = new Set(deriveStores(disc.rows ?? []).map((s) => s.slug));
@@ -387,7 +413,7 @@ export function LinkCreateDialog({
       })();
     }
     if (type === "collection" && collections === null) {
-      affGet<{ collections: CollectionRowT[] }>("/api/affiliate/collections")
+      affGet<CollectionsData>("/api/affiliate/collections")
         .then((d) => alive && setCollections((d.collections ?? []).filter((c) => c.status === "published")))
         .catch(() => alive && setCollections([]));
     }
@@ -404,11 +430,11 @@ export function LinkCreateDialog({
     }
     setBusy(true);
     try {
-      const body: Record<string, unknown> = { type, channel, label: label.trim() || undefined };
+      const body: CreateLinkBody = { type, channel, label: label.trim() || undefined };
       if (pick?.kind === "product") body.productId = pick.productId;
       if (pick?.kind === "store") body.storeId = pick.storeId;
       if (pick?.kind === "collection") body.collectionId = pick.collectionId;
-      await affPost<{ link: { code: string } }>("/api/affiliate/links", body);
+      await affPost<CreateLinkData>("/api/affiliate/links", body);
       toast.success("Link created — copy the share URL from your Links tab");
       onOpenChange(false);
       onCreated?.();
@@ -651,7 +677,7 @@ export function CollectionsTab({ ctx }: { ctx: ShopperCtx }) {
 
   const load = useCallback(async () => {
     try {
-      const d = await affGet<{ collections: CollectionRowT[] }>("/api/affiliate/collections");
+      const d = await affGet<CollectionsData>("/api/affiliate/collections");
       setCollections(d.collections ?? []);
       setErr(null);
     } catch (e) {
@@ -750,10 +776,11 @@ function CreateCollectionButton({ onCreated, inline }: { onCreated: () => void; 
     setError(null);
     setBusy(true);
     try {
-      await affPost<{ collection: { id: string } }>("/api/affiliate/collections", {
+      const body: CreateCollectionBody = {
         title: title.trim(),
         description: description.trim() || undefined,
-      });
+      };
+      await affPost<CreateCollectionData>("/api/affiliate/collections", body);
       toast.success("Collection created as a draft");
       setOpen(false);
       setTitle("");
@@ -830,10 +857,10 @@ function CollectionEditor({
   const [busy, setBusy] = useState<string | null>(null);
   const search = useDiscoverSearch(true);
 
-  const patch = async (body: Record<string, unknown>, okMsg: string) => {
+  const patch = async (body: UpdateCollectionBody, okMsg: string) => {
     setBusy("patch");
     try {
-      await affPatch(`/api/affiliate/collections/${collection.id}`, body);
+      await affPatch<UpdateCollectionData>(`/api/affiliate/collections/${collection.id}`, body);
       toast.success(okMsg);
       onChanged();
     } catch (e) {
@@ -847,7 +874,7 @@ function CollectionEditor({
     if (!window.confirm(`Archive “${collection.title}”? Its share links stop resolving and links pointing at it are archived too.`)) return;
     setBusy("archive");
     try {
-      await affDelete(`/api/affiliate/collections/${collection.id}`);
+      await affDelete<ArchiveCollectionData>(`/api/affiliate/collections/${collection.id}`);
       toast.success("Collection archived");
       onClose();
       onChanged();
@@ -1048,7 +1075,7 @@ export function ShowcaseTab({ ctx, profile }: { ctx: ShopperCtx; profile: Affili
 
   const load = useCallback(async () => {
     try {
-      const d = await affGet<{ collections: CollectionRowT[] }>("/api/affiliate/collections");
+      const d = await affGet<CollectionsData>("/api/affiliate/collections");
       setCollections(d.collections ?? []);
       setErr(null);
     } catch (e) {
@@ -1160,8 +1187,8 @@ export function NetworkTab({ settings, joinCode }: { settings: AffiliateSettings
     setErr(null);
     try {
       const [n, o] = await Promise.all([
-        affGet<NetworkResT>(`/api/affiliate/network?page=${p}`),
-        affGet<HubOverviewT>("/api/affiliate/overview?days=90"),
+        affGet<NetworkData>(`/api/affiliate/network?page=${p}`),
+        affGet<OverviewData>("/api/affiliate/overview?days=90"),
       ]);
       setNet(n);
       setOvw(o.network);
@@ -1274,7 +1301,7 @@ export function EarningsTab({ settings }: { settings: AffiliateSettingsT }) {
     try {
       const sp = new URLSearchParams({ role, page: String(page) });
       if (status !== "all") sp.set("status", status);
-      setData(await affGet<EarningsResT>(`/api/affiliate/earnings?${sp.toString()}`));
+      setData(await affGet<EarningsData>(`/api/affiliate/earnings?${sp.toString()}`));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load your earnings");
     } finally {
@@ -1450,7 +1477,7 @@ export function PayoutsTab() {
     setLoading(true);
     setErr(null);
     try {
-      setData(await affGet<PayoutsResT>("/api/affiliate/payouts"));
+      setData(await affGet<PayoutsData>("/api/affiliate/payouts"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load payouts");
     } finally {
@@ -1465,7 +1492,7 @@ export function PayoutsTab() {
   const request = async () => {
     setBusy(true);
     try {
-      const r = await affPost<{ payoutId: string; amountMinor: number }>("/api/affiliate/payouts", {});
+      const r = await affPost<PayoutRequestData>("/api/affiliate/payouts", {});
       toast.success(`Payout of ${money(r.amountMinor)} requested`, { description: "Finance reviews and executes transfers manually — you'll see the status here." });
       await load();
     } catch (e) {

@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { sellerAffiliateReport } from "@/lib/affiliate-queries";
+import type { AffiliateReportQuery, AffiliateReportData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,9 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const url = new URL(req.url);
-  const days = Math.min(180, Math.max(1, Number(url.searchParams.get("days") ?? 30) || 30));
+  const days: NonNullable<AffiliateReportQuery["days"]> =
+    Math.min(180, Math.max(1, Number(url.searchParams.get("days") ?? 30) || 30));
   const report = await sellerAffiliateReport(store.id, days);
-  return ok({ ...report, days });
+  const payload: AffiliateReportData = { ...report, days };
+  return ok(payload);
 });

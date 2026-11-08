@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerOrdersQuery, SellerOrderRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +32,8 @@ export const GET = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url);
-  const statusParam = url.searchParams.get("status")?.trim();
-  const search = url.searchParams.get("search")?.trim();
+  const statusParam: SellerOrdersQuery["status"] = url.searchParams.get("status")?.trim();
+  const search: SellerOrdersQuery["search"] = url.searchParams.get("search")?.trim();
 
   const where: Record<string, unknown> = { storeId: store.id };
   if (statusParam && statusParam !== "all") {
@@ -58,22 +59,21 @@ export const GET = handle(async (req: Request) => {
     db.order.count({ where }),
   ]);
 
-  return okPaged(
-    rows.map((o) => ({
-      id: o.id,
-      orderNumber: o.orderNumber,
-      customerName: o.customerName,
-      customerEmail: o.customerEmail,
-      status: o.status,
-      channel: o.channel,
-      totalMinor: o.totalMinor,
-      currency: o.currency,
-      itemCount: o.items.length,
-      trackingNumber: o.trackingNumber,
-      createdAt: o.createdAt,
-      paidAt: o.paidAt,
-      shippedAt: o.shippedAt,
-    })),
-    { page, size, total }
-  );
+  const payload: SellerOrderRow[] = rows.map((o) => ({
+    id: o.id,
+    orderNumber: o.orderNumber,
+    customerName: o.customerName,
+    customerEmail: o.customerEmail,
+    status: o.status,
+    channel: o.channel,
+    totalMinor: o.totalMinor,
+    currency: o.currency,
+    itemCount: o.items.length,
+    trackingNumber: o.trackingNumber,
+    createdAt: o.createdAt.toISOString(),
+    paidAt: o.paidAt ? o.paidAt.toISOString() : null,
+    shippedAt: o.shippedAt ? o.shippedAt.toISOString() : null,
+  }));
+
+  return okPaged(payload, { page, size, total });
 });

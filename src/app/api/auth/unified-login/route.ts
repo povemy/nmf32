@@ -6,6 +6,7 @@ import { getMfaEnrollment, createMfaChallenge } from "@/lib/mfa";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper, mergeGuestCartForShopper } from "@/lib/shopper-merge";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
+import type { UnifiedLoginBody, UnifiedMfaData, UnifiedAdminData, UnifiedSellerData, UnifiedShopperData } from "@/lib/types/api-contract";
 
 // POST /api/auth/unified-login { email, password, portal? }
 // ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 // Legacy routes stay fully functional (deep links, API consumers).
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "auth-login", 10);
-  const body = (await req.json().catch(() => ({}))) as { email?: string; password?: string; portal?: "admin" | "seller" | "shopper" };
+  const body = (await req.json().catch(() => ({}))) as UnifiedLoginBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   const portal = body.portal === "admin" || body.portal === "seller" || body.portal === "shopper" ? body.portal : null;
@@ -107,12 +108,14 @@ export const POST = handle(async (req: NextRequest) => {
     const mfa = await getMfaEnrollment(admin.id);
     if (mfa && mfa.confirmedAt) {
       const challenge = await createMfaChallenge(admin.id);
-      return ok({ mfaRequired: true, challenge: challenge.challenge, email: admin.email });
+      const payload: UnifiedMfaData = { mfaRequired: true, challenge: challenge.challenge, email: admin.email };
+      return ok(payload);
     }
     await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
     const token = await createSession("admin", admin.id);
     await logActivity({ actorType: "admin", actorId: admin.id, actorLabel: admin.email, action: "admin.login", meta: { via: "unified" } });
-    return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
+    const payload: UnifiedAdminData = { userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token };
+    return ok(payload);
   }
 
   if (resolved === "seller" && seller) {
@@ -125,14 +128,15 @@ export const POST = handle(async (req: NextRequest) => {
     const token = await createSession("seller", seller.id);
     await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.login", meta: { via: "unified" } });
     const store = await db.store.findUnique({ where: { sellerId: seller.id } });
-    return ok({
+    const payload: UnifiedSellerData = {
       userType: "seller",
       seller: {
         id: seller.id, email: seller.email, fullName: seller.fullName, displayName: seller.displayName,
         status: seller.status, storeId: store?.id ?? null, storeSlug: store?.slug ?? null, storeName: store?.name ?? null,
       },
       token,
-    });
+    };
+    return ok(payload);
   }
 
   // Shopper (buyers AND affiliates — the affiliate surface lives in the
@@ -156,7 +160,7 @@ export const POST = handle(async (req: NextRequest) => {
       select: { status: true },
     });
     await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login", meta: { via: "unified", guestCartMerged: guestCartMerged.itemsMerged } });
-    return ok({
+    const payload: UnifiedShopperData = {
       userType: "shopper",
       shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
       isAffiliate: affiliateProfile != null && affiliateProfile.status !== "terminated",
@@ -164,7 +168,8 @@ export const POST = handle(async (req: NextRequest) => {
       claimed,
       emailVerified,
       guestCartMerged: guestCartMerged.itemsMerged,
-    });
+    };
+    return ok(payload);
   }
 
   return fail(401, "INVALID_CREDENTIALS", "Invalid email or password");

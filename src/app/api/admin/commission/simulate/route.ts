@@ -3,11 +3,12 @@ import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { simulateCommission } from "@/lib/commission";
 import { readBody, optNum } from "@/app/api/admin/_helpers";
+import type { SimulateBody, SimulateData } from "@/lib/types/api-contract";
 
 // POST /api/admin/commission/simulate — pure computation, admin-only
 export const POST = handle(async (req: NextRequest) => {
   await requireAdmin();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as SimulateBody & Record<string, unknown>;
 
   const result = await simulateCommission({
     priceMinor: Math.round(optNum(body, "priceMinor") ?? 0),
@@ -19,5 +20,6 @@ export const POST = handle(async (req: NextRequest) => {
     productId: typeof body.productId === "string" && body.productId !== "" ? body.productId : null,
   });
 
-  return ok(result);
+  const payload: SimulateData = result;
+  return ok(payload);
 });

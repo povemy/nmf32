@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseJson, toJson } from "@/lib/json";
+import type { SellerWebhookPatchBody, SellerWebhookPatchData, SellerWebhookDeleteData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const endpoint = await ownEndpoint(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerWebhookPatchBody;
 
   const data: Record<string, unknown> = {};
   if (body.url !== undefined) {
@@ -39,7 +40,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (body.isActive !== undefined) data.isActive = !!body.isActive;
 
   const updated = await db.webhookEndpoint.update({ where: { id: endpoint.id }, data });
-  return ok({
+  const payload: SellerWebhookPatchData = {
     id: updated.id,
     url: updated.url,
     // D1: masked — the UI re-fetches the list anyway; the plaintext secret is
@@ -47,7 +48,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     secretMasked: maskSecret(updated.secret),
     events: parseJson<string[]>(updated.eventsJson, []),
     isActive: updated.isActive,
-  });
+  };
+  return ok(payload);
 });
 
 // DELETE /api/store/webhooks/[id]
@@ -56,5 +58,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const { id } = await ctx.params;
   const endpoint = await ownEndpoint(store.id, id);
   await db.webhookEndpoint.delete({ where: { id: endpoint.id } });
-  return ok({ id: endpoint.id, deleted: true });
+  const payload: SellerWebhookDeleteData = { id: endpoint.id, deleted: true };
+  return ok(payload);
 });

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, getPagination, okPaged } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { productCardInclude, toProductCard } from "../../_shared/product-card";
+import type { MeRecommendationProduct, RecommendationsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -88,20 +89,18 @@ export const GET = handle(async (req: Request) => {
 
   const total = await db.product.count({ where: { ...baseWhere, ...liveScope } });
 
-  return okPaged(
-    {
-      products: rows.map((p) => {
-        const card = toProductCard(p);
-        const stock = p.variants.reduce((s, v) => s + (v.isActive === false ? 0 : v.stock), 0);
-        return {
-          ...card,
-          inStock: stock > 0,
-          isFeatured: p.isFeatured,
-          isSellingFast: p.salesCount >= SELLING_FAST_SALES,
-          payLaterEligible: card.priceMinor >= PAYLATER_MIN_MINOR,
-        };
-      }),
-    },
-    { page, size, total }
-  );
+  const payload: RecommendationsData = {
+    products: rows.map((p): MeRecommendationProduct => {
+      const card = toProductCard(p);
+      const stock = p.variants.reduce((s, v) => s + (v.isActive === false ? 0 : v.stock), 0);
+      return {
+        ...card,
+        inStock: stock > 0,
+        isFeatured: p.isFeatured,
+        isSellingFast: p.salesCount >= SELLING_FAST_SALES,
+        payLaterEligible: card.priceMinor >= PAYLATER_MIN_MINOR,
+      };
+    }),
+  };
+  return okPaged(payload, { page, size, total });
 });

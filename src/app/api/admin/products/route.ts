@@ -4,6 +4,7 @@ import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminProductsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/products?status=pending_review|all|<status>&search=&storeId=&page=&size=
 export const GET = handle(async (req: NextRequest) => {
@@ -43,10 +44,19 @@ export const GET = handle(async (req: NextRequest) => {
     db.product.count({ where }),
   ]);
 
-  const data = rows.map((p) => ({
-    ...p,
-    flags: parseMaybeJson<string[]>(p.flagsJson, []),
-    flagsJson: undefined,
-  }));
+  // Destructure flagsJson OUT of the row (the pre-contract code nulled it
+  // with `flagsJson: undefined`, which JSON.stringify drops — omitting the
+  // key serializes identically) and convert the Date fields to ISO strings.
+  const data: AdminProductsData[] = rows.map((p) => {
+    const { flagsJson, ...rest } = p;
+    return {
+      ...rest,
+      publishedAt: rest.publishedAt ? rest.publishedAt.toISOString() : null,
+      lastSyncedAt: rest.lastSyncedAt ? rest.lastSyncedAt.toISOString() : null,
+      createdAt: rest.createdAt.toISOString(),
+      updatedAt: rest.updatedAt.toISOString(),
+      flags: parseMaybeJson<string[]>(flagsJson, []),
+    };
+  });
   return okPaged(data, { page, size, total });
 });

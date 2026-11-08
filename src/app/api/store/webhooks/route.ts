@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { randomToken } from "@/lib/password";
 import { parseJson } from "@/lib/json";
+import type { SellerWebhookEndpoint, SellerWebhookDelivery, SellerWebhookBody, SellerWebhookCreateData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -26,23 +27,32 @@ export const GET = handle(async () => {
     include: { deliveries: { orderBy: { createdAt: "desc" }, take: 10 } },
     orderBy: { createdAt: "desc" },
   });
-  return ok(
-    endpoints.map((ep) => ({
-      id: ep.id,
-      url: ep.url,
-      secretMasked: maskSecret(ep.secret),
-      events: parseJson<string[]>(ep.eventsJson, []),
-      isActive: ep.isActive,
-      createdAt: ep.createdAt,
-      deliveries: ep.deliveries,
-    }))
-  );
+  const payload: SellerWebhookEndpoint[] = endpoints.map((ep) => ({
+    id: ep.id,
+    url: ep.url,
+    secretMasked: maskSecret(ep.secret),
+    events: parseJson<string[]>(ep.eventsJson, []),
+    isActive: ep.isActive,
+    createdAt: ep.createdAt.toISOString(),
+    deliveries: ep.deliveries.map<SellerWebhookDelivery>((d) => ({
+      id: d.id,
+      endpointId: d.endpointId,
+      event: d.event,
+      payloadJson: d.payloadJson,
+      status: d.status,
+      attempts: d.attempts,
+      responseCode: d.responseCode,
+      lastAttemptAt: d.lastAttemptAt ? d.lastAttemptAt.toISOString() : null,
+      createdAt: d.createdAt.toISOString(),
+    })),
+  }));
+  return ok(payload);
 });
 
 // POST /api/store/webhooks {url, events: [...]}
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerWebhookBody;
 
   const url = String(body.url ?? "").trim();
   if (!/^https?:\/\/.+/.test(url)) {
@@ -72,15 +82,13 @@ export const POST = handle(async (req: Request) => {
     meta: { url, events },
   });
 
-  return ok(
-    {
-      id: endpoint.id,
-      url: endpoint.url,
-      secret: endpoint.secret,
-      events: parseJson<string[]>(endpoint.eventsJson, []),
-      isActive: endpoint.isActive,
-      deliveries: [],
-    },
-    { status: 201 }
-  );
+  const payload: SellerWebhookCreateData = {
+    id: endpoint.id,
+    url: endpoint.url,
+    secret: endpoint.secret,
+    events: parseJson<string[]>(endpoint.eventsJson, []),
+    isActive: endpoint.isActive,
+    deliveries: [],
+  };
+  return ok(payload, { status: 201 });
 });

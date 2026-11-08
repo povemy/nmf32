@@ -3,6 +3,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { requireShopper } from "@/lib/auth";
 import { assertEmailOtpStorage, verifyEmailOtp, getShopperEmailVerified } from "@/lib/guest-otp";
 import { claimGuestStateForShopper } from "@/lib/shopper-merge";
+import type { ShopperEvVerifyBody, ShopperEvVerifyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export const POST = handle(async (req: Request) => {
   rateLimit(req, "email-verification-verify", 10);
   rateLimitKey(me.id, "email-verification-verify", 20, 3_600_000);
 
-  const body = (await req.json().catch(() => ({}))) as { code?: string };
+  const body = (await req.json().catch(() => ({}))) as ShopperEvVerifyBody;
   const code = (body.code ?? "").trim();
   if (!code || code.length > 12) {
     throw new ApiError(401, "INVALID", "That code is not valid");
@@ -41,7 +42,8 @@ export const POST = handle(async (req: Request) => {
   // Already verified (caller's own state — safe to reveal): idempotent
   // success WITHOUT a second claim.
   if (await getShopperEmailVerified(me.id)) {
-    return ok({ verified: true, alreadyVerified: true, ordersClaimed: 0 });
+    const payload: ShopperEvVerifyData = { verified: true, alreadyVerified: true, ordersClaimed: 0 };
+    return ok(payload);
   }
 
   // Uniform fail-closed pre-flight (pre-migration deployment).
@@ -66,5 +68,6 @@ export const POST = handle(async (req: Request) => {
     meta: { ordersClaimed: claimed.ordersClaimed },
   }).catch(() => undefined);
 
-  return ok({ verified: true, alreadyVerified: false, ordersClaimed: claimed.ordersClaimed });
+  const payload: ShopperEvVerifyData = { verified: true, alreadyVerified: false, ordersClaimed: claimed.ordersClaimed };
+  return ok(payload);
 });

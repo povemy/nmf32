@@ -3,6 +3,7 @@ import { handle, ok, fail, logActivity } from "@/lib/api";
 import { getSession, rotateSession } from "@/lib/auth";
 import { hashPasswordAsync, verifyPasswordAsync } from "@/lib/password";
 import { rateLimit } from "@/lib/rate-limit";
+import type { PasswordChangeAdminData, PasswordChangeBody, PasswordChangeSellerData, PasswordChangeShopperData } from "@/lib/types/api-contract";
 
 // POST /api/me/password { currentPassword, newPassword } — Task 22-b (R2).
 //
@@ -22,7 +23,7 @@ export const POST = handle(async (req: Request) => {
   const sess = await getSession();
   if (!sess) return fail(401, "UNAUTHORIZED", "Sign in required");
 
-  const body = (await req.json().catch(() => ({}))) as { currentPassword?: string; newPassword?: string };
+  const body = (await req.json().catch(() => ({}))) as PasswordChangeBody;
   const currentPassword = body.currentPassword ?? "";
   const newPassword = body.newPassword ?? "";
   if (!currentPassword || !newPassword) {
@@ -46,7 +47,8 @@ export const POST = handle(async (req: Request) => {
     const token = await rotateSession();
     if (!token) return fail(401, "UNAUTHORIZED", "Session expired — sign in again");
     await logActivity({ actorType: "admin", actorId: admin.id, actorLabel: admin.email, action: "admin.password_changed" });
-    return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
+    const payload: PasswordChangeAdminData = { userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token };
+    return ok(payload);
   }
 
   if (sess.userType === "seller") {
@@ -68,14 +70,15 @@ export const POST = handle(async (req: Request) => {
     const token = await rotateSession();
     if (!token) return fail(401, "UNAUTHORIZED", "Session expired — sign in again");
     await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.password_changed" });
-    return ok({
+    const payload: PasswordChangeSellerData = {
       userType: "seller",
       seller: {
         id: seller.id, email: seller.email, fullName: seller.fullName,
         displayName: seller.displayName, status: seller.status,
       },
       token,
-    });
+    };
+    return ok(payload);
   }
 
   const shopper = await db.shopperUser.findUnique({ where: { id: sess.userId } });
@@ -87,9 +90,10 @@ export const POST = handle(async (req: Request) => {
   const token = await rotateSession();
   if (!token) return fail(401, "UNAUTHORIZED", "Session expired — sign in again");
   await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.password_changed" });
-  return ok({
+  const payload: PasswordChangeShopperData = {
     userType: "shopper",
     shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
     token,
-  });
+  };
+  return ok(payload);
 });

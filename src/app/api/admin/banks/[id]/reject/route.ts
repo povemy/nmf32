@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminBankRejectData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -25,5 +26,10 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { verified: false },
   });
 
-  return ok(updated);
+  const payload: AdminBankRejectData = {
+    ...updated,
+    verifiedAt: updated.verifiedAt ? updated.verifiedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+  };
+  return ok(payload);
 });

@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { AdminAnnouncementRow, AnnouncementPatchBody } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireAdmin();
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as AnnouncementPatchBody & Record<string, unknown>;
 
   const ann = await db.announcement.findUnique({ where: { id } });
   if (!ann) throw new ApiError(404, "NOT_FOUND", "Announcement not found");
@@ -43,5 +44,15 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: AdminAnnouncementRow = {
+    id: updated.id,
+    title: updated.title,
+    body: updated.body,
+    audience: updated.audience,
+    startsAt: updated.startsAt ? updated.startsAt.toISOString() : null,
+    endsAt: updated.endsAt ? updated.endsAt.toISOString() : null,
+    isActive: updated.isActive,
+    createdAt: updated.createdAt.toISOString(),
+  };
+  return ok(payload);
 });

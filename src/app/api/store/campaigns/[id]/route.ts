@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
+import type { SellerCampaignPatchBody, SellerCampaignPatchData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
 
   let body: Record<string, unknown> = {};
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = (await req.json()) as SellerCampaignPatchBody & Record<string, unknown>;
     if (body == null || typeof body !== "object" || Array.isArray(body)) body = {};
   } catch {
     throw new ApiError(400, "VALIDATION", "JSON body required");
@@ -62,5 +63,15 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     meta: { campaignId: campaign.id, updates },
   });
 
-  return ok({ ...updated, createdAt: updated.createdAt.toISOString() });
+  const payload: SellerCampaignPatchData = {
+    id: updated.id,
+    name: updated.name,
+    slug: updated.slug,
+    code: updated.code,
+    status: updated.status,
+    defaultSource: updated.defaultSource,
+    defaultMedium: updated.defaultMedium,
+    createdAt: updated.createdAt.toISOString(),
+  };
+  return ok(payload);
 });

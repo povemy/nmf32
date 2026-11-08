@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { computePricing, computeGroupPricing } from "../pricing";
 import { computeOrderCommissions } from "@/lib/commission";
 import { buildVoucherOutcomes, applyVoucherOutcomesToGroups, type VoucherEntryInput } from "@/lib/vouchers";
+import type { QuoteBody, QuoteData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 //    freeshipping voucher zeroes that group's parcel cost. Nothing is marked
 //    used here — redemption happens atomically at /api/checkout/create.
 export const POST = handle(async (req: Request) => {
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as QuoteBody & Record<string, unknown>;
   const voucherEntries = Array.isArray(body.vouchers)
     ? (body.vouchers as VoucherEntryInput[]).filter((e) => e && typeof e === "object")
     : [];
@@ -82,7 +83,7 @@ export const POST = handle(async (req: Request) => {
       commissionPreviewMinor = comm.items.reduce((s, i) => s + i.percentPartMinor, 0);
     }
 
-    return ok({
+    const payload: QuoteData = {
       subtotalMinor: pricing.subtotalMinor,
       discountMinor: g.discountMinor,
       shippingMinor: g.shippingMinor,
@@ -103,7 +104,8 @@ export const POST = handle(async (req: Request) => {
       })),
       shippingOptions: pricing.shippingOptions,
       commissionPreviewMinor,
-    });
+    };
+    return ok(payload);
   }
 
   // ------------------------------------------------------------------ multi-seller quote
@@ -124,7 +126,7 @@ export const POST = handle(async (req: Request) => {
   const applied = applyVoucherOutcomesToGroups(pricing.groups, outcomes);
   const outcomeByStore = new Map(outcomes.map((o) => [o.storeId, o]));
 
-  return ok({
+  const payload: QuoteData = {
     subtotalMinor: applied.totals.subtotalMinor,
     discountMinor: applied.totals.discountMinor,
     shippingMinor: applied.totals.shippingMinor,
@@ -158,5 +160,6 @@ export const POST = handle(async (req: Request) => {
       voucher: outcomeByStore.get(g.storeId) ?? null,
     })),
     shippingOptions: pricing.shippingOptions,
-  });
+  };
+  return ok(payload);
 });

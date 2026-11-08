@@ -3,6 +3,7 @@ import { handle, ok, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { resolveRefundAdapter, RECON_STATUSES } from "@/lib/psp-refund";
+import type { AdminPaymentReconciliationQuery, ReconCase, PaymentReconciliationData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const url = new URL(req.url);
-  const status = url.searchParams.get("status");
+  const status: AdminPaymentReconciliationQuery["status"] = url.searchParams.get("status") ?? undefined;
   const valid = status && (RECON_STATUSES as readonly string[]).includes(status) ? status : undefined;
   const where = valid ? { status: valid } : {};
   const { page, size, skip, take } = getPagination(url, 100);
@@ -56,8 +57,15 @@ export const GET = handle(async (req: NextRequest) => {
   // the payment side; production guard applies at execution time).
   const awaitingOperator = openRequested.filter((c) => !resolveRefundAdapter(c.provider)).length;
 
-  return ok({
-    cases,
+  const caseRows: ReconCase[] = cases.map((c) => ({
+    ...c,
+    lastAttemptAt: c.lastAttemptAt ? c.lastAttemptAt.toISOString() : null,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+
+  const payload: PaymentReconciliationData = {
+    cases: caseRows,
     stats: {
       counts,
       total: Object.values(counts).reduce((a, b) => a + b, 0),
@@ -66,5 +74,6 @@ export const GET = handle(async (req: NextRequest) => {
     },
     runbook: "docs/late-payment-refund-runbook.md",
     meta: { page, size, total },
-  });
+  };
+  return ok(payload);
 });

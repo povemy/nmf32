@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { requireAffiliate } from "@/lib/affiliate";
 import { hubOverview } from "@/lib/affiliate-queries";
+import type { OverviewData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,6 @@ export const GET = handle(async (req: Request) => {
   const url = new URL(req.url);
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") ?? 30) || 30));
   const data = await hubOverview(aff.id, days);
-  return ok({ ...data, days });
+  const payload: OverviewData = { ...data, days };
+  return ok(payload);
 });

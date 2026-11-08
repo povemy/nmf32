@@ -4,6 +4,7 @@ import { requireAdminUngated, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import type { MfaDisableBody, MfaDisableData } from "@/lib/types/api-contract";
 import { getMfaEnrollment, isPrismaMissingTableError, matchRecoveryCode, verifyAdminPassword, verifyTotpForSecretEnc } from "@/lib/mfa";
 import { Prisma } from "@prisma/client";
 
@@ -20,7 +21,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
   const admin = await requireAdminUngated();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as MfaDisableBody & Record<string, unknown>;
   const password = reqStr(body, "password", "Current password");
   const code = reqStr(body, "code", "Authenticator or recovery code");
 
@@ -65,5 +66,6 @@ export const POST = handle(async (req: NextRequest) => {
     meta: { revokedSessions },
   });
 
-  return ok({ disabled: true, revokedSessions });
+  const payload: MfaDisableData = { disabled: true, revokedSessions };
+  return ok(payload);
 });

@@ -7,6 +7,7 @@
 // (no stale client cache — the server keeps the 60 s data cache).
 // ============================================================================
 import { fetchJson } from "./ui-bits";
+// HomePayload is derived from the contract's MarketHomeData (GET /api/market/home).
 import type { HomePayload } from "./home/types";
 
 let inflight: Promise<HomePayload> | null = null;

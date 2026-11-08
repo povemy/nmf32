@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import { deliverWebhookDelivery, WEBHOOK_TEST_EVENT } from "@/lib/webhook-delivery";
+import type { AdminReplayData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -74,7 +75,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     },
   });
 
-  return ok({
+  const payload: AdminReplayData = {
     replayed: outcome.attempted,
     deliveryId: id,
     status: outcome.status,
@@ -86,5 +87,6 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     nextRetryAt: outcome.nextRetryAt,
     endpointUrl: delivery.endpoint.url,
     storeName: delivery.endpoint.store.name,
-  });
+  };
+  return ok(payload);
 });

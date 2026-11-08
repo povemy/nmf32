@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { walletTruth, buildLedgerStatementFromLedger } from "@/lib/ledger";
+import type { AdminPayoutSyncData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -109,7 +110,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     findings.push("statementJson rebuilt from ledger (was missing/malformed or not ledger-derived)");
   }
 
-  const report = {
+  const report: AdminPayoutSyncData = {
     payoutId: id,
     status,
     walletTruth: truth,

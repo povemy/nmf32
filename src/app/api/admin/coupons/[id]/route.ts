@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { AdminCouponDetail, AdminCouponDeleteData, CouponUpdateBody } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,7 +13,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CouponUpdateBody & Record<string, unknown>;
 
   const coupon = await db.coupon.findUnique({ where: { id } });
   if (!coupon) throw new ApiError(404, "NOT_FOUND", "Coupon not found");
@@ -54,7 +55,26 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: AdminCouponDetail = {
+    id: updated.id,
+    scope: updated.scope,
+    storeId: updated.storeId,
+    code: updated.code,
+    description: updated.description,
+    type: updated.type,
+    percent: updated.percent,
+    amountMinor: updated.amountMinor,
+    minSpendMinor: updated.minSpendMinor,
+    maxRedemptions: updated.maxRedemptions,
+    perCustomerLimit: updated.perCustomerLimit,
+    startsAt: updated.startsAt ? updated.startsAt.toISOString() : null,
+    endsAt: updated.endsAt ? updated.endsAt.toISOString() : null,
+    isActive: updated.isActive,
+    timesUsed: updated.timesUsed,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/coupons/[id]
@@ -78,5 +98,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: AdminCouponDeleteData = { deleted: true };
+  return ok(payload);
 });

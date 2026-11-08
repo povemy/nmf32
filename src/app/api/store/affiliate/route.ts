@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { getAffiliateSettings, effectiveAffiliateRateBps } from "@/lib/affiliate";
 import { rateLimit } from "@/lib/rate-limit";
+import type { AffiliateProgrammeData, AffiliateSettingsBody, AffiliateSettingsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +13,15 @@ export const GET = handle(async () => {
   const settings = await getAffiliateSettings();
   const enrolled = await db.product.count({ where: { storeId: store.id, affiliateEnabled: true } });
   const total = await db.product.count({ where: { storeId: store.id } });
-  return ok({
+  const payload: AffiliateProgrammeData = {
     programmeEnabled: settings.enabled,
     maxRateBps: settings.maxRateBps,
     optIn: store.affiliateOptIn,
     defaultRateBps: store.affiliateDefaultRateBps,
     enrolledProducts: enrolled,
     totalProducts: total,
-  });
+  };
+  return ok(payload);
 });
 
 // PATCH /api/store/affiliate — programme opt-in/out + default rate (spec §7).
@@ -30,7 +32,7 @@ export const PATCH = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const settings = await getAffiliateSettings();
   if (!settings.enabled) throw new ApiError(403, "AFFILIATE_DISABLED", "The affiliate programme is currently paused platform-wide");
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AffiliateSettingsBody;
   const data: Record<string, unknown> = {};
   if (body.optIn != null) data.affiliateOptIn = body.optIn === true;
   if (body.defaultRateBps != null) {
@@ -41,9 +43,10 @@ export const PATCH = handle(async (req: Request) => {
     data.affiliateDefaultRateBps = rate;
   }
   const updated = await db.store.update({ where: { id: store.id }, data });
-  return ok({
+  const payload: AffiliateSettingsData = {
     optIn: updated.affiliateOptIn,
     defaultRateBps: updated.affiliateDefaultRateBps,
     maxRateBps: settings.maxRateBps,
-  });
+  };
+  return ok(payload);
 });

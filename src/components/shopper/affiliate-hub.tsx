@@ -46,6 +46,7 @@ import { toMinor } from "@/lib/money";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
 import { EmptyState, formatViewCount, type ShopperCtx } from "./ui-bits";
+import type { ActivateBody, ActivateContextData, ActivateData, MeProfileData, OverviewData } from "@/lib/types/api-contract";
 import {
   affGet,
   affPost,
@@ -153,8 +154,11 @@ export default function AffiliateHubView({
     setLoading(true);
     setLoadErr(null);
     try {
-      const d = await affGet<AffiliateMeT>("/api/affiliate/me");
-      setData(d);
+      // Contract payload → UI refinement: the route always pairs
+      // activated:false with invitedBy and activated:true with profile +
+      // balances (compile-time-only narrowing — runtime object unchanged).
+      const d = await affGet<MeProfileData>("/api/affiliate/me");
+      setData(d as AffiliateMeT);
     } catch (e) {
       setData(null);
       setLoadErr(e instanceof Error ? e.message : "Could not load your affiliate account");
@@ -172,7 +176,7 @@ export default function AffiliateHubView({
   useEffect(() => {
     if (!meState.loaded || shopper) return;
     let alive = true;
-    affGet<AffiliateActivateCtxT>("/api/affiliate/activate")
+    affGet<ActivateContextData>("/api/affiliate/activate")
       .then((d) => {
         if (alive) setGateCtx(d);
       })
@@ -476,14 +480,15 @@ function ActivationPanel({
     }
     setBusy(true);
     try {
-      await affPost("/api/affiliate/activate", {
+      const body: ActivateBody = {
         displayName: displayName.trim() || undefined,
         bio: bio.trim() || undefined,
         slug: slug.trim() || undefined,
         sponsorCode: !invitedBy && sponsorCode.trim() ? sponsorCode.trim() : undefined,
         sponsorConfirmed: confirmSponsor,
         termsAccepted: true,
-      });
+      };
+      await affPost<ActivateData>("/api/affiliate/activate", body);
       toast.success("Welcome to the NOMOFEE Affiliate Programme!");
       onActivated();
     } catch (e) {
@@ -651,7 +656,7 @@ function OverviewTab({ settings, onNavigate }: { settings: AffiliateSettingsT; o
     setLoading(true);
     setErr(null);
     try {
-      setData(await affGet<HubOverviewT>(`/api/affiliate/overview?days=${d}`));
+      setData(await affGet<OverviewData>(`/api/affiliate/overview?days=${d}`));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load your overview");
     } finally {

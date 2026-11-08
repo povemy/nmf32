@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { refreshWalletCache } from "@/lib/ledger";
 import { getSellerEmailVerifiedAt } from "@/lib/seller-email-verification";
+import type { SellerMeData, SellerWallet } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,15 @@ export const GET = handle(async () => {
 
   const ordersCount = await db.order.count({ where: { storeId: store.id } });
 
-  return ok({
+  const walletView: SellerWallet | null = wallet
+    ? {
+        ...wallet,
+        createdAt: wallet.createdAt.toISOString(),
+        updatedAt: wallet.updatedAt.toISOString(),
+      }
+    : null;
+
+  const payload: SellerMeData = {
     seller: {
       id: me.id,
       email: me.email,
@@ -87,7 +96,7 @@ export const GET = handle(async () => {
       riskTier: sellerRow?.riskTier ?? null,
       planCode: sellerRow?.planCode ?? null,
       marketplaceOptIn: sellerRow?.marketplaceOptIn ?? true,
-      submittedAt: sellerRow?.submittedAt ?? null,
+      submittedAt: sellerRow?.submittedAt ? sellerRow.submittedAt.toISOString() : null,
       rejectReason: sellerRow?.rejectReason ?? null,
       // PHASE 2.3 (C2.7) — honest email-verification state: null timestamp
       // (or storage not migrated yet) is reported as NOT verified.
@@ -117,8 +126,9 @@ export const GET = handle(async () => {
       homeShowFresh: store.homeShowFresh,
       homeFeaturedFirst: store.homeFeaturedFirst,
     },
-    wallet,
+    wallet: walletView,
     onboarding: { step, checklist },
     stats: { ordersCount, productCount, revenue30dMinor },
-  });
+  };
+  return ok(payload);
 });

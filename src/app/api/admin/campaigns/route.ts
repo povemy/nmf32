@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optDate, optBool } from "@/app/api/admin/_helpers";
 import { parseCampaignMerchFields } from "@/app/api/admin/_campaign-merch";
+import type { AdminCampaignItem, CampaignCreateBody } from "@/lib/types/api-contract";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import {
   CAMPAIGN_PRESETS,
@@ -43,9 +44,28 @@ type CampaignRow = {
   updatedAt: Date;
 };
 
-function present(c: CampaignRow) {
+function present(c: CampaignRow): AdminCampaignItem {
   return {
-    ...c,
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    presetId: c.presetId,
+    themeJson: c.themeJson,
+    isPublished: c.isPublished,
+    placement: c.placement,
+    priority: c.priority,
+    displayOrder: c.displayOrder,
+    ctaLabel: c.ctaLabel,
+    ctaHref: c.ctaHref,
+    bannerDesktopUrl: c.bannerDesktopUrl,
+    bannerMobileUrl: c.bannerMobileUrl,
+    thumbnailUrl: c.thumbnailUrl,
+    productQuery: c.productQuery,
+    archivedAt: c.archivedAt ? c.archivedAt.toISOString() : null,
+    startAt: c.startAt.toISOString(),
+    endAt: c.endAt.toISOString(),
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
     theme: parseCampaignTheme(c.themeJson),
     status: campaignStatusOf(c),
     daysUntilStart: daysUntil(c.startAt),
@@ -116,7 +136,7 @@ export const GET = handle(async (req: NextRequest) => {
 // (nearest upcoming occurrence). Theme JSON is validated server-side.
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireCap("campaigns.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CampaignCreateBody & Record<string, unknown>;
 
   const name = reqStr(body, "name", "name");
   if (name.length > 120) throw new ApiError(400, "VALIDATION", "name must be ≤ 120 characters");

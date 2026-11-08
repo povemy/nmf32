@@ -24,29 +24,24 @@ import { toMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { apiSend, useApi } from "./use-api";
 import { EmptyState, ErrorState, Money, PageHeader, StatusChip, TableSkeleton, TONE_CLASS, fmtDT, timeAgo } from "./ui-bits";
+import type {
+  AdminLedgerAccountsData,
+  AdminLedgerTransactionsData,
+  AdminLedgerTxnRow,
+  AdminWalletAdjustBody,
+  AdminWalletAdjustData,
+  AdminWalletsData,
+} from "@/lib/types/api-contract";
 
 /* ---------------------------------------------------------------- FIN-05 */
 
-type WalletRow = {
-  id: string;
-  sellerId: string;
-  pendingMinor: number;
-  availableMinor: number;
-  lifetimeEarnedMinor: number;
-  lifetimeCommissionMinor: number;
-  seller?: { displayName: string; email: string } | null;
+/** FIN-05 wallet row — the contract AdminWalletsData plus legacy optional
+ *  identity fields older rows still read; the synced route nests seller/store
+ *  identity under `seller` / `storeName` instead. */
+interface WalletRow extends AdminWalletsData {
   sellerName?: string | null;
   store?: { name: string } | null;
-  storeName?: string | null;
-};
-
-type LedgerTxn = {
-  id: string;
-  txnType: string;
-  description?: string | null;
-  occurredAt: string;
-  lines: { id: string; accountCode: string; direction: string; amountMinor: number; walletId?: string | null; availableAt?: string | null; memo?: string | null }[];
-};
+}
 
 export function WalletsView() {
   const { data, error, loading, refetch } = useApi<WalletRow[]>("/api/admin/wallets");
@@ -169,7 +164,7 @@ function formatMinorSafe(v: number): string {
 
 function WalletActivity({ walletId }: { walletId: string }) {
   // API envelope: { data: { items, nextCursor, count } } — unwrap `items`.
-  const { data, error, loading } = useApi<{ items: LedgerTxn[] }>(`/api/admin/ledger/transactions?walletId=${encodeURIComponent(walletId)}`);
+  const { data, error, loading } = useApi<AdminLedgerTransactionsData>(`/api/admin/ledger/transactions?walletId=${encodeURIComponent(walletId)}`);
   const txns = data?.items ?? [];
   return (
     <div className="mt-4 border-t px-4 py-3">
@@ -216,11 +211,12 @@ function AdjustDialog({ wallet, onClose, onDone }: { wallet: WalletRow | null; o
     if (!wallet) return;
     setSaving(true);
     try {
-      await apiSend(`/api/admin/wallets/${wallet.id}/adjust`, "POST", {
+      const body: AdminWalletAdjustBody = {
         amountMinor: toMinor(amount || "0"),
         direction,
         reason: reason.trim(),
-      });
+      };
+      await apiSend<AdminWalletAdjustData>(`/api/admin/wallets/${wallet.id}/adjust`, "POST", body);
       toast.success("Wallet adjusted", { description: `${direction === "credit" ? "Credited" : "Debited"} ${formatMinor(toMinor(amount))} — ledger T6 posted.` });
       setAmount("");
       setReason("");
@@ -308,7 +304,7 @@ function LedgerTransactions() {
   const [type, setType] = useState("all");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [txns, setTxns] = useState<LedgerTxn[]>([]);
+  const [txns, setTxns] = useState<AdminLedgerTxnRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -331,7 +327,7 @@ function LedgerTransactions() {
     setError(null);
     try {
       const res = await fetch(url, { cache: "no-store" });
-      const body = (await res.json()) as { data?: { items?: LedgerTxn[]; nextCursor?: string | null } };
+      const body = (await res.json()) as { data?: AdminLedgerTransactionsData };
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const rows = body.data?.items ?? [];
       setTxns((prev) => (append ? [...prev, ...rows] : rows));
@@ -527,14 +523,12 @@ function LedgerAccounts() {
   );
 }
 
-type LedgerAccountRow = {
-  code: string;
-  name: string;
-  type: string;
+/** FIN-06 ledger account row — the contract AdminLedgerAccountsData plus
+ *  legacy optional total-alias fields the fallback chain in the table still
+ *  reads; the synced route emits `debitMinor` / `creditMinor`. */
+interface LedgerAccountRow extends AdminLedgerAccountsData {
   totalDebitMinor?: number;
   totalCreditMinor?: number;
   totalDebit?: number;
   totalCredit?: number;
-  debitMinor?: number;
-  creditMinor?: number;
-};
+}

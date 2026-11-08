@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireAffiliate } from "@/lib/affiliate";
+import type { NetworkData, AffiliateReferral } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -46,16 +47,18 @@ export const GET = handle(async (req: Request) => {
     _sum: { amountMinor: true },
   });
 
-  return ok({
+  const rows: AffiliateReferral[] = referrals.map((r) => ({
+    displayName: r.displayName,
+    slug: r.slug,
+    status: r.status,
+    activatedAt: r.activatedAt.toISOString(),
+    generatedSales: withSales.has(r.id),
+  }));
+  const payload: NetworkData = {
     total,
     page,
-    referrals: referrals.map((r) => ({
-      displayName: r.displayName,
-      slug: r.slug,
-      status: r.status,
-      activatedAt: r.activatedAt.toISOString(),
-      generatedSales: withSales.has(r.id),
-    })),
+    referrals: rows,
     sponsorEarningsMinor: sponsorEarned._sum.amountMinor ?? 0,
-  });
+  };
+  return ok(payload);
 });

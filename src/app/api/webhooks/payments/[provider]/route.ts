@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit } from "@/lib/ratelimit";
 import { recordEvent } from "@/lib/metrics";
 import { processPaymentWebhook } from "../process";
+import type { PaymentWebhookBody, PaymentWebhookData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
 
   const { provider } = await ctx.params;
   const rawBody = await req.text(); // raw body read stays BEFORE parsing (order preserved)
-  const body = JSON.parse(rawBody || "{}") as Record<string, unknown>;
+  const body = JSON.parse(rawBody || "{}") as PaymentWebhookBody;
   const headerSignature = req.headers.get("X-SM-Signature");
 
   const outcome = await processPaymentWebhook({
@@ -43,5 +44,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
   // phase; route-level latency/status counters come from handle().
   recordEvent("webhook.payments", outcome.duplicate ? "duplicate" : "processed");
 
-  return ok({ ok: true, duplicate: outcome.duplicate, orderNumber: outcome.orderNumber, orderStatus: outcome.orderStatus });
+  const payload: PaymentWebhookData = { ok: true, duplicate: outcome.duplicate, orderNumber: outcome.orderNumber, orderStatus: outcome.orderStatus };
+  return ok(payload);
 });

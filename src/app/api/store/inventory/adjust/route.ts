@@ -2,13 +2,14 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { InventoryAdjustBody, InventoryAdjustData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/store/inventory/adjust {variantId, delta, reason}
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as InventoryAdjustBody;
 
   const variantId = String(body.variantId ?? "");
   const rawDelta = body.delta;
@@ -73,5 +74,10 @@ export const POST = handle(async (req: Request) => {
   }
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
-  return ok({ id: updated.id, stock: updated.stock, lowStock: updated.stock <= updated.lowStockThreshold });
+  const payload: InventoryAdjustData = {
+    id: updated.id,
+    stock: updated.stock,
+    lowStock: updated.stock <= updated.lowStockThreshold,
+  };
+  return ok(payload);
 });

@@ -3,6 +3,7 @@ import { handle, ok, transitionOrder } from "@/lib/api";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { maybeSyncTracking, MOCK_PROVIDER_ID, ACTIVE_SHIPMENT_STATUSES } from "@/lib/shipping";
 import { toJson, parseJson } from "@/lib/json";
+import type { OrderMaintenanceOutcome, OrderMaintenanceStatusData, OrderMaintenanceThrottledData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,8 @@ export const POST = handle(async (req: Request) => {
   const last = typeof g.__orderMaintenanceAt === "number" ? g.__orderMaintenanceAt : 0;
   const now = Date.now();
   if (now - last < THROTTLE_MS) {
-    return ok({ throttled: true, skippedForMs: THROTTLE_MS - (now - last), auth: auth.mode });
+    const throttled: OrderMaintenanceThrottledData = { throttled: true, skippedForMs: THROTTLE_MS - (now - last), auth: auth.mode };
+    return ok(throttled);
   }
   g.__orderMaintenanceAt = now;
 
@@ -125,7 +127,7 @@ export const POST = handle(async (req: Request) => {
     }
   }
 
-  const payload = {
+  const payload: OrderMaintenanceOutcome = {
     ranAt: new Date().toISOString(),
     durationMs: Math.round(performance.now() - t0),
     autoReceipt: { candidates: unconfirmed.length, received: autoReceived, cutoff: receiptCutoff.toISOString() },
@@ -152,10 +154,11 @@ export const GET = handle(async (req: Request) => {
     db.order.count({ where: { status: "received", receivedAt: { lt: new Date(Date.now() - RATE_WINDOW_DAYS * 86_400_000) } } }),
     db.shipment.count({ where: { providerId: MOCK_PROVIDER_ID, status: { in: [...ACTIVE_SHIPMENT_STATUSES] } } }),
   ]);
-  return ok({
-    lastRun: parseJson<Record<string, unknown> | null>(row?.valueJson ?? null, null),
+  const status: OrderMaintenanceStatusData = {
+    lastRun: parseJson<OrderMaintenanceOutcome | null>(row?.valueJson ?? null, null),
     autoReceiptBacklog: receiptBacklog,
     autoCompleteBacklog: completeBacklog,
     inflightMockShipments: inflightCount,
-  });
+  };
+  return ok(status);
 });

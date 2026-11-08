@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { getAffiliateSettings } from "@/lib/affiliate";
 import { rateLimit } from "@/lib/rate-limit";
+import type { AffiliateProductBody, AffiliateProductData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (!product) throw new ApiError(404, "NOT_FOUND", "Product not found in your store");
   if (!settings.enabled) throw new ApiError(403, "AFFILIATE_DISABLED", "The affiliate programme is currently paused platform-wide");
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AffiliateProductBody;
   const data: Record<string, unknown> = {};
   if (body.enabled != null) {
     if (body.enabled === true && !store.affiliateOptIn) {
@@ -39,10 +40,11 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     }
   }
   const updated = await db.product.update({ where: { id: product.id }, data });
-  return ok({
+  const payload: AffiliateProductData = {
     id: updated.id,
     affiliateEnabled: updated.affiliateEnabled,
     affiliateRateBps: updated.affiliateRateBps,
     effectiveRateBps: Math.min(updated.affiliateRateBps ?? store.affiliateDefaultRateBps, settings.maxRateBps),
-  });
+  };
+  return ok(payload);
 });

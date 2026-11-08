@@ -1,6 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveAffiliateLink } from "@/lib/affiliate-attribution";
+import type { TrackBody, TrackData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +13,15 @@ export const dynamic = "force-dynamic";
 // fail closed (404) — no attribution is ever created from client input.
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-track", 60);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as TrackBody;
   const code = String(body.code ?? "").trim();
   if (!code) throw new ApiError(400, "VALIDATION", "code is required");
   const resolved = await resolveAffiliateLink(code);
-  return ok({
+  const payload: TrackData = {
     target: resolved.target,
     sharedBy: resolved.affiliate.displayName,
     linkType: resolved.link.type,
     channel: resolved.link.channel,
-  });
+  };
+  return ok(payload);
 });

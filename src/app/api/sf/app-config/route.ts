@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
+import type { SfAppConfigData } from "@/lib/types/api-contract";
 
 // GET /api/sf/app-config — PUBLIC lightweight platform chrome config for the
 // shopper web app. Currently exposes the global footer visibility
@@ -17,5 +18,6 @@ export const GET = handle(async (_req: NextRequest) => {
   } catch {
     /* missing table/connection at boot — default stays ON */
   }
-  return ok({ footerVisible });
+  const payload: SfAppConfigData = { footerVisible };
+  return ok(payload);
 });

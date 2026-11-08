@@ -12,6 +12,7 @@ import {
   fulfillmentInsights,
   funnelFor,
 } from "@/lib/analytics/queries";
+import type { SalesInsightsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export const GET = handle(async (req: Request) => {
   const granularity = granRaw as "day" | "week" | "month";
 
   const cacheKey = `sales:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}:${granularity}`;
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<SalesInsightsData> => {
     const [paidOrders, paidPrev, refunds, refundsPrev, cancelled, cancelledPrev, trend, fulfillment, funnel] = await Promise.all([
       paidOrdersFor(store.id, win.from, win.to),
       paidOrdersFor(store.id, win.prevFrom, win.prevTo),

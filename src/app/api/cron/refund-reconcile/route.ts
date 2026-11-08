@@ -10,6 +10,7 @@ import {
   RECON_FAULT_CRASH_AFTER_PROVIDER,
   RECON_STATUSES,
 } from "@/lib/psp-refund";
+import type { RefundReconcileData, RefundReconcileStatusData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -178,7 +179,7 @@ export const POST = handle(async (req: Request) => {
     }
   }
 
-  const outcome = {
+  const outcome: RefundReconcileData = {
     ...stats,
     at: new Date().toISOString(),
     durationMs: Math.round(performance.now() - t0),
@@ -216,12 +217,13 @@ export const GET = handle(async (req: Request) => {
   const awaitingOperator = openRequested.filter((c) => !resolveRefundAdapter(c.provider)).length;
   const counts = Object.fromEntries(RECON_STATUSES.map((s) => [s, 0])) as Record<string, number>;
   for (const row of byStatus) counts[row.status] = row._count._all;
-  return ok({
+  const payload: RefundReconcileStatusData = {
     counts,
     oldestOpenCase: oldestOpen ? { createdAt: oldestOpen.createdAt.toISOString(), provider: oldestOpen.provider } : null,
     awaitingOperator, // providers with no refund adapter at all — runbook applies
-    lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
+    lastRun: lastSetting ? (JSON.parse(lastSetting.valueJson) as RefundReconcileData) : null,
     auth: auth.mode,
-    statuses: RECON_STATUSES,
-  });
+    statuses: [...RECON_STATUSES],
+  };
+  return ok(payload);
 });

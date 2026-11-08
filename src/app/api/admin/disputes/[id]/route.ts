@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, str } from "@/app/api/admin/_helpers";
+import type { AdminDisputePatchBody, AdminDisputeRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("disputes.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as AdminDisputePatchBody & Record<string, unknown>;
 
   const dispute = await db.dispute.findUnique({ where: { id }, include: { order: true } });
   if (!dispute) throw new ApiError(404, "NOT_FOUND", "Dispute not found");
@@ -57,5 +58,11 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status, resolution: resolution ?? dispute.resolution },
   });
 
-  return ok(updated);
+  const payload: AdminDisputeRow = {
+    ...updated,
+    resolvedAt: updated.resolvedAt ? updated.resolvedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

@@ -15,9 +15,12 @@ import { Button } from "@/components/ui/button";
 import { useApp } from "@/lib/app-store";
 import { cn } from "@/lib/utils";
 import { fetchJson, postJson, fmtDateTime, type ShopperView } from "./ui-bits";
+import type { MarkReadBody, MarkReadData, NotificationsData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
-// Shapes (mirror /api/me/notifications)
+// Shapes — the feed rows are a legacy UI projection (client-enriched relative
+// buckets, linkUrl/orderId flags) the current backend no longer emits; the
+// contract's canonical row is MeNotification (see notification-bell.tsx).
 // ---------------------------------------------------------------------------
 
 type NotificationItemT = {
@@ -33,6 +36,12 @@ type NotificationItemT = {
   rel: "now" | "m" | "h" | "d" | "date";
   relValue: number | null;
 };
+
+/** Retired flat panel shape this legacy bell still reads. The synced route
+ *  now answers the contract's NotificationsData / MarkReadData envelopes, so
+ *  these fields are absent on the wire and the `??` guards below keep the
+ *  exact same (empty-feed / zero-badge) runtime as before. */
+type LegacyPanelView = { items?: NotificationItemT[]; unreadCount?: number };
 
 const TYPE_ICON: Record<string, typeof Truck> = {
   ORDER_SHIPPED: Truck,
@@ -105,10 +114,11 @@ export default function NotificationsBell({ nav }: { nav: (v: ShopperView) => vo
 
   const load = useCallback(async () => {
     try {
-      const d = await fetchJson<{ items: NotificationItemT[]; unreadCount: number }>("/api/me/notifications");
+      const d = await fetchJson<NotificationsData>("/api/me/notifications");
+      const legacy = d as unknown as LegacyPanelView;
       if (!aliveRef.current) return;
-      setItems(d.items ?? []);
-      setUnread(d.unreadCount ?? 0);
+      setItems(legacy.items ?? []);
+      setUnread(legacy.unreadCount ?? 0);
     } catch {
       /* silent — the bell is non-critical chrome */
     }
@@ -141,8 +151,9 @@ export default function NotificationsBell({ nav }: { nav: (v: ShopperView) => vo
       setUnread((u) => Math.max(0, u - ids.length));
       setItems((prev) => prev?.map((n) => (ids.includes(n.id) ? { ...n, unread: false, readAt: n.readAt ?? new Date().toISOString() } : n)) ?? prev);
       try {
-        const d = await postJson<{ unreadCount: number }>("/api/me/notifications", { ids });
-        setUnread(d.unreadCount ?? 0);
+        const body: MarkReadBody = { ids };
+        const d = await postJson<MarkReadData>("/api/me/notifications", body);
+        setUnread((d as unknown as LegacyPanelView).unreadCount ?? 0);
       } catch {
         void load();
       }
@@ -153,11 +164,13 @@ export default function NotificationsBell({ nav }: { nav: (v: ShopperView) => vo
   const markAllRead = useCallback(async () => {
     setMarkingAll(true);
     try {
-      const d = await postJson<{ unreadCount: number }>("/api/me/notifications", { all: true });
+      const body: MarkReadBody = { all: true };
+      const d = await postJson<MarkReadData>("/api/me/notifications", body);
+      const legacy = d as unknown as LegacyPanelView;
       setUnread(0);
       setItems((prev) => prev?.map((n) => ({ ...n, unread: false, readAt: n.readAt ?? new Date().toISOString() })) ?? prev);
       toast.success("All notifications marked read");
-      if (typeof d?.unreadCount === "number") setUnread(d.unreadCount);
+      if (typeof legacy.unreadCount === "number") setUnread(legacy.unreadCount);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not mark notifications read");
     } finally {

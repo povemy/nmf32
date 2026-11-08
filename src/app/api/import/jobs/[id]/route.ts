@@ -7,6 +7,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import type { JobSummary } from "@/lib/import/summary";
+import type { SellerImportJobGetData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export const GET = handle(async (req: NextRequest, ctx: { params: Promise<{ id: 
   const summary = parseJson<JobSummary>(job.summaryJson, {});
   const progress = parseJson<Record<string, number>>(job.progressJson, {});
   const error = parseJson<{ code?: string; message?: string }>(job.errorJson, {});
-  return ok({
+  const payload: SellerImportJobGetData = {
     id: job.id,
     platform: job.platform,
     platformLabel: summary.platformLabel ?? job.platform,
@@ -59,8 +60,9 @@ export const GET = handle(async (req: NextRequest, ctx: { params: Promise<{ id: 
       error: it.error,
       warnings: parseJson<string[]>(it.warningsJson, []),
     })),
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    createdAt: job.createdAt,
-  });
+    startedAt: job.startedAt ? job.startedAt.toISOString() : null,
+    finishedAt: job.finishedAt ? job.finishedAt.toISOString() : null,
+    createdAt: job.createdAt.toISOString(),
+  };
+  return ok(payload);
 });

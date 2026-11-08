@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
 import { trackPdpEvent, isPdpEventType } from "@/lib/analytics/track";
+import type { PdpEventBody, PdpEventData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,14 @@ export const dynamic = "force-dynamic";
 //  - Advisory only — money/pricing/stock remain server-authoritative.
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "pdp-event", 120);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as PdpEventBody;
 
   const eventType = body.eventType;
   const storeId = typeof body.storeId === "string" ? body.storeId : null;
-  if (!isPdpEventType(eventType) || !storeId) return ok({ recorded: false });
+  if (!isPdpEventType(eventType) || !storeId) {
+    const payload: PdpEventData = { recorded: false };
+    return ok(payload);
+  }
 
   const productId = typeof body.productId === "string" ? body.productId : null;
   const variantId = typeof body.variantId === "string" ? body.variantId : null;
@@ -42,5 +46,6 @@ export const POST = handle(async (req: Request) => {
   }
 
   await trackPdpEvent(req, { eventType, storeId, productId, variantId, qty, shopperId });
-  return ok({ recorded: true });
+  const payload: PdpEventData = { recorded: true };
+  return ok(payload);
 });

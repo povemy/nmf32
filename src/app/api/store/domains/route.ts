@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerDomainRow, SellerDomainBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,13 +12,26 @@ export const GET = handle(async () => {
     where: { storeId: store.id },
     orderBy: { createdAt: "desc" },
   });
-  return ok(domains);
+  const payload: SellerDomainRow[] = domains.map((d) => ({
+    id: d.id,
+    storeId: d.storeId,
+    domain: d.domain,
+    mode: d.mode,
+    status: d.status,
+    sslStatus: d.sslStatus,
+    isPrimary: d.isPrimary,
+    lastCheckedAt: d.lastCheckedAt ? d.lastCheckedAt.toISOString() : null,
+    errorReason: d.errorReason,
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
+  }));
+  return ok(payload);
 });
 
 // POST /api/store/domains {domain, mode: cname|ns}
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerDomainBody;
 
   const domain = String(body.domain ?? "").trim().toLowerCase();
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
@@ -44,5 +58,18 @@ export const POST = handle(async (req: Request) => {
     meta: { domain, mode },
   });
 
-  return ok(record, { status: 201 });
+  const payload: SellerDomainRow = {
+    id: record.id,
+    storeId: record.storeId,
+    domain: record.domain,
+    mode: record.mode,
+    status: record.status,
+    sslStatus: record.sslStatus,
+    isPrimary: record.isPrimary,
+    lastCheckedAt: record.lastCheckedAt ? record.lastCheckedAt.toISOString() : null,
+    errorReason: record.errorReason,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  };
+  return ok(payload, { status: 201 });
 });

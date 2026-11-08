@@ -4,6 +4,7 @@ import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { latestAttemptLogs, webhookNextRetryAt, MAX_WEBHOOK_ATTEMPTS } from "@/lib/webhook-delivery";
+import type { AdminWebhookDeliveryRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export const GET = handle(async (req: NextRequest) => {
   // is pending — see latestAttemptLogs).
   const logs = await latestAttemptLogs(rows.map((r) => r.id));
 
-  const data = rows.map((r) => {
+  const data: AdminWebhookDeliveryRow[] = rows.map((r) => {
     const log = logs.get(r.id) ?? null;
     const nextRetry = r.status === "pending" ? webhookNextRetryAt(r.attempts, r.lastAttemptAt) : null;
     return {
@@ -82,9 +83,9 @@ export const GET = handle(async (req: NextRequest) => {
       attempts: r.attempts,
       maxAttempts: MAX_WEBHOOK_ATTEMPTS,
       responseCode: r.responseCode,
-      lastAttemptAt: r.lastAttemptAt,
-      createdAt: r.createdAt,
-      nextRetryAt: nextRetry,
+      lastAttemptAt: r.lastAttemptAt ? r.lastAttemptAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+      nextRetryAt: nextRetry ? nextRetry.toISOString() : null,
       endpoint: { id: r.endpoint.id, url: r.endpoint.url, isActive: r.endpoint.isActive },
       store: r.endpoint.store ? { id: r.endpoint.store.id, name: r.endpoint.store.name } : null,
       lastError: log?.error ?? null,

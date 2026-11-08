@@ -4,6 +4,7 @@ import { assembleStorefrontSections, parsePageDoc, parseTheme } from "@/lib/sect
 import { parseSocial, cardStyleFor } from "../../_shared/product-card";
 import { trackStoreView } from "@/lib/analytics/track";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { SfHomeData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
     hasCategories: categories.length > 0,
   });
 
-  return ok({
+  const payload: SfHomeData = {
     store: {
       id: store.id,
       name: store.name,
@@ -93,5 +94,6 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       sections,
       publishedVersion: home.publishedVersion,
     },
-  });
+  };
+  return ok(payload);
 });

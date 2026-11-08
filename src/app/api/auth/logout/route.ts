@@ -1,7 +1,9 @@
 import { destroySession } from "@/lib/auth";
 import { handle, ok } from "@/lib/api";
+import type { LogoutData } from "@/lib/types/api-contract";
 
 export const POST = handle(async () => {
   await destroySession();
-  return ok({ loggedOut: true });
+  const payload: LogoutData = { loggedOut: true };
+  return ok(payload);
 });

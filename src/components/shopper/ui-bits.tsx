@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { formatMinor } from "@/lib/money";
 import { deviceHeaders, syncCartToken } from "@/lib/session-client";
 import { signalSessionExpired } from "@/lib/session-events";
+import type { ApiPageMeta } from "@/lib/types/api-contract";
 import { useApp } from "@/lib/app-store";
 import { fontStack, nameSizePx, priceSizePx, fontLinkHref, type CardStyleTokens } from "@/lib/fonts";
 import {
@@ -283,7 +284,7 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
 export async function fetchEnvelope<T>(
   url: string,
   init?: RequestInit
-): Promise<{ data: T; meta?: { page: number; size: number; total: number } }> {
+): Promise<{ data: T; meta?: ApiPageMeta }> {
   const res = await fetch(url, {
     cache: "no-store",
     ...init,
@@ -295,7 +296,7 @@ export async function fetchEnvelope<T>(
   } catch {
     /* non-json */
   }
-  const b = body as { data?: T; meta?: { page: number; size: number; total: number }; error?: { code?: string; message?: string } } | null;
+  const b = body as { data?: T; meta?: ApiPageMeta; error?: { code?: string; message?: string } } | null;
   if (!res.ok || !b || b.error) {
     if (res.status === 401) signalSessionExpired();
     throw new ApiFail(res.status, b?.error?.code ?? "ERROR", b?.error?.message ?? `Request failed (${res.status})`);

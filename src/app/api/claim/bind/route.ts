@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sha256Hex } from "@/lib/secretbox";
 import { transitionStore } from "@/lib/store-lifecycle";
+import type { ClaimBindBody, ClaimBindData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,7 @@ export const POST = handle(async (req: NextRequest) => {
   if (!session || session.userType !== "seller") {
     return fail(401, "UNAUTHENTICATED", "Log in or create a seller account first, then claim the store.");
   }
-  const body = (await req.json().catch(() => ({}))) as {
-    jobId?: string;
-    claimToken?: string;
-    method?: string; // oauth_shopee | oauth_tiktok | claim_code
-    evidence?: { connectionShopId?: string };
-  };
+  const body = (await req.json().catch(() => ({}))) as ClaimBindBody;
   if (!body.jobId || !body.claimToken) {
     return fail(400, "MISSING_FIELDS", "jobId and claimToken are required.");
   }
@@ -156,8 +152,9 @@ export const POST = handle(async (req: NextRequest) => {
     meta: verification,
   }).catch(() => undefined);
 
-  return ok({
+  const payload: ClaimBindData = {
     store: result,
     nextStep: "Configure your store in the seller portal, then publish.",
-  });
+  };
+  return ok(payload);
 });

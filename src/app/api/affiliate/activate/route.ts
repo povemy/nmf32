@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { activateAffiliate, resolveReferralCookie, getAffiliateSettings } from "@/lib/affiliate";
+import type { ActivateBody, ActivateData, ActivateContextData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-activate", 5);
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ActivateBody;
   if (body.termsAccepted !== true) {
     throw new ApiError(400, "TERMS_REQUIRED", "You must accept the affiliate programme terms to activate");
   }
@@ -26,15 +27,22 @@ export const POST = handle(async (req: Request) => {
     sponsorCode: body.sponsorCode != null ? String(body.sponsorCode).trim() : undefined,
     sponsorConfirmed: body.sponsorConfirmed === true,
   });
-  return ok({
+  // activateAffiliate declares sponsorSource as string | null but only ever
+  // assigns the two contract literals — narrowing keeps the payload honest.
+  const sponsorSource: ActivateData["sponsorSource"] =
+    result.sponsorSource === "referral_touch" || result.sponsorSource === "code_entry"
+      ? result.sponsorSource
+      : null;
+  const payload: ActivateData = {
     profile: {
       id: result.profile.id, code: result.profile.code, slug: result.profile.slug,
       displayName: result.profile.displayName, status: result.profile.status,
       sponsorId: result.profile.sponsorId,
     },
     sponsor: result.sponsor,
-    sponsorSource: result.sponsorSource,
-  }, { status: 201 });
+    sponsorSource,
+  };
+  return ok(payload, { status: 201 });
 });
 
 // GET — pre-activation context: programme status + the pending sponsor the
@@ -42,11 +50,12 @@ export const POST = handle(async (req: Request) => {
 export const GET = handle(async () => {
   const settings = await getAffiliateSettings();
   const touch = await resolveReferralCookie();
-  return ok({
+  const payload: ActivateContextData = {
     enabled: settings.enabled,
     sponsorEnabled: settings.sponsorEnabled,
     maxRateBps: settings.maxRateBps,
     invitedBy: touch?.displayName ?? null,
     invitedByCode: touch?.code ?? null,
-  });
+  };
+  return ok(payload);
 });

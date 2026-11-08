@@ -21,6 +21,19 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { pdpTrack } from "./analytics";
 import type { PdpVoucherT, VoucherEligibility } from "./types";
+import type {
+  ClaimVoucherBody,
+  ClaimVoucherData,
+  MeClaimableVoucher,
+  VouchersData,
+} from "@/lib/types/api-contract";
+
+/** GET /api/me/vouchers (contract VouchersData) as this centre consumes it:
+ *  the claim-centre rows arrive flat exactly as typed (MeClaimableVoucher);
+ *  the wallet rows are read through the flat PdpVoucherT projection instead
+ *  of the nested MeWalletVoucher — pre-existing behaviour kept unchanged
+ *  (see the Wave-4 sync report MISMATCHES note). */
+type VoucherCentrePayload = Omit<VouchersData, "mine" | "vouchers"> & { mine: PdpVoucherT[] };
 
 export function PdpVoucherCentre({
   signedIn,
@@ -36,13 +49,13 @@ export function PdpVoucherCentre({
   onVoucherClaimed?: () => void;
 }) {
   const [wallet, setWallet] = useState<PdpVoucherT[] | null>(null);
-  const [center, setCenter] = useState<PdpVoucherT[] | null>(null);
+  const [center, setCenter] = useState<MeClaimableVoucher[] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const d = await fetchJson<{ mine: PdpVoucherT[]; center: PdpVoucherT[] }>("/api/me/vouchers");
+      const d = await fetchJson<VoucherCentrePayload>("/api/me/vouchers");
       setWallet(Array.isArray(d.mine) ? d.mine : []);
       setCenter(Array.isArray(d.center) ? d.center : []);
     } catch {
@@ -89,7 +102,7 @@ export function PdpVoucherCentre({
     if (claimingId) return; // repeated-click protection
     setClaimingId(v.id);
     try {
-      await postJson("/api/me/vouchers/claim", { voucherId: v.id });
+      await postJson<ClaimVoucherData>("/api/me/vouchers/claim", { voucherId: v.id } satisfies ClaimVoucherBody);
       pdpTrack("claim_voucher", {});
       toast.success("Voucher claimed", { description: `${v.title} — it applies at checkout when its conditions are met.` });
       await load();

@@ -40,7 +40,15 @@ import {
   fmtDate,
   fmtDT,
 } from "../ui-bits";
-import type { AccountDetail, AccountsBody } from "./types";
+import type {
+  AdminAffAccountDetailData,
+  AdminAffAccountProfile,
+  AdminAffAccountsData,
+  AdminAffSponsorBody,
+  AdminAffSponsorData,
+  AdminAffStatusBody,
+  AdminAffStatusData,
+} from "@/lib/types/api-contract";
 
 const ACCOUNT_STATUSES = ["active", "suspended", "terminated"];
 
@@ -57,7 +65,7 @@ export function AffiliateAccountsView({ nav }: { nav: AdminNav }) {
     return `/api/admin/affiliate/accounts?${sp.toString()}`;
   }, [status, q, page]);
 
-  const { data, error, loading, refetch } = useApi<AccountsBody>(url);
+  const { data, error, loading, refetch } = useApi<AdminAffAccountsData>(url);
   const rows = useMemo(() => data?.accounts ?? [], [data]);
   const total = data?.total ?? 0;
   const serverPage = data?.page ?? page;
@@ -207,7 +215,7 @@ function AccountSheet({
   nav: AdminNav;
 }) {
   const { can } = useAdminCaps();
-  const { data, error, loading, refetch } = useApi<AccountDetail>(`/api/admin/affiliate/accounts/${encodeURIComponent(id)}`);
+  const { data, error, loading, refetch } = useApi<AdminAffAccountDetailData>(`/api/admin/affiliate/accounts/${encodeURIComponent(id)}`);
   const [statusAction, setStatusAction] = useState<"suspend" | "terminate" | null>(null);
   const [reinstating, setReinstating] = useState(false);
   const [sponsorOpen, setSponsorOpen] = useState(false);
@@ -219,8 +227,8 @@ function AccountSheet({
     if (!profile) return false;
     setBusy(true);
     try {
-      const body = reason ? { action, reason } : { action };
-      const res = await apiSend<{ status: string }>(`/api/admin/affiliate/accounts/${encodeURIComponent(profile.id)}/status`, "POST", body);
+      const body: AdminAffStatusBody = reason ? { action, reason } : { action };
+      const res = await apiSend<AdminAffStatusData>(`/api/admin/affiliate/accounts/${encodeURIComponent(profile.id)}/status`, "POST", body);
       toast.success(`Affiliate ${action === "reinstate" ? "reinstated" : action}`, {
         description: `Status is now “${res.status}” — the action was written to the audit log.`,
       });
@@ -527,7 +535,7 @@ function SponsorCorrectionDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profile: NonNullable<AccountDetail["profile"]>;
+  profile: AdminAffAccountProfile;
   busy: boolean;
   onDone: () => void;
 }) {
@@ -542,10 +550,11 @@ function SponsorCorrectionDialog({
   const submit = async () => {
     setSaving(true);
     try {
-      await apiSend(`/api/admin/affiliate/accounts/${encodeURIComponent(profile.id)}/sponsor`, "POST", {
+      const body: AdminAffSponsorBody = {
         sponsorCode: code.trim() || null,
         reason: trimmedReason,
-      });
+      };
+      await apiSend<AdminAffSponsorData>(`/api/admin/affiliate/accounts/${encodeURIComponent(profile.id)}/sponsor`, "POST", body);
       toast.success("Sponsor corrected", {
         description: code.trim()
           ? `Future attributions follow sponsor “${code.trim()}” — existing commission snapshots are never rewritten.`

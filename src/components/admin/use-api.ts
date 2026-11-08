@@ -5,8 +5,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeaders } from "@/lib/session-client";
 import { signalSessionExpired } from "@/lib/session-events";
+import type { ApiPageMeta } from "@/lib/types/api-contract";
 
-export type ApiMeta = { page: number; size: number; total: number };
+/** Pagination metadata — now aliased to the centralized contract type
+ *  (src/lib/types/api-contract.ts) so UI and API share one source of truth. */
+export type ApiMeta = ApiPageMeta;
 
 type EnvelopeBody = { data?: unknown; meta?: ApiMeta; error?: { code?: string; message?: string; details?: unknown } };
 

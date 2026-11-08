@@ -22,12 +22,13 @@ import {
   importCapSecret,
   verifyImportCap,
 } from "@/lib/import-cap";
+import type { SellerImportJobCreateBody, SellerImportJobCreateData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "import", 5);
-  const body = (await req.json().catch(() => ({}))) as { url?: string; allowFixture?: boolean };
+  const body = (await req.json().catch(() => ({}))) as SellerImportJobCreateBody;
   if (!body.url || typeof body.url !== "string") {
     return fail(400, "MISSING_URL", "Paste a marketplace URL first.");
   }
@@ -92,10 +93,11 @@ export const POST = handle(async (req: NextRequest) => {
       }
     }
   }
-  return ok({
+  const payload: SellerImportJobCreateData = {
     jobId: job.jobId,
     trackingToken: job.trackingToken,
     status: job.status,
     pollUrl: `/api/import/jobs/${job.jobId}?token=${job.trackingToken}`,
-  });
+  };
+  return ok(payload);
 });

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { randomToken } from "@/lib/secretbox";
 import { getConnector } from "@/lib/marketplaces";
 import type { Platform } from "@/lib/marketplaces/types";
+import type { SellerConnectionBeginData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,5 +31,10 @@ export const GET = handle(async function (_req: NextRequest, ctx: { params: Prom
     const redirectUri = `${origin || ""}/api/auth/callback/${platform}`.replace(/^\/api/, "/api");
     const connector = getConnector(platform as Platform);
     const begin = await connector.beginAuthorisation({ redirectUri, state });
-    return ok({ authorizeUrl: begin?.authorizeUrl ?? null, state, envConfigured: Boolean(begin) });
+    const payload: SellerConnectionBeginData = {
+      authorizeUrl: begin?.authorizeUrl ?? null,
+      state,
+      envConfigured: Boolean(begin),
+    };
+    return ok(payload);
 });

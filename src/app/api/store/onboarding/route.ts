@@ -1,13 +1,14 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity, notify } from "@/lib/api";
 import { requireSeller } from "@/lib/auth";
+import type { OnboardingBody, OnboardingData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/store/onboarding {action:"submit"} — seller submits for KYC review.
 export const POST = handle(async (req: Request) => {
   const me = await requireSeller();
-  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  const body = (await req.json().catch(() => ({}))) as OnboardingBody;
   if (body.action !== "submit") {
     throw new ApiError(400, "BAD_REQUEST", 'action must be "submit"');
   }
@@ -46,5 +47,7 @@ export const POST = handle(async (req: Request) => {
     entityId: seller.id,
   });
 
-  return ok({ status: updated.status, submittedAt: updated.submittedAt });
+  // submittedAt was just written above — the read-back is always set.
+  const payload: OnboardingData = { status: updated.status, submittedAt: updated.submittedAt!.toISOString() };
+  return ok(payload);
 });

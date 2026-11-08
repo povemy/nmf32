@@ -25,10 +25,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import type { MarketHomeData, SellerProductCreateBody, SellerProductDeleteData, SellerProductFull, SellerProductPatchBody, SellerVariantInput } from "@/lib/types/api-contract";
 import { Archive, ImageIcon, Loader2, Package, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 
 // ---------------------------------------------------------------- types
 
+/** Editor form row for a variant — decimal strings as typed (UI-only shape). */
 type Variant = {
   id?: string;
   name: string;
@@ -41,24 +43,8 @@ type Variant = {
   sku: string;
 };
 
-type ProductRow = {
-  id: string;
-  title: string;
-  slug: string;
-  description: string | null;
-  status: string;
-  rejectReason: string | null;
-  priceMinor: number;
-  salesCount: number;
-  flagsJson: string;
-  images: { url: string }[];
-  variants: { id: string; name: string; optionValue: string | null; priceMinor: number; stock: number; moq: number; sku: string | null }[];
-  category: { id: string; name: string } | null;
-};
-
+/** Flattened category picker option (parent / child label) — UI-only shape. */
 type Category = { id: string; label: string };
-
-type Paged<T> = { rows: T[]; total: number };
 
 function slugifyTitle(t: string): string {
   return t.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "product";
@@ -76,8 +62,8 @@ export default function SellerProducts({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<{ product: ProductRow | null; open: boolean }>({ product: null, open: false });
-  const [rows, setRows] = useState<ProductRow[]>([]);
+  const [editing, setEditing] = useState<{ product: SellerProductFull | null; open: boolean }>({ product: null, open: false });
+  const [rows, setRows] = useState<SellerProductFull[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
@@ -88,7 +74,7 @@ export default function SellerProducts({
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
     setLoading(true);
-    apiGetPaged<ProductRow[]>(`/api/store/products?search=${encodeURIComponent(search)}&status=${statusFilter}&page=${page}&size=10`)
+    apiGetPaged<SellerProductFull[]>(`/api/store/products?search=${encodeURIComponent(search)}&status=${statusFilter}&page=${page}&size=10`)
       .then(({ rows: r, meta }) => {
         if (!alive) return;
         setRows(r);
@@ -242,7 +228,7 @@ function ProductEditor({
   onNavigate,
 }: {
   open: boolean;
-  product: ProductRow | null;
+  product: SellerProductFull | null;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
   onArchived: () => void;
@@ -284,7 +270,7 @@ function ProductEditor({
 
   useEffect(() => {
     if (!open) return;
-    apiGet<{ categories: { id: string; name: string; children?: { id: string; name: string }[] }[] }>("/api/market/home")
+    apiGet<MarketHomeData>("/api/market/home")
       .then((d) => {
         const flat: Category[] = [];
         for (const c of d.categories) {
@@ -313,7 +299,7 @@ function ProductEditor({
       toast.error("Product title is required");
       return;
     }
-    const payloadVariants = variants.map((v) => ({
+    const payloadVariants: SellerVariantInput[] = variants.map((v) => ({
       name: v.name.trim() || "Default",
       optionName: v.optionValue ? "Variant" : null,
       optionValue: v.optionValue || null,
@@ -330,21 +316,23 @@ function ProductEditor({
     setBusy(true);
     const ok = await runMutation(async () => {
       if (isNew) {
-        await apiSend("POST", "/api/store/products", {
+        const createBody: SellerProductCreateBody = {
           title: title.trim(),
           description: description || null,
           categoryId: categoryId || null,
           images,
           variants: payloadVariants,
-        });
+        };
+        await apiSend<SellerProductFull>("POST", "/api/store/products", createBody);
       } else {
-        await apiSend("PATCH", `/api/store/products/${product!.id}`, {
+        const patchBody: SellerProductPatchBody = {
           title: title.trim(),
           description: description || null,
           categoryId: categoryId || null,
           images,
           variants: payloadVariants,
-        });
+        };
+        await apiSend<SellerProductFull>("PATCH", `/api/store/products/${product!.id}`, patchBody);
       }
     }, isNew ? "Product created" : "Product updated");
     setBusy(false);
@@ -357,7 +345,7 @@ function ProductEditor({
   const archive = async () => {
     if (!product) return;
     setBusy(true);
-    const ok = await runMutation(() => apiSend("DELETE", `/api/store/products/${product.id}`), "Product archived");
+    const ok = await runMutation(() => apiSend<SellerProductDeleteData>("DELETE", `/api/store/products/${product.id}`), "Product archived");
     setBusy(false);
     setConfirmArchive(false);
     if (ok) onArchived();

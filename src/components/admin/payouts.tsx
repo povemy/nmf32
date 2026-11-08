@@ -23,6 +23,20 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { apiSend, parseJsonSafe, useApi } from "./use-api";
 import type { AdminNav } from "./nav";
+import type {
+  AdminPayoutBatchData,
+  AdminPayoutBatchRunBody,
+  AdminPayoutBatchRunDryRunData,
+  AdminPayoutBatchRunExecutedData,
+  AdminPayoutFailBody,
+  AdminPayoutMarkPaidBody,
+  AdminPayoutRejectBody,
+  AdminPayoutRequest,
+  AdminPayoutRequestsData,
+  AdminPayoutRow,
+  AdminPayoutsData,
+  AdminPayoutsDueData,
+} from "@/lib/types/api-contract";
 import {
   EmptyState,
   ErrorState,
@@ -39,35 +53,18 @@ import {
 
 /* ------------------------------------------------------------------ types */
 
-type PayoutRow = {
-  id: string;
-  batchId: string;
-  referenceNo: string;
-  amountMinor: number;
-  status: string;
-  method: string;
-  providerRef?: string | null;
-  failReason?: string | null;
-  paidAt?: string | null;
-  statementJson?: string | null;
-  createdAt?: string;
+/** Batch-detail payout row — the contract list row (AdminPayoutsData) plus
+ *  legacy optional identity fields the detail view still reads; the synced
+ *  route nests seller identity under `seller` / `storeName` instead. */
+interface PayoutRow extends AdminPayoutsData {
   sellerName?: string | null;
   sellerEmail?: string | null;
-  bankAccount?: { id: string; bankName: string; holderName: string; accountNumberMasked: string } | null;
-};
+}
 
-type PayoutBatch = {
-  id: string;
-  runType: string;
-  status: string;
-  currency: string;
-  totalMinor: number;
-  payoutCount: number;
-  startedAt?: string;
-  finishedAt?: string | null;
-  payouts?: PayoutRow[];
-};
-
+/** Payout.statementJson — parsed client-side (legacy-tolerant, all-optional
+ *  parse target). The contract ships statementJson as an opaque string; the
+ *  seller-payouts statement shape is a different route's payload, so this
+ *  stays UI-local. */
 type Statement = {
   sellerName?: string;
   periodFrom?: string;
@@ -81,71 +78,6 @@ type Statement = {
   reconciled?: boolean;
   lines?: { label: string; amountMinor: number }[];
 };
-
-type DryRunBody = {
-  dryRun: boolean;
-  minMinor: number;
-  mode: string;
-  eligibleCount: number;
-  eligibleTotalMinor: number;
-  eligible: {
-    walletId: string;
-    sellerId: string;
-    sellerName: string;
-    storeName: string | null;
-    availableMinor: number;
-    bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
-  }[];
-  skipped?: {
-    walletId: string;
-    sellerName: string;
-    storeName: string | null;
-    availableMinor: number;
-    reason: string;
-  }[];
-};
-
-/** GET /api/admin/payouts/due — mirrors the dashboard "Payouts due" card:
- *  wallets re-derived from ledger truth with the same minimum as a batch run. */
-type PayoutsDueBody = {
-  minMinor: number;
-  mode: string;
-  asOf: string;
-  dueTotalMinor: number;
-  dueCount: number;
-  due: {
-    walletId: string;
-    sellerId: string;
-    sellerName: string;
-    storeName: string | null;
-    availableMinor: number;
-    requestedMinor: number;
-    requestedRef: string | null;
-    bank: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
-    lastPayout: { amountMinor: number; paidAt: string } | null;
-  }[];
-  requestedTotalMinor: number;
-  pendingTotalMinor: number;
-  belowMinCount: number;
-  belowMinTotalMinor: number;
-};
-
-/** GET /api/admin/payouts/requests — seller-initiated payout requests. */
-type RequestRow = {
-  id: string;
-  referenceNo: string;
-  amountMinor: number;
-  status: string;
-  method: string;
-  failReason?: string | null;
-  paidAt?: string | null;
-  createdAt: string;
-  seller: { id: string; email: string; displayName: string } | null;
-  storeName: string | null;
-  bankAccount: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean } | null;
-};
-
-type RequestsBody = { open: RequestRow[]; recent: RequestRow[] };
 
 /* ------------------------------------------------ payout status labels (FIN-3b) */
 
@@ -177,18 +109,18 @@ function PayoutStatusChip({ status, className }: { status: string; className?: s
 /* ------------------------------------------------------------ PayoutsView */
 
 export function PayoutsView({ nav }: { nav: AdminNav }) {
-  const { data, error, loading, refetch } = useApi<PayoutBatch[]>("/api/admin/payout-batches");
+  const { data, error, loading, refetch } = useApi<AdminPayoutBatchData[]>("/api/admin/payout-batches");
   // Due-now panel: same ledger-derived truth the dashboard card shows, so the
   // two always tally (this used to be the missing piece — the card navigated
   // straight to batch HISTORY, which only shows payouts already run).
-  const due = useApi<PayoutsDueBody>("/api/admin/payouts/due");
-  const requests = useApi<RequestsBody>("/api/admin/payouts/requests");
+  const due = useApi<AdminPayoutsDueData>("/api/admin/payouts/due");
+  const requests = useApi<AdminPayoutRequestsData>("/api/admin/payouts/requests");
   const rows = useMemo(() => data ?? [], [data]);
   const dueRows = useMemo(() => due.data?.due ?? [], [due.data]);
   const openRequests = useMemo(() => requests.data?.open ?? [], [requests.data]);
   const recentRequests = useMemo(() => requests.data?.recent ?? [], [requests.data]);
 
-  const [rejectTarget, setRejectTarget] = useState<RequestRow | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminPayoutRequest | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const refreshAllPanels = useCallback(() => {
@@ -197,10 +129,10 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   }, [requests, due]);
 
   const approveRequest = useCallback(
-    async (r: RequestRow) => {
+    async (r: AdminPayoutRequest) => {
       setBusyId(r.id);
       try {
-        await apiSend(`/api/admin/payouts/${r.id}/approve`, "POST", {});
+        await apiSend<AdminPayoutRow>(`/api/admin/payouts/${r.id}/approve`, "POST", {});
         toast.success(`${r.referenceNo} approved`, {
           description: `${formatMinor(r.amountMinor)} moved to payout clearing (T3) — mark it paid once the transfer lands.`,
         });
@@ -215,10 +147,11 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   );
 
   const rejectRequest = useCallback(
-    async (r: RequestRow, reason: string) => {
+    async (r: AdminPayoutRequest, reason: string) => {
       setBusyId(r.id);
       try {
-        await apiSend(`/api/admin/payouts/${r.id}/reject`, "POST", { reason });
+        const body: AdminPayoutRejectBody = { reason };
+        await apiSend<AdminPayoutRow>(`/api/admin/payouts/${r.id}/reject`, "POST", body);
         toast.success(`${r.referenceNo} rejected`, { description: "The seller's available balance is untouched (no ledger movement)." });
         setRejectTarget(null);
         refreshAllPanels();
@@ -232,7 +165,7 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   );
 
   const [open, setOpen] = useState(false);
-  const [preview, setPreview] = useState<DryRunBody | null>(null);
+  const [preview, setPreview] = useState<AdminPayoutBatchRunDryRunData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -241,8 +174,9 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const body = await apiSend<DryRunBody>("/api/admin/payout-batches", "POST", { dryRun: true });
-      setPreview(body);
+      const body: AdminPayoutBatchRunBody = { dryRun: true };
+      const previewData = await apiSend<AdminPayoutBatchRunDryRunData>("/api/admin/payout-batches", "POST", body);
+      setPreview(previewData);
     } catch (e) {
       setPreview(null);
       setPreviewError(e instanceof Error ? e.message : "Preview failed");
@@ -258,7 +192,8 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
   const runBatch = async () => {
     setRunning(true);
     try {
-      const body = await apiSend<{ batch?: PayoutBatch; payouts?: PayoutRow[] }>("/api/admin/payout-batches", "POST", { dryRun: false });
+      const runBody: AdminPayoutBatchRunBody = { dryRun: false };
+      const body = await apiSend<AdminPayoutBatchRunExecutedData>("/api/admin/payout-batches", "POST", runBody);
       const count = body?.payouts?.length ?? body?.batch?.payoutCount ?? 0;
       toast.success("Payout batch created", {
         description: `${count} payout${count === 1 ? "" : "s"} queued · ${formatMinor(body?.batch?.totalMinor ?? 0)} — ledger T3 posted per wallet.`,
@@ -704,7 +639,7 @@ export function PayoutsView({ nav }: { nav: AdminNav }) {
 /* -------------------------------------------------------- PayoutDetailView */
 
 export function PayoutDetailView({ nav, batchId }: { nav: AdminNav; batchId: string }) {
-  const batches = useApi<PayoutBatch[]>("/api/admin/payout-batches");
+  const batches = useApi<AdminPayoutBatchData[]>("/api/admin/payout-batches");
   const payoutsReq = useApi<PayoutRow[]>(`/api/admin/payouts?batchId=${encodeURIComponent(batchId)}`);
   const batch = useMemo(
     () => (batches.data ?? []).find((b) => b.id === batchId) ?? null,
@@ -859,7 +794,8 @@ export function PayoutDetailView({ nav, batchId }: { nav: AdminNav; batchId: str
         destructive
         onSubmit={(reason) => {
           if (!failTarget) return;
-          apiSend(`/api/admin/payouts/${failTarget.id}/fail`, "POST", { reason })
+          const body: AdminPayoutFailBody = { reason };
+          apiSend<AdminPayoutRow>(`/api/admin/payouts/${failTarget.id}/fail`, "POST", body)
             .then(() => {
               toast.success("Payout marked failed", { description: "Ledger reversal posted; funds returned to wallet." });
               setFailTarget(null);
@@ -993,7 +929,8 @@ function MarkPaidDialog({
     if (!payout || !refNo.trim()) return;
     setSaving(true);
     try {
-      await apiSend(`/api/admin/payouts/${payout.id}/mark-paid`, "POST", { referenceNo: refNo.trim() });
+      const body: AdminPayoutMarkPaidBody = { referenceNo: refNo.trim() };
+      await apiSend<AdminPayoutRow>(`/api/admin/payouts/${payout.id}/mark-paid`, "POST", body);
       toast.success("Payout marked paid", {
         description: `${payout.referenceNo} · bank ref ${refNo.trim()} — ledger T4 posted.`,
       });

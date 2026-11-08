@@ -4,6 +4,7 @@ import { requireAdminUngated, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import type { MfaConfirmBody, MfaConfirmData } from "@/lib/types/api-contract";
 import { generateRecoveryCodes, getMfaEnrollment, isPrismaMissingTableError, consumeTotpCounter, verifyAdminPassword, verifyTotpForSecretEncDetailed } from "@/lib/mfa";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
   const admin = await requireAdminUngated();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as MfaConfirmBody & Record<string, unknown>;
   const password = reqStr(body, "password", "Current password");
   const code = reqStr(body, "code", "Authenticator code");
 
@@ -77,5 +78,6 @@ export const POST = handle(async (req: NextRequest) => {
     meta: { revokedSessions },
   });
 
-  return ok({ recoveryCodes: codes });
+  const payload: MfaConfirmData = { recoveryCodes: codes };
+  return ok(payload);
 });

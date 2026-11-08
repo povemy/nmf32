@@ -39,6 +39,16 @@ import {
 import SellerCardStyle from "./card-style";
 import SellerCartSettings from "./cart-settings";
 import { SectionPreview } from "./builder-render";
+import type {
+  SellerPageDraftBody,
+  SellerPageDraftData,
+  SellerPageGetData,
+  SellerPagePublishData,
+  SellerPageRevertData,
+  SellerPageRow,
+  ThemeBody,
+  ThemeData,
+} from "@/lib/types/api-contract";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -72,25 +82,6 @@ import {
 } from "lucide-react";
 
 // ---------------------------------------------------------------- page list
-
-type PageRow = {
-  id: string;
-  slug: string;
-  title: string;
-  pageType: string;
-  draftVersion: number;
-  publishedVersion: number;
-  hasUnpublished: boolean;
-  published: boolean;
-  sectionCount: number;
-  updatedAt: string;
-};
-
-type PageDetail = {
-  page: Omit<PageRow, "sectionCount" | "updatedAt">;
-  draft: { sections: Section[]; version: number };
-  published: { sections: Section[]; version: number } | null;
-};
 
 export default function PageBuilder({
   pageId,
@@ -141,7 +132,7 @@ export default function PageBuilder({
 }
 
 function PageList({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
-  const { data, loading, error } = useApi<PageRow[]>("/api/store/pages");
+  const { data, loading, error } = useApi<SellerPageRow[]>("/api/store/pages");
 
   return (
     <div className="space-y-4">
@@ -200,7 +191,7 @@ function BuilderEditor({
   storeSlug: string;
   storeName: string;
 }) {
-  const [detail, setDetail] = useState<PageDetail | null>(null);
+  const [detail, setDetail] = useState<SellerPageGetData | null>(null);
   const [loading, setLoading] = useState(true);
   const [sections, setSections] = useState<Section[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -218,8 +209,8 @@ function BuilderEditor({
     (async () => {
       try {
         const [d, t] = await Promise.all([
-          apiGet<PageDetail>(`/api/store/pages/${pageId}`),
-          apiGet<{ theme: ThemeTokens }>("/api/store/theme"),
+          apiGet<SellerPageGetData>(`/api/store/pages/${pageId}`),
+          apiGet<ThemeData>("/api/store/theme"),
         ]);
         if (!alive) return;
         setDetail(d);
@@ -240,10 +231,10 @@ function BuilderEditor({
     async (secs: Section[], silent = false) => {
       setSaveState("saving");
       try {
-        const res = await apiSend<{ doc: { sections: Section[]; version: number } }>(
+        const res = await apiSend<SellerPageDraftData>(
           "PUT",
           `/api/store/pages/${pageId}/draft`,
-          { sections: secs }
+          { sections: secs } satisfies SellerPageDraftBody
         );
         setDetail((prev) =>
           prev
@@ -329,7 +320,7 @@ function BuilderEditor({
     setPublishing(true);
     await saveDraft(sections, true);
     try {
-      const res = await apiSend<{ publishedVersion: number; hasUnpublished: boolean }>(
+      const res = await apiSend<SellerPagePublishData>(
         "POST",
         `/api/store/pages/${pageId}/publish`
       );
@@ -345,7 +336,7 @@ function BuilderEditor({
 
   const discardDraft = async () => {
     try {
-      const res = await apiSend<{ doc: { sections: Section[]; version: number } }>("POST", `/api/store/pages/${pageId}/revert`);
+      const res = await apiSend<SellerPageRevertData>("POST", `/api/store/pages/${pageId}/revert`);
       setSections(res.doc.sections);
       skipFirst.current = true; // don't autosave the reverted state right back
       setSaveState("saved");
@@ -860,7 +851,7 @@ function ThemeDialog({
   const save = async () => {
     setBusy(true);
     try {
-      await apiSend("PUT", "/api/store/theme", { theme: draft });
+      await apiSend<ThemeData>("PUT", "/api/store/theme", { theme: draft } satisfies ThemeBody);
       onThemeChange(draft);
       toast.success("Theme saved — storefront updated");
       onOpenChange(false);

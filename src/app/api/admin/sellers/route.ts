@@ -4,6 +4,7 @@ import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { stripSeller } from "@/app/api/admin/_helpers";
+import type { AdminSellersData } from "@/lib/types/api-contract";
 
 // GET /api/admin/sellers?status=&search=&riskTier=&page=&size=
 export const GET = handle(async (req: NextRequest) => {
@@ -76,12 +77,26 @@ export const GET = handle(async (req: NextRequest) => {
   });
   const gmvByStore = new Map(gmv.map((g) => [g.storeId, { gmv: g._sum.totalMinor ?? 0, orders: g._count._all }]));
 
-  const data = rows.map((s) => {
+  const data: AdminSellersData[] = rows.map((s) => {
     const stats = s.store ? gmvByStore.get(s.store.id) : undefined;
     return {
       ...stripSeller(s),
-      store: s.store ? { ...s.store, gmv30dMinor: stats?.gmv ?? 0, orders30d: stats?.orders ?? 0 } : null,
-      wallet: s.wallet,
+      submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
+      approvedAt: s.approvedAt ? s.approvedAt.toISOString() : null,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+      store: s.store
+        ? {
+            ...s.store,
+            createdAt: s.store.createdAt.toISOString(),
+            updatedAt: s.store.updatedAt.toISOString(),
+            gmv30dMinor: stats?.gmv ?? 0,
+            orders30d: stats?.orders ?? 0,
+          }
+        : null,
+      wallet: s.wallet
+        ? { ...s.wallet, createdAt: s.wallet.createdAt.toISOString(), updatedAt: s.wallet.updatedAt.toISOString() }
+        : null,
     };
   });
   return okPaged(data, { page, size, total });

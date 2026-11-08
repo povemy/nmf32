@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { broadcastToThread, sellerIdForStore } from "@/lib/chat";
+import type { ChatMarkReadData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -33,5 +34,6 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
     { threadId: thread.id, readerType: "shopper", at: now.toISOString() },
     sellerUserId ? [`user:${sellerUserId}`] : []
   );
-  return ok({ read: true, marked });
+  const payload: ChatMarkReadData = { read: true, marked };
+  return ok(payload);
 });

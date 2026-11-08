@@ -11,20 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiSend, useApi } from "./use-api";
 import { EmptyState, ErrorState, PageHeader, StatusChip, TableSkeleton } from "./ui-bits";
+import type { AdminStoresData } from "@/lib/types/api-contract";
 
-type AdminStoreRow = {
-  id: string;
-  name: string;
-  slug: string;
-  status: string;
-  seller?: { displayName: string; email: string } | null;
-  sellerName?: string | null;
-  productCount?: number;
-  domainsCount?: number;
-  domains?: AdminDomainRow[];
-  _count?: { products?: number; domains?: number };
-};
-
+/** Custom-domain table row — UI-ONLY shape: the contract GET /api/admin/stores
+ *  payload carries no domain data, so the Domains tab renders these rows only
+ *  if a payload ever includes `domains`. */
 type AdminDomainRow = {
   id: string;
   domain: string;
@@ -36,11 +27,21 @@ type AdminDomainRow = {
   storeName?: string | null;
 };
 
+/** Stores-table row — the contract list element (AdminStoresData) plus the
+ *  legacy optional fallbacks the table reads (`sellerName`, `_count`,
+ *  `domains`/`domainsCount` for the Domains tab). */
+type StoresListRow = AdminStoresData & {
+  sellerName?: string | null;
+  domainsCount?: number;
+  domains?: AdminDomainRow[];
+  _count?: { products?: number; domains?: number };
+};
+
 export function StoresView() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const url = useMemo(() => `/api/admin/stores${search ? `?search=${encodeURIComponent(search)}` : ""}`, [search]);
-  const { data, error, loading, refetch } = useApi<AdminStoreRow[]>(url);
+  const { data, error, loading, refetch } = useApi<StoresListRow[]>(url);
   const rows = data ?? [];
   const [verifying, setVerifying] = useState<string | null>(null);
 
@@ -53,8 +54,8 @@ export function StoresView() {
     return out;
   }, [rows]);
 
-  const productsOf = (s: AdminStoreRow) => s.productCount ?? s._count?.products ?? 0;
-  const domainsOf = (s: AdminStoreRow) => s.domainsCount ?? s._count?.domains ?? (s.domains?.length ?? 0);
+  const productsOf = (s: StoresListRow) => s.productCount ?? s._count?.products ?? 0;
+  const domainsOf = (s: StoresListRow) => s.domainsCount ?? s._count?.domains ?? (s.domains?.length ?? 0);
 
   const retryDomain = async (d: AdminDomainRow) => {
     setVerifying(d.id);

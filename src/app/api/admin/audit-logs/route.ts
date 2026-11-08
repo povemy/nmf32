@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminAuditLogRow } from "@/lib/types/api-contract";
 
 // GET /api/admin/audit-logs?adminEmail=&action=&entityType=&page=&size= (RBAC logs.view)
 export const GET = handle(async (req: NextRequest) => {
@@ -24,12 +25,16 @@ export const GET = handle(async (req: NextRequest) => {
     db.adminAuditLog.count({ where }),
   ]);
 
-  const data = rows.map((r) => ({
-    ...r,
+  const data: AdminAuditLogRow[] = rows.map((r) => ({
+    id: r.id,
+    adminId: r.adminId,
+    adminEmail: r.adminEmail,
+    action: r.action,
+    entityType: r.entityType,
+    entityId: r.entityId,
     before: parseSafe(r.beforeJson),
     after: parseSafe(r.afterJson),
-    beforeJson: undefined,
-    afterJson: undefined,
+    createdAt: r.createdAt.toISOString(),
   }));
   return okPaged(data, { page, size, total });
 });

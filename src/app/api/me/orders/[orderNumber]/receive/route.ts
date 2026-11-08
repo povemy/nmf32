@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { fastForwardDelivery, mockPodUrl } from "@/lib/shipping";
 import { approveAffiliateCommissionsForOrder } from "@/lib/affiliate";
+import type { ReceiveOrderData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -49,14 +50,15 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
       where: { id: order.id },
       select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
     });
-    return ok({
+    const payload: ReceiveOrderData = {
       id: done!.id,
       orderNumber: done!.orderNumber,
       status: done!.status,
-      receivedAt: done!.receivedAt,
-      completedAt: done!.completedAt,
+      receivedAt: done!.receivedAt ? done!.receivedAt.toISOString() : null,
+      completedAt: done!.completedAt ? done!.completedAt.toISOString() : null,
       alreadyConfirmed: true,
-    });
+    };
+    return ok(payload);
   }
   if (order.status === "completed") {
     // Post-window repeat (order already completed by rating or the 30-day
@@ -65,14 +67,15 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
       where: { id: order.id },
       select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
     });
-    return ok({
+    const payload: ReceiveOrderData = {
       id: done!.id,
       orderNumber: done!.orderNumber,
       status: done!.status,
-      receivedAt: done!.receivedAt,
-      completedAt: done!.completedAt,
+      receivedAt: done!.receivedAt ? done!.receivedAt.toISOString() : null,
+      completedAt: done!.completedAt ? done!.completedAt.toISOString() : null,
       alreadyConfirmed: true,
-    });
+    };
+    return ok(payload);
   }
   if (!["shipped", "delivered"].includes(order.status)) {
     throw new ApiError(409, "VALIDATION", `Order receipt cannot be confirmed from status '${order.status}'`);
@@ -117,11 +120,12 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
     select: { id: true, orderNumber: true, status: true, receivedAt: true, completedAt: true },
   });
 
-  return ok({
+  const payload: ReceiveOrderData = {
     id: received!.id,
     orderNumber: received!.orderNumber,
     status: received!.status,
-    receivedAt: received!.receivedAt,
-    completedAt: received!.completedAt,
-  });
+    receivedAt: received!.receivedAt ? received!.receivedAt.toISOString() : null,
+    completedAt: received!.completedAt ? received!.completedAt.toISOString() : null,
+  };
+  return ok(payload);
 });

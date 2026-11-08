@@ -61,6 +61,10 @@ export function PdpCtaBar({
   disabled: boolean;
   /** Label describing the pending choice (e.g. "Choose an option"). */
   actionLabel: string | null;
+  /** Open the seller's storefront (kept for the call-site contract; the bar
+   *  itself no longer renders a Shop icon — Chat replaced it per the buyer
+   *  work order, the store stays reachable via the seller card/breadcrumb). */
+  onOpenStore: () => void;
   onChat: () => void;
   onAddToCart: () => void;
   onBuyNow: () => void;

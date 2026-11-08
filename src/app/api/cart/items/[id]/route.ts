@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { findCartForCaller, resolveCartCaller, shapeCart } from "../../cart";
 import { trackRemoveFromCart } from "@/lib/analytics/track";
+import type { UpdateCartItemBody, UpdateCartItemData, DeleteCartItemData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ async function requireCallerCartItem(cartId: string | null, itemId: string) {
 export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { shopperId: meId } = await resolveCartCaller();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as UpdateCartItemBody;
 
   const hasQty = body.qty !== undefined;
   const hasSelected = body.selected !== undefined;
@@ -65,7 +66,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   }
 
   const fresh = await findCartForCaller(meId);
-  return ok({ cart: shapeCart(fresh) });
+  const payload: UpdateCartItemData = { cart: shapeCart(fresh) };
+  return ok(payload);
 });
 
 // DELETE /api/cart/items/[id] — same caller resolution (session or device token).
@@ -87,5 +89,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   });
 
   const fresh = await findCartForCaller(meId);
-  return ok({ cart: shapeCart(fresh) });
+  const payload: DeleteCartItemData = { cart: shapeCart(fresh) };
+  return ok(payload);
 });

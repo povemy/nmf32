@@ -18,21 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowDownToLine, Hourglass, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type PendingReleaseRow = {
-  orderId: string;
-  orderNumber: string;
-  orderStatus: string;
-  amountMinor: number;
-  paidAt: string | null;
-  availableAt: string;
-  holdDays: number;
-};
-
-type PendingReleasesData = {
-  summary: { totalMinor: number; count: number; nextReleaseAt: string | null };
-  releases: PendingReleaseRow[];
-};
+import type { PendingReleaseRow, PendingReleasesData } from "@/lib/types/api-contract";
 
 const PAGE_SIZE = 25;
 

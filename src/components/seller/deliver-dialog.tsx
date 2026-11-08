@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Camera, CheckCircle2, Loader2, Trash2 } from "lucide-react";
+import type { DeliverBody, DeliverData, SellerOrderDetailData } from "@/lib/types/api-contract";
 
 const PROOF_MAX_DIM = 1280;
 const PROOF_MAX_BYTES = 1_200_000; // must match backend validateProofDataUrl (1.2MB)
@@ -64,7 +65,7 @@ export default function DeliverDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  order: { id: string; orderNumber: string };
+  order: Pick<SellerOrderDetailData, "id" | "orderNumber">;
   onDone: () => void;
 }) {
   const [proof, setProof] = useState<string | null>(null);
@@ -100,10 +101,11 @@ export default function DeliverDialog({
   const submit = async () => {
     setBusy(true);
     try {
-      await apiSend("POST", `/api/store/orders/${order.id}/deliver`, {
+      const body: DeliverBody = {
         proof: proof ?? undefined,
         note: note.trim() || undefined,
-      });
+      };
+      await apiSend<DeliverData>("POST", `/api/store/orders/${order.id}/deliver`, body);
       toast.success(`${order.orderNumber} marked delivered — buyer asked to confirm receipt`);
       onOpenChange(false);
       onDone();

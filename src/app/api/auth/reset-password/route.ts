@@ -4,6 +4,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { revokeUserSessions } from "@/lib/auth";
 import { hashPasswordAsync } from "@/lib/password";
 import { verifyPasswordResetGrant, passwordEpochTag } from "@/lib/password-recovery";
+import type { ResetPasswordBody, ResetPasswordData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export const dynamic = "force-dynamic";
 // keep the route's brute-force surface identical to its siblings.
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "auth-password-reset", 10);
-  const body = (await req.json().catch(() => ({}))) as { token?: string; newPassword?: string };
+  const body = (await req.json().catch(() => ({}))) as ResetPasswordBody;
   const token = typeof body.token === "string" ? body.token : "";
   const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
   if (!token || token.length > 4096) {
@@ -87,10 +88,11 @@ export const POST = handle(async (req: Request) => {
     meta: { sessionsRevoked },
   }).catch(() => undefined);
 
-  return ok({
+  const payload: ResetPasswordData = {
     reset: true,
     message: "Your password has been changed. Sign in with your new password — all other sessions were signed out.",
-  });
+  };
+  return ok(payload);
 });
 
 /** Best-effort extraction of the grant's bound email for the identity-keyed

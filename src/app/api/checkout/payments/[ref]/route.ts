@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
+import type { PaymentStatusData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ ref: st
     // An unpaid session past its expiry is reported as expired (computed, not stored —
     // a gateway callback could still reconcile it later).
     const expired = group.status === "requires_payment" && group.expiresAt.getTime() < Date.now();
-    return ok({
+    const payload: PaymentStatusData = {
       status: expired ? "expired" : group.status,
       isGroup: true,
       orderNumber: group.orders[0]?.orderNumber ?? "",
@@ -33,8 +34,9 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ ref: st
       amountMinor: group.totalMinor,
       orderStatus: group.orders[0]?.status ?? "payment_pending",
       provider: group.provider,
-      expiresAt: group.expiresAt,
-    });
+      expiresAt: group.expiresAt.toISOString(),
+    };
+    return ok(payload);
   }
 
   const intent = await db.paymentIntent.findUnique({
@@ -45,7 +47,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ ref: st
 
   const expired = intent.status === "requires_payment" && intent.expiresAt.getTime() < Date.now();
 
-  return ok({
+  const payload: PaymentStatusData = {
     status: expired ? "expired" : intent.status,
     isGroup: false,
     orderNumber: intent.order.orderNumber,
@@ -58,6 +60,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ ref: st
     orderStatus: intent.order.status,
     provider: intent.provider,
     redirectUrl: intent.redirectUrl,
-    expiresAt: intent.expiresAt,
-  });
+    expiresAt: intent.expiresAt.toISOString(),
+  };
+  return ok(payload);
 });

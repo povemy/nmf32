@@ -2,7 +2,21 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { runLedgerInvariants } from "@/lib/ledger";
+import { runLedgerInvariants, type WalletCacheDrift } from "@/lib/ledger";
+import type { WalletDrift, AdminHealthData } from "@/lib/types/api-contract";
+
+/** Ledger drift record → contract row (Date → ISO string). */
+const toWalletDrift = (d: WalletCacheDrift): WalletDrift => ({
+  walletId: d.walletId,
+  cachedAvailable: d.cachedAvailable,
+  cachedPending: d.cachedPending,
+  truthAvailable: d.truthAvailable,
+  truthPending: d.truthPending,
+  availableDelta: d.availableDelta,
+  pendingDelta: d.pendingDelta,
+  maturedSinceLastWrite: d.maturedSinceLastWrite,
+  lastCacheWriteAt: d.lastCacheWriteAt.toISOString(),
+});
 
 // GET /api/admin/system/health — counts + ledger invariants + recent audit trail
 export const GET = handle(async (req: NextRequest) => {
@@ -19,10 +33,12 @@ export const GET = handle(async (req: NextRequest) => {
 
   const ledger = await runLedgerInvariants();
 
-  const reconCounts: Record<string, number> = { requested: 0, processing: 0, succeeded: 0, failed: 0, unknown: 0 };
+  // Intersection keeps the loop's dynamic status indexing working while
+  // carrying the five contract-documented counters as named properties.
+  const reconCounts: AdminHealthData["paymentReconciliation"] & Record<string, number> = { requested: 0, processing: 0, succeeded: 0, failed: 0, unknown: 0 };
   for (const row of reconByStatus) reconCounts[row.status] = row._count._all;
 
-  return ok({
+  const payload: AdminHealthData = {
     status: ledger.ok ? "healthy" : "degraded",
     db: "up",
     counts: { sellers, stores, products, orders },
@@ -40,9 +56,20 @@ export const GET = handle(async (req: NextRequest) => {
       // hardDrift needs investigation; timeMaturityStale is benign display
       // staleness (totals equal, self-heals) — visible here WITH wallet ids
       // (authenticated surface) for targeted refresh/repair.
-      hardDrift: ledger.hardDrift,
-      timeMaturityStale: ledger.timeMaturityStale,
+      hardDrift: ledger.hardDrift.map(toWalletDrift),
+      timeMaturityStale: ledger.timeMaturityStale.map(toWalletDrift),
     },
-    recentAudit,
-  });
+    recentAudit: recentAudit.map((r) => ({
+      id: r.id,
+      adminId: r.adminId,
+      adminEmail: r.adminEmail,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      beforeJson: r.beforeJson,
+      afterJson: r.afterJson,
+      createdAt: r.createdAt.toISOString(),
+    })),
+  };
+  return ok(payload);
 });

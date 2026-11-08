@@ -10,6 +10,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import type { ConnectionsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -45,5 +46,21 @@ export const GET = handle(async function (_req: NextRequest) {
       shopee: Boolean(process.env.SHOPEE_PARTNER_ID && process.env.SHOPEE_PARTNER_KEY),
       tiktok: Boolean(process.env.TIKTOK_SHOP_APP_KEY && process.env.TIKTOK_SHOP_APP_SECRET),
     };
-    return ok({ connections, env });
+    const payload: ConnectionsData = {
+      connections: connections.map((c) => ({
+        id: c.id,
+        platform: c.platform,
+        status: c.status,
+        envConfigured: c.envConfigured,
+        shopId: c.shopId,
+        shopName: c.shopName,
+        region: c.region,
+        expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
+        lastRefreshAt: c.lastRefreshAt ? c.lastRefreshAt.toISOString() : null,
+        lastError: c.lastError,
+        createdAt: c.createdAt.toISOString(),
+      })),
+      env,
+    };
+    return ok(payload);
 });

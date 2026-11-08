@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { formatMinor, toMinor } from "@/lib/money";
 import { authHeaders } from "@/lib/session-client";
 import { signalSessionExpired } from "@/lib/session-events";
+import type { ApiPageMeta } from "@/lib/types/api-contract";
 import { Copy, Inbox } from "lucide-react";
 
 // ---------------------------------------------------------------- shared types
@@ -192,10 +193,11 @@ export async function apiGet<T>(url: string): Promise<T> {
   return body.data as T;
 }
 
-/** Like apiGet but also returns the pagination meta when present (okPaged). */
-export async function apiGetPaged<T>(url: string): Promise<{ rows: T; meta: { page: number; size: number; total: number } | null }> {
+/** Like apiGet but also returns the pagination meta when present (okPaged).
+ *  Meta type is the centralized contract ApiPageMeta (single source of truth). */
+export async function apiGetPaged<T>(url: string): Promise<{ rows: T; meta: ApiPageMeta | null }> {
   const res = await fetch(url, { cache: "no-store", headers: withAuth() });
-  const body = (await res.json().catch(() => ({}))) as Envelope<T> & { meta?: { page: number; size: number; total: number } };
+  const body = (await res.json().catch(() => ({}))) as Envelope<T> & { meta?: ApiPageMeta };
   if (!res.ok || body.error) {
     noteUnauthorized(res.status);
     throw new Error(body.error?.message ?? `Request failed (${res.status})`);

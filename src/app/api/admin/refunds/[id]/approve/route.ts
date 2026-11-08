@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminRefundRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -55,5 +56,15 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "approved" },
   });
 
-  return ok(updated);
+  // findUnique is nullable-typed; the successful claim above guarantees the
+  // row exists — keep the historical null passthrough for identical behavior.
+  const payload: AdminRefundRow | null = updated
+    ? {
+        ...updated,
+        processedAt: updated.processedAt ? updated.processedAt.toISOString() : null,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      }
+    : null;
+  return ok(payload);
 });

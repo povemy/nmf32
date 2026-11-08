@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toJson, parseJson } from "@/lib/json";
+import type { CartSettingsData, CartSettingsBody, CartSettingsSaveData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,30 +12,6 @@ export const dynamic = "force-dynamic";
 // seller's own catalogue. Vendors never see or write JSON.
 const LAYOUTS = ["compact", "standard", "pro"];
 const UPSELL_MODES = ["auto", "manual"];
-
-type CartPayload = {
-  layout?: unknown;
-  showFreeShippingBar?: unknown;
-  freeShipThresholdMinor?: unknown;
-  upsellEnabled?: unknown;
-  upsellMode?: unknown;
-  upsellProductIds?: unknown;
-  upsellTitle?: unknown;
-  upsellLimit?: unknown;
-  urgencyStockEnabled?: unknown;
-  urgencyStockThreshold?: unknown;
-  urgencyViewersEnabled?: unknown;
-  urgencyViewersMin?: unknown;
-  urgencyViewersMax?: unknown;
-  urgencyCountdownEnabled?: unknown;
-  urgencyCountdownMinutes?: unknown;
-  trustBadges?: unknown;
-  showOrderNote?: unknown;
-  showDiscountHint?: unknown;
-  checkoutLabel?: unknown;
-  showContinueShopping?: unknown;
-  stickyCta?: unknown;
-};
 
 const TRUST_BADGE_IDS = ["secure", "returns", "support", "shipping", "cod", "warranty"];
 
@@ -51,7 +28,7 @@ function strOr(v: unknown, fallback: string, maxLen: number): string {
   return s ? s.slice(0, maxLen) : fallback;
 }
 
-async function buildData(body: CartPayload, storeId: string, existing: { upsellProductIdsJson: string } | null) {
+async function buildData(body: CartSettingsBody, storeId: string, existing: { upsellProductIdsJson: string } | null) {
   if (typeof body.layout === "string" && !LAYOUTS.includes(body.layout)) {
     throw new ApiError(400, "BAD_LAYOUT", `Layout must be one of: ${LAYOUTS.join(", ")}`);
   }
@@ -125,7 +102,7 @@ export const GET = handle(async () => {
       })
     : [];
 
-  return ok({
+  const payload: CartSettingsData = {
     settings: settings
       ? {
           layout: settings.layout,
@@ -152,13 +129,14 @@ export const GET = handle(async () => {
       : null,
     upsellPicked: picked,
     freeShippingDefaultMinor: 10000,
-  });
+  };
+  return ok(payload);
 });
 
 // PUT /api/store/cart-settings — save the drawer configuration.
 export const PUT = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as CartPayload;
+  const body = (await req.json().catch(() => ({}))) as CartSettingsBody;
   const existing = await db.cartSettings.findUnique({ where: { storeId: store.id } });
   const data = await buildData(body, store.id, existing);
 
@@ -170,5 +148,6 @@ export const PUT = handle(async (req: Request) => {
     update: data,
   });
 
-  return ok({ settings: { layout: saved.layout }, savedAt: saved.updatedAt });
+  const payload: CartSettingsSaveData = { settings: { layout: saved.layout }, savedAt: saved.updatedAt.toISOString() };
+  return ok(payload);
 });

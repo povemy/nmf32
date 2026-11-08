@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAnyCap } from "@/lib/auth";
 import { getAffiliateSettings } from "@/lib/affiliate";
 import { affiliateReconciliation } from "@/lib/affiliate-queries";
+import type { AdminAffOverviewData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export const GET = handle(async () => {
     db.affiliateLink.count(),
     db.affiliateAttributionTouch.count(),
   ]);
-  return ok({
+  const payload: AdminAffOverviewData = {
     settings,
     counts: {
       affiliates: affiliateCount,
@@ -27,5 +28,6 @@ export const GET = handle(async () => {
       attributionTouches: touchCount,
     },
     reconciliation: recon,
-  });
+  };
+  return ok(payload);
 });

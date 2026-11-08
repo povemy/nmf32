@@ -6,6 +6,7 @@ import { aggregateCommission } from "@/lib/commission-export";
 import { ACCOUNTS } from "@/lib/ledger";
 import { PSP_SPLIT_CANDIDATES, PSP_SPLIT_SETTING_KEYS } from "@/lib/psp";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminCommissionAnalyticsQuery, CommissionAnalyticsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/commission/analytics?days=90 — ledger-truth commission
 // analytics + recent exports + dormant PSP split-settlement scaffold state.
@@ -15,7 +16,10 @@ import { parseMaybeJson } from "@/app/api/admin/_helpers";
 export const GET = handle(async (req: NextRequest) => {
   await requireCap("commission.manage");
   const url = new URL(req.url);
-  const days = Math.min(730, Math.max(7, Number(url.searchParams.get("days") ?? 90) || 90));
+  const query: AdminCommissionAnalyticsQuery = {
+    days: Number(url.searchParams.get("days") ?? 90) || 90,
+  };
+  const days = Math.min(730, Math.max(7, query.days ?? 90));
   const periodTo = new Date();
   const periodFrom = new Date(periodTo.getTime() - days * 86_400_000);
 
@@ -50,7 +54,7 @@ export const GET = handle(async (req: NextRequest) => {
     }),
   ]);
 
-  return ok({
+  const payload: CommissionAnalyticsData = {
     days,
     summary: {
       ...snapshot.summary,
@@ -58,7 +62,12 @@ export const GET = handle(async (req: NextRequest) => {
     },
     weekly: snapshot.weekly,
     stores: snapshot.stores,
-    exports,
+    exports: exports.map((e) => ({
+      ...e,
+      periodFrom: e.periodFrom.toISOString(),
+      periodTo: e.periodTo.toISOString(),
+      createdAt: e.createdAt.toISOString(),
+    })),
     psp: {
       webhookPath: "/api/webhooks/payments/{provider}",
       candidates: PSP_SPLIT_CANDIDATES,
@@ -67,11 +76,12 @@ export const GET = handle(async (req: NextRequest) => {
       lastSettlement: lastSettlement
         ? {
             description: lastSettlement.description,
-            occurredAt: lastSettlement.occurredAt,
+            occurredAt: lastSettlement.occurredAt.toISOString(),
             amountMinor: lastSettlement.lines.filter((l) => l.direction === "debit").reduce((s, l) => s + l.amountMinor, 0),
           }
         : null,
       note: "Dormant scaffold — with a licensed PSP the gateway webhook mirrors each split settlement into the ledger and wallet caches refresh automatically on release. Auto-settle stays OFF until a provider adapter is implemented.",
     },
-  });
+  };
+  return ok(payload);
 });

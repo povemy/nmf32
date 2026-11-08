@@ -6,6 +6,21 @@ import { db } from "@/lib/db";
 import { refreshWalletCache, postPayoutInitiated, buildLedgerStatementFromLedger, walletTruth } from "@/lib/ledger";
 import { rateLimit } from "@/lib/ratelimit";
 import { parseMaybeJson, readBody, optBool, daysAgo } from "@/app/api/admin/_helpers";
+import type {
+  AdminPayoutBatchData,
+  AdminPayoutBatchRunBody,
+  AdminPayoutBatchRunDryRunData,
+  AdminPayoutBatchRunExecutedData,
+  AdminPayoutRow,
+} from "@/lib/types/api-contract";
+
+/** Payout row → contract AdminPayoutRow (Date fields → ISO strings; identical JSON). */
+const payoutRow = (p: Payout): AdminPayoutRow => ({
+  ...p,
+  paidAt: p.paidAt ? p.paidAt.toISOString() : null,
+  createdAt: p.createdAt.toISOString(),
+  updatedAt: p.updatedAt.toISOString(),
+});
 
 // GET /api/admin/payout-batches
 export const GET = handle(async (req: NextRequest) => {
@@ -25,11 +40,17 @@ export const GET = handle(async (req: NextRequest) => {
     : [];
   const sMap = new Map(sellers.map((s) => [s.id, s]));
 
-  const data = batches.map((b) => ({
+  const data: AdminPayoutBatchData[] = batches.map((b) => ({
     ...b,
+    startedAt: b.startedAt.toISOString(),
+    finishedAt: b.finishedAt ? b.finishedAt.toISOString() : null,
     payouts: b.payouts.map((p) => {
       const s = sMap.get(p.sellerId);
-      return { ...p, sellerName: s?.store?.name ?? s?.displayName ?? null, sellerEmail: s?.email ?? null };
+      return {
+        ...payoutRow(p),
+        sellerName: s?.store?.name ?? s?.displayName ?? null,
+        sellerEmail: s?.email ?? null,
+      };
     }),
   }));
   return ok(data);
@@ -50,7 +71,7 @@ export const POST = handle(async (req: NextRequest) => {
   if (!rl.ok) throw new ApiError(429, "RATE_LIMITED", "Too many requests, retry later");
 
   const admin = await requireCap("payouts.manage");
-  const body = await readBody(req).catch(() => ({}) as Record<string, never>);
+  const body = (await readBody(req).catch(() => ({}) as Record<string, never>)) as AdminPayoutBatchRunBody;
   const dryRun = optBool(body as Record<string, unknown>, "dryRun") ?? false;
 
   // settings
@@ -82,7 +103,7 @@ export const POST = handle(async (req: NextRequest) => {
       select: { walletId: true },
     })).map((r) => r.walletId)
   );
-  const skipped = refreshed
+  const skipped: AdminPayoutBatchRunDryRunData["skipped"] = refreshed
     .filter((w) => openRequestWalletIds.has(w.id))
     .map((w) => {
       const bank = w.seller.bankAccounts.find((b) => b.verified) ?? w.seller.bankAccounts[0] ?? null;
@@ -98,7 +119,7 @@ export const POST = handle(async (req: NextRequest) => {
 
   const eligible = refreshed.filter((w) => w.truth.availableMinor >= minMinor && !openRequestWalletIds.has(w.id));
 
-  const preview = eligible.map((w) => {
+  const preview: AdminPayoutBatchRunDryRunData["eligible"] = eligible.map((w) => {
     const bank = w.seller.bankAccounts.find((b) => b.verified) ?? w.seller.bankAccounts[0] ?? null;
     return {
       walletId: w.id,
@@ -111,7 +132,7 @@ export const POST = handle(async (req: NextRequest) => {
   });
 
   if (dryRun) {
-    return ok({
+    const payload: AdminPayoutBatchRunDryRunData = {
       dryRun: true,
       minMinor,
       mode,
@@ -119,7 +140,8 @@ export const POST = handle(async (req: NextRequest) => {
       eligibleTotalMinor: preview.reduce((s, e) => s + e.availableMinor, 0),
       eligible: preview,
       skipped,
-    });
+    };
+    return ok(payload);
   }
 
   if (preview.length === 0) {
@@ -289,5 +311,14 @@ export const POST = handle(async (req: NextRequest) => {
     },
   });
 
-  return ok({ batch: finished, payouts: createdPayouts });
+  const payload: AdminPayoutBatchRunExecutedData = {
+    batch: {
+      ...finished,
+      startedAt: finished.startedAt.toISOString(),
+      finishedAt: finished.finishedAt ? finished.finishedAt.toISOString() : null,
+      payouts: finished.payouts.map(payoutRow),
+    },
+    payouts: createdPayouts.map(payoutRow),
+  };
+  return ok(payload);
 });

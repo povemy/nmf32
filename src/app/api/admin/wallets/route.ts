@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { safeRefreshWalletCache } from "@/lib/ledger";
+import type { AdminWalletsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/wallets — wallets w/ seller + store names, truth-refreshed balances
 export const GET = handle(async (req: NextRequest) => {
@@ -24,13 +25,15 @@ export const GET = handle(async (req: NextRequest) => {
     orderBy: { createdAt: "asc" },
   });
 
-  const data: unknown[] = [];
+  const data: AdminWalletsData[] = [];
   for (const w of wallets) {
     // safeRefresh: one contended wallet row can no longer 500 the whole
     // admin finance list — it falls back to last-known values for that row.
     const truth = await safeRefreshWalletCache(w.id);
     data.push({
       ...w,
+      createdAt: w.createdAt.toISOString(),
+      updatedAt: w.updatedAt.toISOString(),
       pendingMinor: truth.truth?.pendingMinor ?? w.pendingMinor,
       availableMinor: truth.truth?.availableMinor ?? w.availableMinor,
       lifetimeEarnedMinor: truth.truth?.lifetimeEarnedMinor ?? w.lifetimeEarnedMinor,

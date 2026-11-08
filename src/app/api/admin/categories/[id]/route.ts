@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optNum } from "@/app/api/admin/_helpers";
+import type { AdminCategoryDetail, AdminCategoryDeleteData, CategoryUpdateBody } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireAdmin();
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CategoryUpdateBody & Record<string, unknown>;
 
   const category = await db.category.findUnique({ where: { id } });
   if (!category) throw new ApiError(404, "NOT_FOUND", "Category not found");
@@ -39,7 +40,18 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: AdminCategoryDetail = {
+    id: updated.id,
+    name: updated.name,
+    slug: updated.slug,
+    parentId: updated.parentId,
+    commissionPercent: updated.commissionPercent,
+    imageUrl: updated.imageUrl,
+    sortOrder: updated.sortOrder,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/categories/[id] — detach products (categoryId=null), re-parent children, then delete
@@ -64,5 +76,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: AdminCategoryDeleteData = { deleted: true };
+  return ok(payload);
 });

@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAffiliateSettings, affiliateBalances, resolveReferralCookie } from "@/lib/affiliate";
+import type { MeProfileData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export const GET = handle(async () => {
   ]);
   if (!profile) {
     const touch = await resolveReferralCookie();
-    return ok({ activated: false, settings, invitedBy: touch?.displayName ?? null });
+    const payload: MeProfileData = { activated: false, settings, invitedBy: touch?.displayName ?? null };
+    return ok(payload);
   }
   const [sponsor, balances] = await Promise.all([
     profile.sponsorId
@@ -24,7 +26,7 @@ export const GET = handle(async () => {
       : null,
     affiliateBalances(profile.id),
   ]);
-  return ok({
+  const payload: MeProfileData = {
     activated: true,
     settings,
     profile: {
@@ -38,5 +40,6 @@ export const GET = handle(async () => {
       activatedAt: profile.activatedAt.toISOString(),
     },
     balances,
-  });
+  };
+  return ok(payload);
 });

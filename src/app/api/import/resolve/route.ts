@@ -21,12 +21,13 @@ import {
   verifyImportCap,
 } from "@/lib/import-cap";
 import type { AuthStatus } from "@/lib/marketplaces/types";
+import type { SellerImportResolveBody, SellerImportResolveData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "import", 5);
-  const body = (await req.json().catch(() => ({}))) as { url?: string };
+  const body = (await req.json().catch(() => ({}))) as SellerImportResolveBody;
   if (!body.url || typeof body.url !== "string") {
     return fail(400, "MISSING_URL", "Paste a marketplace URL first.");
   }
@@ -51,7 +52,7 @@ export const POST = handle(async (req: NextRequest) => {
   const resolved = await resolveMarketplaceUrl(body.url);
   const connector = getConnector(resolved.platform);
   const auth: AuthStatus = await connector.authStatus();
-  return ok({
+  const payload: SellerImportResolveData = {
     platform: resolved.platform,
     platformLabel: platformLabel(resolved.platform),
     urlType: resolved.urlType,
@@ -68,5 +69,6 @@ export const POST = handle(async (req: NextRequest) => {
       needsAuthorisation: auth.needsAuthorisation,
       missingEnv: auth.missing,
     },
-  });
+  };
+  return ok(payload);
 });

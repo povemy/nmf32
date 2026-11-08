@@ -9,16 +9,18 @@ import { NextRequest } from "next/server";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import type { SellerDisconnectQuery, DisconnectData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 export const DELETE = handle(async function (req: NextRequest) {
     const session = await getSession();
     if (!session || session.userType !== "seller") return fail(401, "UNAUTHENTICATED", "Seller session required.");
-    const platform = req.nextUrl.searchParams.get("platform") ?? "";
-    if (!["shopee", "tiktok", "fixture"].includes(platform)) {
+    const platformParam = req.nextUrl.searchParams.get("platform") ?? "";
+    if (!["shopee", "tiktok", "fixture"].includes(platformParam)) {
       return fail(400, "INVALID_PLATFORM", "Unsupported platform.");
     }
+    const platform: SellerDisconnectQuery["platform"] = platformParam as SellerDisconnectQuery["platform"];
     // PHASE 2.3 select hygiene (C2.7): only the store id is used — selecting
     // the relation explicitly keeps the un-migrated Seller.emailVerifiedAt
     // column out of the query (default/include select → P2022 pre-migration).
@@ -38,5 +40,6 @@ export const DELETE = handle(async function (req: NextRequest) {
       entityId: platform,
       meta: { count: updated.count },
     }).catch(() => undefined);
-    return ok({ disconnected: updated.count });
+    const payload: DisconnectData = { disconnected: updated.count };
+    return ok(payload);
 });

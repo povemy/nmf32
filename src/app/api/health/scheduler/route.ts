@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, fail, ApiError } from "@/lib/api";
 import { assertCronAuth } from "@/lib/cron-auth";
+import type { SchedulerData, SchedulerRail } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -74,16 +75,6 @@ function parseOutcome(raw: string): Record<string, unknown> | null {
   }
 }
 
-type RailReport = {
-  key: string;
-  ageSeconds: number | null;
-  verdict: "fresh" | "stale" | "missing";
-  note: string;
-  recordedAt: string | null;
-  cadenceSec: number;
-  outcome: Record<string, unknown> | null;
-};
-
 export const GET = handle(async (req: Request) => {
   const auth = assertCronAuth(req);
 
@@ -107,7 +98,7 @@ export const GET = handle(async (req: Request) => {
   }
   const byKey = new Map(rows.map((r) => [r.key, r]));
 
-  const rails: RailReport[] = [];
+  const rails: SchedulerRail[] = [];
   for (const rail of KNOWN_RAILS) {
     const row = byKey.get(rail.key);
     if (!row) {
@@ -153,7 +144,7 @@ export const GET = handle(async (req: Request) => {
     ? Math.min(...rails.map((r) => r.ageSeconds ?? Infinity))
     : null;
 
-  const payload = {
+  const payload: SchedulerData = {
     status,
     expirySweep: {
       key: "cron.expiry_sweep.last",

@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { runExpirySweep } from "@/lib/expiry-sweep";
+import type { ExpiryTickData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +38,11 @@ export const POST = handle(async (req: Request) => {
   const g = globalThis as Record<string, unknown>;
   const last = typeof g.__expiryTickAt === "number" ? g.__expiryTickAt : 0;
   if (Date.now() - last < TICK_THROTTLE_MS) {
-    return ok({ scanned: 0, released: 0, skipped: 0, errors: [], throttled: true, auth: auth.mode });
+    const throttled: ExpiryTickData = { scanned: 0, released: 0, skipped: 0, errors: [], throttled: true, auth: auth.mode };
+    return ok(throttled);
   }
   g.__expiryTickAt = Date.now();
   const result = await runExpirySweep();
-  return ok({ ...result, auth: auth.mode });
+  const payload: ExpiryTickData = { ...result, auth: auth.mode };
+  return ok(payload);
 });

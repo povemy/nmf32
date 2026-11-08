@@ -28,11 +28,12 @@ import type { AdminNav } from "../nav";
 import { useAdminCaps } from "../use-admin-caps";
 import { useApi } from "../use-api";
 import { CardsSkeleton, ErrorState, KpiCard, Money, PageHeader } from "../ui-bits";
-import { bpsLabel, type AffiliateOverviewBody, type ReconciliationReport } from "./types";
+import { bpsLabel } from "./types";
+import type { AdminAffOverviewData, AdminAffReconciliation } from "@/lib/types/api-contract";
 
 export function AffiliateOverviewView({ nav }: { nav: AdminNav }) {
   const { can } = useAdminCaps();
-  const { data, error, loading, refetch } = useApi<AffiliateOverviewBody>("/api/admin/affiliate/overview");
+  const { data, error, loading, refetch } = useApi<AdminAffOverviewData>("/api/admin/affiliate/overview");
 
   return (
     <div className="space-y-4">
@@ -67,7 +68,7 @@ export function AffiliateOverviewView({ nav }: { nav: AdminNav }) {
 
 /* ------------------------------------------------------------- launch gate */
 
-function LaunchGate({ settings }: { settings: AffiliateOverviewBody["settings"] }) {
+function LaunchGate({ settings }: { settings: AdminAffOverviewData["settings"] }) {
   if (!settings.enabled) {
     return (
       <div
@@ -118,7 +119,7 @@ function KpiGrid({
   suspended,
 }: {
   nav: AdminNav;
-  recon: ReconciliationReport;
+  recon: AdminAffReconciliation;
   affiliates: number;
   suspended: number;
 }) {
@@ -229,7 +230,7 @@ function KpiGrid({
 
 /* -------------------------------------------------------------- settings */
 
-const SETTING_ROWS: { key: keyof AffiliateOverviewBody["settings"]; label: string; hint: string }[] = [
+const SETTING_ROWS: { key: keyof AdminAffOverviewData["settings"]; label: string; hint: string }[] = [
   { key: "enabled", label: "Programme enabled (kill switch)", hint: "affiliate.enabled" },
   { key: "sponsorEnabled", label: "Sponsor override (90/10 split)", hint: "affiliate.sponsor_enabled" },
   { key: "maxRateBps", label: "Max commission rate", hint: "affiliate.max_rate_bps" },
@@ -246,10 +247,10 @@ function SettingsSummary({
 }: {
   nav: AdminNav;
   canManageSettings: boolean;
-  body: AffiliateOverviewBody;
+  body: AdminAffOverviewData;
 }) {
   const s = body.settings;
-  const value = (key: keyof AffiliateOverviewBody["settings"]) => {
+  const value = (key: keyof AdminAffOverviewData["settings"]) => {
     switch (key) {
       case "enabled":
       case "sponsorEnabled":

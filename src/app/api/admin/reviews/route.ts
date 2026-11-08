@@ -5,6 +5,7 @@ import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { REVIEW_STATUSES, reviewsSchemaReady } from "@/lib/reviews";
 import { detectReviewThreat } from "@/lib/review-text";
+import type { AdminReviewsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/reviews?status=pending|published|rejected&productId=&page=&size=
 // — the review moderation queue (Task B1). RBAC: reviews.moderate (same tier
@@ -49,7 +50,7 @@ export const GET = handle(async (req: NextRequest) => {
     db.review.count({ where }),
   ]);
 
-  const data = rows.map((r) => ({
+  const data: AdminReviewsData[] = rows.map((r) => ({
     id: r.id,
     productId: r.productId,
     orderId: r.orderId,
@@ -63,7 +64,7 @@ export const GET = handle(async (req: NextRequest) => {
     body: r.body,
     reply: r.reply,
     status: r.status,
-    createdAt: r.createdAt,
+    createdAt: r.createdAt.toISOString(),
     product: {
       id: r.product.id,
       title: r.product.title,

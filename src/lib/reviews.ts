@@ -94,7 +94,9 @@ export type EligibleOrderShape = {
   deliveredAt?: Date | null;
   receivedAt?: Date | null;
   completedAt?: Date | null;
-  items: ReadonlyArray<{ productId: string; refundedMinor?: number; lineSubtotalMinor?: number }>;
+  // productId is nullable on OrderItem (Prisma String?) — a null product can
+  // never equal the reviewed productId, so the predicate just returns false.
+  items: ReadonlyArray<{ productId: string | null; refundedMinor?: number; lineSubtotalMinor?: number }>;
 };
 
 /** Pure eligibility predicate:

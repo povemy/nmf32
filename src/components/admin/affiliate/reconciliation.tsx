@@ -15,7 +15,7 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { useApi } from "../use-api";
 import { EmptyState, ErrorState, Money, PageHeader, StatusChip, TableSkeleton, CheckRow } from "../ui-bits";
-import type { ReconciliationReport } from "./types";
+import type { AdminAffReconciliation } from "@/lib/types/api-contract";
 
 async function copyText(text: string, label: string): Promise<void> {
   try {
@@ -27,7 +27,7 @@ async function copyText(text: string, label: string): Promise<void> {
 }
 
 export function AffiliateReconciliationView() {
-  const { data, error, loading, refetch } = useApi<ReconciliationReport>("/api/admin/affiliate/reconciliation");
+  const { data, error, loading, refetch } = useApi<AdminAffReconciliation>("/api/admin/affiliate/reconciliation");
 
   const points = data?.points;
 
@@ -256,7 +256,7 @@ export function AffiliateReconciliationView() {
 
 /* --------------------------------------------------------- variance */
 
-function VariancePanel({ report }: { report: ReconciliationReport }) {
+function VariancePanel({ report }: { report: AdminAffReconciliation }) {
   const overAllocated = report.points.allocatedMinor > report.points.expectedPoolMinor;
   const negativeLedger = report.ledgerBalanceMinor < 0;
   const ledgerMismatch = report.points.remainingLiabilityMinor !== report.ledgerBalanceMinor;

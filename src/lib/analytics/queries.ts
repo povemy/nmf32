@@ -400,29 +400,33 @@ export async function productTrafficTop(storeId: string, win: InsightsWindow): P
     : [];
   const byId = new Map(products.map((p) => [p.id, p]));
 
+  // Explicit intermediate type: without it TS cannot prove the filter
+  // predicate narrows the `| null` branch away (TS2677), leaving nulls in
+  // the array type. Contextual typing also checks each row against
+  // ProductTrafficRow directly.
+  const rows: Array<ProductTrafficRow | null> = topIds.map((id) => {
+    const p = byId.get(id);
+    if (!p) return null;
+    const cart = carts.get(id) ?? [ { times: 0, units: 0 }, { times: 0, units: 0 } ];
+    const pur = purchases.get(id);
+    return {
+      productId: id,
+      title: p.title,
+      slug: p.slug,
+      imageUrl: p.images[0]?.url ?? null,
+      views: views.get(id) ?? 0,
+      uniqueViewers: viewers.get(id)?.size ?? 0,
+      cartAddTimes: cart[0]!.times,
+      cartAddUnits: cart[0]!.units,
+      cartRemoveTimes: cart[1]!.times,
+      cartRemoveUnits: cart[1]!.units,
+      purchaseOrders: pur?.orders.size ?? 0,
+      purchaseUnits: pur?.units ?? 0,
+    } satisfies ProductTrafficRow;
+  });
+
   return {
-    topViewedProducts: topIds
-      .map((id) => {
-        const p = byId.get(id);
-        if (!p) return null;
-        const cart = carts.get(id) ?? [ { times: 0, units: 0 }, { times: 0, units: 0 } ];
-        const pur = purchases.get(id);
-        return {
-          productId: id,
-          title: p.title,
-          slug: p.slug,
-          imageUrl: p.images[0]?.url ?? null,
-          views: views.get(id) ?? 0,
-          uniqueViewers: viewers.get(id)?.size ?? 0,
-          cartAddTimes: cart[0]!.times,
-          cartAddUnits: cart[0]!.units,
-          cartRemoveTimes: cart[1]!.times,
-          cartRemoveUnits: cart[1]!.units,
-          purchaseOrders: pur?.orders.size ?? 0,
-          purchaseUnits: pur?.units ?? 0,
-        } satisfies ProductTrafficRow;
-      })
-      .filter((x): x is ProductTrafficRow => x !== null),
+    topViewedProducts: rows.filter((x): x is ProductTrafficRow => x !== null),
     truncated: cur.truncated,
   };
 }

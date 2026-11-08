@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { ChatThreadsQuery, StoreChatThreadsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const GET = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const filter = url.searchParams.get("filter") === "active" ? "active" : "all";
+  const filter: ChatThreadsQuery["filter"] = url.searchParams.get("filter") === "active" ? "active" : "all";
   const { page, size, skip, take } = getPagination(url, 100);
 
   const baseWhere = {
@@ -45,23 +46,26 @@ export const GET = handle(async (req: Request) => {
     db.chatThread.count({ where: baseWhere }),
   ]);
 
-  return okPaged(
-    threads.map((t) => ({
-      id: t.id,
-      shopperId: t.shopper.id,
-      displayName: t.shopper.fullName,
-      avatarUrl: null as string | null,
-      shopperEmail: t.shopper.email,
-      orderNumber: t.orderNumber,
-      contextType: t.contextType,
-      subject: t.subject,
-      createdAt: t.createdAt,
-      lastMessageAt: t.lastMessageAt,
-      unreadCount: t.sellerUnread,
-      lastMessage: t.messages[0]
-        ? { body: t.messages[0].body, senderType: t.messages[0].senderType, createdAt: t.messages[0].createdAt, readAt: t.messages[0].readAt }
-        : null,
-    })),
-    { page, size, total }
-  );
+  const items: StoreChatThreadsData = threads.map((t) => ({
+    id: t.id,
+    shopperId: t.shopper.id,
+    displayName: t.shopper.fullName,
+    avatarUrl: null,
+    shopperEmail: t.shopper.email,
+    orderNumber: t.orderNumber,
+    contextType: t.contextType,
+    subject: t.subject,
+    createdAt: t.createdAt.toISOString(),
+    lastMessageAt: t.lastMessageAt.toISOString(),
+    unreadCount: t.sellerUnread,
+    lastMessage: t.messages[0]
+      ? {
+          body: t.messages[0].body,
+          senderType: t.messages[0].senderType,
+          createdAt: t.messages[0].createdAt.toISOString(),
+          readAt: t.messages[0].readAt ? t.messages[0].readAt.toISOString() : null,
+        }
+      : null,
+  }));
+  return okPaged(items, { page, size, total });
 });

@@ -1,11 +1,32 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { addressScope, resolveAddressOwner, validateAddressInput } from "../owner";
+import type { Address } from "@prisma/client";
+import type { CheckoutAddress, ListAddressesData, CreateAddressBody, CreateAddressData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 function sortAddresses<T extends { isDefault: boolean; updatedAt: Date }>(rows: T[]) {
   return [...rows].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.updatedAt.getTime() - a.updatedAt.getTime());
+}
+
+/** Prisma Address row → contract CheckoutAddress (Dates → ISO strings). */
+function toCheckoutAddress(row: Address): CheckoutAddress {
+  return {
+    id: row.id,
+    ownerToken: row.ownerToken,
+    shopperId: row.shopperId,
+    label: row.label,
+    name: row.name,
+    phone: row.phone,
+    line1: row.line1,
+    city: row.city,
+    state: row.state,
+    postcode: row.postcode,
+    isDefault: row.isDefault,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 // GET /api/checkout/addresses — the CURRENT owner's saved addresses.
@@ -15,7 +36,8 @@ function sortAddresses<T extends { isDefault: boolean; updatedAt: Date }>(rows: 
 export const GET = handle(async () => {
   const owner = await resolveAddressOwner();
   const rows = await db.address.findMany({ where: addressScope(owner) });
-  return ok({ addresses: sortAddresses(rows) });
+  const payload: ListAddressesData = { addresses: sortAddresses(rows).map(toCheckoutAddress) };
+  return ok(payload);
 });
 
 // POST /api/checkout/addresses — save a new address (first one becomes default).
@@ -23,7 +45,7 @@ export const GET = handle(async () => {
 // claim them if they were still guest rows) and the shopperId when signed in.
 export const POST = handle(async (req: Request) => {
   const owner = await resolveAddressOwner();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as CreateAddressBody & Record<string, unknown>;
   const input = validateAddressInput(body);
 
   const count = await db.address.count({ where: addressScope(owner) });
@@ -39,5 +61,9 @@ export const POST = handle(async (req: Request) => {
   });
 
   const rows = await db.address.findMany({ where: addressScope(owner) });
-  return ok({ address, addresses: sortAddresses(rows) }, { status: 201 });
+  const payload: CreateAddressData = {
+    address: toCheckoutAddress(address),
+    addresses: sortAddresses(rows).map(toCheckoutAddress),
+  };
+  return ok(payload, { status: 201 });
 });

@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { toJson, parseJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { analyticsQueueStats, flushAnalyticsQueue } from "@/lib/analytics/queue";
+import type { AnalyticsTickData, AnalyticsTickStatusData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ export const POST = handle(async (req: Request) => {
   const remaining = await db.analyticsEvent.count();
   const oldest = await db.analyticsEvent.findFirst({ orderBy: { createdAt: "asc" }, select: { createdAt: true } });
 
-  const outcome = {
+  const outcome: AnalyticsTickData = {
     ranAt: new Date().toISOString(),
     durationMs: Math.round(performance.now() - t0),
     retentionDays: days,
@@ -101,13 +102,17 @@ export const GET = handle(async (req: Request) => {
     db.analyticsEvent.groupBy({ by: ["eventType"], _count: { _all: true } }),
     db.analyticsEvent.findFirst({ orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
   ]);
-  return ok({
+  const byTypeCounts: Record<string, number> = Object.fromEntries(
+    byType.map((r): [string, number] => [r.eventType, r._count._all]),
+  );
+  const status: AnalyticsTickStatusData = {
     total,
-    byType: Object.fromEntries(byType.map((r) => [r.eventType, r._count._all])),
+    byType: byTypeCounts,
     oldestEventAt: oldest?.createdAt.toISOString() ?? null,
     retentionDays: await retentionDays(),
     queue: analyticsQueueStats(),
-    lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
+    lastRun: lastSetting ? (JSON.parse(lastSetting.valueJson) as AnalyticsTickData) : null,
     auth: auth.mode,
-  });
+  };
+  return ok(status);
 });

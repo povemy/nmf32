@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { KycQueueData } from "@/lib/types/api-contract";
 
 // GET /api/admin/kyc-queue — sellers pending review with docs + banks + product count
 // F-26 (Phase 3): KYC queue bundles identity documents, bank accounts and
@@ -38,7 +39,7 @@ export const GET = handle(async (req: NextRequest) => {
     },
     orderBy: { submittedAt: "asc" },
   });
-  const cards = sellers.map((s) => ({
+  const cards: KycQueueData[] = sellers.map((s) => ({
     id: s.id,
     email: s.email,
     fullName: s.fullName,
@@ -47,14 +48,20 @@ export const GET = handle(async (req: NextRequest) => {
     status: s.status,
     kycStatus: s.kycStatus,
     riskTier: s.riskTier,
-    submittedAt: s.submittedAt,
-    createdAt: s.createdAt,
+    submittedAt: s.submittedAt ? s.submittedAt.toISOString() : null,
+    createdAt: s.createdAt.toISOString(),
     store: s.store ? { id: s.store.id, name: s.store.name, slug: s.store.slug, productCount: s.store._count.products } : null,
-    docs: s.kycDocuments,
+    docs: s.kycDocuments.map((d) => ({
+      ...d,
+      reviewedAt: d.reviewedAt ? d.reviewedAt.toISOString() : null,
+      createdAt: d.createdAt.toISOString(),
+    })),
     docsApproved: s.kycDocuments.filter((d) => d.status === "approved").length,
     docsTotal: s.kycDocuments.length,
     banks: s.bankAccounts.map((b) => ({ id: b.id, bankName: b.bankName, holderName: b.holderName, accountNumberMasked: b.accountNumberMasked, verified: b.verified })),
-    wallet: s.wallet,
+    wallet: s.wallet
+      ? { ...s.wallet, createdAt: s.wallet.createdAt.toISOString(), updatedAt: s.wallet.updatedAt.toISOString() }
+      : null,
   }));
   return ok(cards);
 });

@@ -48,92 +48,39 @@ import { useApp } from "@/lib/app-store";
 import { setSessionToken } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import { ApiFail, fetchJson, postJson, type ShopperCtx } from "./ui-bits";
+import type {
+  ClaimBindData,
+  LoginAdminData,
+  LoginBody,
+  LoginMfaData,
+  LoginSellerData,
+  MeAdminData,
+  MeAnonymousData,
+  MeSellerData,
+  MeShopperData,
+  RegisterBody,
+  RegisterData,
+  SellerImportJobCreateBody,
+  SellerImportJobCreateData,
+  SellerImportJobGetData,
+  SellerImportJobResumeData,
+  SellerImportResolveBody,
+  SellerImportResolveData,
+} from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
-// API types (mirror the route handlers exactly — no invented fields)
+// API types — the import/claim/auth shapes come from the centralized API
+// contract (§2 auth, §13 import & claim). Two derived views below narrow
+// contract payloads where the UI relies on a guaranteed invariant.
 // ---------------------------------------------------------------------------
 
-type ResolveResult = {
-  platform: "shopee" | "tiktok" | "fixture";
-  platformLabel: string;
-  urlType: "shop" | "product" | "unknown";
-  shopId: string | null;
-  productId: string | null;
-  normalizedUrl: string;
-  isFixture: boolean;
-  connector: {
-    envConfigured: boolean;
-    connected: boolean;
-    needsAuthorisation: boolean;
-    missingEnv: string[];
-  };
-};
+/** POST /api/claim/bind result with the bound store narrowed to non-null —
+ *  a successful bind always returns one (the claim flow renders it directly). */
+type BindResult = ClaimBindData & { store: NonNullable<ClaimBindData["store"]> };
 
-type CreateJobResult = {
-  jobId: string;
-  trackingToken: string;
-  status: string;
-  pollUrl: string;
-};
-
-type JobItemT = {
-  id: string;
-  sourceProductId: string;
-  title: string | null;
-  status: string; // pending | importing | ok | skipped | failed
-  error: string | null;
-  warnings: string[];
-};
-
-type JobSummaryT = {
-  shop: { name: string; sourceShopId: string; region?: string | null } | null;
-  authorisationRequired: boolean;
-  beginUrl: string | null;
-  missingEnv: string[];
-  claimToken: string | null;
-  claimExpiresAt: string | null;
-  claimMethod: string | null;
-  warnings: string[];
-  productsOk: number | null;
-  productsFailed: number | null;
-};
-
-type JobT = {
-  id: string;
-  platform: string;
-  platformLabel: string;
-  urlType: string;
-  inputUrl: string;
-  status: string;
-  phaseDetail: string | null;
-  isFixture: boolean;
-  progress: Record<string, number>;
-  error: { code?: string; message?: string } | null;
-  summary: JobSummaryT;
-  store: { id: string; name: string; slug: string; status: string } | null;
-  items: JobItemT[];
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-};
-
-type BindResult = {
-  store: { id: string; name: string; slug: string };
-  nextStep: string;
-};
-
-type SellerT = {
-  id: string;
-  email: string;
-  fullName: string;
-  displayName: string;
-  status: string;
-  storeId: string | null;
-  storeSlug: string | null;
-  storeName: string | null;
-};
-
-type AuthResult = { userType: string; token?: string; seller?: SellerT };
+/** POST /api/auth/login response (MFA challenge | admin | seller) with the
+ *  MFA variant's absent token normalized to optional for the res?.token read. */
+type LoginResult = (LoginMfaData | LoginAdminData | LoginSellerData) & { token?: string };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -199,13 +146,13 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
   const [url, setUrl] = useState("");
   const [demo, setDemo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [resolveResult, setResolveResult] = useState<ResolveResult | null>(null);
+  const [resolveResult, setResolveResult] = useState<SellerImportResolveData | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   // job (persisted for polling / resume / claim)
   const [jobId, setJobId] = useState<string | null>(null);
   const [trackingToken, setTrackingToken] = useState<string | null>(null);
-  const [job, setJob] = useState<JobT | null>(null);
+  const [job, setJob] = useState<SellerImportJobGetData | null>(null);
 
   // kick-off (the pipeline executes inline via the resume endpoint)
   const [kickState, setKickState] = useState<"idle" | "running" | "failed">("idle");
@@ -236,7 +183,7 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
     kickedFor.current = id;
     setKickState("running");
     setKickError(null);
-    postJson<{ status: string }>(`/api/import/jobs/${id}/resume?token=${encodeURIComponent(token)}`, {})
+    postJson<SellerImportJobResumeData>(`/api/import/jobs/${id}/resume?token=${encodeURIComponent(token)}`, {})
       .then(() => setKickState("idle"))
       .catch((e) => {
         setKickState("failed");
@@ -261,12 +208,12 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
     setFormError(null);
     setResolveResult(null);
     try {
-      const resolved = await postJson<ResolveResult>("/api/import/resolve", { url: trimmed });
+      const resolved = await postJson<SellerImportResolveData>("/api/import/resolve", { url: trimmed } satisfies SellerImportResolveBody);
       setResolveResult(resolved);
-      const created = await postJson<CreateJobResult>("/api/import/jobs", {
+      const created = await postJson<SellerImportJobCreateData>("/api/import/jobs", {
         url: trimmed,
         allowFixture: demo,
-      });
+      } satisfies SellerImportJobCreateBody);
       setJobId(created.jobId);
       setTrackingToken(created.trackingToken);
       setJob(null);
@@ -276,7 +223,7 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
       if (created.status === "awaiting_authorisation") {
         // fetch once so the panel has beginUrl + missingEnv from the job summary
         try {
-          const j = await fetchJson<JobT>(`/api/import/jobs/${created.jobId}?token=${encodeURIComponent(created.trackingToken)}`);
+          const j = await fetchJson<SellerImportJobGetData>(`/api/import/jobs/${created.jobId}?token=${encodeURIComponent(created.trackingToken)}`);
           setJob(j);
         } catch {
           /* panel still renders from created.status */
@@ -325,7 +272,7 @@ export default function GenerateStoreView({ ctx }: { ctx: ShopperCtx }) {
     let failures = 0;
     const tick = async () => {
       try {
-        const j = await fetchJson<JobT>(`/api/import/jobs/${jobId}?token=${encodeURIComponent(trackingToken)}`);
+        const j = await fetchJson<SellerImportJobGetData>(`/api/import/jobs/${jobId}?token=${encodeURIComponent(trackingToken)}`);
         if (!alive) return;
         failures = 0;
         setJob(j);
@@ -626,7 +573,7 @@ function ProgressPanel({
   kickError,
   onRetry,
 }: {
-  job: JobT | null;
+  job: SellerImportJobGetData | null;
   kickState: "idle" | "running" | "failed";
   kickError: string | null;
   onRetry: () => void;
@@ -828,7 +775,7 @@ function ResultPanel({
   onStartOver,
   onRetry,
 }: {
-  job: JobT;
+  job: SellerImportJobGetData;
   onClaim: () => void;
   onPreview: () => void;
   onStartOver: () => void;
@@ -968,7 +915,7 @@ function ClaimFlow({
   onClaimed,
   onSellerPortal,
 }: {
-  job: JobT;
+  job: SellerImportJobGetData;
   initialClaimCode: string;
   onBack?: () => void;
   onClaimed: (r: BindResult) => void;
@@ -976,7 +923,7 @@ function ClaimFlow({
 }) {
   const [panel, setPanel] = useState<ClaimPanel>("verify");
   const [claimCode, setClaimCode] = useState(initialClaimCode || (job.isFixture ? "" : ""));
-  const [me, setMe] = useState<SellerT | null>(null);
+  const [me, setMe] = useState<MeSellerData["seller"] | null>(null);
   const [meLoading, setMeLoading] = useState(true);
 
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -996,7 +943,7 @@ function ClaimFlow({
   // detect an existing seller session ("Continue as …")
   useEffect(() => {
     let alive = true;
-    fetchJson<AuthResult>("/api/auth/me")
+    fetchJson<MeAnonymousData | MeAdminData | MeSellerData | MeShopperData>("/api/auth/me")
       .then((d) => {
         if (alive && d.userType === "seller" && d.seller) setMe(d.seller);
       })
@@ -1038,16 +985,16 @@ function ClaimFlow({
         if (!fullName.trim()) throw new Error("Your name is required.");
         if (!email.includes("@")) throw new Error("A valid email is required.");
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-        const res = await postJson<AuthResult>("/api/auth/register", {
+        const res = await postJson<RegisterData>("/api/auth/register", {
           email: email.trim(),
           password,
           fullName: fullName.trim(),
           displayName: fullName.trim(),
-        });
+        } satisfies RegisterBody);
         setSessionToken(res?.token);
       } else {
         if (!email.includes("@") || !password) throw new Error("Email and password are required.");
-        const res = await postJson<AuthResult>("/api/auth/login", { email: email.trim(), password, portal: "seller" });
+        const res = await postJson<LoginResult>("/api/auth/login", { email: email.trim(), password, portal: "seller" } satisfies LoginBody);
         setSessionToken(res?.token);
       }
       setPanel("bind");
@@ -1331,14 +1278,14 @@ function ClaimFlow({
 export function ClaimView({ jobId, token, onExit }: { jobId: string; token: string; onExit?: () => void }) {
   const setSurface = useApp((s) => s.setSurface);
   const refreshMe = useApp((s) => s.refreshMe);
-  const [job, setJob] = useState<JobT | null>(null);
+  const [job, setJob] = useState<SellerImportJobGetData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claimed, setClaimed] = useState<BindResult | null>(null);
   const [portalBusy, setPortalBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    fetchJson<JobT>(`/api/import/jobs/${encodeURIComponent(jobId)}?token=${encodeURIComponent(token)}`)
+    fetchJson<SellerImportJobGetData>(`/api/import/jobs/${encodeURIComponent(jobId)}?token=${encodeURIComponent(token)}`)
       .then((j) => alive && setJob(j))
       .catch((e) => alive && setError(e instanceof Error ? e.message : "This claim link could not be opened."));
     return () => {

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { ownProduct, recomputePrice } from "../../helpers";
+import type { SellerVariantCreateBody, SellerProductVariant } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   const { store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const product = await ownProduct(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerVariantCreateBody;
 
   const priceMinor = Math.round(Number(body.priceMinor));
   if (!Number.isFinite(priceMinor) || priceMinor < 0) {
@@ -38,5 +39,23 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     await db.product.update({ where: { id: product.id }, data: { priceMinor: price } });
   }
 
-  return ok(variant, { status: 201 });
+  const payload: SellerProductVariant = {
+    id: variant.id,
+    productId: variant.productId,
+    name: variant.name,
+    optionName: variant.optionName,
+    optionValue: variant.optionValue,
+    priceMinor: variant.priceMinor,
+    compareAtPriceMinor: variant.compareAtPriceMinor,
+    stock: variant.stock,
+    moq: variant.moq,
+    lowStockThreshold: variant.lowStockThreshold,
+    sku: variant.sku,
+    isActive: variant.isActive,
+    imageUrl: variant.imageUrl,
+    sourceModelId: variant.sourceModelId,
+    createdAt: variant.createdAt.toISOString(),
+    updatedAt: variant.updatedAt.toISOString(),
+  };
+  return ok(payload, { status: 201 });
 });

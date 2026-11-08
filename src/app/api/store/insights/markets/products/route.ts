@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseInsightsWindow, insightsCached, marketProducts } from "@/lib/analytics/queries";
+import type { InsightsMarketProductsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export const GET = handle(async (req: Request) => {
   const dimension = dimRaw as "country" | "state";
 
   const cacheKey = `marketproducts:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}:${dimension}:${code}`;
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<InsightsMarketProductsData> => {
     const report = await marketProducts(store.id, win, dimension, code);
     return {
       window: { key: win.key, from: win.from.toISOString(), to: win.to.toISOString(), prevFrom: win.prevFrom.toISOString(), prevTo: win.prevTo.toISOString(), days: win.days },

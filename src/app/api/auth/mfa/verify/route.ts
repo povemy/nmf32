@@ -3,6 +3,7 @@ import { verifyMfaChallenge } from "@/lib/mfa";
 import { createSession } from "@/lib/auth";
 import { handle, ok, fail, ApiError, logActivity } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
+import type { MfaVerifyBody, MfaVerifyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "auth-login", 10);
 
-  const body = (await req.json().catch(() => ({}))) as { challenge?: string; code?: string };
+  const body = (await req.json().catch(() => ({}))) as MfaVerifyBody;
   const challenge = (body.challenge ?? "").trim();
   const code = (body.code ?? "").trim();
   if (!challenge || !code) {
@@ -64,5 +65,6 @@ export const POST = handle(async (req: Request) => {
     action: "admin.login",
     meta: { via: "mfa", recovery: result.usedRecoveryCode },
   });
-  return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
+  const payload: MfaVerifyData = { userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token };
+  return ok(payload);
 });

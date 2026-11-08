@@ -7,6 +7,7 @@ import {
   productTrafficTop,
   productTrafficDetail,
 } from "@/lib/analytics/queries";
+import type { InsightsProductTrafficData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic"; // HMR ping 2
 
@@ -51,7 +52,7 @@ export const GET = handle(async (req: Request) => {
     const cacheKey = `ptraffic:${store.id}:d:${productId}:${win.key}:${win.from.getTime()}:${win.to.getTime()}`;
     const data = await insightsCached(cacheKey, url, () => productTrafficDetail(store.id, productId, win));
     if (!data) throw new ApiError(404, "PRODUCT_NOT_FOUND", "Unknown product for this store");
-    return ok({
+    const payload: InsightsProductTrafficData = {
       window: windowInfo,
       generatedAt: new Date().toISOString(),
       ...data,
@@ -62,14 +63,16 @@ export const GET = handle(async (req: Request) => {
         "Cart adds/removes are applied cart transitions (units actually added or removed); guest activity counts units but is not tied to a logged-in account.",
         "Purchases come from authoritative paid-order records (orders + units with paidAt in the window) — never from client beacons.",
       ],
-    });
+    };
+    return ok(payload);
   }
 
   const cacheKey = `ptraffic:${store.id}:top:${win.key}:${win.from.getTime()}:${win.to.getTime()}`;
   const data = await insightsCached(cacheKey, url, () => productTrafficTop(store.id, win));
-  return ok({
+  const payload: InsightsProductTrafficData = {
     window: windowInfo,
     generatedAt: new Date().toISOString(),
     ...data,
-  });
+  };
+  return ok(payload);
 });

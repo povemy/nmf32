@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { runLedgerInvariants, type LedgerInvariantResult } from "@/lib/ledger";
 import { checkoutGateStats } from "@/lib/checkout-gate";
 import { createHash } from "node:crypto";
+import type { HealthData, HealthQuery } from "@/lib/types/api-contract";
 
 // GET /api/health — system heartbeat (SYS-06 lite)
 //
@@ -59,7 +60,7 @@ export const GET = handle(async (req: Request) => {
   const g = globalThis as unknown as {
     __ledgerInvariantCache?: { at: number; result: LedgerInvariantResult };
   };
-  const fresh = new URL(req.url).searchParams.get("fresh") === "1";
+  const fresh: HealthQuery["fresh"] = new URL(req.url).searchParams.get("fresh") === "1" ? "1" : null;
   const TTL_MS = 60_000;
   let ledger = fresh ? undefined : g.__ledgerInvariantCache?.result;
   if (!ledger || Date.now() - (g.__ledgerInvariantCache?.at ?? 0) > TTL_MS) {
@@ -73,7 +74,7 @@ export const GET = handle(async (req: Request) => {
     db.order.count(),
     deploymentFingerprint(),
   ]);
-  return ok({
+  const payload: HealthData = {
     status: ledger.ok ? "healthy" : "unhealthy",
     db: "up",
     deployment,
@@ -95,5 +96,6 @@ export const GET = handle(async (req: Request) => {
     checkoutGate: checkoutGateStats(),
     invariantCachedAt: g.__ledgerInvariantCache?.at ? new Date(g.__ledgerInvariantCache.at).toISOString() : null,
     time: new Date().toISOString(),
-  });
+  };
+  return ok(payload);
 });

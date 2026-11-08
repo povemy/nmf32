@@ -1,11 +1,32 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { addressScope, resolveAddressOwner, validateAddressInput, type AddressOwner } from "../../owner";
+import type { Address } from "@prisma/client";
+import type { CheckoutAddress, UpdateAddressBody, UpdateAddressData, DeleteAddressData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 function sortAddresses<T extends { isDefault: boolean; updatedAt: Date }>(rows: T[]) {
   return [...rows].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.updatedAt.getTime() - a.updatedAt.getTime());
+}
+
+/** Prisma Address row → contract CheckoutAddress (Dates → ISO strings). */
+function toCheckoutAddress(row: Address): CheckoutAddress {
+  return {
+    id: row.id,
+    ownerToken: row.ownerToken,
+    shopperId: row.shopperId,
+    label: row.label,
+    name: row.name,
+    phone: row.phone,
+    line1: row.line1,
+    city: row.city,
+    state: row.state,
+    postcode: row.postcode,
+    isDefault: row.isDefault,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 // Ownership check — the signed-in shopper may only touch rows owned by their
@@ -22,7 +43,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const owner = await resolveAddressOwner();
   await requireOwned(owner, id);
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as UpdateAddressBody & Record<string, unknown>;
 
   // Setting default only (no field edits).
   const hasFieldEdits = ["label", "name", "phone", "line1", "city", "state", "postcode"].some((k) => k in body);
@@ -41,7 +62,11 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   });
 
   const rows = await db.address.findMany({ where: addressScope(owner) });
-  return ok({ address, addresses: sortAddresses(rows) });
+  const payload: UpdateAddressData = {
+    address: toCheckoutAddress(address),
+    addresses: sortAddresses(rows).map(toCheckoutAddress),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/checkout/addresses/[id] — remove; promote the newest remaining one if the default went away.
@@ -61,5 +86,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   }
 
   const rows = await db.address.findMany({ where: addressScope(owner) });
-  return ok({ addresses: sortAddresses(rows) });
+  const payload: DeleteAddressData = { addresses: sortAddresses(rows).map(toCheckoutAddress) };
+  return ok(payload);
 });

@@ -18,6 +18,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiSend, useApi } from "./use-api";
+import type {
+  AdminCategoryDeleteData,
+  AdminCategoryDetail,
+  AdminCategoryNode,
+  CategoryCreateBody,
+  CategoryUpdateBody,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -30,14 +37,10 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
-type CatRow = {
-  id: string;
-  name: string;
-  slug: string;
-  parentId: string | null;
-  commissionPercent: number | null;
-  sortOrder?: number;
-};
+/** Flat taxonomy row the tree builder consumes — the contract GET
+ *  /api/admin/categories returns nested AdminCategoryNode trees, so
+ *  `parentId` stays optional (tree nodes do not carry it). */
+type CatRow = AdminCategoryNode & { parentId?: string | null };
 
 type CatNode = CatRow & { children: CatNode[]; depth: number };
 
@@ -68,7 +71,7 @@ function flatten(nodes: CatNode[]): CatNode[] {
 }
 
 export function CategoriesView() {
-  const { data, error, loading, refetch } = useApi<CatRow[]>("/api/admin/categories");
+  const { data, error, loading, refetch } = useApi<AdminCategoryNode[]>("/api/admin/categories");
   const rows = data ?? [];
   const nodes = useMemo(() => buildTree(rows), [rows]);
   const flat = useMemo(() => flatten(nodes), [nodes]);
@@ -94,10 +97,10 @@ export function CategoriesView() {
   const create = async () => {
     setCreating(true);
     try {
-      await apiSend("/api/admin/categories", "POST", {
+      await apiSend<AdminCategoryDetail>("/api/admin/categories", "POST", {
         name: newName.trim(),
         parentId: newParent === "root" ? undefined : newParent,
-      });
+      } satisfies CategoryCreateBody);
       toast.success("Category created", { description: newName.trim() });
       setCreateOpen(false);
       setNewName("");
@@ -118,7 +121,7 @@ export function CategoriesView() {
     }
     if ((cat.commissionPercent ?? null) === percent) return;
     try {
-      await apiSend(`/api/admin/categories/${cat.id}`, "PATCH", { commissionPercent: percent });
+      await apiSend<AdminCategoryDetail>(`/api/admin/categories/${cat.id}`, "PATCH", { commissionPercent: percent } satisfies CategoryUpdateBody);
       toast.success(percent === null ? "Commission reset to inherit" : `Commission set to ${percent}%`);
       void refetch();
     } catch (e) {
@@ -130,7 +133,7 @@ export function CategoriesView() {
     if (!deleting) return;
     setBusy(true);
     try {
-      await apiSend(`/api/admin/categories/${deleting.id}`, "DELETE");
+      await apiSend<AdminCategoryDeleteData>(`/api/admin/categories/${deleting.id}`, "DELETE");
       toast.success("Category deleted", { description: "Products under it were unlinked." });
       setDeleting(null);
       void refetch();

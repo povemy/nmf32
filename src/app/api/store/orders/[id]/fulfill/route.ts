@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, transitionOrder, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { FulfillData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -34,5 +35,12 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
     meta: { orderNumber: order.orderNumber },
   });
 
-  return ok({ id: fresh!.id, status: fresh!.status, fulfilledAt: fresh!.fulfilledAt });
+  // fulfilledAt: Date | null on the Prisma row vs contract string — always
+  // non-null here because transitionOrder just stamped it above.
+  const payload: FulfillData = {
+    id: fresh!.id,
+    status: fresh!.status,
+    fulfilledAt: fresh!.fulfilledAt ? fresh!.fulfilledAt.toISOString() : null,
+  } as FulfillData;
+  return ok(payload);
 });

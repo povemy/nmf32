@@ -1,6 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { claimVoucherForShopper } from "@/lib/vouchers";
+import type { ClaimVoucherBody, ClaimVoucherData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,26 +12,24 @@ export const dynamic = "force-dynamic";
 // or store.
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ClaimVoucherBody;
   const code = typeof body.code === "string" ? body.code : null;
   const voucherId = typeof body.voucherId === "string" ? body.voucherId : null;
   if (!code?.trim() && !voucherId?.trim()) {
     throw new ApiError(400, "VALIDATION", "A voucher code or voucherId is required");
   }
   const res = await claimVoucherForShopper(me.id, { code, voucherId });
-  return ok(
-    {
-      voucher: {
-        id: res.voucher.id,
-        code: res.voucher.code,
-        title: res.voucher.title,
-        kind: res.voucher.kind,
-        scope: res.voucher.scope,
-        expiryAt: res.voucher.expiryAt,
-      },
-      userVoucherId: res.userVoucher.id,
-      status: res.userVoucher.status,
+  const payload: ClaimVoucherData = {
+    voucher: {
+      id: res.voucher.id,
+      code: res.voucher.code,
+      title: res.voucher.title,
+      kind: res.voucher.kind,
+      scope: res.voucher.scope,
+      expiryAt: res.voucher.expiryAt.toISOString(),
     },
-    { status: 201 }
-  );
+    userVoucherId: res.userVoucher.id,
+    status: res.userVoucher.status,
+  };
+  return ok(payload, { status: 201 });
 });

@@ -18,22 +18,12 @@ import { cn } from "@/lib/utils";
 import { authHeaders } from "@/lib/session-client";
 import { toast } from "sonner";
 import { fmtDate, useApi } from "./ui-bits";
+import type { SellerShippingQuoteData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------- types
 
-export type ShipmentBrief = {
-  status: string | null;
-  awbNumber: string | null;
-  courierName: string | null;
-  etaFrom: string | null;
-  etaTo: string | null;
-} | null;
-
-type QuoteEnvelope = {
-  shipment: ShipmentBrief;
-  destination: { state: string; city: string | null; zone: string };
-  parcel: { weightGrams: number; itemCount: number };
-};
+/** Shipment brief as carried on GET /api/store/shipping/quote (contract-derived). */
+export type ShipmentBrief = SellerShippingQuoteData["shipment"];
 
 // ---------------------------------------------------------------- chip
 
@@ -110,7 +100,7 @@ export default function ShipmentPanel({
   deliveredAt: string | null;
   refreshKey?: number;
 }) {
-  const { data, loading } = useApi<QuoteEnvelope>(`/api/store/shipping/quote?orderId=${orderId}`, [refreshKey]);
+  const { data, loading } = useApi<SellerShippingQuoteData>(`/api/store/shipping/quote?orderId=${orderId}`, [refreshKey]);
   const shipment = data?.shipment ?? null;
   const isPlatform = !!shipment?.awbNumber;
   const isManual = !isPlatform && !!trackingNumber;

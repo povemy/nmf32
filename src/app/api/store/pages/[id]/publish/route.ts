@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerPagePublishData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,11 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
     meta: { slug: page.slug, publishedVersion: updated.publishedVersion },
   });
 
-  return ok({
+  const payload: SellerPagePublishData = {
     id: updated.id,
     slug: updated.slug,
     publishedVersion: updated.publishedVersion,
     hasUnpublished: updated.hasUnpublished,
-  });
+  };
+  return ok(payload);
 });

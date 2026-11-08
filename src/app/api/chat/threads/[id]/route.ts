@@ -4,6 +4,7 @@ import { getSession, requireShopper } from "@/lib/auth";
 import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
 import { broadcastToThread } from "@/lib/chat";
 import { loadChatMessagePage } from "@/lib/chat-pagination";
+import type { ChatDetailMessage, ThreadDetailData, ClearContextBody, ClearContextData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: stri
   // the existence of someone else's thread
   const { messages, hasMore } = await loadChatMessagePage(thread.id, req);
 
-  return ok({
+  const payload: ThreadDetailData = {
     thread: {
       id: thread.id,
       storeId: thread.store.id,
@@ -82,20 +83,21 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: stri
       orderNumber: thread.orderNumber,
       contextType: thread.contextType,
       subject: thread.subject,
-      createdAt: thread.createdAt,
-      lastMessageAt: thread.lastMessageAt,
+      createdAt: thread.createdAt.toISOString(),
+      lastMessageAt: thread.lastMessageAt.toISOString(),
     },
     context,
     hasMore,
-    messages: messages.map((m) => ({
+    messages: messages.map((m): ChatDetailMessage => ({
       id: m.id,
       senderType: m.senderType,
       senderName: m.senderName,
       body: m.body,
-      createdAt: m.createdAt,
-      readAt: m.readAt,
+      createdAt: m.createdAt.toISOString(),
+      readAt: m.readAt ? m.readAt.toISOString() : null,
     })),
-  });
+  };
+  return ok(payload);
 });
 
 // PATCH /api/chat/threads/[id] { action: "clearContext" } — the shopper (or
@@ -106,7 +108,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { id } = await ctx.params;
   const sess = await getSession();
   if (!sess) throw new ApiError(401, "UNAUTHORIZED", "Login required");
-  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  const body = (await req.json().catch(() => ({}))) as ClearContextBody;
   if (body.action !== "clearContext") throw new ApiError(400, "BAD_REQUEST", "Unsupported action");
 
   const thread = await db.chatThread.findUnique({
@@ -126,5 +128,6 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   }
 
   await clearThreadContext(thread.id);
-  return ok({ threadId: thread.id, contextType: null });
+  const payload: ClearContextData = { threadId: thread.id, contextType: null };
+  return ok(payload);
 });

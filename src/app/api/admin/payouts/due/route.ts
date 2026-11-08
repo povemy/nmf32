@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { refreshWalletCache } from "@/lib/ledger";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminPayoutsDueData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,7 @@ export const GET = handle(async (_req: NextRequest) => {
   const bankOf = (accounts: { id: string; bankName: string; holderName: string; accountNumberMasked: string; verified: boolean }[]) =>
     accounts.find((b) => b.verified) ?? accounts[0] ?? null;
 
-  const due = refreshed
+  const due: AdminPayoutsDueData["due"] = refreshed
     .filter(({ truth }) => truth.availableMinor >= minMinor)
     .map(({ w, truth }) => {
       const bank = bankOf(w.seller.bankAccounts);
@@ -101,7 +102,7 @@ export const GET = handle(async (_req: NextRequest) => {
   const belowMin = refreshed.filter(({ truth }) => truth.availableMinor > 0 && truth.availableMinor < minMinor);
   const requestedTotalMinor = [...requestedByWallet.values()].reduce((s, r) => s + r.amountMinor, 0);
 
-  return ok({
+  const payload: AdminPayoutsDueData = {
     minMinor,
     mode,
     asOf: new Date().toISOString(),
@@ -112,5 +113,6 @@ export const GET = handle(async (_req: NextRequest) => {
     pendingTotalMinor,
     belowMinCount: belowMin.length,
     belowMinTotalMinor: belowMin.reduce((s, { truth }) => s + truth.availableMinor, 0),
-  });
+  };
+  return ok(payload);
 });

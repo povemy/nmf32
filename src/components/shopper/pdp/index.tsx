@@ -27,9 +27,19 @@ import {
   EmptyState,
   ProductCard,
   QtyStepper,
-  type CartT,
   type ShopperCtx,
 } from "../ui-bits";
+import type {
+  ActivityBody,
+  ActivityLikedData,
+  AddCartItemBody,
+  AddCartItemData,
+  CreateThreadBody,
+  CreateThreadData,
+  PdpData,
+  RemoveActivityData,
+  TrackActivityData,
+} from "@/lib/types/api-contract";
 import { pdpTrack, setPdpAnalyticsContext } from "./analytics";
 import { PdpGallery } from "./gallery";
 import { PdpCtaBar } from "./cta-bar";
@@ -46,10 +56,9 @@ import {
 } from "./sections";
 import { PdpVoucherCentre } from "./vouchers";
 import { PdpVariantSheet } from "./variant-sheet";
-import type { PdpPayloadT } from "./types";
 
 export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: string; pSlug: string }) {
-  const [data, setData] = useState<PdpPayloadT | null>(null);
+  const [data, setData] = useState<PdpData | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
@@ -68,7 +77,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     setVariantId(null);
     setQty(1);
     setSheetOpen(false);
-    fetchJson<PdpPayloadT>(`/api/sf/${encodeURIComponent(slug)}/products/${encodeURIComponent(pSlug)}`)
+    fetchJson<PdpData>(`/api/sf/${encodeURIComponent(slug)}/products/${encodeURIComponent(pSlug)}`)
       .then((d) => {
         if (!alive) return;
         setData(d);
@@ -157,11 +166,11 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     if (!data) return;
     setChatBusy(true);
     try {
-      const res = await postJson<{ thread: { id: string } }>("/api/chat/threads", {
+      const res = await postJson<CreateThreadData>("/api/chat/threads", {
         storeId: data.store.id,
         productId: data.product.id,
         message: `Hi ${data.store.name}! I'd like to ask about “${data.product.title}”.`,
-      });
+      } satisfies CreateThreadBody);
       toast.success("Chat opened", { description: `You're now chatting with ${data.store.name} about this product.` });
       ctx.nav({ name: "messages", threadId: res.thread.id });
     } catch (e) {
@@ -186,8 +195,8 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
   useEffect(() => {
     if (!shopper || !productId) return;
     // VIEWED — fire-and-forget; recency powers Recently Viewed + recommendations.
-    postJson("/api/me/activity", { productId, activityType: "VIEWED" }).catch(() => {});
-    fetchJson<{ liked: boolean }>(`/api/me/activity?productId=${encodeURIComponent(productId)}`)
+    postJson<TrackActivityData>("/api/me/activity", { productId, activityType: "VIEWED" } satisfies ActivityBody).catch(() => {});
+    fetchJson<ActivityLikedData>(`/api/me/activity?productId=${encodeURIComponent(productId)}`)
       .then((d) => setLiked(Boolean(d.liked)))
       .catch(() => {});
   }, [shopper, productId]);
@@ -198,13 +207,13 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
       setLiked(target); // optimistic
       try {
         if (target) {
-          await postJson("/api/me/activity", { productId, activityType: "LIKE" });
+          await postJson<TrackActivityData>("/api/me/activity", { productId, activityType: "LIKE" } satisfies ActivityBody);
           toast.success("Saved to My Likes");
         } else {
-          await fetchJson("/api/me/activity", {
+          await fetchJson<RemoveActivityData>("/api/me/activity", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productId, activityType: "LIKE" }),
+            body: JSON.stringify({ productId, activityType: "LIKE" } satisfies ActivityBody),
           });
         }
       } catch {
@@ -268,7 +277,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
     // their account (lib/shopper-merge.ts).
     setAdding(true);
     try {
-      const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", { variantId: variant.id, qty: Math.max(moq, qty) });
+      const res = await postJson<AddCartItemData>("/api/cart/items", { variantId: variant.id, qty: Math.max(moq, qty) } satisfies AddCartItemBody);
       applyServerCart(res.cart); // same-frame badge/drawer update, zero refetch
       if (res.notice) {
         toast.warning("Cart updated", { description: res.notice });
@@ -532,6 +541,7 @@ export default function PdpView({ ctx, slug, pSlug }: { ctx: ShopperCtx; slug: s
         adding={adding}
         disabled={outOfStock}
         actionLabel={requiresVariant && !variant ? "Choose an option first" : null}
+        onOpenStore={() => ctx.nav({ name: "storefront", slug: store.slug })}
         onChat={onMessageSeller}
         onAddToCart={handleAddToCart}
         onBuyNow={() => void handleBuyNow()}

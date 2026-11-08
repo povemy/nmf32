@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getEmailChannel } from "@/lib/email-provider";
 import { getShopperEmailVerified, issueEmailOtp, assertEmailOtpStorage } from "@/lib/guest-otp";
 import { mergeGuestCartForShopper } from "@/lib/shopper-merge";
+import type { ShopperRegisterBody, ShopperRegisterData } from "@/lib/types/api-contract";
 
 // POST /api/auth/shopper/register { fullName, email, password, phone? } — buyer signup.
 //
@@ -25,9 +26,7 @@ export const POST = handle(async (req: Request) => {
   // F-12 remediation: account-creation throttle — shared "auth-register"
   // bucket (5/min/IP) with the seller register route.
   rateLimit(req, "auth-register", 5);
-  const body = (await req.json().catch(() => ({}))) as {
-    email?: string; password?: string; fullName?: string; phone?: string;
-  };
+  const body = (await req.json().catch(() => ({}))) as ShopperRegisterBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   const fullName = (body.fullName ?? "").trim();
@@ -98,7 +97,7 @@ export const POST = handle(async (req: Request) => {
     action: "shopper.register",
     meta: { emailVerificationSent, guestCartMerged: guestCartMerged.itemsMerged },
   });
-  return ok({
+  const payload: ShopperRegisterData = {
     userType: "shopper",
     shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
     token,
@@ -106,5 +105,6 @@ export const POST = handle(async (req: Request) => {
     emailVerified,
     emailVerificationSent,
     guestCartMerged: guestCartMerged.itemsMerged,
-  });
+  };
+  return ok(payload);
 });

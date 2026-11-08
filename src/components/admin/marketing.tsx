@@ -25,6 +25,22 @@ import { cn } from "@/lib/utils";
 import { formatMinor, toMinor } from "@/lib/money";
 import { apiSend, useApi, useDebounced } from "./use-api";
 import { qs } from "./nav";
+import type {
+  AdminBannerDeleteData,
+  AdminBannerRow,
+  AdminCouponDeleteData,
+  AdminCouponDetail,
+  AdminCouponRow,
+  AdminFeaturedDeleteData,
+  AdminFeaturedRow,
+  AdminProductsData,
+  BannerCreateBody,
+  BannerUpdateBody,
+  CouponCreateBody,
+  CouponUpdateBody,
+  FeaturedCreateBody,
+  FeaturedCreateData,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -39,15 +55,8 @@ import {
 
 /* ------------------------------------------------------------- BannersView */
 
-type BannerRow = {
-  id: string;
-  title: string;
-  imageUrl: string;
-  linkUrl?: string | null;
-  sortOrder: number;
-  isActive: boolean;
-  createdAt?: string;
-};
+/** MKT-01 banner row — aliases the contract AdminBannerRow. */
+type BannerRow = AdminBannerRow;
 
 function randomBannerSeed(): string {
   return `banner-${Math.random().toString(36).slice(2, 8)}`;
@@ -72,13 +81,13 @@ export function BannersView() {
   const create = async () => {
     setCreating(true);
     try {
-      await apiSend("/api/admin/banners", "POST", {
+      await apiSend<AdminBannerRow>("/api/admin/banners", "POST", {
         title: title.trim(),
         imageUrl: imageUrl.trim() || undefined,
         linkUrl: linkUrl.trim() || undefined,
         sortOrder: Number(sortOrder) || 0,
         isActive: true,
-      });
+      } satisfies BannerCreateBody);
       toast.success("Banner created", { description: title.trim() });
       setCreateOpen(false);
       setTitle("");
@@ -96,7 +105,7 @@ export function BannersView() {
   const toggle = async (b: BannerRow) => {
     setBusyId(b.id);
     try {
-      await apiSend(`/api/admin/banners/${b.id}`, "PATCH", { isActive: !b.isActive });
+      await apiSend<AdminBannerRow>(`/api/admin/banners/${b.id}`, "PATCH", { isActive: !b.isActive } satisfies BannerUpdateBody);
       toast.success(`Banner ${b.isActive ? "hidden" : "activated"}`, { description: b.title });
       void refetch();
     } catch (e) {
@@ -110,7 +119,7 @@ export function BannersView() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
     try {
-      await apiSend(`/api/admin/banners/${deleteTarget.id}`, "DELETE");
+      await apiSend<AdminBannerDeleteData>(`/api/admin/banners/${deleteTarget.id}`, "DELETE");
       toast.success("Banner deleted", { description: deleteTarget.title });
       setDeleteTarget(null);
       void refetch();
@@ -263,33 +272,13 @@ export function BannersView() {
 
 /* ------------------------------------------------------------ FeaturedView */
 
-type FeaturedRow = {
-  id: string;
-  slot: string;
-  sortOrder: number;
-  isActive: boolean;
-  createdAt?: string;
-  product: {
-    id: string;
-    title: string;
-    slug: string;
-    priceMinor: number;
-    status: string;
-    imageUrl: string | null;
-    storeName: string;
-    storeSlug: string;
-  } | null;
-};
+/** MKT-02 featured slot row — aliases the contract AdminFeaturedRow. */
+type FeaturedRow = AdminFeaturedRow;
 
-type ProductOption = {
-  id: string;
-  title: string;
-  slug: string;
-  priceMinor: number;
-  status: string;
-  store?: { name: string } | null;
+/** Product picker row — the contract list element (AdminProductsData) plus
+ *  the legacy `storeName`/`imageUrl` fallbacks the picker reads. */
+type ProductOption = AdminProductsData & {
   storeName?: string | null;
-  images?: { url: string }[];
   imageUrl?: string | null;
 };
 
@@ -310,7 +299,7 @@ export function FeaturedView() {
   const add = async (p: ProductOption) => {
     setAddingId(p.id);
     try {
-      await apiSend("/api/admin/featured", "POST", { productId: p.id, slot: "home_grid" });
+      await apiSend<FeaturedCreateData>("/api/admin/featured", "POST", { productId: p.id, slot: "home_grid" } satisfies FeaturedCreateBody);
       toast.success("Added to featured", { description: p.title });
       void refetch();
     } catch (e) {
@@ -324,7 +313,7 @@ export function FeaturedView() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
     try {
-      await apiSend(`/api/admin/featured/${deleteTarget.id}`, "DELETE");
+      await apiSend<AdminFeaturedDeleteData>(`/api/admin/featured/${deleteTarget.id}`, "DELETE");
       toast.success("Removed from featured", { description: deleteTarget.product?.title ?? "" });
       setDeleteTarget(null);
       void refetch();
@@ -474,24 +463,8 @@ export function FeaturedView() {
 
 /* ------------------------------------------------------------- CouponsView */
 
-type CouponRow = {
-  id: string;
-  scope: string;
-  code: string;
-  description?: string | null;
-  type: "percent" | "fixed" | "freeship" | string;
-  percent?: number | null;
-  amountMinor?: number | null;
-  minSpendMinor?: number;
-  maxRedemptions?: number | null;
-  perCustomerLimit?: number;
-  startsAt?: string | null;
-  endsAt?: string | null;
-  isActive: boolean;
-  timesUsed?: number;
-  createdAt?: string;
-  store?: { id: string; name: string } | null;
-};
+/** MKT-03 coupon row — aliases the contract AdminCouponRow. */
+type CouponRow = AdminCouponRow;
 
 function couponValue(c: CouponRow): string {
   if (c.type === "percent") return `${c.percent ?? 0}% off`;
@@ -532,7 +505,7 @@ export function CouponsView() {
   const create = async () => {
     setCreating(true);
     try {
-      const body: Record<string, unknown> = {
+      const body: CouponCreateBody = {
         code: code.trim().toUpperCase(),
         description: description.trim() || undefined,
         type,
@@ -543,7 +516,7 @@ export function CouponsView() {
       if (type === "fixed") body.amountMinor = toMinor(amount || "0");
       if (startsAt) body.startsAt = new Date(startsAt).toISOString();
       if (endsAt) body.endsAt = new Date(`${endsAt}T23:59:59`).toISOString();
-      await apiSend("/api/admin/coupons", "POST", body);
+      await apiSend<AdminCouponDetail>("/api/admin/coupons", "POST", body);
       toast.success("Coupon created", { description: body.code as string });
       setCreateOpen(false);
       resetForm();
@@ -558,7 +531,7 @@ export function CouponsView() {
   const toggle = async (c: CouponRow) => {
     setBusyId(c.id);
     try {
-      await apiSend(`/api/admin/coupons/${c.id}`, "PATCH", { isActive: !c.isActive });
+      await apiSend<AdminCouponDetail>(`/api/admin/coupons/${c.id}`, "PATCH", { isActive: !c.isActive } satisfies CouponUpdateBody);
       toast.success(`Coupon ${c.isActive ? "disabled" : "enabled"}`, { description: c.code });
       void refetch();
     } catch (e) {
@@ -572,7 +545,7 @@ export function CouponsView() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
     try {
-      await apiSend(`/api/admin/coupons/${deleteTarget.id}`, "DELETE");
+      await apiSend<AdminCouponDeleteData>(`/api/admin/coupons/${deleteTarget.id}`, "DELETE");
       toast.success("Coupon deleted", { description: deleteTarget.code });
       setDeleteTarget(null);
       void refetch();

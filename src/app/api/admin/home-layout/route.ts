@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody } from "@/app/api/admin/_helpers";
+import type { HomeLayoutData, HomeLayoutPutBody, HomeLayoutPutData } from "@/lib/types/api-contract";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import {
   DEFAULT_SECTION_ORDER,
@@ -30,11 +31,12 @@ async function loadOrder(): Promise<HomeSectionId[]> {
 export const GET = handle(async () => {
   await requireCap("campaigns.manage");
   const order = await loadOrder();
-  return ok({
+  const payload: HomeLayoutData = {
     order,
     defaults: DEFAULT_SECTION_ORDER,
     sections: HOME_SECTIONS,
-  });
+  };
+  return ok(payload);
 });
 
 // PUT /api/admin/home-layout { order: string[] } (RBAC campaigns.manage).
@@ -43,7 +45,7 @@ export const GET = handle(async () => {
 // public homepage reflects the change within the documented window.
 export const PUT = handle(async (req: NextRequest) => {
   const admin = await requireCap("campaigns.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as HomeLayoutPutBody & Record<string, unknown>;
   if (!Array.isArray(body.order)) throw new ApiError(400, "VALIDATION", "order must be an array of section ids");
 
   const before = await loadOrder();
@@ -68,5 +70,6 @@ export const PUT = handle(async (req: NextRequest) => {
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.campaigns, PUBLIC_CACHE_TAGS.market);
 
-  return ok({ order: normalized });
+  const payload: HomeLayoutPutData = { order: normalized };
+  return ok(payload);
 });

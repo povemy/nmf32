@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { auditAdmin } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { getAffiliateSettings } from "@/lib/affiliate";
+import type { AdminAffHoldBody, AdminAffHoldData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   rateLimit(req, "admin-aff-hold", 30);
   const admin = await requireCap("affiliate.manage");
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AdminAffHoldBody;
   const action = String(body.action ?? "");
   const reason = String(body.reason ?? "").slice(0, 200);
   if (!["hold", "release"].includes(action)) throw new ApiError(400, "VALIDATION", "action must be hold | release");
@@ -57,5 +58,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     before: { status: commission.status },
     after: { status: result.status, reason },
   });
-  return ok({ status: result.status });
+  const payload: AdminAffHoldData = { status: result.status };
+  return ok(payload);
 });

@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { HolidayPatchBody, HolidayPatchData, HolidayDeleteData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("commission.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as HolidayPatchBody & Record<string, unknown>;
 
   const h = await db.feeHoliday.findUnique({ where: { id } });
   if (!h) throw new ApiError(404, "NOT_FOUND", "Fee holiday not found");
@@ -48,7 +49,14 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: HolidayPatchData = {
+    ...updated,
+    startsAt: updated.startsAt.toISOString(),
+    endsAt: updated.endsAt.toISOString(),
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/commission/holidays/[id] (RBAC commission.manage)
@@ -71,5 +79,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: HolidayDeleteData = { deleted: true };
+  return ok(payload);
 });

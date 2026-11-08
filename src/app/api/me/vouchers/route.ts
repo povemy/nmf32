@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { claimVoucherForShopper, SUPPORTED_VOUCHER_KINDS } from "@/lib/vouchers";
+import type { ClaimByCodeBody, ClaimByCodeData, MeClaimableVoucher, MeHeldVoucher, MeWalletVoucher, VouchersData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -39,14 +40,14 @@ export const GET = handle(async () => {
   }
   const expiredIds = new Set(stale.map((r) => r.id));
 
-  const mine = rows.map((r) => {
+  const mine: MeWalletVoucher[] = rows.map((r) => {
     const status = r.status === "AVAILABLE" && expiredIds.has(r.id) ? "EXPIRED" : r.status;
     return {
       id: r.id,
       status,
       claimedByMe: true,
-      claimedAt: r.claimedAt,
-      usedAt: r.usedAt,
+      claimedAt: r.claimedAt.toISOString(),
+      usedAt: r.usedAt ? r.usedAt.toISOString() : null,
       usedOrderId: r.usedOrderId,
       voucher: {
         id: r.voucher.id,
@@ -57,7 +58,7 @@ export const GET = handle(async () => {
         percentOff: r.voucher.percentOff,
         maxDiscountMinor: r.voucher.maxDiscountMinor,
         minSpendMinor: r.voucher.minSpendMinor,
-        expiryAt: r.voucher.expiryAt,
+        expiryAt: r.voucher.expiryAt.toISOString(),
         scope: r.voucher.scope,
         storeId: r.voucher.storeId,
         regionLimit: r.voucher.regionLimit,
@@ -67,7 +68,7 @@ export const GET = handle(async () => {
   });
 
   // Legacy contract: flat rows keyed `vouchers` (me-hub voucher sub-view).
-  const legacy = mine.map((m) => ({
+  const legacy: MeHeldVoucher[] = mine.map((m) => ({
     id: m.id,
     status: m.status,
     claimedAt: m.claimedAt,
@@ -99,7 +100,7 @@ export const GET = handle(async () => {
     include: { store: { select: { name: true, slug: true, logoUrl: true, status: true } } },
   });
   const heldVoucherIds = new Set(rows.map((r) => r.voucherId));
-  const center = pool
+  const center: MeClaimableVoucher[] = pool
     .filter((v) => v.scope === "PLATFORM" || (v.scope === "STORE" && v.store?.status === "live"))
     .map((v) => {
       const claimedByMe = heldVoucherIds.has(v.id);
@@ -113,8 +114,8 @@ export const GET = handle(async () => {
         percentOff: v.percentOff,
         maxDiscountMinor: v.maxDiscountMinor,
         minSpendMinor: v.minSpendMinor,
-        expiryAt: v.expiryAt,
-        startsAt: v.startsAt,
+        expiryAt: v.expiryAt.toISOString(),
+        startsAt: v.startsAt ? v.startsAt.toISOString() : null,
         scope: v.scope,
         regionLimit: v.regionLimit,
         store: storeBrief(v.store),
@@ -124,7 +125,8 @@ export const GET = handle(async () => {
       };
     });
 
-  return ok({ vouchers: legacy, mine, center });
+  const payload: VouchersData = { vouchers: legacy, mine, center };
+  return ok(payload);
 });
 
 const claimSchema = { code: "string (2-40 chars)" } as const;
@@ -133,17 +135,15 @@ const claimSchema = { code: "string (2-40 chars)" } as const;
 // same engine powers POST /api/me/vouchers/claim which also accepts voucherId).
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ClaimByCodeBody;
   const code = typeof body.code === "string" ? body.code.trim() : "";
   if (code.length < 2 || code.length > 40) {
     throw new ApiError(400, "VALIDATION", `A voucher code is required (${claimSchema.code})`);
   }
   const res = await claimVoucherForShopper(me.id, { code });
-  return ok(
-    {
-      voucher: { code: res.voucher.code, title: res.voucher.title, kind: res.voucher.kind, scope: res.voucher.scope },
-      status: res.userVoucher.status,
-    },
-    { status: 201 }
-  );
+  const payload: ClaimByCodeData = {
+    voucher: { code: res.voucher.code, title: res.voucher.title, kind: res.voucher.kind, scope: res.voucher.scope },
+    status: res.userVoucher.status,
+  };
+  return ok(payload, { status: 201 });
 });

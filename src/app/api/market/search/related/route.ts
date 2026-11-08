@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { productCardInclude, toProductCard, type ProductWithRelations } from "../../../_shared/product-card";
 import { tokenize, buildAnyTokenWhere, scoreProduct } from "../../_shared/search";
+import type { MarketRelatedData, SfProductCard } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export const GET = handle(async (req: Request) => {
 
   const baseWhere = { status: "active" as const, store: liveStore, id: { notIn: [...exclude] } };
 
-  let cards: ReturnType<typeof toProductCard>[] = [];
+  let cards: SfProductCard[] = [];
 
   const anyWhere = buildAnyTokenWhere(tokens);
   if (anyWhere) {
@@ -69,5 +70,6 @@ export const GET = handle(async (req: Request) => {
     }
   }
 
-  return ok({ products: cards });
+  const payload: MarketRelatedData = { products: cards };
+  return ok(payload);
 });

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerCouponRow, SellerCouponCreateBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,32 @@ export const GET = handle(async () => {
     where: { storeId: store.id },
     orderBy: { createdAt: "desc" },
   });
-  return ok(coupons);
+  const payload: SellerCouponRow[] = coupons.map((c) => ({
+    id: c.id,
+    scope: c.scope,
+    storeId: c.storeId,
+    code: c.code,
+    description: c.description,
+    type: c.type,
+    percent: c.percent,
+    amountMinor: c.amountMinor,
+    minSpendMinor: c.minSpendMinor,
+    maxRedemptions: c.maxRedemptions,
+    perCustomerLimit: c.perCustomerLimit,
+    startsAt: c.startsAt ? c.startsAt.toISOString() : null,
+    endsAt: c.endsAt ? c.endsAt.toISOString() : null,
+    isActive: c.isActive,
+    timesUsed: c.timesUsed,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+  return ok(payload);
 });
 
 // POST /api/store/coupons {code, type: percent|fixed|freeship, ...}
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerCouponCreateBody;
 
   const code = String(body.code ?? "").trim().toUpperCase();
   if (!/^[A-Z0-9_-]{3,24}$/.test(code)) {
@@ -73,5 +93,25 @@ export const POST = handle(async (req: Request) => {
     meta: { code, type },
   });
 
-  return ok(coupon, { status: 201 });
+  const payload: SellerCouponRow = {
+    id: coupon.id,
+    scope: coupon.scope,
+    storeId: coupon.storeId,
+    code: coupon.code,
+    description: coupon.description,
+    type: coupon.type,
+    percent: coupon.percent,
+    amountMinor: coupon.amountMinor,
+    minSpendMinor: coupon.minSpendMinor,
+    maxRedemptions: coupon.maxRedemptions,
+    perCustomerLimit: coupon.perCustomerLimit,
+    startsAt: coupon.startsAt ? coupon.startsAt.toISOString() : null,
+    endsAt: coupon.endsAt ? coupon.endsAt.toISOString() : null,
+    isActive: coupon.isActive,
+    timesUsed: coupon.timesUsed,
+    createdAt: coupon.createdAt.toISOString(),
+    updatedAt: coupon.updatedAt.toISOString(),
+  };
+
+  return ok(payload, { status: 201 });
 });

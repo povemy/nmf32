@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminFeaturedStoresData, FeaturedStoresPutBody } from "@/lib/types/api-contract";
 import { FEATURED_STORES_KEY } from "@/lib/home-layout";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 
@@ -68,7 +69,8 @@ export const GET = handle(async () => {
   await requireAdmin();
   const ids = await loadConfiguredIds();
   const stores = await resolveStores(ids);
-  return ok({ key: FEATURED_STORES_KEY, stores });
+  const payload: AdminFeaturedStoresData = { key: FEATURED_STORES_KEY, stores };
+  return ok(payload);
 });
 
 // PUT /api/admin/featured-stores { storeIds: string[] } — replace the whole
@@ -78,7 +80,7 @@ export const GET = handle(async () => {
 // (/api/admin/settings PUT) — previously bare requireAdmin bypassed the cap.
 export const PUT = handle(async (req: NextRequest) => {
   const admin = await requireCap("settings.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as FeaturedStoresPutBody & Record<string, unknown>;
 
   const rawIds = Array.isArray(body.storeIds) ? body.storeIds : null;
   if (!rawIds) throw new ApiError(400, "VALIDATION", "storeIds array is required");
@@ -127,5 +129,6 @@ export const PUT = handle(async (req: NextRequest) => {
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.market, PUBLIC_CACHE_TAGS.stores);
 
   const stores = await resolveStores(ids);
-  return ok({ key: FEATURED_STORES_KEY, stores });
+  const payload: AdminFeaturedStoresData = { key: FEATURED_STORES_KEY, stores };
+  return ok(payload);
 });

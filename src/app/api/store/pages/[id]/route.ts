@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parsePageDoc } from "@/lib/sections";
+import type { SellerPageGetData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
   const page = await db.cmsPage.findFirst({ where: { OR: [{ id }, { slug: id }], storeId: store.id } });
   if (!page) throw new ApiError(404, "NOT_FOUND", "Page not found");
 
-  return ok({
+  const payload: SellerPageGetData = {
     page: {
       id: page.id,
       slug: page.slug,
@@ -29,5 +30,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     },
     draft: parsePageDoc(page.draftJson),
     published: page.publishedJson ? parsePageDoc(page.publishedJson) : null,
-  });
+  };
+  return ok(payload);
 });

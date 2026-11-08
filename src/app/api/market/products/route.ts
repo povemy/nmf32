@@ -5,6 +5,7 @@ import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import { normalizeSearchQuery } from "@/lib/search-normalize";
 import { tokenize, buildTokenWhere, scoreProduct } from "../_shared/search";
 import type { Prisma } from "@prisma/client";
+import type { SfProductCard } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -170,5 +171,6 @@ export const GET = handle(async (req: Request) => {
 
   const { rows, total } = await loadProducts(search, categorySlug, sort, page, size, onSale);
 
-  return okPaged(rows.map((p) => toProductCard(p as ProductWithRelations)), { page, size, total });
+  const products: SfProductCard[] = rows.map((p) => toProductCard(p as ProductWithRelations));
+  return okPaged(products, { page, size, total });
 });

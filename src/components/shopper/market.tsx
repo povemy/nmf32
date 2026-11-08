@@ -29,17 +29,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
 import {
-  fetchJson,
   fetchEnvelope,
   openProduct,
   EmptyState,
   ProductCard,
   ProductGridSkeleton,
-  type CategoryT,
-  type ProductCardT,
   type ShopperCtx,
-  type StoreCardT,
 } from "./ui-bits";
+import type { MarketStoreCard, SfProductCard } from "@/lib/types/api-contract";
 import { fetchMarketHome } from "./market-home-client";
 import type { HomePayload } from "./home/types";
 import type { HomeSectionId } from "@/lib/home-layout";
@@ -264,7 +261,7 @@ function HomeSectionGrid({
 }: {
   title: string;
   icon: React.ReactNode;
-  products: ProductCardT[];
+  products: SfProductCard[];
   ctx: ShopperCtx;
 }) {
   return (
@@ -296,7 +293,7 @@ function HomeSectionRail({
   id?: string;
   title: string;
   icon: React.ReactNode;
-  products: ProductCardT[];
+  products: SfProductCard[];
   ctx: ShopperCtx;
   viewAll: { label: string; onClick: () => void };
   /** Desktop homepage work order: card quick actions (md+ only). */
@@ -314,7 +311,7 @@ function HomeSectionRail({
   );
 }
 
-function HomeStores({ stores, ctx }: { stores: StoreCardT[]; ctx: ShopperCtx }) {
+function HomeStores({ stores, ctx }: { stores: MarketStoreCard[]; ctx: ShopperCtx }) {
   return (
     <SectionShell
       id="home-stores"
@@ -454,7 +451,7 @@ export function ResultsView({
   const [sort, setSort] = useState<SortValue>(mode.kind === "search" ? (mode.sort ?? "relevance") : "newest");
   const [page, setPage] = useState(1);
   // completed-fetch state — loading is DERIVED (no sync setState in effects)
-  const [done, setDone] = useState<{ key: string; items: ProductCardT[]; total: number }>({ key: "", items: [], total: 0 });
+  const [done, setDone] = useState<{ key: string; items: SfProductCard[]; total: number }>({ key: "", items: [], total: 0 });
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
 
@@ -482,7 +479,7 @@ export function ResultsView({
     if (search) params.set("search", search);
     if (category) params.set("category", category);
     if (deals) params.set("onSale", "1");
-    fetchEnvelope<ProductCardT[]>(`/api/market/products?${params.toString()}`)
+    fetchEnvelope<SfProductCard[]>(`/api/market/products?${params.toString()}`)
       .then(({ data, meta }) => {
         if (!alive) return;
         const rows = Array.isArray(data) ? data : [];

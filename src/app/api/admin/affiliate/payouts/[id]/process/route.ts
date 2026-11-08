@@ -8,6 +8,7 @@ import {
   postAffiliatePayoutConfirmed,
   postAffiliatePayoutFailed,
 } from "@/lib/ledger";
+import type { AdminAffProcessBody, AdminAffProcessData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   rateLimit(req, "admin-aff-payout", 30);
   const admin = await requireCap("affiliate.finance");
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AdminAffProcessBody;
   const action = String(body.action ?? "");
   const reference = body.reference != null ? String(body.reference).trim().slice(0, 100) : null;
   const reason = body.reason != null ? String(body.reason).slice(0, 300) : null;
@@ -206,5 +207,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     after: result,
   });
 
-  return ok(result);
+  const payload: AdminAffProcessData = result;
+  return ok(payload);
 });

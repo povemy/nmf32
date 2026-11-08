@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { auditAdmin } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { getAffiliateSettings } from "@/lib/affiliate";
+import type { AdminAffStatusBody, AdminAffStatusData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   rateLimit(req, "admin-aff-status", 30);
   const admin = await requireCap("affiliate.manage");
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AdminAffStatusBody;
   const action = String(body.action ?? "");
   const reason = body.reason != null ? String(body.reason).slice(0, 500) : null;
   if (!["suspend", "reinstate", "terminate"].includes(action)) {
@@ -78,5 +79,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     after: { status: result.status, reason },
   });
 
-  return ok({ status: result.status });
+  const payload: AdminAffStatusData = { status: result.status };
+  return ok(payload);
 });

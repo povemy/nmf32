@@ -35,21 +35,15 @@ import {
   fetchJson,
   postJson,
 } from "./ui-bits";
+import type { MarkReadBody, MarkReadData, MeNotification, NotificationsData, UnreadCountData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
-// types (mirror GET /api/me/notifications rows — dataJson parsed by the route)
+// types — notification feed rows come straight from the contract
+// (MeNotification.data is an open Record; order/slug deep-links are read out
+// of it with runtime typeof guards in openItem below).
 // ---------------------------------------------------------------------------
 
-export type NotificationRowT = {
-  id: string;
-  type: string;
-  title: string;
-  body: string | null;
-  data: { orderNumber?: string; slug?: string } & Record<string, unknown>;
-  read: boolean;
-  readAt: string | null;
-  createdAt: string;
-};
+export type NotificationRowT = MeNotification;
 
 export type NotificationBellProps = {
   /** Navigate to the order-status view for data.orderNumber notifications. */
@@ -105,7 +99,7 @@ export default function NotificationBell({ onOpenOrder, onOpenStore, className, 
   const loadUnread = useCallback(async () => {
     if (!authed) return;
     try {
-      const d = await fetchJson<{ unread: number }>("/api/me/notifications/unread");
+      const d = await fetchJson<UnreadCountData>("/api/me/notifications/unread");
       setUnread(d.unread ?? 0);
     } catch {
       /* offline / session dropped — keep the last badge */
@@ -134,7 +128,7 @@ export default function NotificationBell({ onOpenOrder, onOpenStore, className, 
     if (!authed) return;
     setListLoading(true);
     try {
-      const env = await fetchEnvelope<NotificationRowT[]>("/api/me/notifications?size=20");
+      const env = await fetchEnvelope<NotificationsData>("/api/me/notifications?size=20");
       setRows(env.data ?? []);
     } catch {
       setRows([]);
@@ -153,7 +147,8 @@ export default function NotificationBell({ onOpenOrder, onOpenStore, className, 
 
   const markOne = async (id: string) => {
     try {
-      const res = await postJson<{ updated: number; unread: number }>("/api/me/notifications", { ids: [id] });
+      const body: MarkReadBody = { ids: [id] };
+      const res = await postJson<MarkReadData>("/api/me/notifications", body);
       setUnread(res.unread ?? 0);
       setRows((prev) => (prev ? prev.map((n) => (n.id === id ? { ...n, read: true } : n)) : prev));
     } catch {
@@ -164,7 +159,8 @@ export default function NotificationBell({ onOpenOrder, onOpenStore, className, 
   const markAllRead = async () => {
     setMarkingAll(true);
     try {
-      const res = await postJson<{ updated: number; unread: number }>("/api/me/notifications", { all: true });
+      const body: MarkReadBody = { all: true };
+      const res = await postJson<MarkReadData>("/api/me/notifications", body);
       setUnread(res.unread ?? 0);
       setRows((prev) => (prev ? prev.map((n) => ({ ...n, read: true })) : prev));
     } catch (e) {

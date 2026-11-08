@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseInsightsWindow, insightsCached, campaignReport } from "@/lib/analytics/queries";
+import type { InsightsCampaignsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export const GET = handle(async (req: Request) => {
   const win = parseInsightsWindow(url);
   const cacheKey = `campaigns:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}`;
 
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<InsightsCampaignsData> => {
     const report = await campaignReport(store.id, win);
     return {
       window: { key: win.key, from: win.from.toISOString(), to: win.to.toISOString(), prevFrom: win.prevFrom.toISOString(), prevTo: win.prevTo.toISOString(), days: win.days },

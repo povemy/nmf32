@@ -8,6 +8,7 @@ import {
   productFunnelFor,
   freshnessFor,
 } from "@/lib/analytics/queries";
+import type { InsightsFunnelData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -48,12 +49,15 @@ export const GET = handle(async (req: Request) => {
 
   const cacheKey = `funnel:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}:${rawProductId ?? "store"}`;
 
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<InsightsFunnelData> => {
     const [report, freshness] = await Promise.all([
       rawProductId ? productFunnelFor(store.id, rawProductId, win) : funnelReportFor(store.id, win),
       freshnessFor(store.id),
     ]);
-    const product = "product" in report ? report.product : null;
+    // The ternary union (FunnelReport | ProductFunnel) collapses to FunnelReport
+    // under inference (ProductFunnel is a structural subtype), so `in`-narrowing
+    // types `.product` as unknown — the runtime shape matches the contract.
+    const product = ("product" in report ? report.product : null) as InsightsFunnelData["product"];
     const byDayNote =
       product == null
         ? "Daily series: visit → cart stages count DISTINCT sessions per calendar day (Kuala Lumpur) — a session spanning midnight counts on both days, so daily values can sum above the window total. Checkout and paid rows are exact per-day order counts."

@@ -6,6 +6,7 @@ import {
   issueGuestCheckoutToken,
   GUEST_CHECKOUT_TOKEN_TTL_MS,
 } from "@/lib/guest-otp";
+import type { GuestVerifyBody, GuestVerifyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export const dynamic = "force-dynamic";
 // email, PLUS the challenge's own bounded attempt counter (5, CAS-guarded).
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "guest-verify-verify", 10);
-  const body = (await req.json().catch(() => ({}))) as { email?: string; code?: string };
+  const body = (await req.json().catch(() => ({}))) as GuestVerifyBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const code = (body.code ?? "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !code || code.length > 12) {
@@ -66,5 +67,6 @@ export const POST = handle(async (req: Request) => {
     meta: { tokenTtlMs: GUEST_CHECKOUT_TOKEN_TTL_MS },
   }).catch(() => undefined);
 
-  return ok({ token, email, expiresAt: new Date(Date.now() + GUEST_CHECKOUT_TOKEN_TTL_MS).toISOString() });
+  const payload: GuestVerifyData = { token, email, expiresAt: new Date(Date.now() + GUEST_CHECKOUT_TOKEN_TTL_MS).toISOString() };
+  return ok(payload);
 });

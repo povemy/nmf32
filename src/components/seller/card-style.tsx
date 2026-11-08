@@ -17,13 +17,13 @@ import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import { ProductCard, type ProductCardT, type CardStyleTokens } from "@/components/shopper/ui-bits";
 import { fontLabel } from "@/lib/fonts";
 import { apiGet, apiSend } from "./ui-bits";
+import type { CardStyleBody, CardStyleData, CardStyleSaveData } from "@/lib/types/api-contract";
 
+// UI-side render tokens (shopper ProductCard input — loose strings by design).
 type StyleRow = CardStyleTokens;
 
-type Payload = {
-  style: StyleRow | null;
-  fonts: { id: string; label: string; kind: string }[];
-};
+// Contract font catalogue row from GET /api/store/card-style.
+type FontRow = CardStyleData["fonts"][number];
 
 const DEFAULT_STYLE: StyleRow = {
   nameFont: "inter",
@@ -58,13 +58,13 @@ const SIZE_OPTIONS = [
 export default function SellerCardStyle() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [fonts, setFonts] = useState<{ id: string; label: string; kind: string }[]>([]);
+  const [fonts, setFonts] = useState<FontRow[]>([]);
   const [style, setStyle] = useState<StyleRow>({ ...DEFAULT_STYLE });
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    apiGet<Payload>("/api/store/card-style")
+    apiGet<CardStyleData>("/api/store/card-style")
       .then((d) => {
         if (!alive) return;
         setFonts(d.fonts ?? []);
@@ -93,7 +93,9 @@ export default function SellerCardStyle() {
   const save = async () => {
     setSaving(true);
     try {
-      await apiSend("PUT", "/api/store/card-style", style);
+      // The dropdowns/toggles only emit enum-valid values; the shared render
+      // token type keeps loose strings, so narrow to the contract body here.
+      await apiSend<CardStyleSaveData>("PUT", "/api/store/card-style", style as CardStyleBody);
       toast.success("Product cards updated", { description: "Your storefront catalogue now uses this typography." });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save");

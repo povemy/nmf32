@@ -10,6 +10,12 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { useApi, apiSend } from "./use-api";
 import { qs } from "./nav";
 import type { AdminNav } from "./nav";
+import type {
+  AdminProductBanBody,
+  AdminProductRejectBody,
+  AdminProductRow,
+  AdminProductsData,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -23,25 +29,16 @@ import {
   fmtDate,
 } from "./ui-bits";
 
-type AdminProductRow = {
-  id: string;
-  title: string;
-  slug: string;
-  priceMinor: number;
-  status: string;
-  description?: string | null;
+/** Moderation card row — the contract list element (AdminProductsData) plus
+ *  the legacy `flagsJson`/`storeName`/`imageUrl` fallbacks flagsOf/firstImage
+ *  read off older payloads. */
+type ModerationProductRow = AdminProductsData & {
   flagsJson?: string | null;
-  flags?: string[];
-  reportsCount?: number;
-  createdAt?: string;
-  store?: { id: string; name: string; slug: string } | null;
   storeName?: string | null;
-  images?: { id: string; url: string }[];
   imageUrl?: string | null;
-  category?: { name: string } | null;
 };
 
-function flagsOf(p: AdminProductRow): string[] {
+function flagsOf(p: ModerationProductRow): string[] {
   if (Array.isArray(p.flags)) return p.flags;
   try {
     const parsed: unknown = JSON.parse(p.flagsJson ?? "[]");
@@ -51,7 +48,7 @@ function flagsOf(p: AdminProductRow): string[] {
   }
 }
 
-function firstImage(p: AdminProductRow): string | null {
+function firstImage(p: ModerationProductRow): string | null {
   if (p.images && p.images.length > 0) return p.images[0].url;
   if (p.imageUrl) return p.imageUrl;
   return `/api/img/${encodeURIComponent(p.slug || p.id)}?w=400&h=300&label=${encodeURIComponent(p.title.slice(0, 12))}`;
@@ -60,19 +57,19 @@ function firstImage(p: AdminProductRow): string | null {
 export function ModerationView({ nav }: { nav: AdminNav }) {
   const [page, setPage] = useState(1);
   const url = useMemo(() => `/api/admin/products${qs({ status: "pending_review", page, size: "12" })}`, [page]);
-  const { data, meta, error, loading, refetch } = useApi<AdminProductRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<AdminProductsData[]>(url);
   const rows = data ?? [];
 
-  const [detail, setDetail] = useState<AdminProductRow | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<AdminProductRow | null>(null);
-  const [banTarget, setBanTarget] = useState<AdminProductRow | null>(null);
-  const [approveTarget, setApproveTarget] = useState<AdminProductRow | null>(null);
+  const [detail, setDetail] = useState<ModerationProductRow | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<ModerationProductRow | null>(null);
+  const [banTarget, setBanTarget] = useState<ModerationProductRow | null>(null);
+  const [approveTarget, setApproveTarget] = useState<ModerationProductRow | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const moderate = async (p: AdminProductRow, kind: "approve" | "reject" | "ban", reason?: string) => {
+  const moderate = async (p: ModerationProductRow, kind: "approve" | "reject" | "ban", reason?: string) => {
     setBusy(true);
     try {
-      await apiSend(`/api/admin/products/${p.id}/${kind}`, "POST", kind === "approve" ? undefined : { reason });
+      await apiSend<AdminProductRow>(`/api/admin/products/${p.id}/${kind}`, "POST", kind === "approve" ? undefined : ({ reason } satisfies AdminProductRejectBody | AdminProductBanBody));
       toast.success(`Product ${kind === "approve" ? "approved" : kind}`, { description: p.title });
       setDetail(null);
       setRejectTarget(null);
@@ -114,7 +111,7 @@ export function ModerationView({ nav }: { nav: AdminNav }) {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-            {rows.map((p) => {
+            {rows.map((p: ModerationProductRow) => {
               const flags = flagsOf(p);
               return (
                 <button

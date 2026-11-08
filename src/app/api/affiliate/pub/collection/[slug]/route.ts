@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getAffiliateSettings } from "@/lib/affiliate";
+import type { AffiliatePubNotFoundData, PubCollectionFoundData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const settings = await getAffiliateSettings();
   if (!settings.collectionsEnabled) {
-    return ok({ found: false });
+    const payload: AffiliatePubNotFoundData = { found: false };
+    return ok(payload);
   }
   const { slug } = await ctx.params;
   const collection = await db.affiliateCollection.findUnique({
@@ -38,9 +40,10 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     },
   });
   if (!collection || collection.status !== "published" || collection.affiliate.status !== "active") {
-    return ok({ found: false });
+    const payload: AffiliatePubNotFoundData = { found: false };
+    return ok(payload);
   }
-  return ok({
+  const payload: PubCollectionFoundData = {
     found: true,
     collection: {
       title: collection.title,
@@ -61,5 +64,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
           image: it.product.images[0]?.url ?? null,
         })),
     },
-  });
+  };
+  return ok(payload);
 });

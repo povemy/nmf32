@@ -1169,7 +1169,7 @@ export interface CreateCheckoutData {
   orderPaymentRef: string | null;
   paymentRef: string | null;
   totalMinor: number;
-  redirectUrl?: string;
+  redirectUrl?: string | null;
   status: string;
   duplicate?: boolean;
   vouchersApplied?: VoucherApplied[];
@@ -1259,7 +1259,7 @@ export interface PaymentStatusData {
   orderStatus: string;
   provider: string;
   expiresAt: string;
-  redirectUrl?: string;
+  redirectUrl?: string | null;
 }
 /** GET /api/checkout/payments/[ref] — payment-status */
 export type PaymentStatusResponse = ApiOk<PaymentStatusData>;
@@ -2153,6 +2153,10 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/** Message row as emitted by GET /api/chat/threads/[id] detail listings —
+ *  same as ChatMessage minus threadId (the thread is already in scope). */
+export type ChatDetailMessage = Omit<ChatMessage, "threadId">;
+
 /** POST /api/chat/threads — get-or-create-thread result */
 export interface CreateThreadData {
   thread: { id: string; storeId: string; storeName: string; storeSlug: string; orderNumber: string | null; contextType: string | null; subject: string | null; lastMessageAt: string };
@@ -2170,7 +2174,7 @@ export interface ThreadDetailData {
   thread: { id: string; storeId: string; storeName: string; storeSlug: string; shopperName: string; orderNumber: string | null; contextType: string | null; subject: string | null; createdAt: string; lastMessageAt: string };
   context: ThreadContextCard | null;
   hasMore: boolean;
-  messages: ChatMessage[];
+  messages: ChatDetailMessage[];
 }
 export type ThreadDetailResponse = ApiOk<ThreadDetailData>;
 
@@ -2612,8 +2616,8 @@ export interface AffiliateEarningRow {
   rateBps: number;
   baseMinor: number;
   poolMinor: number;
-  channel: string;
-  linkType: string;
+  channel: string | null;
+  linkType: string | null;
 }
 
 /** GET /api/affiliate/earnings — commission entries payload (deviation: inline page/total, no meta) */
@@ -2814,7 +2818,7 @@ export interface SellerProductFull {
 }
 
 /** GET /api/store/products — paged seller catalog */
-export type SellerProductsListResponse = ApiPage<SellerProductFull>;
+export type SellerProductsListResponse = ApiPage<SellerProductFull[]>;
 
 /** POST /api/store/products — variant input shared by create/patch product */
 export interface SellerVariantInput {
@@ -2955,15 +2959,17 @@ export interface StoreCategoryDeleteData {
 /** DELETE /api/store/categories/[id] — deleted category ack */
 export type StoreCategoryDeleteResponse = ApiOk<StoreCategoryDeleteData>;
 
-/** GET /api/store/collections — collection row with embedded product summaries */
+/** GET /api/store/collections — collection row with embedded product summaries.
+ *  storeId/updatedAt are emitted by the POST create response but omitted by
+ *  the GET list rows (wire-accurate optionals). */
 export interface SellerCollectionRow {
   id: string;
-  storeId: string;
+  storeId?: string;
   name: string;
   slug: string;
   description: string | null;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
   productCount: number;
   products: { id: string; title: string; slug: string; priceMinor: number; status: string }[];
 }
@@ -3606,7 +3612,7 @@ export interface SellerOrderRow {
 }
 
 /** GET /api/store/orders — paged seller orders */
-export type SellerOrdersListResponse = ApiPage<SellerOrderRow>;
+export type SellerOrdersListResponse = ApiPage<SellerOrderRow[]>;
 
 /** GET /api/store/orders/[id] — order line item row */
 export interface SellerOrderItemRow {
@@ -5181,7 +5187,7 @@ export interface AdminSellersData extends AdminSellerRow {
 }
 
 /** GET /api/admin/sellers — 200 paged response */
-export type AdminSellersResponse = ApiPage<AdminSellersData>;
+export type AdminSellersResponse = ApiPage<AdminSellersData[]>;
 
 // ------------------------------------------------------------
 // §15 — GET /api/admin/sellers/[id] — seller dossier
@@ -5554,7 +5560,7 @@ export interface AdminOrdersData extends AdminOrderRow {
 }
 
 /** GET /api/admin/orders — 200 paged response */
-export type AdminOrdersResponse = ApiPage<AdminOrdersData>;
+export type AdminOrdersResponse = ApiPage<AdminOrdersData[]>;
 
 // ------------------------------------------------------------
 // §15 — GET /api/admin/orders/[id] — order dossier
@@ -5705,7 +5711,7 @@ export interface AdminDisputesData extends AdminDisputeRow {
 }
 
 /** GET /api/admin/disputes — 200 paged response */
-export type AdminDisputesResponse = ApiPage<AdminDisputesData>;
+export type AdminDisputesResponse = ApiPage<AdminDisputesData[]>;
 
 // ------------------------------------------------------------
 // §15 — PATCH /api/admin/disputes/[id] — update dispute
@@ -5750,7 +5756,7 @@ export interface AdminRefundsData extends AdminRefundRow {
 }
 
 /** GET /api/admin/refunds — 200 paged response */
-export type AdminRefundsResponse = ApiPage<AdminRefundsData>;
+export type AdminRefundsResponse = ApiPage<AdminRefundsData[]>;
 
 // ------------------------------------------------------------
 // §15 — POST /api/admin/refunds/[id]/process — process refund
@@ -5816,7 +5822,7 @@ export type AdminProductsData = Omit<AdminProductRow, "flagsJson"> & {
 };
 
 /** GET /api/admin/products — 200 paged response */
-export type AdminProductsResponse = ApiPage<AdminProductsData>;
+export type AdminProductsResponse = ApiPage<AdminProductsData[]>;
 
 // ------------------------------------------------------------
 // §15 — POST /api/admin/products/[id]/approve — approve product
@@ -5903,7 +5909,7 @@ export interface AdminReviewsData {
 }
 
 /** GET /api/admin/reviews — 200 paged response */
-export type AdminReviewsResponse = ApiPage<AdminReviewsData>;
+export type AdminReviewsResponse = ApiPage<AdminReviewsData[]>;
 
 // ------------------------------------------------------------
 // §15 — POST /api/admin/reviews/[id] — moderate review
@@ -5997,7 +6003,7 @@ export interface AdminPayoutsData extends AdminPayoutRow {
 }
 
 /** GET /api/admin/payouts — 200 paged response */
-export type AdminPayoutsResponse = ApiPage<AdminPayoutsData>;
+export type AdminPayoutsResponse = ApiPage<AdminPayoutsData[]>;
 
 // ------------------------------------------------------------
 // §16 — GET /api/admin/payouts/requests — seller payout request queues

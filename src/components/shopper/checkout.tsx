@@ -76,6 +76,39 @@ import {
   type ShopperCtx,
   type CartItemT,
 } from "./ui-bits";
+import type {
+  ApiErr,
+  CheckoutAddress,
+  CreateAddressBody,
+  CreateAddressData,
+  CreateCheckoutBody,
+  CreateCheckoutData,
+  CreateThreadData,
+  DeleteAddressData,
+  GuestOrderLookupData,
+  GuestOrderOtpRequestBody,
+  GuestOrderOtpRequestData,
+  GuestOrderOtpVerifyBody,
+  GuestOrderOtpVerifyData,
+  GuestVerifyBody,
+  GuestVerifyData,
+  GuestVerifyRequestBody,
+  GuestVerifyRequestData,
+  ListAddressesData,
+  MeWalletVoucher,
+  OrderDetailData,
+  PaymentStatusData,
+  QuoteBody,
+  QuoteData,
+  ReceiveOrderData,
+  ReorderData,
+  RetryPaymentData,
+  SimulatePaymentBody,
+  SimulatePaymentData,
+  UpdateAddressBody,
+  UpdateAddressData,
+  VouchersData,
+} from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
 // constants
@@ -255,66 +288,21 @@ function clearDraft() {
 }
 
 // ---------------------------------------------------------------------------
-// server types
+// server types — quote/address/payment shapes come from the centralized API
+// contract (§5 cart & checkout, §6 orders, §7 account hub). AddressT is the
+// UI subset of CheckoutAddress (the inline guest address is synthetic — it
+// carries no server bookkeeping fields); CreateCheckoutUiData narrows the
+// payment ref the PayView navigation relies on.
 // ---------------------------------------------------------------------------
 
-type ShippingOptionT = {
-  id: string;
-  label: string;
-  eta: string;
-  amountMinor: number;
-  freeShipping: boolean;
-  available: boolean;
-  reason: string | null;
-};
+type AddressT = Omit<CheckoutAddress, "ownerToken" | "shopperId" | "createdAt" | "updatedAt">;
 
-type VoucherOutcomeT = {
-  storeId: string;
-  userVoucherId?: string;
-  valid: boolean;
-  reason: string | null;
-  code: string | null;
-  title: string | null;
-  kind: string | null;
-  discountMinor: number;
-  freeShipping: boolean;
-};
+/** POST /api/checkout/create payload with the payment ref narrowed to
+ *  non-null — a successful create always issues one and the UI immediately
+ *  navigates to PayView with it (the contract also allows a null edge). */
+type CreateCheckoutUiData = CreateCheckoutData & { orderPaymentRef: string };
 
-type QuoteGroupT = {
-  storeId: string;
-  storeSlug: string;
-  storeName: string;
-  subtotalMinor: number;
-  discountMinor: number;
-  shippingMinor: number;
-  totalMinor: number;
-  itemCount: number;
-  couponApplied: boolean;
-  voucher?: VoucherOutcomeT | null;
-};
-
-/** A held voucher from GET /api/me/vouchers `mine` (Task 10-b). */
-type HeldVoucherT = {
-  id: string;
-  status: string;
-  voucher: {
-    id: string;
-    code: string;
-    title: string;
-    kind: string;
-    discountMinor: number;
-    percentOff: number | null;
-    maxDiscountMinor: number | null;
-    minSpendMinor: number;
-    expiryAt: string;
-    scope: string;
-    storeId: string | null;
-    regionLimit: string | null;
-    store?: { name: string; slug: string; logoUrl: string | null } | null;
-  };
-};
-
-function voucherOptionLabel(v: HeldVoucherT): string {
+function voucherOptionLabel(v: MeWalletVoucher): string {
   const d = v.voucher;
   if (d.kind === "freeshipping") return `Free shipping · ${d.code}`;
   if (d.percentOff != null) {
@@ -323,41 +311,6 @@ function voucherOptionLabel(v: HeldVoucherT): string {
   }
   return `${formatMinor(d.discountMinor)} off · ${d.code}`;
 }
-
-type QuoteT = {
-  subtotalMinor: number;
-  discountMinor: number;
-  shippingMinor: number;
-  totalMinor: number;
-  shippingRateId: string;
-  coupon: { code: string; valid: boolean; discountMinor?: number; freeShip?: boolean; reason?: string };
-  items: {
-    title: string;
-    variantLabel: string | null;
-    qty: number;
-    unitPriceMinor: number;
-    lineTotalMinor: number;
-    stock: number;
-    moq?: number;
-    storeId?: string;
-    storeSlug?: string;
-    storeName?: string;
-  }[];
-  groups?: QuoteGroupT[];
-  shippingOptions?: ShippingOptionT[];
-};
-
-type AddressT = {
-  id: string;
-  label: string;
-  name: string;
-  phone: string | null;
-  line1: string;
-  city: string;
-  state: string;
-  postcode: string;
-  isDefault: boolean;
-};
 
 // =============================================================================================
 // PROGRESS STEPPER
@@ -573,7 +526,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   // no address book (that stays account-only; guests check out inline only).
   const [guestForm, setGuestForm] = useState(emptyForm);
 
-  const [quote, setQuote] = useState<QuoteT | null>(null);
+  const [quote, setQuote] = useState<QuoteData | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [couponInput, setCouponInput] = useState("");
   const [couponErr, setCouponErr] = useState<string | null>(null);
@@ -581,7 +534,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   const [submitting, setSubmitting] = useState(false);
 
   // Task 10-b claimable vouchers — one held voucher per seller group.
-  const [heldVouchers, setHeldVouchers] = useState<HeldVoucherT[] | null>(null);
+  const [heldVouchers, setHeldVouchers] = useState<MeWalletVoucher[] | null>(null);
   const [voucherSel, setVoucherSel] = useState<Record<string, string>>({}); // storeId → userVoucherId
 
   const accountAddr = useMemo(
@@ -619,7 +572,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   useEffect(() => {
     if (!shopper) return;
     let alive = true;
-    fetchJson<{ addresses: AddressT[] }>("/api/checkout/addresses")
+    fetchJson<ListAddressesData>("/api/checkout/addresses")
       .then((d) => {
         if (!alive) return;
         setAddresses(d.addresses);
@@ -663,7 +616,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
   useEffect(() => {
     if (!shopper) return;
     let alive = true;
-    fetchJson<{ mine: HeldVoucherT[] }>("/api/me/vouchers")
+    fetchJson<VouchersData>("/api/me/vouchers")
       .then((d) => {
         if (!alive) return;
         setHeldVouchers((d.mine ?? []).filter((v) => v.status === "AVAILABLE"));
@@ -700,13 +653,13 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
         // OPTION A: no storeSlug — the server groups cart items per seller itself.
         // vouchers: per-group claimable voucher verdicts (Task 10-b).
         const ve = voucherEntriesRef.current;
-        const q = await postJson<QuoteT>("/api/checkout/quote", {
+        const q = await postJson<QuoteData>("/api/checkout/quote", {
           items: payloadItems,
           couponCode: code || undefined,
           shippingRateId: rateId,
           state: state ?? undefined,
           vouchers: ve.length > 0 ? ve : undefined,
-        });
+        } satisfies QuoteBody);
         if (seq !== quoteSeq.current) return; // superseded by a newer request
         setQuote(q);
       } catch {
@@ -755,13 +708,13 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     const seq = ++quoteSeq.current; // join the same sequencing as refreshQuote
     setQuoting(true);
     try {
-      const q = await postJson<QuoteT>("/api/checkout/quote", {
+      const q = await postJson<QuoteData>("/api/checkout/quote", {
         items: payloadItems,
         couponCode: code,
         shippingRateId: draft.shippingRateId,
         state: destState ?? undefined,
         vouchers: voucherEntries.length > 0 ? voucherEntries : undefined,
-      });
+      } satisfies QuoteBody);
       if (seq !== quoteSeq.current) return; // superseded by a newer request
       if (q.coupon?.valid) {
         setDraft((d) => ({ ...d, couponCode: code }));
@@ -792,11 +745,11 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     if (Object.values(errs).some(Boolean)) return;
     setFormBusy(true);
     try {
-      const payload = { ...form, name: form.name.trim(), line1: form.line1.trim(), city: form.city.trim(), postcode: form.postcode.trim() };
+      const payload = { ...form, name: form.name.trim(), line1: form.line1.trim(), city: form.city.trim(), postcode: form.postcode.trim() } satisfies CreateAddressBody;
       const res =
         formMode?.kind === "edit"
-          ? await patchJson<{ address: AddressT; addresses: AddressT[] }>(`/api/checkout/addresses/${formMode.address.id}`, payload)
-          : await postJson<{ address: AddressT; addresses: AddressT[] }>("/api/checkout/addresses", payload);
+          ? await patchJson<UpdateAddressData>(`/api/checkout/addresses/${formMode.address.id}`, payload)
+          : await postJson<CreateAddressData>("/api/checkout/addresses", payload);
       setAddresses(res.addresses);
       setDraft((d) => ({ ...d, addressId: res.address.id }));
       setFormMode(null);
@@ -814,7 +767,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 
   async function removeAddress(id: string) {
     try {
-      const res = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
+      const res = await deleteJson<DeleteAddressData>(`/api/checkout/addresses/${id}`);
       setAddresses(res.addresses);
       setDeleteArm(null);
       setDraft((d) => (d.addressId === id ? { ...d, addressId: res.addresses.find((a) => a.isDefault)?.id ?? res.addresses[0]?.id ?? null } : d));
@@ -827,7 +780,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 
   async function makeDefault(id: string) {
     try {
-      const res = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
+      const res = await patchJson<UpdateAddressData>(`/api/checkout/addresses/${id}`, { isDefault: true } satisfies UpdateAddressBody);
       setAddresses(res.addresses);
       window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Default address updated");
@@ -854,7 +807,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     setGuestCodeBusy(true);
     setGuestVerifyError(null);
     try {
-      await postJson<{ sent: boolean; message: string }>("/api/checkout/guest-verify/request", { email: guestEmail });
+      await postJson<GuestVerifyRequestData>("/api/checkout/guest-verify/request", { email: guestEmail } satisfies GuestVerifyRequestBody);
       setGuestCodeSentTo(guestEmail);
       setGuestCode("");
     } catch (e) {
@@ -879,9 +832,9 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     setGuestCodeBusy(true);
     setGuestVerifyError(null);
     try {
-      const verified = await postJson<{ token: string; email: string; expiresAt: string }>(
+      const verified = await postJson<GuestVerifyData>(
         "/api/checkout/guest-verify/verify",
-        { email: guestEmail, code: digits }
+        { email: guestEmail, code: digits } satisfies GuestVerifyBody
       );
       // In-memory only — never persisted to localStorage/sessionStorage.
       setGuestVerified({ email: verified.email, token: verified.token, expiresAtMs: new Date(verified.expiresAt).getTime() });
@@ -959,13 +912,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
     }
     setSubmitting(true);
     try {
-      const res = await postJson<{
-        orderNumber: string;
-        orderNumbers?: string[];
-        orderPaymentRef: string;
-        totalMinor: number;
-        vouchersApplied?: { storeId: string; code: string | null; title: string | null; kind: string | null; discountMinor: number; freeShipping: boolean }[];
-      }>(
+      const res = await postJson<CreateCheckoutUiData>(
         "/api/checkout/create",
         {
           items: payloadItems,
@@ -986,7 +933,7 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
           shippingRateId: draft.shippingRateId,
           provider: draft.provider,
           customerNote: draft.note.trim() || undefined,
-        },
+        } satisfies CreateCheckoutBody,
         { "Idempotency-Key": draft.idemKey } // stable per checkout session → safe retries
       );
       const orderNumbers = res.orderNumbers?.length ? res.orderNumbers : [res.orderNumber];
@@ -1819,23 +1766,8 @@ export function CheckoutView({ ctx }: { ctx: ShopperCtx }) {
 // SANDBOX PAYMENT VIEW
 // =============================================================================================
 
-type PaymentT = {
-  status: string;
-  orderNumber: string;
-  orderNumbers?: string[];
-  isGroup?: boolean;
-  orderCount?: number;
-  storeNames?: string[];
-  amountMinor: number;
-  storeName: string | null;
-  storeSlug: string | null;
-  provider: string;
-  /** Server-authoritative payment window end (ISO) — drives the countdown. */
-  expiresAt: string;
-};
-
 export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: string }) {
-  const [payment, setPayment] = useState<PaymentT | null>(null);
+  const [payment, setPayment] = useState<PaymentStatusData | null>(null);
   const [failed, setFailed] = useState(false);
   const [phase, setPhase] = useState<"awaiting" | "success" | "failure" | "expired">("awaiting");
   const [busy, setBusy] = useState(false);
@@ -1846,7 +1778,7 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
 
   const load = useCallback(async () => {
     try {
-      const p = await fetchJson<PaymentT>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
+      const p = await fetchJson<PaymentStatusData>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}`);
       setPayment(p);
       setFailed(false);
       if (p.expiresAt) {
@@ -1903,9 +1835,9 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
     if (busy) return;
     setBusy(true);
     try {
-      await postJson<{ status: string; orderNumber: string }>(
+      await postJson<SimulatePaymentData>(
         `/api/checkout/payments/${encodeURIComponent(paymentRef)}/simulate`,
-        { result }
+        { result } satisfies SimulatePaymentBody
       );
       if (result === "succeeded") {
         // cart is emptied server-side on verified success — just refresh the badge
@@ -1930,7 +1862,7 @@ export function PayView({ ctx, paymentRef }: { ctx: ShopperCtx; paymentRef: stri
     if (busy) return;
     setBusy(true);
     try {
-      await postJson(`/api/checkout/payments/${encodeURIComponent(paymentRef)}/retry`, {});
+      await postJson<RetryPaymentData>(`/api/checkout/payments/${encodeURIComponent(paymentRef)}/retry`, {});
       setPhase("awaiting");
       await load();
     } catch (e) {
@@ -2200,8 +2132,6 @@ function orderHero(d: OrderDetailT): { Icon: typeof Clock; title: string; blurb:
   }
 }
 
-type ReorderResultT = { added: { title: string; qty: number }[]; skipped: { title: string; reason: string }[] };
-
 export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNumber: string }) {
   const [email] = useState(() => (typeof window !== "undefined" ? window.localStorage.getItem(EMAIL_KEY) ?? "" : ""));
   const [data, setData] = useState<OrderDetailT | null>(null);
@@ -2222,7 +2152,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     const grantHeaders = orderGrantHeaders(orderNumber);
     if (grantHeaders) {
       try {
-        const d = await fetchJson<OrderDetailT>(
+        const d = await fetchJson<GuestOrderLookupData>(
           `/api/orders/lookup?orderNumber=${encodeURIComponent(orderNumber)}`,
           { headers: grantHeaders }
         );
@@ -2240,7 +2170,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     // 2) Account path — signed-in buyer deep-linking from the Me hub;
     //    ownership enforced server-side by the session's shopperId.
     try {
-      const d = await fetchJson<OrderDetailT>(`/api/me/orders/${encodeURIComponent(orderNumber)}`);
+      const d = await fetchJson<OrderDetailData>(`/api/me/orders/${encodeURIComponent(orderNumber)}`);
       setData(d);
       setVerificationRequired(false);
       loadedRef.current = true;
@@ -2293,7 +2223,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
         headers ? { headers } : undefined
       );
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
+        const body = (await res.json().catch(() => null)) as ApiErr | null;
         throw new Error(body?.error?.message ?? "Could not generate the receipt");
       }
       const blob = await res.blob();
@@ -2332,7 +2262,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     if (receiveBusy) return;
     setReceiveBusy(true);
     try {
-      const res = await postJson<{ orderNumber: string; status: string }>(`/api/me/orders/${encodeURIComponent(orderNumber)}/receive`, {});
+      const res = await postJson<ReceiveOrderData>(`/api/me/orders/${encodeURIComponent(orderNumber)}/receive`, {});
       toast.success("Order received — thank you!", {
         description: `Order ${res.orderNumber} moved to To Rate — rate it within 30 days to complete it.`,
       });
@@ -2350,7 +2280,7 @@ export function OrderStatusView({ ctx, orderNumber }: { ctx: ShopperCtx; orderNu
     if (reorderBusy) return;
     setReorderBusy(true);
     try {
-      const res = await postJson<ReorderResultT>(`/api/me/orders/${encodeURIComponent(orderNumber)}/reorder`, {});
+      const res = await postJson<ReorderData>(`/api/me/orders/${encodeURIComponent(orderNumber)}/reorder`, {});
       if (res.added.length === 0) {
         toast.error("Nothing could be added to your cart", {
           description:
@@ -2740,7 +2670,10 @@ function ContactSellerButton({
   const startThread = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await postJson<{ thread: { id: string } }>("/api/chat/threads", {
+      const res = await postJson<CreateThreadData>("/api/chat/threads", {
+        // storeId/storeSlug arrive as `string | null | undefined` props here —
+        // the contract CreateThreadBody wants plain strings, so the body keeps
+        // its original (unguarded) shape instead of a `satisfies` narrowing.
         ...(storeId ? { storeId } : { storeSlug }),
         orderNumber,
         message: `Hi ${storeName}! I'd like to ask about my order ${orderNumber}.`,
@@ -2808,7 +2741,7 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
         const headers = orderGrantHeaders(r.orderNumber);
         if (headers) {
           try {
-            return await fetchJson<LookupResultT>(
+            return await fetchJson<GuestOrderLookupData>(
               `/api/orders/lookup?orderNumber=${encodeURIComponent(r.orderNumber)}`,
               { headers }
             );
@@ -2817,7 +2750,7 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
           }
         }
         try {
-          return await fetchJson<LookupResultT>(`/api/me/orders/${encodeURIComponent(r.orderNumber)}`);
+          return await fetchJson<OrderDetailData>(`/api/me/orders/${encodeURIComponent(r.orderNumber)}`);
         } catch {
           return null;
         }
@@ -2928,9 +2861,6 @@ export function OrdersView({ ctx }: { ctx: ShopperCtx }) {
 
 // ---------------------------------------------------------------- lookup
 
-type OtpRequestResponseT = { sent: boolean; message: string };
-type OtpVerifyResponseT = { accessGrant: string; grantExpiresInMs: number };
-
 // FINAL CLOSURE §1 — the lookup view is a TWO-STEP verification flow now:
 //   Step 1  email + order number → POST /api/orders/otp/request (uniform 200 —
 //           the pair can only REQUEST a code, never authorize data);
@@ -2960,10 +2890,10 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
     setBusy(true);
     setError(null);
     try {
-      await postJson<OtpRequestResponseT>("/api/orders/otp/request", {
+      await postJson<GuestOrderOtpRequestData>("/api/orders/otp/request", {
         email: email.trim(),
         orderNumber: orderNumber.trim(),
-      });
+      } satisfies GuestOrderOtpRequestBody);
       window.localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
       setStep("code");
       setCode("");
@@ -2989,14 +2919,14 @@ export function LookupView({ ctx }: { ctx: ShopperCtx }) {
     setCodeBusy(true);
     setError(null);
     try {
-      const verified = await postJson<OtpVerifyResponseT>("/api/orders/otp/verify", {
+      const verified = await postJson<GuestOrderOtpVerifyData>("/api/orders/otp/verify", {
         email: email.trim(),
         orderNumber: orderNumber.trim(),
         code: digits,
-      });
+      } satisfies GuestOrderOtpVerifyBody);
       // In-memory only — never persisted to localStorage/sessionStorage.
       rememberOrderGrant(orderNumber.trim(), verified.accessGrant, Date.now() + verified.grantExpiresInMs);
-      const data = await fetchJson<LookupResultT>(
+      const data = await fetchJson<GuestOrderLookupData>(
         `/api/orders/lookup?orderNumber=${encodeURIComponent(orderNumber.trim())}`,
         { headers: { Authorization: `Bearer ${verified.accessGrant}` } }
       );

@@ -25,17 +25,30 @@ import { formatMinor, toMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { apiSend, useApi } from "./use-api";
 import { EmptyState, ErrorState, Money, PageHeader, TableSkeleton, TONE_CLASS, TypingConfirm, fmtDate } from "./ui-bits";
+import type {
+  AdminCategoryNode,
+  AdminProductsData,
+  AdminSellersData,
+  HolidayCreateBody,
+  HolidayCreateData,
+  HolidayDeleteData,
+  HolidayPatchBody,
+  HolidayPatchData,
+  HolidaysData,
+  OverrideCreateBody,
+  OverrideCreateData,
+  OverrideDeleteData,
+  OverridePatchBody,
+  OverridePatchData,
+  OverridesData,
+} from "@/lib/types/api-contract";
 
 /* ------------------------------------------------------------------ shared */
 
-type CatOpt = { id: string; name: string };
-type SellerOpt = { id: string; displayName: string; email: string };
-type ProductOpt = { id: string; title: string };
-
 function useTargetMaps() {
-  const cats = useApi<CatOpt[]>("/api/admin/categories");
-  const sellers = useApi<SellerOpt[]>("/api/admin/sellers?size=100");
-  const products = useApi<ProductOpt[]>("/api/admin/products?status=all&size=100");
+  const cats = useApi<AdminCategoryNode[]>("/api/admin/categories");
+  const sellers = useApi<AdminSellersData[]>("/api/admin/sellers?size=100");
+  const products = useApi<AdminProductsData[]>("/api/admin/products?status=all&size=100");
   return {
     catName: (id: string) => cats.data?.find((c) => c.id === id)?.name,
     sellerName: (id: string) => sellers.data?.find((s) => s.id === id)?.displayName,
@@ -46,34 +59,21 @@ function useTargetMaps() {
 
 /* ---------------------------------------------------------------- FIN-02 */
 
-type OverrideRow = {
-  id: string;
-  scope: "category" | "seller" | "product";
-  categoryId?: string | null;
-  sellerId?: string | null;
-  productId?: string | null;
-  percent?: number | null;
-  fixedFeeMinor?: number | null;
-  holdDays?: number | null;
-  validFrom?: string | null;
-  validTo?: string | null;
-  isActive: boolean;
-};
-
 const SCOPE_ICON = { category: Tags, seller: StoreIcon, product: Package };
 
 export function OverridesView() {
-  const { data, error, loading, refetch } = useApi<OverrideRow[]>("/api/admin/commission/overrides");
+  const { data, error, loading, refetch } = useApi<OverridesData[]>("/api/admin/commission/overrides");
   const maps = useTargetMaps();
   const rows = data ?? [];
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleting, setDeleting] = useState<OverrideRow | null>(null);
+  const [deleting, setDeleting] = useState<OverridesData | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const toggle = async (o: OverrideRow) => {
+  const toggle = async (o: OverridesData) => {
     try {
-      await apiSend(`/api/admin/commission/overrides/${o.id}`, "PATCH", { isActive: !o.isActive });
+      const body: OverridePatchBody = { isActive: !o.isActive };
+      await apiSend<OverridePatchData>(`/api/admin/commission/overrides/${o.id}`, "PATCH", body);
       toast.success(o.isActive ? "Override disabled" : "Override enabled");
       void refetch();
     } catch (e) {
@@ -81,7 +81,7 @@ export function OverridesView() {
     }
   };
 
-  const targetLabel = (o: OverrideRow): string => {
+  const targetLabel = (o: OverridesData): string => {
     if (o.scope === "category") return maps.catName(o.categoryId ?? "") ?? o.categoryId ?? "—";
     if (o.scope === "seller") return maps.sellerName(o.sellerId ?? "") ?? o.sellerId ?? "—";
     return maps.productName(o.productId ?? "") ?? o.productId ?? "—";
@@ -183,7 +183,7 @@ export function OverridesView() {
           if (!deleting) return;
           setBusy(true);
           try {
-            await apiSend(`/api/admin/commission/overrides/${deleting.id}`, "DELETE");
+            await apiSend<OverrideDeleteData>(`/api/admin/commission/overrides/${deleting.id}`, "DELETE");
             toast.success("Override deleted");
             setDeleting(null);
             void refetch();
@@ -200,9 +200,9 @@ export function OverridesView() {
 }
 
 function OverrideCreateDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: () => void }) {
-  const cats = useApi<CatOpt[]>("/api/admin/categories");
-  const sellers = useApi<SellerOpt[]>("/api/admin/sellers?size=100");
-  const products = useApi<ProductOpt[]>("/api/admin/products?status=all&size=100");
+  const cats = useApi<AdminCategoryNode[]>("/api/admin/categories");
+  const sellers = useApi<AdminSellersData[]>("/api/admin/sellers?size=100");
+  const products = useApi<AdminProductsData[]>("/api/admin/products?status=all&size=100");
 
   const [scope, setScope] = useState<"category" | "seller" | "product">("category");
   const [targetId, setTargetId] = useState("");
@@ -223,7 +223,7 @@ function OverrideCreateDialog({ open, onOpenChange, onCreated }: { open: boolean
   const submit = async () => {
     setSaving(true);
     try {
-      const body: Record<string, unknown> = { scope };
+      const body: OverrideCreateBody = { scope };
       if (scope === "category") body.categoryId = targetId;
       if (scope === "seller") body.sellerId = targetId;
       if (scope === "product") body.productId = targetId;
@@ -232,7 +232,7 @@ function OverrideCreateDialog({ open, onOpenChange, onCreated }: { open: boolean
       if (holdDays !== "") body.holdDays = Number(holdDays);
       if (validFrom) body.validFrom = new Date(validFrom).toISOString();
       if (validTo) body.validTo = new Date(validTo).toISOString();
-      await apiSend("/api/admin/commission/overrides", "POST", body);
+      await apiSend<OverrideCreateData>("/api/admin/commission/overrides", "POST", body);
       toast.success("Override created");
       setTargetId("");
       setPercent("");
@@ -326,27 +326,16 @@ function OverrideCreateDialog({ open, onOpenChange, onCreated }: { open: boolean
 
 /* ---------------------------------------------------------------- FIN-03 */
 
-type HolidayRow = {
-  id: string;
-  name: string;
-  scope: "all" | "sellers" | "categories";
-  scopeIds?: string | null;
-  percent: number;
-  startsAt: string;
-  endsAt: string;
-  isActive: boolean;
-};
-
 export function FeeHolidaysView() {
-  const { data, error, loading, refetch } = useApi<HolidayRow[]>("/api/admin/commission/holidays");
+  const { data, error, loading, refetch } = useApi<HolidaysData[]>("/api/admin/commission/holidays");
   const maps = useTargetMaps();
   const rows = data ?? [];
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleting, setDeleting] = useState<HolidayRow | null>(null);
+  const [deleting, setDeleting] = useState<HolidaysData | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const scopeLabel = (h: HolidayRow): string => {
+  const scopeLabel = (h: HolidaysData): string => {
     if (h.scope === "all") return "everything";
     const ids = parseIds(h.scopeIds);
     if (ids.length === 0) return h.scope;
@@ -356,9 +345,10 @@ export function FeeHolidaysView() {
     return names.length > 0 ? names.slice(0, 3).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "") : `${ids.length} target${ids.length === 1 ? "" : "s"}`;
   };
 
-  const toggle = async (h: HolidayRow) => {
+  const toggle = async (h: HolidaysData) => {
     try {
-      await apiSend(`/api/admin/commission/holidays/${h.id}`, "PATCH", { isActive: !h.isActive });
+      const body: HolidayPatchBody = { isActive: !h.isActive };
+      await apiSend<HolidayPatchData>(`/api/admin/commission/holidays/${h.id}`, "PATCH", body);
       toast.success(h.isActive ? "Holiday disabled" : "Holiday enabled");
       void refetch();
     } catch (e) {
@@ -459,7 +449,7 @@ export function FeeHolidaysView() {
           if (!deleting) return;
           setBusy(true);
           try {
-            await apiSend(`/api/admin/commission/holidays/${deleting.id}`, "DELETE");
+            await apiSend<HolidayDeleteData>(`/api/admin/commission/holidays/${deleting.id}`, "DELETE");
             toast.success("Fee holiday deleted");
             setDeleting(null);
             void refetch();
@@ -485,8 +475,8 @@ function parseIds(json: string | null | undefined): string[] {
 }
 
 function HolidayCreateDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: () => void }) {
-  const cats = useApi<CatOpt[]>("/api/admin/categories");
-  const sellers = useApi<SellerOpt[]>("/api/admin/sellers?size=100");
+  const cats = useApi<AdminCategoryNode[]>("/api/admin/categories");
+  const sellers = useApi<AdminSellersData[]>("/api/admin/sellers?size=100");
 
   const [name, setName] = useState("");
   const [scope, setScope] = useState<"all" | "sellers" | "categories">("all");
@@ -504,14 +494,15 @@ function HolidayCreateDialog({ open, onOpenChange, onCreated }: { open: boolean;
   const submit = async () => {
     setSaving(true);
     try {
-      await apiSend("/api/admin/commission/holidays", "POST", {
+      const body: HolidayCreateBody = {
         name: name.trim(),
         scope,
         scopeIds: scope === "all" ? [] : targets,
         percent: Number(percent || "0"),
         startsAt: startsAt ? new Date(startsAt).toISOString() : new Date().toISOString(),
         endsAt: endsAt ? new Date(endsAt).toISOString() : new Date(Date.now() + 7 * 86400000).toISOString(),
-      });
+      };
+      await apiSend<HolidayCreateData>("/api/admin/commission/holidays", "POST", body);
       toast.success("Fee holiday created");
       setName("");
       setScope("all");

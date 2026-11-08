@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
 import { detectReviewSubmissionThreat } from "@/lib/review-text";
+import type { ReviewEditBody, ReviewEditData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     throw new ApiError(503, "REVIEWS_NOT_MIGRATED", "Verified-purchase reviews await a pending database migration");
   }
   const { id } = await ctx.params;
-  const raw = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const raw = (await req.json().catch(() => ({}))) as ReviewEditBody;
 
   const review = await db.review.findFirst({
     where: { id, shopperId: me.id },
@@ -101,5 +102,6 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     meta: { editNumber: edits + 1, rating: merged.value.rating, productId: review.productId },
   });
 
-  return ok({ id: review.id, status: "pending", editsRemaining: MAX_EDITS - (edits + 1) });
+  const payload: ReviewEditData = { id: review.id, status: "pending", editsRemaining: MAX_EDITS - (edits + 1) };
+  return ok(payload);
 });

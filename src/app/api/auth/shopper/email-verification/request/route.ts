@@ -3,6 +3,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { requireShopper } from "@/lib/auth";
 import { requireEmailChannel } from "@/lib/email-provider";
 import { assertEmailOtpStorage, issueEmailOtp, getShopperEmailVerified } from "@/lib/guest-otp";
+import type { ShopperEvDoneData, ShopperEvSentData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,8 @@ export const POST = handle(async (req: Request) => {
   // Already verified → idempotent no-op (the caller's own state — revealing
   // it leaks nothing).
   if (await getShopperEmailVerified(me.id)) {
-    return ok({ alreadyVerified: true, sent: false });
+    const payload: ShopperEvDoneData = { alreadyVerified: true, sent: false };
+    return ok(payload);
   }
 
   const channel = requireEmailChannel();
@@ -73,5 +75,6 @@ export const POST = handle(async (req: Request) => {
       "A verification code could not be sent right now — wait for any earlier code to expire (10 minutes) and try again"
     );
   }
-  return ok({ sent: true, message: "A 6-digit code was sent to your email address. It expires in 10 minutes." });
+  const payload: ShopperEvSentData = { sent: true, message: "A 6-digit code was sent to your email address. It expires in 10 minutes." };
+  return ok(payload);
 });

@@ -6,6 +6,7 @@ import { runLedgerInvariants } from "@/lib/ledger";
 import { processPaymentWebhook } from "@/app/api/webhooks/payments/process";
 import { rateLimit } from "@/lib/ratelimit";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminSweepData, AdminWalletCacheDrift } from "@/lib/types/api-contract";
 
 // POST /api/admin/payouts/sweep — bounded, repeatable operations sweep (RBAC payouts.manage).
 //
@@ -49,7 +50,7 @@ export const POST = handle(async (req: NextRequest) => {
     : [];
   const alertedIds = new Set(priorAlerts.map((a) => a.entityId));
 
-  const stuck: Array<{ payoutId: string; referenceNo: string; hoursStuck: number; updatedAt: string; alerted: boolean }> = [];
+  const stuck: AdminSweepData["stuck"] = [];
   let stuckNewlyDetected = 0;
   for (const p of stuckRows) {
     const hoursStuck = Math.floor((Date.now() - p.updatedAt.getTime()) / 3600000);
@@ -121,11 +122,23 @@ export const POST = handle(async (req: NextRequest) => {
     },
   });
 
-  return ok({
+  const payload: AdminSweepData = {
     stuck,
     stuckHours,
     webhooks: { scanned: unprocessed.length, reprocessed, stillFailing, skipped },
-    invariants,
+    invariants: {
+      ok: invariants.ok,
+      problems: invariants.problems,
+      hardDrift: invariants.hardDrift.map(
+        (d): AdminWalletCacheDrift => ({ ...d, lastCacheWriteAt: d.lastCacheWriteAt.toISOString() })
+      ),
+      timeMaturityStale: invariants.timeMaturityStale.map(
+        (d): AdminWalletCacheDrift => ({ ...d, lastCacheWriteAt: d.lastCacheWriteAt.toISOString() })
+      ),
+      txnCount: invariants.txnCount,
+      walletCount: invariants.walletCount,
+    },
     ranAt: new Date().toISOString(),
-  });
+  };
+  return ok(payload);
 });

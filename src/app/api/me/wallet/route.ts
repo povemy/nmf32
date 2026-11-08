@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
+import type { WalletData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +26,14 @@ export const GET = handle(async () => {
   ]);
 
   if (!NOMO_FINANCE_ENABLED) {
-    return ok({
+    const payload: WalletData = {
       disabled: true,
       message: "NomoPay & Nomo Coins are coming soon.",
       wallet: null,
       checkIn: null,
       vouchers: { available: availableVouchers, used: usedVouchers },
-    });
+    };
+    return ok(payload);
   }
 
   // Wallet is created lazily on first read so every account has one.
@@ -46,7 +48,7 @@ export const GET = handle(async () => {
   const canClaim = !lastCheckInAt || now.getTime() - lastCheckInAt.getTime() >= CLAIM_COOLDOWN_MS;
   const nextClaimAt = lastCheckInAt ? new Date(lastCheckInAt.getTime() + CLAIM_COOLDOWN_MS) : null;
 
-  return ok({
+  const payload: WalletData = {
     wallet: {
       balanceMinor: wallet.balanceMinor,
       coinBalance: wallet.coinBalance,
@@ -56,6 +58,11 @@ export const GET = handle(async () => {
       checkInStreak: wallet.checkInStreak,
     },
     vouchers: { available: availableVouchers, used: usedVouchers },
-    checkIn: { canClaim, lastCheckInAt, nextClaimAt },
-  });
+    checkIn: {
+      canClaim,
+      lastCheckInAt: lastCheckInAt ? lastCheckInAt.toISOString() : null,
+      nextClaimAt: nextClaimAt ? nextClaimAt.toISOString() : null,
+    },
+  };
+  return ok(payload);
 });

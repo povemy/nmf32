@@ -35,6 +35,15 @@ import {
   type Section,
   type ThemeTokens,
 } from "@/lib/sections";
+import type {
+  NewsletterBody,
+  NewsletterData,
+  SfCardStyle,
+  SfHomeData,
+  SfPageData,
+  SfProductCard,
+  StoreFollowData,
+} from "@/lib/types/api-contract";
 import { cn } from "@/lib/utils";
 import { setMeta } from "@/lib/seo";
 import { useApp } from "@/lib/app-store";
@@ -46,44 +55,33 @@ import {
   openProduct,
   EmptyState,
   ProductCard,
-  type ProductCardT,
   type ShopperCtx,
   ensureFontsLoaded,
-  type CardStyleTokens,
 } from "./ui-bits";
 
 // ---------------------------------------------------------------------------
-// Payloads
+// Payloads — derived from the contract's SfHomeData (GET /api/sf/[slug]) and
+// SfPageData (GET /api/sf/[slug]/pages/[pageSlug]). The store projection is
+// the INTERSECTION of both payload stores: fields only the home payload
+// carries are optional, `theme` is narrowed to the client-side ThemeTokens
+// token type (radius/buttonStyle unions index the RADIUS_PX map), cardStyle
+// uses the contract SfCardStyle, and `display.metric` is narrowed to the
+// card-metric union the product cards render.
 // ---------------------------------------------------------------------------
 
-export type SfStore = {
-  id: string;
-  name: string;
-  slug: string;
-  tagline: string | null;
-  logoUrl: string | null;
-  bannerUrl: string | null;
-  description?: string | null;
-  theme: ThemeTokens;
-  whatsapp: string | null;
-  supportEmail?: string | null;
-  supportPhone?: string | null;
-  social?: Record<string, string>;
-  /** Task 10-d — follower count carried by /api/sf/[slug]. */
-  followers?: number | null;
-  /** Seller-customized product-card typography (null = platform defaults). */
-  cardStyle?: CardStyleTokens | null;
-  /** Seller store settings work order — the store's own categories (chip row
-   *  below the hero) + per-store card display config. */
-  categories?: SfCategoryT[];
-  display?: { showStars: boolean; metric: "views" | "sold" };
-};
+export type SfStore = Omit<SfPageData["store"], "theme" | "cardStyle"> &
+  Partial<Omit<SfHomeData["store"], "theme" | "cardStyle" | "display" | "categories" | keyof SfPageData["store"]>> & {
+    theme: ThemeTokens;
+    cardStyle?: SfCardStyle | null;
+    display?: { showStars: boolean; metric: "views" | "sold" };
+    categories?: SfCategoryT[];
+  };
 
-/** One of the store's own storefront categories (seller-defined). */
-export type SfCategoryT = { id: string; name: string; sortOrder: number };
+/** One of the store's own storefront categories (contract SfHomeData["store"]["categories"][number]). */
+export type SfCategoryT = SfHomeData["store"]["categories"][number];
 
-type SfHomePayload = { store: SfStore; page: { id: string; title: string; slug: string; sections: Section[]; publishedVersion: number } };
-type SfPagePayload = { store: SfStore; page: { id: string; title: string; slug: string; pageType?: string }; sections: Section[] };
+type SfHomePayload = { store: SfStore; page: SfHomeData["page"] };
+type SfPagePayload = { store: SfStore; page: SfPageData["page"]; sections: SfPageData["sections"] };
 
 // ---------------------------------------------------------------------------
 // Theme plumbing
@@ -334,7 +332,7 @@ function FollowStoreButton({ store }: { store: SfStore }) {
   // expected and keeps the sf payload followers count).
   useEffect(() => {
     let alive = true;
-    fetchJson<{ following: boolean; followers: number }>(`/api/stores/${encodeURIComponent(store.slug)}/follow`)
+    fetchJson<StoreFollowData>(`/api/stores/${encodeURIComponent(store.slug)}/follow`)
       .then((d) => {
         if (!alive) return;
         setFollowing(d.following);
@@ -356,7 +354,7 @@ function FollowStoreButton({ store }: { store: SfStore }) {
     setFollowers((n) => (n == null ? n : Math.max(0, n + (next ? 1 : -1))));
     setBusy(true);
     try {
-      const d = await postJson<{ following: boolean; followers: number }>(
+      const d = await postJson<StoreFollowData>(
         `/api/stores/${encodeURIComponent(store.slug)}/follow`,
         {}
       );
@@ -660,7 +658,7 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
   const showPrice = bool(props, "showPrice", true);
   const showViewAll = bool(props, "showViewAll", true);
   const columns = String(num(props, "columns", 4));
-  const [products, setProducts] = useState<ProductCardT[] | null>(null);
+  const [products, setProducts] = useState<SfProductCard[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -677,7 +675,7 @@ function ProductGridSection({ props, rctx }: { props: Record<string, unknown>; r
     if (collectionSlug) params.set("collection", collectionSlug);
     if (categoryFilter) params.set("category", categoryFilter);
     if (sfSearch.trim()) params.set("search", sfSearch.trim());
-    fetchJson<ProductCardT[]>(`/api/sf/${encodeURIComponent(store.slug)}/products?${params.toString()}`)
+    fetchJson<SfProductCard[]>(`/api/sf/${encodeURIComponent(store.slug)}/products?${params.toString()}`)
       .then((d) => alive && setProducts(Array.isArray(d) ? d : []))
       .catch(() => alive && setFailed(true));
     return () => {
@@ -961,7 +959,7 @@ function NewsletterSection({ props, rctx }: { props: Record<string, unknown>; rc
     }
     setBusy(true);
     try {
-      await postJson(`/api/sf/${encodeURIComponent(store.slug)}/newsletter`, { email: email.trim() });
+      await postJson<NewsletterData>(`/api/sf/${encodeURIComponent(store.slug)}/newsletter`, { email: email.trim() } satisfies NewsletterBody);
       toast.success("You're on the list!", { description: `Thanks for subscribing to ${store.name}.` });
       setEmail("");
     } catch (e) {
@@ -1179,7 +1177,7 @@ function MarketplaceStrip({ props, rctx }: { props: Record<string, unknown>; rct
   const nav = rctx.nav.nav; // ShopperCtx → nav function
   const title = str(props, "title");
   const limit = Math.min(12, Math.max(2, num(props, "limit", 6)));
-  const [items, setItems] = useState<ProductCardT[] | null>(null);
+  const [items, setItems] = useState<SfProductCard[] | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1226,8 +1224,8 @@ function MarketplaceStrip({ props, rctx }: { props: Record<string, unknown>; rct
   );
 }
 
-async function fetchEnvelopeProducts(limit: number): Promise<ProductCardT[]> {
-  const { data } = await fetchEnvelope<ProductCardT[]>(`/api/market/products?limit=${limit}&sort=popular`);
+async function fetchEnvelopeProducts(limit: number): Promise<SfProductCard[]> {
+  const { data } = await fetchEnvelope<SfProductCard[]>(`/api/market/products?limit=${limit}&sort=popular`);
   return Array.isArray(data) ? data : [];
 }
 

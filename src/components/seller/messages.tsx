@@ -35,18 +35,34 @@ import {
   type ChatFilter,
 } from "@/components/chat/chat-ui";
 import { apiGet, apiSend, EmptyState, type SellerNav } from "./ui-bits";
+import type {
+  ClearContextData,
+  SellerReplyData,
+  StoreChatThreadSummary,
+  ThreadContextCard,
+  ThreadMessagesData,
+  ThreadReadData,
+} from "@/lib/types/api-contract";
 
-/** The clickable "what is this chat about" bubble — product or order. */
-type ThreadContextCard =
-  | { kind: "product"; productId: string; title: string; slug: string; storeSlug: string; image: string | null; priceMinor: number; compareAtPriceMinor: number | null }
-  | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; itemCount: number; firstItemTitle: string | null; firstItemImage: string | null };
+/** GET /api/store/chat/threads/[id]/messages payload as this hub consumes it:
+ *  the contract types the message rows' senderType as a free string while the
+ *  shared chat-ui module narrows it to "shopper" | "seller" for bubble
+ *  alignment — so only `messages` is re-typed (rest is ThreadMessagesData). */
+type ThreadMessagesView = Omit<ThreadMessagesData, "messages"> & { messages: ChatMsg[] };
+
+/** Older keyset page of the same route (only hasMore + messages are read). */
+type ChatMsgPage = Pick<ThreadMessagesView, "hasMore" | "messages">;
+
+/** Conversation header bar state — the contract thread row narrowed to the
+ *  fields the header renders. */
+type ThreadHeaderView = Pick<ThreadMessagesData["thread"], "shopperName" | "shopperEmail" | "orderNumber" | "contextType" | "subject">;
 
 export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: string | null; onNavigate?: (n: SellerNav) => void } = {}) {
   const [threads, setThreads] = useState<ChatThreadRow[] | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ChatFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [thread, setThread] = useState<{ shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
+  const [thread, setThread] = useState<ThreadHeaderView | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
   // Phase 2.4 (C2.x): bounded history — the GET returns the latest
@@ -67,7 +83,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
       // local snapshot instantly (filterChatThreads). Pill switches used to
       // refetch from the remote DB first — that was the blink. Socket pushes
       // + read receipts keep this snapshot live and authoritative.
-      const d = await apiGet<ChatThreadRow[]>("/api/store/chat/threads?size=100");
+      const d = await apiGet<StoreChatThreadSummary[]>("/api/store/chat/threads?size=100");
       const rows = d ?? [];
       setThreads(rows);
       return rows;
@@ -79,12 +95,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
-      const d = await apiGet<{
-        thread: { shopperName: string; shopperEmail: string; orderNumber: string | null; contextType: string | null; subject: string | null };
-        context: ThreadContextCard | null;
-        hasMore: boolean;
-        messages: ChatMsg[];
-      }>(`/api/store/chat/threads/${threadId}/messages?limit=${CHAT_PAGE_SIZE}`);
+      const d = await apiGet<ThreadMessagesView>(`/api/store/chat/threads/${threadId}/messages?limit=${CHAT_PAGE_SIZE}`);
       setThread(d.thread);
       setContext(d.context ?? null);
       setMessages(d.messages);
@@ -104,7 +115,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
     setLoadingOlder(true);
     const prevHeight = scrollRef.current?.scrollHeight ?? 0;
     try {
-      const d = await apiGet<{ hasMore: boolean; messages: ChatMsg[] }>(
+      const d = await apiGet<ChatMsgPage>(
         `/api/store/chat/threads/${activeId}/messages?limit=${CHAT_PAGE_SIZE}&before=${encodeURIComponent(messages[0].id)}`
       );
       prependRestoreRef.current = prevHeight;
@@ -170,7 +181,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
     setThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
     setThreads((prev) => (prev ? prev.map((t) => (t.id === threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
     try {
-      await apiSend("PATCH", `/api/store/chat/threads/${threadId}/messages`, { action: "clearContext" });
+      await apiSend<ClearContextData>("PATCH", `/api/store/chat/threads/${threadId}/messages`, { action: "clearContext" });
     } catch {
       toast.error("Could not remove the quote — try again");
     }
@@ -186,7 +197,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
           setMessages((prev) => (prev && !prev.some((m) => m.id === msg.id) ? [...prev, msg] : prev));
           if (msg.senderType === "shopper") {
             // arrived while the conversation is open — clear the badge + stamp ✓✓
-            void apiSend("POST", `/api/store/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
+            void apiSend<ThreadReadData>("POST", `/api/store/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
           }
           patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, true);
         } else if (msg.threadId) {
@@ -236,7 +247,7 @@ export default function SellerMessages({ sellerId, onNavigate }: { sellerId?: st
     if (!text || !activeId || sending) return;
     setSending(true);
     try {
-      const msg = await apiSend<ChatMsg>("POST", `/api/store/chat/threads/${activeId}/messages`, { body: text });
+      const msg = await apiSend<SellerReplyData>("POST", `/api/store/chat/threads/${activeId}/messages`, { body: text });
       // dedupe — the socket broadcast may have delivered this message already
       setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");

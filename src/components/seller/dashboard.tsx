@@ -3,13 +3,19 @@
 // latest orders, pending actions with jump links.
 import { useState } from "react";
 import { toast } from "sonner";
-import { apiGet, apiSend, CardsSkeleton, RowsSkeleton, StatCard, StatusChip, ageOf, formatMinor, runMutation, useApi, useSellerTerms, fmtCommissionPercent, holdAfterPayment, type SellerNav, type StoreMe } from "./ui-bits";
+import { apiGet, apiSend, CardsSkeleton, RowsSkeleton, StatCard, StatusChip, ageOf, formatMinor, runMutation, useApi, useSellerTerms, fmtCommissionPercent, holdAfterPayment, type SellerNav } from "./ui-bits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import type {
+  InventoryAdjustData,
+  SellerDashboardData,
+  SellerEvVerifyData,
+  SellerMeData,
+} from "@/lib/types/api-contract";
 import {
   AlertTriangle,
   ArrowRight,
@@ -27,42 +33,21 @@ import {
   Undo2,
 } from "lucide-react";
 
-type DashboardData = {
-  cards: Record<"today" | "7d" | "30d", { orders: number; revenueMinor: number; commissionMinor: number; netMinor: number }>;
-  // R2-UI — ledger-truth wallet snapshot (refreshWalletCache + cached read).
-  wallet: { availableMinor: number; pendingMinor: number };
-  lowStock: {
-    id: string;
-    name: string;
-    optionValue: string | null;
-    sku: string | null;
-    stock: number;
-    lowStockThreshold: number;
-    productId: string;
-    productTitle: string;
-  }[];
-  latestOrders: {
-    id: string;
-    orderNumber: string;
-    customerName: string;
-    status: string;
-    totalMinor: number;
-    itemCount: number;
-    createdAt: string;
-  }[];
-  pendingActions: { unfulfilledPaidOrders: number; openRefundRequests: number; productsPendingReview: number };
-};
+/** /api/auth/seller/email-verification/request result as the card reads it —
+ *  the contract union (SellerEvDoneData | SellerEvSentData) flattened to the
+ *  fields the flow gates on (only `alreadyVerified` is acted on). */
+type SellerEvRequestView = { sent: boolean; alreadyVerified?: boolean; message?: string };
 
 export default function SellerDashboard({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
-  const { data, loading, error, refetch } = useApi<DashboardData>("/api/store/dashboard");
-  const { data: me, refetch: refetchMe } = useApi<StoreMe>("/api/store/me");
+  const { data, loading, error, refetch } = useApi<SellerDashboardData>("/api/store/dashboard");
+  const { data: me, refetch: refetchMe } = useApi<SellerMeData>("/api/store/me");
   // ADDENDUM #8 — live platform terms (commission %, hold) from the admin
   // settings via /api/store/terms; shared module cache means one fetch / 60 s.
   const { terms } = useSellerTerms();
 
   const restock = async (variantId: string, title: string) => {
     const ok = await runMutation(
-      () => apiSend("POST", "/api/store/inventory/adjust", { variantId, delta: 10, reason: "restock" }),
+      () => apiSend<InventoryAdjustData>("POST", "/api/store/inventory/adjust", { variantId, delta: 10, reason: "restock" }),
       `Restocked +10 — ${title}`
     );
     if (ok) refetch();
@@ -453,7 +438,7 @@ function SellerEmailVerificationCard({ verified, onVerified }: { verified: boole
     if (busy) return;
     setBusy(true);
     try {
-      const res = await apiSend<{ sent: boolean; alreadyVerified?: boolean; message?: string }>(
+      const res = await apiSend<SellerEvRequestView>(
         "POST",
         "/api/auth/seller/email-verification/request",
         {}
@@ -481,7 +466,7 @@ function SellerEmailVerificationCard({ verified, onVerified }: { verified: boole
     if (busy) return;
     setBusy(true);
     try {
-      const res = await apiSend<{ verified: boolean; alreadyVerified?: boolean }>(
+      const res = await apiSend<SellerEvVerifyData>(
         "POST",
         "/api/auth/seller/email-verification/verify",
         { code: digits }

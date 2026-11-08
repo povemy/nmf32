@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, fail } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { sha256Hex } from "@/lib/secretbox";
+import type { HubAuthBody, HubAuthData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const POST = handle(async (req: Request) => {
   // tokens, each landing in its own Tier 2 bucket) can force, without
   // throttling legitimate aggregate reconnect load.
   rateLimit(req, "chat-hub-auth", 600);
-  const body = (await req.json().catch(() => ({}))) as { token?: string; rooms?: unknown };
+  const body = (await req.json().catch(() => ({}))) as HubAuthBody;
   const token = typeof body.token === "string" ? body.token.trim().toLowerCase() : "";
   const rooms = Array.isArray(body.rooms)
     ? body.rooms.filter((r): r is string => typeof r === "string" && r.length > 0 && r.length <= 128).slice(0, MAX_ROOMS_PER_CALL)
@@ -108,5 +109,11 @@ export const POST = handle(async (req: Request) => {
     }
   }
 
-  return ok({ ok: true, user: { userType: session.userType, userId: session.userId }, allowed, denied: rooms.length - allowed.length });
+  const payload: HubAuthData = {
+    ok: true,
+    user: { userType: session.userType, userId: session.userId },
+    allowed,
+    denied: rooms.length - allowed.length,
+  };
+  return ok(payload);
 });

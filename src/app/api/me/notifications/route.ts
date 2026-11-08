@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { handle, ok, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import type { MarkReadBody, MarkReadData, MeNotification, NotificationsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -28,19 +29,17 @@ export const GET = handle(async (req: Request) => {
     db.notification.count({ where }),
   ]);
 
-  return okPaged(
-    rows.map((n) => ({
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      body: n.body,
-      data: parseDataJson(n.dataJson),
-      read: n.readAt != null,
-      readAt: n.readAt,
-      createdAt: n.createdAt,
-    })),
-    { page, size, total }
-  );
+  const payload: NotificationsData = rows.map((n): MeNotification => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    data: parseDataJson(n.dataJson),
+    read: n.readAt != null,
+    readAt: n.readAt ? n.readAt.toISOString() : null,
+    createdAt: n.createdAt.toISOString(),
+  }));
+  return okPaged(payload, { page, size, total });
 });
 
 const readSchema = z
@@ -50,7 +49,7 @@ const readSchema = z
 // POST /api/me/notifications {ids?: string[] | all: true} — mark as read.
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const parsed = readSchema.safeParse((await req.json().catch(() => ({}))) as unknown);
+  const parsed = readSchema.safeParse((await req.json().catch(() => ({}))) as MarkReadBody);
   if (!parsed.success) throw new ApiError(400, "VALIDATION", "Provide { ids: string[] } or { all: true }");
 
   const where = parsed.data.all
@@ -59,5 +58,6 @@ export const POST = handle(async (req: Request) => {
 
   const res = await db.notification.updateMany({ where, data: { readAt: new Date() } });
   const unread = await db.notification.count({ where: { shopperUserId: me.id, readAt: null } });
-  return ok({ updated: res.count, unread });
+  const payload: MarkReadData = { updated: res.count, unread };
+  return ok(payload);
 });

@@ -3,6 +3,7 @@
 // the full-ledger invariants — those stay in /api/health for ops/diagnostics
 // and are excluded from routine load-test polling.
 import { db } from "@/lib/db";
+import type { HealthReadyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,9 @@ export async function GET() {
       new Promise<never>((_, rej) => setTimeout(() => rej(new Error("READY_TIMEOUT")), 1200)),
     ]);
     void res;
+    const data: HealthReadyData = { status: "ready", db: "up", dbProbeMs: Math.round((performance.now() - t0) * 10) / 10, time: new Date().toISOString() };
     return Response.json(
-      { data: { status: "ready", db: "up", dbProbeMs: Math.round((performance.now() - t0) * 10) / 10, time: new Date().toISOString() } },
+      { data },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit } from "@/lib/ratelimit";
 import { mockPspAllowed } from "@/lib/psp";
 import { processPaymentWebhook, expectedSignature } from "../process";
+import type { PayoutSimulateBody, PayoutSimulateData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(404, "NOT_FOUND", "Not found");
   }
 
-  const body = (await req.json().catch(() => ({}))) as { referenceNo?: unknown; result?: unknown; reason?: unknown };
+  const body = (await req.json().catch(() => ({}))) as PayoutSimulateBody;
   const referenceNo = String(body.referenceNo ?? "").trim();
   if (!referenceNo) throw new ApiError(400, "VALIDATION", "referenceNo is required");
   const result = String(body.result ?? "succeeded");
@@ -67,9 +68,10 @@ export const POST = handle(async (req: Request) => {
   });
 
   const refreshed = await db.payout.findUnique({ where: { id: payout.id } });
-  return ok({
+  const data: PayoutSimulateData = {
     ...outcome,
     referenceNo: payout.referenceNo,
     payoutStatus: refreshed?.status ?? outcome.payoutStatus ?? payout.status,
-  });
+  };
+  return ok(data);
 });

@@ -24,26 +24,11 @@ import { useApi, apiSend } from "./use-api";
 import { qs } from "./nav";
 import { EmptyState, ErrorState, PageHeader, Pager, StatusChip, fmtDate } from "./ui-bits";
 import { cn } from "@/lib/utils";
-
-type AdminReviewRow = {
-  id: string;
-  productId: string;
-  orderId: string | null;
-  customerName: string;
-  rating: number;
-  // Flagged server-side when the text carries a script/HTML payload — the
-  // moderator still sees the RAW text (to judge/reject) plus this badge.
-  unsafeContent?: boolean;
-  title: string | null;
-  body: string | null;
-  reply: string | null;
-  status: string;
-  createdAt: string;
-  product: { id: string; title: string; slug: string; store: { id: string; name: string; slug: string } };
-  shopper: { id: string; email: string; fullName: string } | null;
-  order: { id: string; orderNumber: string; status: string } | null;
-  reward: { id: string; points: number; reversed: boolean; reversalReason: string | null } | null;
-};
+import type {
+  AdminReviewModerateBody,
+  AdminReviewModerateData,
+  AdminReviewsData,
+} from "@/lib/types/api-contract";
 
 const STATUS_TABS = [
   { key: "pending", label: "Pending" },
@@ -66,26 +51,26 @@ export function ReviewsModerationView() {
   const [tab, setTab] = useState<string>("pending");
   const [page, setPage] = useState(1);
   const url = useMemo(() => `/api/admin/reviews${qs({ status: tab || undefined, page, size: "10" })}`, [tab, page]);
-  const { data, meta, error, loading, refetch } = useApi<AdminReviewRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<AdminReviewsData[]>(url);
   const rows = data ?? [];
 
-  const [approveTarget, setApproveTarget] = useState<AdminReviewRow | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<AdminReviewRow | null>(null);
+  const [approveTarget, setApproveTarget] = useState<AdminReviewsData | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminReviewsData | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [reverseReward, setReverseReward] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const moderate = async (
-    r: AdminReviewRow,
+    r: AdminReviewsData,
     action: "approve" | "reject",
     opts?: { reason?: string; reverseReward?: boolean }
   ) => {
     setBusy(true);
     try {
-      const res = await apiSend<{ id: string; status: string; ratingAvg: number; ratingCount: number; rewardReversed: boolean }>(
+      const res = await apiSend<AdminReviewModerateData>(
         `/api/admin/reviews/${r.id}`,
         "POST",
-        { action, ...(opts?.reason ? { reason: opts.reason } : {}), ...(opts?.reverseReward ? { reverseReward: true } : {}) }
+        { action, ...(opts?.reason ? { reason: opts.reason } : {}), ...(opts?.reverseReward ? { reverseReward: true } : {}) } satisfies AdminReviewModerateBody
       );
       toast.success(
         action === "approve" ? "Review published" : "Review rejected",

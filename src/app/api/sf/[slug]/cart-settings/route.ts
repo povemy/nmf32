@@ -3,6 +3,7 @@ import { parseTheme } from "@/lib/sections";
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import { productCardInclude, toProductCard, minVariant, type ProductWithRelations } from "../../../_shared/product-card";
+import type { SfCartSettingsData, CartSettingsDTO, UpsellCard } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   // of config. The drawer's cross-vendor AOV strip uses it for stores that
   // have NO cart-experience config yet, so a 2-vendor cart surfaces
   // recommendations from BOTH sellers instead of only the configured one.
-  const toUpsellCard = (p: ProductWithRelations) => {
+  const toUpsellCard = (p: ProductWithRelations): UpsellCard => {
     const card = toProductCard(p);
     const mv = minVariant(p.variants);
     return { ...card, variantId: mv?.id ?? null, stock: mv?.stock ?? 0 };
@@ -44,7 +45,13 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   // best-seller fallback still ships so multi-vendor carts can represent
   // this store in the cross-vendor strip.
   if (!settings) {
-    return ok({ store: { id: store.id, name: store.name, slug: store.slug, theme: parseTheme(store.themeJson) }, settings: null, upsell: [], bestSellers });
+    const payload: SfCartSettingsData = {
+      store: { id: store.id, name: store.name, slug: store.slug, theme: parseTheme(store.themeJson) },
+      settings: null,
+      upsell: [],
+      bestSellers,
+    };
+    return ok(payload);
   }
 
   // Resolve upsell products: manual picks first, otherwise the store's
@@ -75,31 +82,34 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     }
   }
 
-  return ok({
+  const settingsDto: CartSettingsDTO = {
+    layout: settings.layout,
+    showFreeShippingBar: settings.showFreeShippingBar,
+    freeShipThresholdMinor: settings.freeShipThresholdMinor,
+    upsellEnabled: settings.upsellEnabled,
+    upsellMode: settings.upsellMode,
+    upsellTitle: settings.upsellTitle,
+    upsellLimit: settings.upsellLimit,
+    urgencyStockEnabled: settings.urgencyStockEnabled,
+    urgencyStockThreshold: settings.urgencyStockThreshold,
+    urgencyViewersEnabled: settings.urgencyViewersEnabled,
+    urgencyViewersMin: settings.urgencyViewersMin,
+    urgencyViewersMax: settings.urgencyViewersMax,
+    urgencyCountdownEnabled: settings.urgencyCountdownEnabled,
+    urgencyCountdownMinutes: settings.urgencyCountdownMinutes,
+    showOrderNote: settings.showOrderNote,
+    showDiscountHint: settings.showDiscountHint,
+    checkoutLabel: settings.checkoutLabel,
+    showContinueShopping: settings.showContinueShopping,
+    stickyCta: settings.stickyCta,
+    trustBadges: parseJson<string[]>(settings.trustBadgesJson, []),
+  };
+
+  const payload: SfCartSettingsData = {
     store: { id: store.id, name: store.name, slug: store.slug, theme: parseTheme(store.themeJson) },
-    settings: {
-      layout: settings.layout,
-      showFreeShippingBar: settings.showFreeShippingBar,
-      freeShipThresholdMinor: settings.freeShipThresholdMinor,
-      upsellEnabled: settings.upsellEnabled,
-      upsellMode: settings.upsellMode,
-      upsellTitle: settings.upsellTitle,
-      upsellLimit: settings.upsellLimit,
-      urgencyStockEnabled: settings.urgencyStockEnabled,
-      urgencyStockThreshold: settings.urgencyStockThreshold,
-      urgencyViewersEnabled: settings.urgencyViewersEnabled,
-      urgencyViewersMin: settings.urgencyViewersMin,
-      urgencyViewersMax: settings.urgencyViewersMax,
-      urgencyCountdownEnabled: settings.urgencyCountdownEnabled,
-      urgencyCountdownMinutes: settings.urgencyCountdownMinutes,
-      showOrderNote: settings.showOrderNote,
-      showDiscountHint: settings.showDiscountHint,
-      checkoutLabel: settings.checkoutLabel,
-      showContinueShopping: settings.showContinueShopping,
-      stickyCta: settings.stickyCta,
-      trustBadges: parseJson<string[]>(settings.trustBadgesJson, []),
-    },
+    settings: settingsDto,
     upsell: products.map(toUpsellCard),
     bestSellers,
-  });
+  };
+  return ok(payload);
 });

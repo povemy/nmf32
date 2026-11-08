@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit } from "@/lib/ratelimit";
 import { mockPspAllowed } from "@/lib/psp";
 import { processPaymentWebhook, expectedSignature } from "../../../../webhooks/payments/process";
+import type { SimulatePaymentBody, SimulatePaymentData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ ref: st
     throw new ApiError(404, "NOT_FOUND", "Not found");
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SimulatePaymentBody;
 
   const result = String(body.result ?? "succeeded");
   if (!["succeeded", "failed"].includes(result)) {
@@ -66,10 +67,11 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ ref: st
     rawBody: JSON.stringify(payload),
   });
 
-  return ok({
+  const responseData: SimulatePaymentData = {
     status: outcome.intentStatus,
     orderNumber: outcome.orderNumber,
     orderNumbers: outcome.orderNumbers ?? [outcome.orderNumber],
     isGroup: Boolean(outcome.isGroup),
-  });
+  };
+  return ok(responseData);
 });

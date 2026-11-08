@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { StoreCategoryRow, StoreCategoryCreateBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +27,19 @@ export const GET = handle(async () => {
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     include: { _count: { select: { products: true } } },
   });
-  return ok(
-    rows.map((c) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder, productCount: c._count.products }))
-  );
+  const payload: StoreCategoryRow[] = rows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    sortOrder: c.sortOrder,
+    productCount: c._count.products,
+  }));
+  return ok(payload);
 });
 
 // POST /api/store/categories — create { name }; appended after the last row.
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as StoreCategoryCreateBody;
   const name = cleanName(body.name);
   if (!name) throw new ApiError(400, "VALIDATION", "Category name cannot be empty");
   if (name.length > MAX_NAME) {
@@ -66,5 +71,6 @@ export const POST = handle(async (req: Request) => {
     meta: { name },
   });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market);
-  return ok({ id: created.id, name: created.name, sortOrder: created.sortOrder, productCount: 0 }, { status: 201 });
+  const payload: StoreCategoryRow = { id: created.id, name: created.name, sortOrder: created.sortOrder, productCount: 0 };
+  return ok(payload, { status: 201 });
 });

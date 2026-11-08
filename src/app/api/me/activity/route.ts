@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, getPagination, okPaged } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { productCardInclude, toProductCard } from "../../_shared/product-card";
+import type { ActivityBody, ActivityLikedData, ActivityListData, MeTrackedActivity, RemoveActivityData, TrackActivityData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ const postSchema = z.object({
 // shopper (upsert per product+type; VIEWED refreshes recency for Recently Viewed).
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const parsed = postSchema.safeParse((await req.json().catch(() => ({}))) as unknown);
+  const parsed = postSchema.safeParse((await req.json().catch(() => ({}))) as ActivityBody);
   if (!parsed.success) throw new ApiError(400, "VALIDATION", "productId and activityType (LIKE|VIEWED) are required");
   const { productId, activityType } = parsed.data;
 
@@ -31,7 +32,8 @@ export const POST = handle(async (req: Request) => {
   } else {
     await db.userActivity.create({ data: { userId: me.id, productId, activityType } });
   }
-  return ok({ tracked: activityType, productId }, { status: 201 });
+  const payload: TrackActivityData = { tracked: activityType, productId };
+  return ok(payload, { status: 201 });
 });
 
 const deleteSchema = z.object({
@@ -42,11 +44,12 @@ const deleteSchema = z.object({
 // DELETE /api/me/activity — remove a LIKE/VIEWED row (PDP heart un-like).
 export const DELETE = handle(async (req: Request) => {
   const me = await requireShopper();
-  const parsed = deleteSchema.safeParse((await req.json().catch(() => ({}))) as unknown);
+  const parsed = deleteSchema.safeParse((await req.json().catch(() => ({}))) as ActivityBody);
   if (!parsed.success) throw new ApiError(400, "VALIDATION", "productId and activityType (LIKE|VIEWED) are required");
   const { productId, activityType } = parsed.data;
   await db.userActivity.deleteMany({ where: { userId: me.id, productId, activityType } });
-  return ok({ removed: activityType, productId });
+  const payload: RemoveActivityData = { removed: activityType, productId };
+  return ok(payload);
 });
 
 // GET /api/me/activity?type=LIKE|VIEWED&page&size — product cards for
@@ -63,7 +66,8 @@ export const GET = handle(async (req: Request) => {
       where: { userId_productId_activityType: { userId: me.id, productId: productIdParam, activityType: "LIKE" } },
       select: { id: true },
     });
-    return ok({ liked: Boolean(row) });
+    const payload: ActivityLikedData = { liked: Boolean(row) };
+    return ok(payload);
   }
 
   const { page, size, skip, take } = getPagination(url, 50);
@@ -83,16 +87,14 @@ export const GET = handle(async (req: Request) => {
     db.userActivity.count({ where: { userId: me.id, activityType: type } }),
   ]);
 
-  return okPaged(
-    {
-      activities: rows
-        .filter((a) => a.product && a.product.status === "active")
-        .map((a) => ({
-          activityId: a.id,
-          trackedAt: a.createdAt,
-          product: toProductCard(a.product),
-        })),
-    },
-    { page, size, total }
-  );
+  const payload: ActivityListData = {
+    activities: rows
+      .filter((a) => a.product && a.product.status === "active")
+      .map((a): MeTrackedActivity => ({
+        activityId: a.id,
+        trackedAt: a.createdAt.toISOString(),
+        product: toProductCard(a.product),
+      })),
+  };
+  return okPaged(payload, { page, size, total });
 });

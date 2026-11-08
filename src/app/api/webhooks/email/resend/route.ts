@@ -1,6 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { verifySvixSignature } from "@/lib/email-providers/resend";
+import type { ResendEventBody, ResendWebhookData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -43,18 +44,6 @@ function webhookSecret(): string {
   return "sm_email_webhook_secret_demo";
 }
 
-type ResendWebhookPayload = {
-  type?: string;
-  created_at?: string;
-  data?: {
-    email_id?: string;
-    email?: string;
-    to?: string[];
-    subject?: string;
-    bounce?: { type?: string };
-  };
-};
-
 export const POST = handle(async (req: Request) => {
   const rawBody = await req.text();
   const svixId = req.headers.get("svix-id") ?? "";
@@ -79,9 +68,9 @@ export const POST = handle(async (req: Request) => {
     throw new ApiError(400, "BAD_SIGNATURE", "Webhook signature verification failed");
   }
 
-  let payload: ResendWebhookPayload;
+  let payload: ResendEventBody;
   try {
-    payload = JSON.parse(rawBody) as ResendWebhookPayload;
+    payload = JSON.parse(rawBody) as ResendEventBody;
   } catch {
     throw new ApiError(400, "BAD_PAYLOAD", "Webhook body is not valid JSON");
   }
@@ -110,7 +99,8 @@ export const POST = handle(async (req: Request) => {
   });
 
   if (inserted === null) {
-    return ok({ received: true, duplicate: true, eventType });
+    const data: ResendWebhookData = { received: true, duplicate: true, eventType };
+    return ok(data);
   }
 
   // Side effects — only for FIRST ingestion.
@@ -131,5 +121,6 @@ export const POST = handle(async (req: Request) => {
     await db.emailSuppression.deleteMany({ where: { email } });
   }
 
-  return ok({ received: true, duplicate: false, eventType });
+  const data: ResendWebhookData = { received: true, duplicate: false, eventType };
+  return ok(data);
 });

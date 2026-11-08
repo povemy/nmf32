@@ -4,18 +4,21 @@ import { requireCap, requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getCommissionSettings } from "@/lib/commission";
 import { readBody, optNum, optBool } from "@/app/api/admin/_helpers";
+import type { CommissionSettingsData, CommissionSettingsPutBody, CommissionSettingsPutData } from "@/lib/types/api-contract";
 
 // GET /api/admin/commission/settings
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const settings = await getCommissionSettings();
-  return ok(settings);
+  // CommissionSettingsDTO omits the runtime row's `id` (always present on the wire) — cast at the boundary.
+  const payload = settings as CommissionSettingsData;
+  return ok(payload);
 });
 
 // PUT /api/admin/commission/settings (RBAC commission.manage)
 export const PUT = handle(async (req: NextRequest) => {
   const admin = await requireCap("commission.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CommissionSettingsPutBody & Record<string, unknown>;
 
   const before = await getCommissionSettings();
 
@@ -78,5 +81,6 @@ export const PUT = handle(async (req: NextRequest) => {
     after: data,
   });
 
-  return ok(after);
+  const payload: CommissionSettingsPutData = after;
+  return ok(payload);
 });

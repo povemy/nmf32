@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireCap } from "@/lib/auth";
 import { affiliateBalances } from "@/lib/affiliate";
+import type { AdminAffAccountDetailData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     db.affiliateProfile.count({ where: { sponsorId: id } }),
   ]);
 
-  return ok({
+  const payload: AdminAffAccountDetailData = {
     profile: {
       id: profile.id, displayName: profile.displayName, slug: profile.slug, code: profile.code,
       email: profile.user.email, fullName: profile.user.fullName,
@@ -64,5 +65,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       id: p.id, amountMinor: p.amountMinor, status: p.status, reference: p.reference,
       requestedAt: p.requestedAt.toISOString(), processedAt: p.processedAt?.toISOString() ?? null,
     })),
-  });
+  };
+  return ok(payload);
 });

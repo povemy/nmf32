@@ -5,6 +5,7 @@ import { createSession } from "@/lib/auth";
 import { getMfaEnrollment, createMfaChallenge } from "@/lib/mfa";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
+import type { LoginBody, LoginMfaData, LoginAdminData, LoginSellerData } from "@/lib/types/api-contract";
 
 // POST /api/auth/login { email, password, portal: "admin" | "seller" }
 export const POST = handle(async (req: NextRequest) => {
@@ -12,7 +13,7 @@ export const POST = handle(async (req: NextRequest) => {
   // per minute per IP, shared with the shopper login route (one "auth-login"
   // bucket). Uniform 429 for every email — no account-existence signal.
   rateLimit(req, "auth-login", 10);
-  const body = (await req.json()) as { email?: string; password?: string; portal?: "admin" | "seller" };
+  const body = (await req.json()) as LoginBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   const portal = body.portal === "admin" ? "admin" : "seller";
@@ -36,14 +37,16 @@ export const POST = handle(async (req: NextRequest) => {
     const mfa = await getMfaEnrollment(admin.id);
     if (mfa && mfa.confirmedAt) {
       const challenge = await createMfaChallenge(admin.id);
-      return ok({ mfaRequired: true, challenge: challenge.challenge, email: admin.email });
+      const payload: LoginMfaData = { mfaRequired: true, challenge: challenge.challenge, email: admin.email };
+      return ok(payload);
     }
     await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
     const token = await createSession("admin", admin.id);
     await logActivity({ actorType: "admin", actorId: admin.id, actorLabel: admin.email, action: "admin.login" });
     // token: client stores it in localStorage and sends it as a Bearer header —
     // keeps the session alive where cookies are unavailable (cross-site iframes).
-    return ok({ userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token });
+    const payload: LoginAdminData = { userType: "admin", admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role }, token };
+    return ok(payload);
   }
 
   // PHASE 2.3 select hygiene (C2.7): explicit field list EXCLUDING the
@@ -72,12 +75,13 @@ export const POST = handle(async (req: NextRequest) => {
   const token = await createSession("seller", seller.id);
   await logActivity({ actorType: "seller", actorId: seller.id, actorLabel: seller.email, action: "seller.login" });
   const store = await db.store.findUnique({ where: { sellerId: seller.id } });
-  return ok({
+  const payload: LoginSellerData = {
     userType: "seller",
     seller: {
       id: seller.id, email: seller.email, fullName: seller.fullName, displayName: seller.displayName,
       status: seller.status, storeId: store?.id ?? null, storeSlug: store?.slug ?? null, storeName: store?.name ?? null,
     },
     token,
-  });
+  };
+  return ok(payload);
 });

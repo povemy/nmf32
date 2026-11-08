@@ -33,41 +33,12 @@ import {
   TableSkeleton,
   fmtDT,
 } from "./ui-bits";
-
-type SalesReport = {
-  series: { date: string; gmvMinor: number; orders: number; commissionMinor: number }[];
-  totals: { gmvMinor: number; orders: number; commissionMinor: number; aovMinor: number };
-  days: number;
-};
-
-type SellersReport = {
-  rows: { storeName: string; gmvMinor: number; orders: number; commissionMinor: number; aovMinor: number }[];
-  totals: { gmvMinor: number; orders: number; commissionMinor: number; stores: number };
-  days: number;
-};
-
-type CommissionReport = {
-  series: { date: string; gmvMinor: number; orders: number; commissionMinor: number }[];
-  byCategory: { categoryName: string; commissionMinor: number }[];
-  effectiveRate: number;
-  totals: { commissionMinor: number; gmvMinor: number; items: number; itemsValueMinor: number };
-  days: number;
-};
-
-type PayoutsReport = {
-  batches: {
-    id: string;
-    runType: string;
-    status: string;
-    totalMinor: number;
-    payoutCount: number;
-    startedAt?: string;
-    finishedAt?: string | null;
-    payouts: { id: string; referenceNo: string; sellerName: string; amountMinor: number; status: string; method: string; paidAt?: string | null }[];
-  }[];
-  totals: { totalMinor: number; count: number; paidMinor: number; processingMinor: number; failedMinor: number; batchCount: number };
-  days: number;
-};
+import type {
+  AdminReportCommissionData,
+  AdminReportPayoutsData,
+  AdminReportSalesData,
+  AdminReportSellersData,
+} from "@/lib/types/api-contract";
 
 const CHART_MARGIN = { top: 8, right: 12, left: 4, bottom: 0 };
 
@@ -135,7 +106,7 @@ export function ReportsView() {
 /* ------------------------------------------------------------------- sales */
 
 function SalesTab({ days }: { days: string }) {
-  const { data, error, loading, refetch } = useApi<SalesReport>(`/api/admin/reports/sales?days=${days}`);
+  const { data, error, loading, refetch } = useApi<AdminReportSalesData>(`/api/admin/reports/sales?days=${days}`);
   const series = useMemo(() => (data?.series ?? []).map((p) => ({ ...p, gmvMinor: Number(p.gmvMinor) || 0, commissionMinor: Number(p.commissionMinor) || 0 })), [data]);
   const t = data?.totals;
 
@@ -241,7 +212,7 @@ function SalesTab({ days }: { days: string }) {
 /* ----------------------------------------------------------------- sellers */
 
 function SellersTab({ days }: { days: string }) {
-  const { data, error, loading, refetch } = useApi<SellersReport>(`/api/admin/reports/sellers?days=${days}`);
+  const { data, error, loading, refetch } = useApi<AdminReportSellersData>(`/api/admin/reports/sellers?days=${days}`);
   const rows = data?.rows ?? [];
   const top8 = useMemo(() => rows.slice(0, 8), [rows]);
   const t = data?.totals;
@@ -349,7 +320,7 @@ function SellersTab({ days }: { days: string }) {
 /* -------------------------------------------------------------- commission */
 
 function CommissionTab({ days }: { days: string }) {
-  const { data, error, loading, refetch } = useApi<CommissionReport>(`/api/admin/reports/commission?days=${days}`);
+  const { data, error, loading, refetch } = useApi<AdminReportCommissionData>(`/api/admin/reports/commission?days=${days}`);
   const byCategory = data?.byCategory ?? [];
   const t = data?.totals;
 
@@ -413,7 +384,7 @@ function CommissionTab({ days }: { days: string }) {
 /* ----------------------------------------------------------------- payouts */
 
 function PayoutsTab() {
-  const { data, error, loading, refetch } = useApi<PayoutsReport>("/api/admin/reports/payouts?days=365");
+  const { data, error, loading, refetch } = useApi<AdminReportPayoutsData>("/api/admin/reports/payouts?days=365");
   const batches = data?.batches ?? [];
   const t = data?.totals;
 

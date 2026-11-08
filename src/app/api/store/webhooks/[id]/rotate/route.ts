@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { randomToken } from "@/lib/password";
 import { rateLimit } from "@/lib/rate-limit";
+import type { SellerWebhookRotateData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -48,5 +49,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     meta: { endpointId: endpoint.id, urlHost: urlHost(endpoint.url) },
   });
 
-  return ok({ id: endpoint.id, secret: newSecret });
+  const payload: SellerWebhookRotateData = { id: endpoint.id, secret: newSecret };
+  return ok(payload);
 });

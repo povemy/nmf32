@@ -3,7 +3,8 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { postAdminAdjustment, refreshWalletCache, walletTruth } from "@/lib/ledger";
-import { readBody, reqNum, reqStr } from "@/app/api/admin/_helpers";
+import { readBody, reqNum, reqStr, type Body } from "@/app/api/admin/_helpers";
+import type { AdminWalletAdjustBody, AdminWalletAdjustData, AdminWalletRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("payouts.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as Body & AdminWalletAdjustBody;
 
   const amountMinor = reqNum(body, "amountMinor", "amountMinor");
   if (amountMinor <= 0) throw new ApiError(400, "VALIDATION", "amountMinor must be > 0");
@@ -26,7 +27,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const txn = await postAdminAdjustment({
     walletId: id,
-    direction: direction as "credit" | "debit",
+    direction: direction as AdminWalletAdjustBody["direction"],
     amountMinor,
     reason,
     adminEmail: admin.email,
@@ -45,5 +46,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { pendingMinor: after.pendingMinor, availableMinor: after.availableMinor, direction, amountMinor, reason, txnId: txn.id },
   });
 
-  return ok({ wallet: fresh, txnId: txn.id, before, after });
+  const walletPayload: AdminWalletRow | null = fresh
+    ? { ...fresh, createdAt: fresh.createdAt.toISOString(), updatedAt: fresh.updatedAt.toISOString() }
+    : null;
+  // Contract types `wallet` as AdminWalletRow (non-null); findUnique can return
+  // null in theory — cast at the serialization boundary keeps behavior identical.
+  const payload = { wallet: walletPayload, txnId: txn.id, before, after } as AdminWalletAdjustData;
+  return ok(payload);
 });

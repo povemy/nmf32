@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { recomputeProductRating, reviewsSchemaReady } from "@/lib/reviews";
 import { reverseReviewReward } from "@/lib/review-rewards";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { AdminReviewModerateBody, AdminReviewModerateData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -38,7 +39,7 @@ export const POST = handle(async (req: Request, ctx: Ctx) => {
     throw new ApiError(503, "REVIEWS_NOT_MIGRATED", "Review moderation awaits a pending database migration");
   }
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AdminReviewModerateBody;
 
   const action = String(body.action ?? "").trim().toLowerCase();
   if (action !== "approve" && action !== "reject") {
@@ -101,5 +102,6 @@ export const POST = handle(async (req: Request, ctx: Ctx) => {
   });
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.reviews);
-  return ok({ id, status: toStatus, ratingAvg, ratingCount, rewardReversed });
+  const payload: AdminReviewModerateData = { id, status: toStatus, ratingAvg, ratingCount, rewardReversed };
+  return ok(payload);
 });

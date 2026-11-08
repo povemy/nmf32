@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { findCartForCaller, resolveCartCaller, shapeCart } from "./cart";
 import { trackViewCart } from "@/lib/analytics/track";
+import type { CartView, GetCartData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -29,5 +30,7 @@ export const GET = handle(async (req: Request) => {
     );
   }
 
-  return ok({ cart: shapeCart(cart ?? null), requiresAuth: false });
+  const cartView: CartView = shapeCart(cart ?? null);
+  const payload: GetCartData = { cart: cartView, requiresAuth: false };
+  return ok(payload);
 });

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import type { StoreFollowData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,8 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     db.storeFollow.count({ where: { storeId: store.id } }),
   ]);
 
-  return ok({ following: !!follow, followers });
+  const payload: StoreFollowData = { following: !!follow, followers };
+  return ok(payload);
 });
 
 // POST /api/stores/[slug]/follow — toggle follow → {following, followers}.
@@ -63,5 +65,6 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ slug: 
   }
 
   const followers = await db.storeFollow.count({ where: { storeId: store.id } });
-  return ok({ following, followers });
+  const payload: StoreFollowData = { following, followers };
+  return ok(payload);
 });

@@ -4,6 +4,7 @@ import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PSP_SPLIT_CANDIDATES, PSP_SPLIT_SETTING_KEYS } from "@/lib/psp";
 import { readBody } from "@/app/api/admin/_helpers";
+import type { PspSettingsData, PspSettingsPutBody, PspSettingsPutData } from "@/lib/types/api-contract";
 
 // GET /api/admin/commission/psp-settings — dormant split-settlement scaffold state.
 export const GET = handle(async () => {
@@ -12,11 +13,12 @@ export const GET = handle(async () => {
     db.setting.findUnique({ where: { key: PSP_SPLIT_SETTING_KEYS.autoSettle } }),
     db.setting.findUnique({ where: { key: PSP_SPLIT_SETTING_KEYS.provider } }),
   ]);
-  return ok({
+  const payload: PspSettingsData = {
     autoSettle: autoSettleRow ? JSON.parse(autoSettleRow.valueJson) === true : false,
     provider: providerRow ? JSON.parse(providerRow.valueJson) : "mock",
     candidates: PSP_SPLIT_CANDIDATES,
-  });
+  };
+  return ok(payload);
 });
 
 // PUT /api/admin/commission/psp-settings {autoSettle?, provider?} — writes the
@@ -24,7 +26,7 @@ export const GET = handle(async () => {
 // documented scaffold until a production PSP adapter exists (Option B).
 export const PUT = handle(async (req: NextRequest) => {
   const admin = await requireCap("commission.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as PspSettingsPutBody;
 
   const before = {
     autoSettle: (await db.setting.findUnique({ where: { key: PSP_SPLIT_SETTING_KEYS.autoSettle } }))?.valueJson ?? null,
@@ -73,5 +75,6 @@ export const PUT = handle(async (req: NextRequest) => {
     after,
   });
 
-  return ok({ updated: after });
+  const payload: PspSettingsPutData = { updated: after };
+  return ok(payload);
 });

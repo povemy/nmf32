@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { postPayoutInitiated, buildLedgerStatementFromLedger, walletTruth, refreshWalletCache } from "@/lib/ledger";
 import { assertTransition } from "@/lib/payout-state";
 import { rateLimit } from "@/lib/ratelimit";
+import type { AdminPayoutRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -178,5 +179,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.payout.findUnique({ where: { id } });
   if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
-  return ok(updated);
+  const payload: AdminPayoutRow = {
+    ...updated,
+    paidAt: updated.paidAt ? updated.paidAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

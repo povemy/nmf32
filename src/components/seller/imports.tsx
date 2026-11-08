@@ -26,39 +26,19 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { authHeaders } from "@/lib/session-client";
 import { apiGet, apiSend, runMutation, type SellerNav } from "./ui-bits";
+import type {
+  ApiErr,
+  DisconnectData,
+  PublishData,
+  SellerConnectionBeginData,
+  SellerImportJobResumeData,
+  StoreImportJobRow,
+  StoreImportsData,
+} from "@/lib/types/api-contract";
 
-type Connection = {
-  platform: string;
-  status: string;
-  envConfigured: boolean;
-  shopName: string | null;
-  expiresAt: string | null;
-};
-
-type Job = {
-  id: string;
-  trackingToken: string;
-  platform: string;
-  urlType: string;
-  inputUrl: string;
-  status: string;
-  phaseDetail: string | null;
-  isFixture: boolean;
-  storeId: string | null;
-  createdAt: string;
-  finishedAt: string | null;
-  itemCount: number;
-  productsOk: number | null;
-  productsFailed: number | null;
-  progress: Record<string, number>;
-  errorMessage: string | null;
-};
-
-type Payload = {
-  jobs: Job[];
-  connections: Connection[];
-  env: { shopee: boolean; tiktok: boolean };
-};
+/** 422 fail envelope for POST /api/store/publish — ApiErr with the blockers
+ *  detail shape the checklist renders (message fallback when absent). */
+type PublishFailBody = { error?: Pick<ApiErr["error"], "message"> & { details?: { blockers?: string[] } } };
 
 const JOB_LABEL: Record<string, string> = {
   queued: "Queued",
@@ -80,7 +60,7 @@ const JOB_LABEL: Record<string, string> = {
 const PLATFORM_LABEL: Record<string, string> = { shopee: "Shopee", tiktok: "TikTok Shop", fixture: "Demo fixture" };
 
 export default function SellerImports({ onNavigate }: { onNavigate: (nav: SellerNav) => void }) {
-  const [data, setData] = useState<Payload | null>(null);
+  const [data, setData] = useState<StoreImportsData | null>(null);
   const [failed, setFailed] = useState(false);
   const [busyJob, setBusyJob] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -88,7 +68,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
 
   const refresh = useCallback(async () => {
     try {
-      const d = await apiGet<Payload>("/api/store/imports");
+      const d = await apiGet<StoreImportsData>("/api/store/imports");
       setData(d);
       setFailed(false);
     } catch {
@@ -103,10 +83,10 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
     return () => clearInterval(t);
   }, [refresh]);
 
-  async function resume(job: Job) {
+  async function resume(job: StoreImportJobRow) {
     setBusyJob(job.id);
     const ok = await runMutation(
-      () => apiSend("POST", `/api/import/jobs/${job.id}/resume?token=${encodeURIComponent(job.trackingToken)}`),
+      () => apiSend<SellerImportJobResumeData>("POST", `/api/import/jobs/${job.id}/resume?token=${encodeURIComponent(job.trackingToken)}`),
       "Import resumed"
     );
     if (ok) await refresh();
@@ -116,7 +96,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
 
   async function disconnect(platform: string) {
     const ok = await runMutation(
-      () => apiSend("DELETE", `/api/store/connections/disconnect?platform=${platform}`),
+      () => apiSend<DisconnectData>("DELETE", `/api/store/connections/disconnect?platform=${platform}`),
       `${PLATFORM_LABEL[platform] ?? platform} disconnected`
     );
     if (ok) await refresh();
@@ -124,7 +104,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
 
   async function beginAuth(platform: string) {
     try {
-      const r = await apiGet<{ authorizeUrl: string | null; envConfigured: boolean }>(
+      const r = await apiGet<SellerConnectionBeginData>(
         `/api/store/connections/${platform}/begin`
       );
       if (r.authorizeUrl) {
@@ -142,7 +122,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
     setPublishing(true);
     setPublishBlockers(null);
     try {
-      await apiSend("POST", "/api/store/publish");
+      await apiSend<PublishData>("POST", "/api/store/publish");
       toast.success("Store published! Your storefront is live.");
       await refresh();
       onNavigate({ view: "dashboard" });
@@ -154,7 +134,7 @@ export default function SellerImports({ onNavigate }: { onNavigate: (nav: Seller
           method: "POST",
           headers: authHeaders(), // Bearer (when present) + X-SM-Client origin-gate marker
         });
-        const body = (await res.json()) as { error?: { details?: { blockers?: string[] }; message?: string } };
+        const body = (await res.json()) as PublishFailBody;
         blockers = body.error?.details?.blockers ?? [body.error?.message ?? "Store cannot be published yet."];
       } catch {
         blockers = [err instanceof Error ? err.message : "Store cannot be published yet."];

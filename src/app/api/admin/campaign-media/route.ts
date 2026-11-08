@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
+import type { CampaignMediaData } from "@/lib/types/api-contract";
 
 // ============================================================================
 // POST /api/admin/campaign-media — banner/thumbnail uploads for campaigns
@@ -69,5 +70,6 @@ export const POST = handle(async (req: NextRequest) => {
     after: { url, bytes: file.size, mime: kind.mime },
   });
 
-  return ok({ url, bytes: file.size, mime: kind.mime });
+  const payload: CampaignMediaData = { url, bytes: file.size, mime: kind.mime };
+  return ok(payload);
 });

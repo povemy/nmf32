@@ -16,6 +16,7 @@ import { KNOWN_PAYMENT_METHODS } from "@/lib/payment-methods";
 import { resolveAttribution } from "@/lib/analytics/attribution";
 import { resolveAffiliateAttributionForCart } from "@/lib/affiliate-attribution";
 import { getAffiliateSettings } from "@/lib/affiliate";
+import type { CreateCheckoutBody, CreateCheckoutData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -135,7 +136,7 @@ export const POST = handle(async (req: Request) => {
       // as on the account path).
       if (existingGroup.shopperId !== (me?.id ?? null)) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
       timing.emit(200, { gateWaitMs: 0, ...gateStats() });
-      return ok({
+      const payload: CreateCheckoutData = {
         orderNumber: existingGroup.orders[0]?.orderNumber ?? "",
         orderNumbers: existingGroup.orders.map((o) => o.orderNumber),
         orderPaymentRef: existingGroup.ref,
@@ -143,14 +144,15 @@ export const POST = handle(async (req: Request) => {
         totalMinor: existingGroup.totalMinor,
         status: existingGroup.orders[0]?.status ?? "payment_pending",
         duplicate: true,
-      });
+      };
+      return ok(payload);
     }
 
     // Idempotent replay #2 — legacy single-order checkout with this key.
     if (existing) {
       if (existing.shopperId !== (me?.id ?? null)) throw new ApiError(403, "FORBIDDEN", "This checkout session belongs to a different account");
       timing.emit(200, { gateWaitMs: 0, ...gateStats() });
-      return ok({
+      const payload: CreateCheckoutData = {
         orderNumber: existing.orderNumber,
         orderNumbers: [existing.orderNumber],
         orderPaymentRef: existing.paymentIntents[0]?.providerRef ?? null,
@@ -158,7 +160,8 @@ export const POST = handle(async (req: Request) => {
         totalMinor: existing.totalMinor,
         status: existing.status,
         duplicate: true,
-      });
+      };
+      return ok(payload);
     }
 
     // PHASE 2.2: guest checkout create is UNAUTHENTICATED — apply a guest-only
@@ -178,7 +181,7 @@ export const POST = handle(async (req: Request) => {
     // converges on this checkout instead of duplicating it.
     const runCheckout = async () => {
 
-      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      const body = (await req.json().catch(() => ({}))) as CreateCheckoutBody & Record<string, unknown>;
 
       // Contact details — PHASE 2.2 branches here:
       // • ACCOUNT path (byte-identical to before): prefill from the account; a
@@ -688,27 +691,25 @@ export const POST = handle(async (req: Request) => {
       // transactional and untouched.
       bustPublicProductCache();
 
-      const response = ok(
-        {
-          orderNumber: orderSummaries[0]?.orderNumber ?? "",
-          orderNumbers: orderSummaries.map((o) => o.orderNumber),
-          orderPaymentRef: group.ref,
-          paymentRef: group.ref,
-          totalMinor: group.totalMinor,
-          redirectUrl: group.redirectUrl,
-          status: "payment_pending",
-          vouchersApplied: voucherOutcomes.map((o) => ({
-            storeId: o.storeId,
-            code: o.code,
-            title: o.title,
-            kind: o.kind,
-            discountMinor: o.discountMinor,
-            freeShipping: o.freeShipping,
-            fsPriceAdjustMinor: o.fsPriceAdjustMinor,
-          })),
-        },
-        { status: 201 }
-      );
+      const payload: CreateCheckoutData = {
+        orderNumber: orderSummaries[0]?.orderNumber ?? "",
+        orderNumbers: orderSummaries.map((o) => o.orderNumber),
+        orderPaymentRef: group.ref,
+        paymentRef: group.ref,
+        totalMinor: group.totalMinor,
+        redirectUrl: group.redirectUrl,
+        status: "payment_pending",
+        vouchersApplied: voucherOutcomes.map((o) => ({
+          storeId: o.storeId,
+          code: o.code,
+          title: o.title,
+          kind: o.kind,
+          discountMinor: o.discountMinor,
+          freeShipping: o.freeShipping,
+          fsPriceAdjustMinor: o.fsPriceAdjustMinor,
+        })),
+      };
+      const response = ok(payload, { status: 201 });
 
       // txExec = statements + commit (total minus the acquire window). The emit
       // itself is deferred past the admission gate so the measured queue wait

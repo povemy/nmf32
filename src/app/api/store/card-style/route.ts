@@ -3,17 +3,9 @@ import { requireActiveSellerStore } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CARD_ALIGNMENTS, CARD_FONT_SIZES, FONT_OPTIONS, fontLabel } from "@/lib/fonts";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { CardStyleData, CardStyleBody, CardStyleSaveData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
-
-type StylePayload = {
-  nameFont?: unknown;
-  nameSize?: unknown;
-  nameAlign?: unknown;
-  priceFont?: unknown;
-  priceSize?: unknown;
-  priceAlign?: unknown;
-};
 
 function validFont(v: unknown, field: string): string {
   const id = typeof v === "string" ? v : "";
@@ -33,7 +25,7 @@ function validAlign(v: unknown, field: string): string {
 export const GET = handle(async () => {
   const { store } = await requireActiveSellerStore();
   const style = await db.productCardStyle.findUnique({ where: { storeId: store.id } });
-  return ok({
+  const payload: CardStyleData = {
     style: style
       ? {
           nameFont: style.nameFont,
@@ -45,14 +37,15 @@ export const GET = handle(async () => {
         }
       : null,
     fonts: FONT_OPTIONS.map((f) => ({ id: f.id, label: f.label, kind: f.kind })),
-  });
+  };
+  return ok(payload);
 });
 
 // PUT /api/store/card-style — save typography (validated enum vocabularies;
 // the vendor form sends friendly ids, never CSS or JSON).
 export const PUT = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as StylePayload;
+  const body = (await req.json().catch(() => ({}))) as CardStyleBody;
 
   const data = {
     nameFont: validFont(body.nameFont, "Product name font"),
@@ -70,7 +63,7 @@ export const PUT = handle(async (req: Request) => {
   });
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
-  return ok({
+  const payload: CardStyleSaveData = {
     style: {
       nameFont: saved.nameFont,
       nameSize: saved.nameSize,
@@ -83,5 +76,6 @@ export const PUT = handle(async (req: Request) => {
       name: fontLabel(saved.nameFont),
       price: fontLabel(saved.priceFont),
     },
-  });
+  };
+  return ok(payload);
 });

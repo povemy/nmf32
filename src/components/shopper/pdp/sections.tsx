@@ -34,7 +34,7 @@ import { PDP_SHIPPING_DISPLAY } from "@/lib/shipping-display";
 import { cn } from "@/lib/utils";
 import type { ShopperCtx } from "../ui-bits";
 import { ReviewFormDialog } from "../review-form-dialog";
-import type { PdpPayloadT } from "./types";
+import type { PdpData, SfReviewEligibilityData, SfReviewsListData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
 // 2.3 — price & promotion block. Buyer work order: the PRICING follows the
@@ -288,7 +288,7 @@ export function PdpSellerBlock({
   chatBusy,
   ctx,
 }: {
-  store: PdpPayloadT["store"];
+  store: PdpData["store"];
   productTitle: string;
   onMessageSeller: () => void;
   chatBusy: boolean;
@@ -398,7 +398,7 @@ export function PdpReviewsBlock({
   sectionRef,
   onOpenAuth,
 }: {
-  reviews: PdpPayloadT["reviews"];
+  reviews: PdpData["reviews"];
   ratingAvg: number;
   ratingCount: number;
   ratingDist: number[];
@@ -417,7 +417,7 @@ export function PdpReviewsBlock({
   const [star, setStar] = useState<number | null>(null);
   const [sort, setSort] = useState<"recent" | "highest" | "lowest">("recent");
   // server mode engages on any filter/sort interaction or load-more
-  const [serverItems, setServerItems] = useState<PdpPayloadT["reviews"] | null>(null);
+  const [serverItems, setServerItems] = useState<PdpData["reviews"] | null>(null);
   const [serverTotal, setServerTotal] = useState(0);
   const [serverPage, setServerPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -438,7 +438,7 @@ export function PdpReviewsBlock({
     }
     let alive = true;
     setEligibility({ state: "ineligible" }); // probe pending — no CTA flash
-    fetchJson<{ eligible: boolean; reason: string; review?: { status: string } }>(
+    fetchJson<SfReviewEligibilityData>(
       `/api/sf/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}/reviews/eligibility`
     )
       .then((d) => {
@@ -468,7 +468,7 @@ export function PdpReviewsBlock({
       try {
         const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE), sort: fSort });
         if (fStar != null) params.set("star", String(fStar));
-        const res = await fetchEnvelope<{ reviews: PdpPayloadT["reviews"] }>(
+        const res = await fetchEnvelope<SfReviewsListData>(
           `/api/sf/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}/reviews?${params.toString()}`
         );
         setServerTotal(res.meta?.total ?? 0);

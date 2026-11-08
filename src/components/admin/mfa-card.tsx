@@ -27,10 +27,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiSend, useApi } from "./use-api";
-
-type MfaStatus = { enrolled: boolean; confirmed: boolean };
-type EnrollResponse = { secretBase32: string; otpauthUrl: string };
-type ConfirmResponse = { recoveryCodes: string[] };
+import type {
+  AdminMfaStatus,
+  MfaConfirmBody,
+  MfaConfirmData,
+  MfaDisableBody,
+  MfaDisableData,
+  MfaEnrollBody,
+  MfaEnrollData,
+} from "@/lib/types/api-contract";
 
 /** "abcdefghij" → "abcde-fghij" (matches the login panel's recovery input). */
 function groupCode(code: string): string {
@@ -78,14 +83,14 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 
 export function MfaCard() {
   // Server truth: GET /api/admin/mfa/status (useApi handles load/error/refetch).
-  const { data, error, loading, refetch } = useApi<MfaStatus>("/api/admin/mfa/status");
+  const { data, error, loading, refetch } = useApi<AdminMfaStatus>("/api/admin/mfa/status");
   // Local phase override while a transition is in flight — the derived phase
   // below covers every steady state.
   const [override, setOverride] = useState<"setup" | "recovery" | "signedout" | null>(null);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [setup, setSetup] = useState<EnrollResponse | null>(null);
+  const [setup, setSetup] = useState<MfaEnrollData | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
 
   const phase: "loading" | "error" | "off" | "setup" | "resume" | "enabled" | "recovery" | "signedout" =
@@ -105,7 +110,7 @@ export function MfaCard() {
     if (busy || !password) return;
     setBusy(true);
     try {
-      const data = await apiSend<EnrollResponse>("/api/admin/mfa/enroll", "POST", { password });
+      const data = await apiSend<MfaEnrollData>("/api/admin/mfa/enroll", "POST", { password } satisfies MfaEnrollBody);
       setSetup(data);
       setCode("");
       setOverride("setup");
@@ -122,7 +127,7 @@ export function MfaCard() {
     if (busy || !password || !code.trim()) return;
     setBusy(true);
     try {
-      const data = await apiSend<ConfirmResponse>("/api/admin/mfa/confirm", "POST", { password, code: code.trim() });
+      const data = await apiSend<MfaConfirmData>("/api/admin/mfa/confirm", "POST", { password, code: code.trim() } satisfies MfaConfirmBody);
       setRecoveryCodes(data.recoveryCodes ?? []);
       setOverride("recovery");
       toast.success("Two-factor authentication enabled", {
@@ -140,7 +145,7 @@ export function MfaCard() {
     if (busy || !password || !code.trim()) return;
     setBusy(true);
     try {
-      await apiSend("/api/admin/mfa/disable", "POST", { password, code: code.trim() });
+      await apiSend<MfaDisableData>("/api/admin/mfa/disable", "POST", { password, code: code.trim() } satisfies MfaDisableBody);
       setOverride("signedout");
       toast.success("Two-factor authentication disabled", {
         description: "All sessions were signed out — sign in again with your password.",

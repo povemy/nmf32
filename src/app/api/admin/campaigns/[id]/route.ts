@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optDate, optBool } from "@/app/api/admin/_helpers";
 import { parseCampaignMerchFields, type CampaignMerchFields } from "@/app/api/admin/_campaign-merch";
+import type { AdminCampaignDeleteData, AdminCampaignItem, CampaignUpdateBody } from "@/lib/types/api-contract";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import {
   campaignStatusOf,
@@ -43,7 +44,7 @@ function bustCampaignCaches(): void {
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("campaigns.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CampaignUpdateBody & Record<string, unknown>;
 
   const campaign = await db.campaign.findUnique({ where: { id } });
   if (!campaign) throw new ApiError(404, "NOT_FOUND", "Campaign not found");
@@ -135,13 +136,33 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
 
   bustCampaignCaches();
 
-  return ok({
-    ...updated,
+  const payload: AdminCampaignItem = {
+    id: updated.id,
+    name: updated.name,
+    description: updated.description,
+    presetId: updated.presetId,
+    themeJson: updated.themeJson,
+    isPublished: updated.isPublished,
+    placement: updated.placement,
+    priority: updated.priority,
+    displayOrder: updated.displayOrder,
+    ctaLabel: updated.ctaLabel,
+    ctaHref: updated.ctaHref,
+    bannerDesktopUrl: updated.bannerDesktopUrl,
+    bannerMobileUrl: updated.bannerMobileUrl,
+    thumbnailUrl: updated.thumbnailUrl,
+    productQuery: updated.productQuery,
+    archivedAt: updated.archivedAt ? updated.archivedAt.toISOString() : null,
+    startAt: updated.startAt.toISOString(),
+    endAt: updated.endAt.toISOString(),
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
     theme: parseCampaignTheme(updated.themeJson),
     status: campaignStatusOf(updated),
     daysUntilStart: daysUntil(updated.startAt),
     daysLeft: daysUntil(updated.endAt),
-  });
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/campaigns/[id] (RBAC campaigns.manage) — hard delete.
@@ -167,5 +188,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
   });
 
   bustCampaignCaches();
-  return ok({ deleted: true });
+  const payload: AdminCampaignDeleteData = { deleted: true };
+  return ok(payload);
 });

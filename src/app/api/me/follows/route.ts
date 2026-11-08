@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import type { FollowBody, FollowData, FollowsData, MeFollowedStore, UnfollowBody, UnfollowData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export const GET = handle(async () => {
       },
     },
   });
-  const stores = follows.map((f) => ({
+  const stores: MeFollowedStore[] = follows.map((f) => ({
     id: f.store.id,
     name: f.store.name,
     slug: f.store.slug,
@@ -41,15 +42,16 @@ export const GET = handle(async () => {
     isLive: f.store.status === "live",
     productCount: f.store._count.products,
     followers: f.store._count.followers,
-    followedAt: f.createdAt,
+    followedAt: f.createdAt.toISOString(),
   }));
-  return ok({ stores, total: stores.length });
+  const payload: FollowsData = { stores, total: stores.length };
+  return ok(payload);
 });
 
 // POST /api/me/follows {storeId} — follow a live store.
 export const POST = handle(async (req: Request) => {
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as { storeId?: unknown };
+  const body = (await req.json().catch(() => ({}))) as FollowBody;
   const storeId = typeof body.storeId === "string" ? body.storeId.trim() : "";
   if (!storeId) throw new ApiError(400, "VALIDATION", "storeId is required");
 
@@ -64,12 +66,14 @@ export const POST = handle(async (req: Request) => {
     // into a friendly 409 instead of a 500 (P2002 = unique constraint violation).
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const followers = await db.storeFollow.count({ where: { storeId: store.id } });
-      return ok({ following: true, followers, already: true }, { status: 200 });
+      const payload: FollowData = { following: true, followers, already: true };
+      return ok(payload, { status: 200 });
     }
     throw e;
   }
   const followers = await db.storeFollow.count({ where: { storeId: store.id } });
-  return ok({ following: true, followers }, { status: 201 });
+  const payload: FollowData = { following: true, followers };
+  return ok(payload, { status: 201 });
 });
 
 // DELETE /api/me/follows {storeId} — unfollow (storeId via JSON body or ?storeId= query).
@@ -78,7 +82,7 @@ export const DELETE = handle(async (req: Request) => {
   const url = new URL(req.url);
   let storeId = url.searchParams.get("storeId")?.trim() ?? "";
   if (!storeId) {
-    const body = (await req.json().catch(() => ({}))) as { storeId?: unknown };
+    const body = (await req.json().catch(() => ({}))) as UnfollowBody;
     if (typeof body.storeId === "string") storeId = body.storeId.trim();
   }
   if (!storeId) throw new ApiError(400, "VALIDATION", "storeId is required");
@@ -90,5 +94,6 @@ export const DELETE = handle(async (req: Request) => {
 
   await db.storeFollow.delete({ where: { id: existing.id } });
   const followers = await db.storeFollow.count({ where: { storeId } });
-  return ok({ following: false, followers });
+  const payload: UnfollowData = { following: false, followers };
+  return ok(payload);
 });

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { ensureCartForCaller, findCartForCaller, resolveCartCaller, loadAddableVariant, shapeCart } from "../cart";
 import { trackAddToCart } from "@/lib/analytics/track";
+import type { AddCartItemBody, AddCartItemData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const POST = handle(async (req: Request) => {
   // suspended account → 401); guests resolve to { shopperId: null }.
   const { shopperId: meId } = await resolveCartCaller();
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AddCartItemBody;
 
   const variantId = String(body.variantId ?? "");
   const qty = Math.round(Number(body.qty ?? 1));
@@ -84,5 +85,6 @@ export const POST = handle(async (req: Request) => {
   }
 
   const fresh = await findCartForCaller(meId);
-  return ok({ cart: shapeCart(fresh), notice }, { status: 201 });
+  const payload: AddCartItemData = { cart: shapeCart(fresh), notice };
+  return ok(payload, { status: 201 });
 });

@@ -9,6 +9,7 @@ import {
   pushBuyerNotificationForShipped,
 } from "@/lib/shipping";
 import { parseJson } from "@/lib/json";
+import type { ShipBody, ShipData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ShipBody;
   const mode = body.mode == null ? null : String(body.mode).trim();
 
   const order = await db.order.findFirst({
@@ -103,21 +104,24 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
       meta: { orderNumber: order.orderNumber, mode: "platform", rateId, awb: shipment.awbNumber, courier: quote.courierName },
     });
 
-    return ok({
+    // shippedAt (Date|null, stamped by transitionOrder above) and awbNumber
+    // (nullable on the snapshot, generated non-null) vs contract strings.
+    const payload: ShipData = {
       id: fresh.id,
       status: fresh.status,
-      shippedAt: fresh.shippedAt,
+      shippedAt: fresh.shippedAt ? fresh.shippedAt.toISOString() : null,
       trackingNumber: shipment.awbNumber,
       trackingProvider: "mock",
       shipmentStatus: shipment.status,
       shipment: {
         awbNumber: shipment.awbNumber,
         courierName: shipment.courierName,
-        etaFrom: shipment.etaFrom,
-        etaTo: shipment.etaTo,
+        etaFrom: shipment.etaFrom ? shipment.etaFrom.toISOString() : null,
+        etaTo: shipment.etaTo ? shipment.etaTo.toISOString() : null,
         labelUrl: shipment.labelUrl,
       },
-    });
+    } as unknown as ShipData;
+    return ok(payload);
   }
 
   // Legacy manual mode — {provider, trackingNumber} (explicit or implicit).
@@ -176,13 +180,15 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     meta: { orderNumber: order.orderNumber, provider, trackingNumber },
   });
 
-  return ok({
+  // shippedAt (Date|null, stamped by transitionOrder above) vs contract string.
+  const payload: ShipData = {
     id: fresh.id,
     status: fresh.status,
-    shippedAt: fresh.shippedAt,
+    shippedAt: fresh.shippedAt ? fresh.shippedAt.toISOString() : null,
     trackingNumber,
     trackingProvider: provider,
     shipmentStatus: null,
     shipment: null,
-  });
+  } as unknown as ShipData;
+  return ok(payload);
 });

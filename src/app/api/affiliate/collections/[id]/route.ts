@@ -1,6 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
+import type { UpdateCollectionBody, UpdateCollectionData, ArchiveCollectionData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { id } = await ctx.params;
   const collection = await db.affiliateCollection.findFirst({ where: { id, affiliateId: aff.id } });
   if (!collection) throw new ApiError(404, "NOT_FOUND", "Collection not found");
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as UpdateCollectionBody;
 
   // POST-IMPLEMENTATION AUDIT (P2): collections are deferred for the initial
   // release. While the gate is off, only WIND-DOWN operations are accepted:
@@ -118,7 +119,8 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     return tx.affiliateCollection.update({ where: { id: collection.id }, data });
   });
 
-  return ok({ collection: { id: result.id, title: result.title, slug: result.slug, status: result.status, version: result.version } });
+  const payload: UpdateCollectionData = { collection: { id: result.id, title: result.title, slug: result.slug, status: result.status, version: result.version } };
+  return ok(payload);
 });
 
 // DELETE /api/affiliate/collections/[id] — archive (never hard-delete:
@@ -138,5 +140,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
       data: { status: "archived", archivedAt: new Date() },
     });
   });
-  return ok({ archived: true });
+  const payload: ArchiveCollectionData = { archived: true };
+  return ok(payload);
 });

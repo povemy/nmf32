@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { resumeJob } from "@/lib/import/runner";
+import type { SellerImportJobResumeData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,6 @@ export const POST = handle(async (req: NextRequest, ctx: { params: Promise<{ id:
   if (!token || token !== job.trackingToken) {
     throw new ApiError(403, "INVALID_TRACKING_TOKEN", "Tracking token does not match this job.");
   }
-  const res = await resumeJob(id);
-  return ok(res);
+  const payload: SellerImportJobResumeData = await resumeJob(id);
+  return ok(payload);
 });

@@ -35,31 +35,13 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { formatMinor } from "@/lib/money";
 import { apiGet, apiSend, MoneyInput } from "./ui-bits";
+import type { CartSettingsBody, CartSettingsData, CartSettingsSaveData, SellerProductFull } from "@/lib/types/api-contract";
 
-type CartConfig = {
-  layout: string;
-  showFreeShippingBar: boolean;
-  freeShipThresholdMinor: number;
-  upsellEnabled: boolean;
-  upsellMode: string;
-  upsellTitle: string;
-  upsellLimit: number;
-  urgencyStockEnabled: boolean;
-  urgencyStockThreshold: number;
-  urgencyViewersEnabled: boolean;
-  urgencyViewersMin: number;
-  urgencyViewersMax: number;
-  urgencyCountdownEnabled: boolean;
-  urgencyCountdownMinutes: number;
-  showOrderNote: boolean;
-  showDiscountHint: boolean;
-  checkoutLabel: string;
-  showContinueShopping: boolean;
-  stickyCta: boolean;
-  trustBadges: string[];
-};
+// Contract GET /api/store/cart-settings drawer config (settings object).
+type CartConfig = NonNullable<CartSettingsData["settings"]>;
 
-type ProductPick = { id: string; title: string; priceMinor: number; status: string };
+// Contract GET /api/store/cart-settings resolved manual upsell pick row.
+type ProductPick = CartSettingsData["upsellPicked"][number];
 
 const DEFAULTS: CartConfig = {
   layout: "standard",
@@ -127,8 +109,8 @@ export default function SellerCartSettings() {
     let alive = true;
     setLoading(true);
     Promise.all([
-      apiGet<{ settings: Partial<CartConfig> | null; upsellPicked: ProductPick[] }>("/api/store/cart-settings"),
-      apiGet<ProductPick[]>("/api/store/products?size=100"),
+      apiGet<CartSettingsData>("/api/store/cart-settings"),
+      apiGet<SellerProductFull[]>("/api/store/products?size=100"),
     ])
       .then(([s, rows]) => {
         if (!alive) return;
@@ -165,10 +147,10 @@ export default function SellerCartSettings() {
   const save = async () => {
     setSaving(true);
     try {
-      await apiSend("PUT", "/api/store/cart-settings", {
+      await apiSend<CartSettingsSaveData>("PUT", "/api/store/cart-settings", {
         ...cfg,
         upsellProductIds: cfg.upsellMode === "manual" ? picked.map((p) => p.id) : [],
-      });
+      } satisfies CartSettingsBody);
       toast.success("Cart experience saved", { description: "Shoppers now see this cart drawer in your store." });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save");

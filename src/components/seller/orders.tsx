@@ -36,6 +36,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import type { FulfillData, RefundRequestData, SellerOrderDetailData, SellerOrderRow } from "@/lib/types/api-contract";
 import {
   ArrowLeft,
   CircleDollarSign,
@@ -52,62 +53,12 @@ import {
 
 // ---------------------------------------------------------------- types
 
-type OrderRow = {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerEmail: string;
-  status: string;
-  channel: string;
-  totalMinor: number;
-  currency: string;
-  itemCount: number;
-  trackingNumber: string | null;
-  createdAt: string;
-  paidAt: string | null;
-  shippedAt: string | null;
-};
-
-type OrderDetail = {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string | null;
-  status: string;
-  channel: string;
-  currency: string;
-  subtotalMinor: number;
-  discountMinor: number;
-  shippingMinor: number;
-  taxMinor: number;
-  totalMinor: number;
-  couponCode: string | null;
-  customerNote: string | null;
-  paymentProvider: string | null;
-  paidAt: string | null;
-  fulfilledAt: string | null;
-  shippedAt: string | null;
-  deliveredAt: string | null;
-  trackingNumber: string | null;
-  trackingProvider: string | null;
-  createdAt: string;
-  items: {
-    id: string;
-    title: string;
-    variantLabel: string | null;
-    unitPriceMinor: number;
-    qty: number;
-    lineSubtotalMinor: number;
-    discountMinor: number;
-    commissionMinor: number;
-    sellerNetMinor: number;
-    refundedMinor: number;
-  }[];
-  history: { id: string; fromStatus: string | null; toStatus: string; actor: string; note: string | null; createdAt: string }[];
-  refunds: { id: string; amountMinor: number; reason: string | null; status: string; requestedBy: string; createdAt: string }[];
+/** GET /api/store/orders/[id] view: the contract types `shippingAddress` as a
+ *  loose Record<string, unknown>; the detail view + packing slip render a
+ *  known subset of optional string fields, so that one field is re-narrowed
+ *  here (everything else is SellerOrderDetailData verbatim). */
+type OrderDetail = Omit<SellerOrderDetailData, "shippingAddress"> & {
   shippingAddress: { line1?: string; line2?: string; city?: string; postcode?: string; state?: string; country?: string };
-  latestPaymentRef: string | null;
 };
 
 const TABS = [
@@ -124,7 +75,7 @@ export default function SellerOrders({ focusOrderId, onNavigate }: { focusOrderI
   const [tab, setTab] = useState("to_fulfill");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [rows, setRows] = useState<OrderRow[]>([]);
+  const [rows, setRows] = useState<SellerOrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -139,7 +90,7 @@ export default function SellerOrders({ focusOrderId, onNavigate }: { focusOrderI
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data-fetch reset
     setLoading(true);
-    apiGetPaged<OrderRow[]>(`/api/store/orders?status=${tab}&search=${encodeURIComponent(search)}&page=${page}&size=12`)
+    apiGetPaged<SellerOrderRow[]>(`/api/store/orders?status=${tab}&search=${encodeURIComponent(search)}&page=${page}&size=12`)
       .then(({ rows: r, meta }) => {
         if (!alive) return;
         setRows(r);
@@ -287,7 +238,7 @@ function OrderDetailView({ orderId, onBack }: { orderId: string; onBack: () => v
   const canRefund = ["paid", "processing", "shipped", "delivered", "received", "completed"].includes(order.status);
 
   const fulfill = async () => {
-    const ok = await runMutation(() => apiSend("POST", `/api/store/orders/${order.id}/fulfill`), `Order ${order.orderNumber} marked fulfilled`);
+    const ok = await runMutation(() => apiSend<FulfillData>("POST", `/api/store/orders/${order.id}/fulfill`), `Order ${order.orderNumber} marked fulfilled`);
     if (ok) refreshAll();
   };
 
@@ -515,7 +466,7 @@ function RefundDialog({ open, onOpenChange, order, onDone }: { open: boolean; on
     }
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("POST", `/api/store/orders/${order.id}/refund-request`, { amountMinor: amount, reason: reason || null, restock }),
+      () => apiSend<RefundRequestData>("POST", `/api/store/orders/${order.id}/refund-request`, { amountMinor: amount, reason: reason || null, restock }),
       "Refund requested — an admin will review it"
     );
     setBusy(false);

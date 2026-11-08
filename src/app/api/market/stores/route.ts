@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { MarketStoreCard } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +24,14 @@ const loadStores = publicCache(
 // GET /api/market/stores — public directory of live stores.
 export const GET = handle(async () => {
   const stores = await loadStores();
-  return ok(
-    stores.map((s) => ({
-      id: s.id,
-      name: s.name,
-      slug: s.slug,
-      tagline: s.tagline,
-      logoUrl: s.logoUrl,
-      bannerUrl: s.bannerUrl,
-      productCount: s._count.products,
-    }))
-  );
+  const payload: MarketStoreCard[] = stores.map((s) => ({
+    id: s.id,
+    name: s.name,
+    slug: s.slug,
+    tagline: s.tagline,
+    logoUrl: s.logoUrl,
+    bannerUrl: s.bannerUrl,
+    productCount: s._count.products,
+  }));
+  return ok(payload);
 });

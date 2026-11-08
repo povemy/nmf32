@@ -70,8 +70,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { FunnelCard, FUNNEL_WINDOW_PARAM, type FunnelApi, type FunnelData, type FunnelViewKey } from "./funnel-diagram";
+import { FunnelCard, FUNNEL_WINDOW_PARAM, type FunnelApi, type FunnelViewKey } from "./funnel-diagram";
 import { TourGuide, type TourStep } from "./tour-guide";
+import type {
+  ApiPageMeta,
+  CartInsightsData,
+  InsightsCampaignsData,
+  InsightsFunnelData,
+  InsightsMarketProductsData,
+  InsightsMarketsData,
+  InsightsOverviewData,
+  InsightsProductPerformanceData,
+  InsightsProductTrafficData,
+  SalesInsightsData,
+  InsightsTrafficProductRow,
+  SellerCampaignPatchData,
+  SellerCampaignRow,
+} from "@/lib/types/api-contract";
 import {
   apiGetPaged,
   apiSend,
@@ -88,69 +103,16 @@ import {
 } from "./ui-bits";
 
 // ---------------------------------------------------------------- contract types
-// Client-side mirror of the /api/store/insights/* response shapes (Task 5).
-
-type InsightsWindowInfo = {
-  key: string;
-  from: string;
-  to: string;
-  prevFrom: string;
-  prevTo: string;
-  days: number;
-};
-
-type Freshness = { eventsUpTo: string | null; trackingSince: string | null; note?: string | null };
-
-type OverviewData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  freshness: Freshness;
-  traffic: {
-    storeViews: number;
-    storeViewsPrev: number;
-    sessions: number;
-    sessionsPrev: number;
-    uniqueVisitors: number;
-    uniqueVisitorsPrev: number;
-    productViews: number;
-    productViewsPrev: number;
-    byDay: { day: string; storeViews: number; productViews: number }[];
-    channels: { channel: string; views: number; sessions: number }[];
-    topViewedProducts: { productId: string; title: string; slug: string; imageUrl: string | null; views: number }[];
-    truncated: boolean;
-  };
-  funnel: {
-    stages: { key: string; label: string; count: number; prev: number; stepRate: number | null; dropOff: number | null; dropOffPct: number | null }[];
-    basis: string[];
-    paymentAttempts: number;
-    paymentAttemptsPrev: number;
-  };
-  summary: {
-    orders: number;
-    ordersPrev: number;
-    unitsSold: number;
-    unitsSoldPrev: number;
-    grossSalesMinor: number;
-    grossSalesMinorPrev: number;
-    grossProductSalesMinor: number;
-    netProductSalesMinor: number;
-    refundsMinor: number;
-    refundsMinorPrev: number;
-    refundCount: number;
-    aovMinor: number | null;
-    aovMinorPrev: number | null;
-    cartAddUnits: number;
-    cartAddUnitsPrev: number;
-    activeCartsNow: number;
-    unitsInCartsNow: number;
-    visitToPurchaseRate: number | null;
-  };
-  observations: { kind: string; text: string }[];
-};
+// /api/store/insights/* payloads are imported VERBATIM from the centralized
+// API contract (src/lib/types/api-contract.ts). The only local types below
+// are mode-specific derivations the shared contract route types as optional
+// (product-traffic serves list mode AND drill-down mode from one endpoint).
 
 // ---------------------------------------------------------------- product traffic
-// Contract mirror of /api/store/insights/product-traffic — the Top viewed
-// products card's OWN Daily/Weekly/Monthly/Yearly filter + drill-down modal.
+// Top viewed products card — the seller's per-product traffic card with its OWN
+// Daily/Weekly/Monthly/Yearly filter (independent of the page window, like
+// the funnel diagram) and a click-through drill-down modal showing where
+// each product's viewers came from plus cart/purchase movement.
 
 type ProductTrafficViewKey = "daily" | "weekly" | "monthly" | "yearly";
 
@@ -168,42 +130,12 @@ const PT_VIEW_LABELS: Record<ProductTrafficViewKey, string> = {
   yearly: "Last 12 months",
 };
 
-type ProductTrafficTotals = {
-  views: number;
-  uniqueViewers: number;
-  cartAddTimes: number;
-  cartAddUnits: number;
-  cartRemoveTimes: number;
-  cartRemoveUnits: number;
-  purchaseOrders: number;
-  purchaseUnits: number;
-};
-
-type ProductTrafficRow = ProductTrafficTotals & {
-  productId: string;
-  title: string;
-  slug: string;
-  imageUrl: string | null;
-};
-
-type ProductTrafficListData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  topViewedProducts: ProductTrafficRow[];
-  truncated: boolean;
-};
-
-type ProductTrafficDetailData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  product: { id: string; title: string; slug: string; imageUrl: string | null };
-  totals: ProductTrafficTotals;
-  channels: { channel: string; views: number; sessions: number }[];
-  referrers: { host: string; views: number }[];
-  byDay: { day: string; views: number }[];
-  truncated: boolean;
-  notes?: string[] | null;
-};
+/** Drill-down (productId) mode of GET /api/store/insights/product-traffic:
+ *  the contract types the mode-specific blocks optional because one route
+ *  serves BOTH modes — a drill-down response always carries them, so they
+ *  are Required() here (list mode uses InsightsProductTrafficData verbatim). */
+type ProductTrafficDetailData = InsightsProductTrafficData &
+  Required<Pick<InsightsProductTrafficData, "product" | "totals" | "channels" | "referrers" | "byDay">>;
 
 /** Fixed display order + plain-language labels for the five channels a view
  *  can be classified into (server values: direct/search/social/internal/other). */
@@ -215,211 +147,6 @@ const PT_CHANNEL_META: Record<string, { label: string; hint: string }> = {
   search: { label: "Search engines", hint: "Google, Bing, DuckDuckGo and other search sites." },
   social: { label: "Social media", hint: "Facebook, Instagram, TikTok, X, YouTube, WhatsApp and other social platforms." },
   other: { label: "Other sites", hint: "Links from sites that are neither search engines nor social networks." },
-};
-
-type CartData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  freshness?: Freshness;
-  period: {
-    addEvents: number;
-    addEventsPrev: number;
-    addUnits: number;
-    addUnitsPrev: number;
-    removeEvents: number;
-    removeEventsPrev: number;
-    removeUnits: number;
-    removeUnitsPrev: number;
-    byDay: { day: string; addUnits: number; removeUnits: number }[];
-    topAdded: { productId: string; title: string; imageUrl: string | null; addUnits: number; addEvents: number }[];
-  };
-  current: {
-    sampledAt: string;
-    activeCarts: number;
-    totalUnits: number;
-    totalLines: number;
-    ineligibleUnits: number;
-    byProduct: { productId: string; title: string; slug: string; imageUrl: string | null; units: number; carts: number }[];
-    eligibilityNote: string;
-  };
-};
-
-type ProductRow = {
-  productId: string;
-  title: string;
-  slug: string;
-  imageUrl: string | null;
-  status: string;
-  views: number;
-  viewSessions: number;
-  addUnits: number;
-  addEvents: number;
-  currentCartUnits: number;
-  currentCarts: number;
-  orderedUnits: number;
-  purchasedUnits: number;
-  grossSalesMinor: number;
-  netSalesMinor: number;
-  refundedMinor: number;
-  viewToCartRate: number | null;
-  checkoutToPurchaseRate: number | null;
-};
-
-type ProductsPayload = { rows: ProductRow[]; notes: string[] };
-
-type SalesData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  cards: {
-    paidOrders: number;
-    paidOrdersPrev: number;
-    unitsSold: number;
-    unitsSoldPrev: number;
-    grossSalesMinor: number;
-    grossSalesMinorPrev: number;
-    grossProductSalesMinor: number;
-    grossProductSalesMinorPrev?: number;
-    discountsMinor: number;
-    discountsMinorPrev?: number;
-    shippingChargedMinor: number;
-    shippingChargedMinorPrev?: number;
-    sellerProceedsMinor: number;
-    sellerProceedsMinorPrev?: number;
-    refundsMinor: number;
-    refundsMinorPrev: number;
-    refundCount: number;
-    refundCountPrev: number;
-    cancelledOrders: number;
-    cancelledOrdersPrev?: number;
-    aovMinor: number | null;
-    aovMinorPrev: number | null;
-    netProductSalesMinor: number;
-    refundedItemsMinor?: number;
-    visitToPurchaseRate: number | null;
-  };
-  byDay: { bucket: string; grossSalesMinor: number; netProductSalesMinor: number; orders: number; units: number; refundsMinor: number }[];
-  granularity: string;
-  topProducts: { productId: string; title: string; units: number; netSalesMinor: number }[];
-  fulfillment: { unfulfilledPaidOrders: number; avgPaidToShippedHours: number | null; shippedSample: number; note: string };
-  notes: string[];
-};
-
-type MarketRow = {
-  code: string;
-  label: string;
-  paidOrders: number;
-  paidOrdersPrev: number;
-  unitsSold: number;
-  grossProductSalesMinor: number;
-  discountsMinor: number;
-  refundsMinor: number;
-  netProductSalesMinor: number;
-  shippingChargedMinor: number;
-  aovMinor: number;
-  shareNetPct: number;
-  shareOrdersPct: number;
-  growthPct: number | null;
-  isNew: boolean;
-  source: string;
-};
-
-type MarketsData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  dimension: "country" | "state";
-  rows: MarketRow[];
-  totals: { paidOrders: number; netProductSalesMinor: number };
-  notes: string[];
-  movers: {
-    risers: { code: string; label: string; growthPct: number }[];
-    fallers: { code: string; label: string; growthPct: number }[];
-  };
-};
-
-type MarketProductsData = {
-  label: string;
-  rows: {
-    productId: string;
-    title: string;
-    slug: string;
-    imageUrl: string | null;
-    unitsSold: number;
-    grossProductSalesMinor: number;
-    discountsMinor: number;
-    refundedMinor: number;
-    netProductSalesMinor: number;
-    paidOrders: number;
-    avgSellingPriceMinor: number;
-    views: number;
-    addUnits: number;
-  }[];
-  notes: string[];
-};
-
-// Marketing Intelligence — /api/store/insights/campaigns report mirror.
-type CampaignReportRow = {
-  campaignId: string;
-  name: string;
-  slug: string;
-  code: string;
-  status: string;
-  defaultSource: string | null;
-  defaultMedium: string | null;
-  createdAt: string;
-  visits: number;
-  visitSessions: number;
-  productViews: number;
-  addUnits: number;
-  attributedOrders: number;
-  paidOrders: number;
-  paidOrdersPrev: number;
-  grossSalesMinor: number;
-  grossProductSalesMinor: number;
-  aovMinor: number | null;
-  conversionPct: number | null;
-  firstEventAt: string | null;
-};
-
-type CampaignUtmRow = {
-  source: string;
-  medium: string | null;
-  campaign: string | null;
-  visits: number;
-  visitSessions: number;
-  productViews: number;
-  addUnits: number;
-  attributedOrders: number;
-  paidOrders: number;
-  grossSalesMinor: number;
-};
-
-type CampaignsData = {
-  window: InsightsWindowInfo;
-  generatedAt: string;
-  rows: CampaignReportRow[];
-  utmRows: CampaignUtmRow[];
-  totals: {
-    campaigns: number;
-    attributedVisits: number;
-    attributedPaidOrders: number;
-    attributedGrossSalesMinor: number;
-    unclaimedPaidOrders: number;
-    unclaimedGrossSalesMinor: number;
-  };
-  notes: string[];
-};
-
-// /api/store/campaigns list mirror (link management).
-type CampaignLinkRow = {
-  id: string;
-  name: string;
-  slug: string;
-  code: string;
-  status: string;
-  defaultSource: string | null;
-  defaultMedium: string | null;
-  createdAt: string;
-  linkPath: string;
 };
 
 // ---------------------------------------------------------------- constants + helpers
@@ -600,7 +327,7 @@ function GrowthBadge({ growthPct, isNew }: { growthPct: number | null; isNew: bo
 /** Paged fetch hook (apiGetPaged keeps the top-level pagination meta). */
 function usePagedApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
-  const [meta, setMeta] = useState<{ page: number; size: number; total: number } | null>(null);
+  const [meta, setMeta] = useState<ApiPageMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -722,18 +449,18 @@ export default function SellerInsights({ onNavigate }: { onNavigate: (n: SellerN
   // Per-tab lazy data: a tab's URL stays null until it is first activated,
   // so nothing is fetched for tabs the seller never opens. Window changes and
   // refreshes rewrite every loaded tab's URL (keys the useApi effect).
-  const overview = useApi<OverviewData>(mkUrl("overview", visited.overview));
-  const cart = useApi<CartData>(mkUrl("cart", visited.cart));
-  const sales = useApi<SalesData>(mkUrl("sales", visited.sales, `&granularity=${salesGran}`));
-  const markets = useApi<MarketsData>(mkUrl("markets", visited.markets, `&dimension=${marketDim}`));
-  const campaigns = useApi<CampaignsData>(mkUrl("campaigns", visited.campaigns));
-  const products = usePagedApi<ProductsPayload>(mkUrl("products", visited.products, `&sort=${productSort}&page=${productPage}&size=20`));
+  const overview = useApi<InsightsOverviewData>(mkUrl("overview", visited.overview));
+  const cart = useApi<CartInsightsData>(mkUrl("cart", visited.cart));
+  const sales = useApi<SalesInsightsData>(mkUrl("sales", visited.sales, `&granularity=${salesGran}`));
+  const markets = useApi<InsightsMarketsData>(mkUrl("markets", visited.markets, `&dimension=${marketDim}`));
+  const campaigns = useApi<InsightsCampaignsData>(mkUrl("campaigns", visited.campaigns));
+  const products = usePagedApi<InsightsProductPerformanceData>(mkUrl("products", visited.products, `&sort=${productSort}&page=${productPage}&size=20`));
   const funnelUrl = visited.overview
     ? `/api/store/insights/funnel?window=${FUNNEL_WINDOW_PARAM[funnelView]}${
         funnelProduct ? `&productId=${encodeURIComponent(funnelProduct)}` : ""
       }${freshQ}`
     : null;
-  const funnel: FunnelApi = useApi<FunnelData>(funnelUrl);
+  const funnel: FunnelApi = useApi<InsightsFunnelData>(funnelUrl);
 
   // Self-healing: when the selected product stops resolving server-side
   // (deleted, or never belonged to this store → honest 404 "Unknown product…"),
@@ -953,7 +680,7 @@ function OverviewSection({
   funnelProduct,
   onFunnelProduct,
 }: {
-  data: OverviewData | null;
+  data: InsightsOverviewData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -1220,8 +947,8 @@ function OverviewSection({
  *  each product's viewers came from plus cart/purchase movement. */
 function TopViewedProductsCard({ onNavigate }: { onNavigate: (n: SellerNav) => void }) {
   const [view, setView] = useState<ProductTrafficViewKey>("monthly");
-  const [selected, setSelected] = useState<ProductTrafficRow | null>(null);
-  const list = useApi<ProductTrafficListData>(`/api/store/insights/product-traffic?window=${PT_WINDOW_PARAM[view]}`);
+  const [selected, setSelected] = useState<InsightsTrafficProductRow | null>(null);
+  const list = useApi<InsightsProductTrafficData>(`/api/store/insights/product-traffic?window=${PT_WINDOW_PARAM[view]}`);
   const rows = list.data?.topViewedProducts ?? [];
 
   return (
@@ -1332,7 +1059,7 @@ function ProductTrafficDialog({
   view,
   onClose,
 }: {
-  product: ProductTrafficRow | null;
+  product: InsightsTrafficProductRow | null;
   view: ProductTrafficViewKey;
   onClose: () => void;
 }) {
@@ -1548,7 +1275,7 @@ function CartSection({
   error,
   onRetry,
 }: {
-  data: CartData | null;
+  data: CartInsightsData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -1751,8 +1478,8 @@ function ProductsSection({
   onPage,
   exportHref,
 }: {
-  data: ProductsPayload | null;
-  meta: { page: number; size: number; total: number } | null;
+  data: InsightsProductPerformanceData | null;
+  meta: ApiPageMeta | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -1906,7 +1633,7 @@ function SalesSection({
   onGranularity,
   onNavigate,
 }: {
-  data: SalesData | null;
+  data: SalesInsightsData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -2168,7 +1895,7 @@ function MarketsSection({
   windowQuery,
   windowLabel,
 }: {
-  data: MarketsData | null;
+  data: InsightsMarketsData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -2184,7 +1911,7 @@ function MarketsSection({
     drill && windowQuery
       ? `/api/store/insights/markets/products?${windowQuery}&dimension=${dimension}&code=${encodeURIComponent(drill.code)}`
       : null;
-  const drillApi = useApi<MarketProductsData>(drillUrl);
+  const drillApi = useApi<InsightsMarketProductsData>(drillUrl);
 
   if (error) return <ErrorPanel message={error} onRetry={onRetry} />;
   if (loading || !data) {
@@ -2459,7 +2186,7 @@ function CampaignsSection({
   onRetry,
   onReportChanged,
 }: {
-  data: CampaignsData | null;
+  data: InsightsCampaignsData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -2467,7 +2194,7 @@ function CampaignsSection({
 }) {
   // Link management list (independent of the insights window — a campaign's
   // link and code do not change with the selected date range).
-  const links = useApi<CampaignLinkRow[]>("/api/store/campaigns");
+  const links = useApi<SellerCampaignRow[]>("/api/store/campaigns");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", source: "", medium: "" });
   const [creating, setCreating] = useState(false);
@@ -2803,7 +2530,7 @@ function CampaignsSection({
     [zeroAttribution, utmCount, hasNotes]
   );
 
-  const copyLink = async (row: CampaignLinkRow) => {
+  const copyLink = async (row: SellerCampaignRow) => {
     const url = `${window.location.origin}${row.linkPath}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -2831,7 +2558,7 @@ function CampaignsSection({
     setCreating(true);
     const done = await runMutation(
       () =>
-        apiSend<CampaignLinkRow>("POST", "/api/store/campaigns", {
+        apiSend<SellerCampaignRow>("POST", "/api/store/campaigns", {
           name: form.name.trim(),
           source: form.source.trim() || undefined,
           medium: form.medium.trim() || undefined,
@@ -2847,10 +2574,10 @@ function CampaignsSection({
     }
   };
 
-  const toggleArchive = async (row: CampaignLinkRow) => {
+  const toggleArchive = async (row: SellerCampaignRow) => {
     const next = row.status === "active" ? "archived" : "active";
     const done = await runMutation(
-      () => apiSend<unknown>("PATCH", `/api/store/campaigns/${row.id}`, { status: next }),
+      () => apiSend<SellerCampaignPatchData>("PATCH", `/api/store/campaigns/${row.id}`, { status: next }),
       next === "archived"
         ? "Campaign archived — its link keeps resolving and past attribution keeps reporting"
         : "Campaign reactivated"

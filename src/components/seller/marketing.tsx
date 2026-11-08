@@ -22,32 +22,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Plus, Tag, Trash2 } from "lucide-react";
-
-type Coupon = {
-  id: string;
-  code: string;
-  description: string | null;
-  type: "percent" | "fixed" | "freeship" | string;
-  percent: number | null;
-  amountMinor: number | null;
-  minSpendMinor: number;
-  maxRedemptions: number | null;
-  perCustomerLimit: number;
-  startsAt: string | null;
-  endsAt: string | null;
-  isActive: boolean;
-  timesUsed: number;
-  createdAt: string;
-};
+import type { SellerCouponCreateBody, SellerCouponDeleteData, SellerCouponRow } from "@/lib/types/api-contract";
 
 export default function SellerCoupons() {
-  const { data, loading, refetch } = useApi<Coupon[]>("/api/store/coupons");
+  const { data, loading, refetch } = useApi<SellerCouponRow[]>("/api/store/coupons");
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<Coupon | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SellerCouponRow | null>(null);
 
-  const toggle = async (c: Coupon, next: boolean) => {
+  const toggle = async (c: SellerCouponRow, next: boolean) => {
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/coupons/${c.id}`, { isActive: next }),
+      () => apiSend<SellerCouponRow>("PATCH", `/api/store/coupons/${c.id}`, { isActive: next }),
       `${c.code} ${next ? "activated" : "paused"}`
     );
     if (ok) refetch();
@@ -55,7 +39,7 @@ export default function SellerCoupons() {
 
   const remove = async () => {
     if (!confirmDelete) return;
-    const ok = await runMutation(() => apiSend("DELETE", `/api/store/coupons/${confirmDelete.id}`), `Coupon ${confirmDelete.code} deleted`);
+    const ok = await runMutation(() => apiSend<SellerCouponDeleteData>("DELETE", `/api/store/coupons/${confirmDelete.id}`), `Coupon ${confirmDelete.code} deleted`);
     setConfirmDelete(null);
     if (ok) refetch();
   };
@@ -162,7 +146,7 @@ function CreateCouponDialog({ open, onOpenChange, onDone }: { open: boolean; onO
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    const body: Record<string, unknown> = {
+    const body: SellerCouponCreateBody = {
       code: code.trim().toUpperCase(),
       type,
       description: description || null,
@@ -172,7 +156,7 @@ function CreateCouponDialog({ open, onOpenChange, onDone }: { open: boolean; onO
     if (type === "percent") body.percent = Number(percent);
     if (type === "fixed") body.amountMinor = amountMinor;
     setBusy(true);
-    const ok = await runMutation(() => apiSend("POST", "/api/store/coupons", body), `Coupon ${code.toUpperCase()} created`);
+    const ok = await runMutation(() => apiSend<SellerCouponRow>("POST", "/api/store/coupons", body), `Coupon ${code.toUpperCase()} created`);
     setBusy(false);
     if (ok) {
       setCode("");

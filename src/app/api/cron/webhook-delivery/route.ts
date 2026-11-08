@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { assertCronAuth } from "@/lib/cron-auth";
 import { sweepDueWebhookDeliveries, MAX_WEBHOOK_ATTEMPTS, WEBHOOK_BACKOFF_SCHEDULE_MS } from "@/lib/webhook-delivery";
+import type { WebhookDeliveryStatusData, WebhookDeliveryThrottledData, WebhookSweepOutcome } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,8 @@ export const POST = handle(async (req: Request) => {
   const last = typeof g.__webhookDeliverySweepAt === "number" ? (g.__webhookDeliverySweepAt as number) : 0;
   const now = Date.now();
   if (now - last < SWEEP_THROTTLE_MS) {
-    return ok({ throttled: true, attempted: 0, auth: auth.mode });
+    const throttled: WebhookDeliveryThrottledData = { throttled: true, attempted: 0, auth: auth.mode };
+    return ok(throttled);
   }
   g.__webhookDeliverySweepAt = now;
 
@@ -63,7 +65,8 @@ export const POST = handle(async (req: Request) => {
     update: { valueJson: toJson(outcome) },
   });
 
-  return ok(outcome);
+  const payload: WebhookSweepOutcome = outcome;
+  return ok(payload);
 });
 
 // GET — backlog + last-run observability without triggering a sweep.
@@ -87,15 +90,16 @@ export const GET = handle(async (req: Request) => {
       .catch(() => null),
     db.setting.findUnique({ where: { key: "cron.webhook_delivery.last" } }),
   ]);
-  return ok({
+  const payload: WebhookDeliveryStatusData = {
     backlog,
     dueNowApprox: dueNow,
-    oldestPending: oldest ? { createdAt: oldest.createdAt, event: oldest.event, attempts: oldest.attempts } : null,
-    lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
+    oldestPending: oldest ? { createdAt: oldest.createdAt.toISOString(), event: oldest.event, attempts: oldest.attempts } : null,
+    lastRun: lastSetting ? (JSON.parse(lastSetting.valueJson) as WebhookSweepOutcome) : null,
     auth: auth.mode,
     schedulingNote:
       "Recurring invocation: mini-services/expiry-scheduler (`webhook` kind, this deployment) or a platform cron in production; this endpoint is the tick, not the scheduler",
     receiverContract:
       "POST {url} with x-nomofee-event / x-nomofee-timestamp (unix s) / x-nomofee-signature = hex HMAC-SHA256(secret, `${timestamp}.${rawBody}`); unsigned when the endpoint has no secret; verify within ±10 min",
-  });
+  };
+  return ok(payload);
 });

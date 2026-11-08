@@ -5,6 +5,7 @@ import { productCardInclude, toProductCard, type ProductWithRelations } from "..
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
 import { normalizeSearchQuery } from "@/lib/search-normalize";
 import { tokenize } from "../../../market/_shared/search";
+import type { SfProductCard } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -97,5 +98,6 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
 
   const result = await loadSfProducts(slug, search, collectionSlug, source, limit, categoryId);
   if (result.notFound) throw new ApiError(404, "STORE_NOT_FOUND", "Store not found");
-  return ok(result.products.map((p) => toProductCard(p as ProductWithRelations)));
+  const payload: SfProductCard[] = result.products.map((p) => toProductCard(p as ProductWithRelations));
+  return ok(payload);
 });

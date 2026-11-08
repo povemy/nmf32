@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireAffiliate, affiliateBalances, requestAffiliatePayout, getAffiliateSettings } from "@/lib/affiliate";
+import type { PayoutsData, AffiliatePayoutRow, PayoutRequestData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +18,14 @@ export const GET = handle(async () => {
     affiliateBalances(aff.id),
     getAffiliateSettings(),
   ]);
-  return ok({
-    balances,
-    minPayoutMinor: settings.minPayoutMinor,
-    payouts: payouts.map((p) => ({
-      id: p.id, amountMinor: p.amountMinor, status: p.status, method: p.method,
-      reference: p.reference, note: p.note, failReason: p.failReason,
-      requestedAt: p.requestedAt.toISOString(),
-      processedAt: p.processedAt?.toISOString() ?? null,
-    })),
-  });
+  const rows: AffiliatePayoutRow[] = payouts.map((p) => ({
+    id: p.id, amountMinor: p.amountMinor, status: p.status, method: p.method,
+    reference: p.reference, note: p.note, failReason: p.failReason,
+    requestedAt: p.requestedAt.toISOString(),
+    processedAt: p.processedAt?.toISOString() ?? null,
+  }));
+  const payload: PayoutsData = { balances, minPayoutMinor: settings.minPayoutMinor, payouts: rows };
+  return ok(payload);
 });
 
 // POST /api/affiliate/payouts — request a withdrawal (manual controlled
@@ -36,5 +35,6 @@ export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-payout-request", 3);
   const aff = await requireAffiliate();
   const result = await requestAffiliatePayout(aff.id);
-  return ok(result, { status: 201 });
+  const payload: PayoutRequestData = { payoutId: result.payoutId, amountMinor: result.amountMinor };
+  return ok(payload, { status: 201 });
 });

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
+import type { StockProbeQuery, StockProbeData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,8 @@ export const dynamic = "force-dynamic";
 // and the guest cart drawer needs it exactly like the account one.
 export const GET = handle(async (req: Request) => {
   const url = new URL(req.url);
-  const ids = (url.searchParams.get("ids") ?? "")
+  const query: StockProbeQuery = { ids: url.searchParams.get("ids") ?? "" };
+  const ids = query.ids
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
@@ -60,5 +62,6 @@ export const GET = handle(async (req: Request) => {
     };
   }
 
-  return ok({ stocks });
+  const payload: StockProbeData = { stocks };
+  return ok(payload);
 });

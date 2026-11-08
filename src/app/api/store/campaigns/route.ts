@@ -4,6 +4,7 @@ import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { randomToken } from "@/lib/password";
 import { campaignLinkPath } from "@/lib/analytics/attribution";
+import type { SellerCampaignRow, SellerCampaignCreateBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -42,19 +43,10 @@ function slugify(name: string): string {
   );
 }
 
-type CampaignRow = {
-  id: string;
-  name: string;
-  slug: string;
-  code: string;
-  status: string;
-  defaultSource: string | null;
-  defaultMedium: string | null;
-  createdAt: string;
-  linkPath: string;
-};
-
-function toRow(storeSlug: string, c: { id: string; name: string; slug: string; code: string; status: string; defaultSource: string | null; defaultMedium: string | null; createdAt: Date }): CampaignRow {
+function toRow(
+  storeSlug: string,
+  c: { id: string; name: string; slug: string; code: string; status: string; defaultSource: string | null; defaultMedium: string | null; createdAt: Date }
+): SellerCampaignRow {
   return {
     id: c.id,
     name: c.name,
@@ -77,7 +69,8 @@ export const GET = handle(async (req: Request) => {
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, slug: true, code: true, status: true, defaultSource: true, defaultMedium: true, createdAt: true },
   });
-  return ok(campaigns.map((c) => toRow(store.slug, c)));
+  const payload: SellerCampaignRow[] = campaigns.map((c) => toRow(store.slug, c));
+  return ok(payload);
 });
 
 // POST — create a campaign (name + optional suggested utm_source/utm_medium).
@@ -87,7 +80,7 @@ export const POST = handle(async (req: Request) => {
 
   let body: Record<string, unknown> = {};
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = (await req.json()) as SellerCampaignCreateBody & Record<string, unknown>;
     if (body == null || typeof body !== "object" || Array.isArray(body)) body = {};
   } catch {
     throw new ApiError(400, "VALIDATION", "JSON body required");
@@ -133,5 +126,6 @@ export const POST = handle(async (req: Request) => {
     meta: { campaignId: created.id, name, slug, code },
   });
 
-  return ok(toRow(store.slug, created), { status: 201 });
+  const payload: SellerCampaignRow = toRow(store.slug, created);
+  return ok(payload, { status: 201 });
 });

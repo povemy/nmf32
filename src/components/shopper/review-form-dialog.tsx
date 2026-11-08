@@ -27,17 +27,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { detectReviewSubmissionThreat } from "@/lib/review-text";
 import { postJson, patchJson, ApiFail } from "./ui-bits";
+import type { MeSubmittedReview, ReviewEditBody, ReviewEditData, ReviewSubmitBody, ReviewSubmitData } from "@/lib/types/api-contract";
 
 const STAR_LABELS = ["Very poor", "Poor", "Average", "Good", "Excellent"] as const;
 const REWARD_POINTS = 5; // display copy only — the server is authoritative
 
-/** Edit mode payload — PATCHes MY pending review (no reward interaction). */
-export type EditableReviewT = {
-  id: string;
-  rating: number;
-  title: string | null;
-  body: string | null;
-};
+/** Edit mode payload — PATCHes MY pending review (no reward interaction).
+ *  UI-minimized projection of the contract's MeSubmittedReview row. */
+export type EditableReviewT = Pick<MeSubmittedReview, "id" | "rating" | "title" | "body">;
 
 export function ReviewFormDialog({
   open,
@@ -108,16 +105,18 @@ export function ReviewFormDialog({
     try {
       if (edit) {
         // EDIT path — pending-only, budgeted, audited; NEVER touches rewards.
-        await patchJson<{ id: string; editsRemaining: number }>(`/api/me/reviews/${encodeURIComponent(edit.id)}`, {
+        const payload: ReviewEditBody = {
           rating,
           title: title.trim() || null,
           body: trimmedBody || null,
-        });
+        };
+        await patchJson<ReviewEditData>(`/api/me/reviews/${encodeURIComponent(edit.id)}`, payload);
         toast.success("Review updated", { description: "Your pending review was edited — it is still awaiting approval." });
       } else {
-        const res = await postJson<{ id: string; status: string; reward: { points: number } }>(
+        const payload: ReviewSubmitBody = { rating, title: title.trim() || undefined, body: trimmedBody || undefined };
+        const res = await postJson<ReviewSubmitData>(
           `/api/sf/${encodeURIComponent(storeSlug)}/products/${encodeURIComponent(productSlug)}/reviews`,
-          { rating, title: title.trim() || undefined, body: trimmedBody || undefined }
+          payload
         );
         toast.success("Review submitted — pending approval", {
           description: `Thank you for the honest feedback! ${res.reward?.points ?? REWARD_POINTS} membership points (≈ RM0.05) were added to your rewards.`,

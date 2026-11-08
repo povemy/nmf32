@@ -7,6 +7,7 @@ import {
   issueOrderAccessGrant,
   ORDER_ACCESS_GRANT_TTL_MS,
 } from "@/lib/guest-otp";
+import type { GuestOrderOtpVerifyBody, GuestOrderOtpVerifyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,7 @@ export const dynamic = "force-dynamic";
 // persistent storage (the SPA keeps it in memory only).
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "orders-otp-verify", 10);
-  const body = (await req.json().catch(() => ({}))) as {
-    email?: string;
-    orderNumber?: string;
-    code?: string;
-  };
+  const body = (await req.json().catch(() => ({}))) as GuestOrderOtpVerifyBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const orderNumber = (body.orderNumber ?? "").trim();
   const code = (body.code ?? "").trim();
@@ -85,5 +82,6 @@ export const POST = handle(async (req: Request) => {
     meta: { grantTtlMs: ORDER_ACCESS_GRANT_TTL_MS },
   }).catch(() => undefined);
 
-  return ok({ accessGrant, grantExpiresInMs: ORDER_ACCESS_GRANT_TTL_MS });
+  const payload: GuestOrderOtpVerifyData = { accessGrant, grantExpiresInMs: ORDER_ACCESS_GRANT_TTL_MS };
+  return ok(payload);
 });

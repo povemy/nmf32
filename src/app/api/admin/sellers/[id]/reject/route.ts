@@ -4,6 +4,7 @@ import { requireCap, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, stripSeller } from "@/app/api/admin/_helpers";
 import { planAdminStorePath, transitionStoreToward, TransitionError } from "@/lib/store-lifecycle";
+import type { AdminSellerRejectBody, AdminSellerRejectData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("sellers.approve");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as AdminSellerRejectBody & Record<string, unknown>;
   const reason = reqStr(body, "reason", "reason");
 
   const seller = await db.seller.findUnique({ where: { id }, include: { store: true } });
@@ -69,5 +70,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "rejected", kycStatus: "rejected", reason, sessionsRevoked },
   });
 
-  return ok({ ...stripSeller(updated), sessionsRevoked });
+  const payload: AdminSellerRejectData = {
+    ...stripSeller(updated),
+    submittedAt: updated.submittedAt ? updated.submittedAt.toISOString() : null,
+    approvedAt: updated.approvedAt ? updated.approvedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+    emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null,
+    sessionsRevoked,
+  };
+  return ok(payload);
 });

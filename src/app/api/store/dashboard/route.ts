@@ -2,12 +2,11 @@ import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { safeRefreshWalletCache } from "@/lib/ledger";
+import type { SellerDashboardCard, SellerDashboardData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
-type Card = { orders: number; revenueMinor: number; commissionMinor: number; netMinor: number };
-
-const EMPTY: Card = { orders: 0, revenueMinor: 0, commissionMinor: 0, netMinor: 0 };
+const EMPTY: SellerDashboardCard = { orders: 0, revenueMinor: 0, commissionMinor: 0, netMinor: 0 };
 
 function startOfToday(): Date {
   const d = new Date();
@@ -44,7 +43,7 @@ export const GET = handle(async () => {
     include: { items: { select: { commissionMinor: true } } },
   });
 
-  const cards: Record<string, Card> = { today: { ...EMPTY }, "7d": { ...EMPTY }, "30d": { ...EMPTY } };
+  const cards: Record<string, SellerDashboardCard> = { today: { ...EMPTY }, "7d": { ...EMPTY }, "30d": { ...EMPTY } };
   const inWindow = (paidAt: Date, from: Date) => paidAt >= from;
   for (const o of paidOrders) {
     const paidAt = o.paidAt as Date;
@@ -86,8 +85,8 @@ export const GET = handle(async () => {
     loadWalletSummary(me.id),
   ]);
 
-  return ok({
-    cards,
+  const payload: SellerDashboardData = {
+    cards: { today: cards.today, "7d": cards["7d"], "30d": cards["30d"] },
     // R2-UI — e-wallet snapshot (available + pending from ledger truth).
     wallet,
     lowStock: lowStock
@@ -110,12 +109,13 @@ export const GET = handle(async () => {
       status: o.status,
       totalMinor: o.totalMinor,
       itemCount: o.items.length,
-      createdAt: o.createdAt,
+      createdAt: o.createdAt.toISOString(),
     })),
     pendingActions: {
       unfulfilledPaidOrders: unfulfilled,
       openRefundRequests: refundRequests,
       productsPendingReview: pendingProducts,
     },
-  });
+  };
+  return ok(payload);
 });

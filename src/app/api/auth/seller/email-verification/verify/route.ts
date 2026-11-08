@@ -7,6 +7,7 @@ import {
   getSellerEmailVerifiedAt,
   assertSellerEmailVerificationWritable,
 } from "@/lib/seller-email-verification";
+import type { SellerEvVerifyBody, SellerEvVerifyData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export const POST = handle(async (req: Request) => {
   rateLimit(req, "email-verification-verify", 10);
   rateLimitKey(me.id, "email-verification-verify", 20, 3_600_000);
 
-  const body = (await req.json().catch(() => ({}))) as { code?: string };
+  const body = (await req.json().catch(() => ({}))) as SellerEvVerifyBody;
   const code = (body.code ?? "").trim();
   if (!code || code.length > 12) {
     throw new ApiError(401, "INVALID", "That code is not valid");
@@ -54,7 +55,8 @@ export const POST = handle(async (req: Request) => {
   // success. Tolerant read: pre-migration reads as unverified.
   const alreadyAt = await getSellerEmailVerifiedAt(me.id);
   if (alreadyAt != null) {
-    return ok({ verified: true, alreadyVerified: true, emailVerifiedAt: alreadyAt.toISOString() });
+    const payload: SellerEvVerifyData = { verified: true, alreadyVerified: true, emailVerifiedAt: alreadyAt.toISOString() };
+    return ok(payload);
   }
 
   // Uniform fail-closed pre-flight (pre-migration deployment).
@@ -104,5 +106,6 @@ export const POST = handle(async (req: Request) => {
     meta: { emailVerifiedAt: verifiedAt.toISOString() },
   }).catch(() => undefined);
 
-  return ok({ verified: true, alreadyVerified: false, emailVerifiedAt: verifiedAt.toISOString() });
+  const payload: SellerEvVerifyData = { verified: true, alreadyVerified: false, emailVerifiedAt: verifiedAt.toISOString() };
+  return ok(payload);
 });

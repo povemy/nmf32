@@ -5,6 +5,7 @@ import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
+import type { SeoData, SeoBody, SeoSaveData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export const GET = handle(async function (_req: NextRequest) {
     });
     const productSeo = await db.seoMeta.findMany({ where: { entityType: "product", entityId: { in: products.map((p) => p.id) } } });
     const seoByProduct = new Map(productSeo.map((s) => [s.entityId, s]));
-    return ok({
+    const payload: SeoData = {
       store: {
         seoTitle: storeSeo?.seoTitle ?? seller.store.name,
         seoDescription: storeSeo?.seoDescription ?? seller.store.tagline ?? "",
@@ -59,23 +60,14 @@ export const GET = handle(async function (_req: NextRequest) {
           warnings: parseJson<string[]>(s?.warningsJson, []),
         };
       }),
-    });
+    };
+    return ok(payload);
 });
 
 export const PATCH = handle(async function (req: NextRequest) {
     const seller = await sellerStore();
     if (!seller?.store) return fail(401, "UNAUTHENTICATED", "Seller session required.");
-    const body = (await req.json().catch(() => ({}))) as {
-      target?: "store" | "product";
-      productId?: string;
-      seoTitle?: string;
-      seoDescription?: string;
-      ogImage?: string | null;
-      canonicalUrl?: string | null;
-      noindex?: boolean;
-      lock?: string[];
-      unlock?: string[];
-    };
+    const body = (await req.json().catch(() => ({}))) as SeoBody;
     const entityType = body.target === "product" ? "product" : "store";
     if (entityType === "product" && !body.productId) return fail(400, "MISSING_PRODUCT", "productId required for product SEO.");
     const entityId = entityType === "store" ? seller.store.id : (body.productId as string);
@@ -115,7 +107,16 @@ export const PATCH = handle(async function (req: NextRequest) {
         await db.product.update({ where: { id: entityId }, data: { overridesJson: JSON.stringify(ov) } });
       }
     }
-    return ok({ id: saved.id, seoTitle: saved.seoTitle, seoDescription: saved.seoDescription, ogImage: saved.ogImage, noindex: saved.noindex, lockedFields: [...locked], warnings: parseJson<string[]>(saved.warningsJson, []) });
+    const payload: SeoSaveData = {
+      id: saved.id,
+      seoTitle: saved.seoTitle,
+      seoDescription: saved.seoDescription,
+      ogImage: saved.ogImage,
+      noindex: saved.noindex,
+      lockedFields: [...locked],
+      warnings: parseJson<string[]>(saved.warningsJson, []),
+    };
+    return ok(payload);
 });
 
 function validateSeo(title?: string, description?: string): string[] {

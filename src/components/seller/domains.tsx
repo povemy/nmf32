@@ -21,29 +21,18 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BadgeCheck, Copy, Globe, Info, Loader2, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type Domain = {
-  id: string;
-  domain: string;
-  mode: "cname" | "ns" | string;
-  status: string;
-  sslStatus: string;
-  isPrimary: boolean;
-  lastCheckedAt: string | null;
-  errorReason: string | null;
-  createdAt: string;
-};
+import type { SellerDomainBody, SellerDomainDeleteData, SellerDomainRow, SellerDomainVerifiedData } from "@/lib/types/api-contract";
 
 const STEPS = ["pending", "verifying", "verified", "active"];
 
 export default function SellerDomains({ storeSlug }: { storeSlug: string }) {
-  const { data, loading, refetch } = useApi<Domain[]>("/api/store/domains");
+  const { data, loading, refetch } = useApi<SellerDomainRow[]>("/api/store/domains");
   const [addOpen, setAddOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<Domain | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SellerDomainRow | null>(null);
 
-  const verify = async (d: Domain) => {
+  const verify = async (d: SellerDomainRow) => {
     const ok = await runMutation(
-      () => apiSend("POST", `/api/store/domains/${d.id}/verify`),
+      () => apiSend<SellerDomainVerifiedData>("POST", `/api/store/domains/${d.id}/verify`),
       `${d.domain} verified — SSL certificate issued`
     );
     if (ok) refetch();
@@ -51,7 +40,7 @@ export default function SellerDomains({ storeSlug }: { storeSlug: string }) {
 
   const remove = async () => {
     if (!confirmDelete) return;
-    const ok = await runMutation(() => apiSend("DELETE", `/api/store/domains/${confirmDelete.id}`), "Domain removed");
+    const ok = await runMutation(() => apiSend<SellerDomainDeleteData>("DELETE", `/api/store/domains/${confirmDelete.id}`), "Domain removed");
     setConfirmDelete(null);
     if (ok) refetch();
   };
@@ -177,7 +166,7 @@ export default function SellerDomains({ storeSlug }: { storeSlug: string }) {
 
 // ---------------------------------------------------------------- dns card
 
-function DnsInstructions({ domain }: { domain: Domain }) {
+function DnsInstructions({ domain }: { domain: SellerDomainRow }) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const copy = async (text: string, key: string) => {
@@ -232,7 +221,7 @@ function AddDomainDialog({ open, onOpenChange, onDone }: { open: boolean; onOpen
   const submit = async () => {
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("POST", "/api/store/domains", { domain: domain.trim(), mode }),
+      () => apiSend<SellerDomainRow>("POST", "/api/store/domains", { domain: domain.trim(), mode } satisfies SellerDomainBody),
       "Domain added — now update DNS, then press Verify now"
     );
     setBusy(false);

@@ -27,6 +27,26 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type {
+  ActivateContextData,
+  AffiliateBalances,
+  AffiliateCollectionItem,
+  AffiliateCollectionSummary,
+  AffiliateEarningRow,
+  AffiliateLinkSummary,
+  AffiliatePayoutRow,
+  AffiliateProfile,
+  AffiliatePubProduct,
+  AffiliateSettings,
+  DiscoverData,
+  DiscoverProduct,
+  EarningsData,
+  NetworkData,
+  OverviewData,
+  PayoutsData,
+  PubCollectionFoundData,
+  PubShowcaseFoundData,
+} from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
 // Authed fetch helpers — deviceHeaders come from fetchJson; affiliate routes
@@ -55,223 +75,66 @@ export function affDelete<T>(url: string): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Payload types (mirror the API routes — see src/app/api/affiliate/**)
+// Payload types — re-exported contract types for /api/affiliate/** (see
+// src/lib/types/api-contract.ts §9). Only AffiliateMeT, DiscoverResT and the
+// two Pub*ResT views below are UI-side refinements, each documented in place.
 // ---------------------------------------------------------------------------
 
-export type AffiliateSettingsT = {
-  enabled: boolean;
-  sponsorEnabled: boolean;
-  maxRateBps: number;
-  attrWindowDays: number;
-  sponsorWindowDays: number;
-  reviewDays: number;
-  minPayoutMinor: number;
-  // P2 deferral flags: Collections & Showcase are gated features — when false
-  // the hub hides those tabs and the link-creation dialog stops offering the
-  // corresponding link types (the API 403s anyway; the UI simply fails closed).
-  collectionsEnabled: boolean;
-  showcaseEnabled: boolean;
-};
+export type AffiliateSettingsT = AffiliateSettings;
 
-export type AffiliateBalancesT = {
-  pendingMinor: number;
-  approvedMinor: number;
-  availableMinor: number;
-  payoutInFlightMinor: number;
-  paidMinor: number;
-  reversedMinor: number;
-  heldMinor: number;
-  recoveryMinor: number;
-  requestableMinor: number;
-};
+export type AffiliateBalancesT = AffiliateBalances;
 
-export type AffiliateProfileT = {
-  id: string;
-  code: string;
-  slug: string;
-  status: string;
-  displayName: string;
-  bio: string | null;
-  avatarUrl: string | null;
-  payoutRef: string | null;
-  payoutVerified: boolean;
-  sponsorId: string | null;
-  sponsorName: string | null;
-  sponsorSlug: string | null;
-  termsVersion: number;
-  termsAcceptedAt: string;
-  activatedAt: string;
-};
+export type AffiliateProfileT = AffiliateProfile;
 
+/** UI refinement of the contract's MeProfileData: /api/affiliate/me always
+ *  pairs activated:false with invitedBy and activated:true with profile +
+ *  balances, so the hub can discriminate on `activated` without optional
+ *  chaining at every read site. */
 export type AffiliateMeT =
-  | { activated: false; settings: AffiliateSettingsT; invitedBy: string | null }
-  | { activated: true; settings: AffiliateSettingsT; profile: AffiliateProfileT; balances: AffiliateBalancesT };
+  | { activated: false; settings: AffiliateSettings; invitedBy: string | null }
+  | { activated: true; settings: AffiliateSettings; profile: AffiliateProfile; balances: AffiliateBalances };
 
 /** GET /api/affiliate/activate (public pre-activation context). */
-export type AffiliateActivateCtxT = {
-  enabled: boolean;
-  sponsorEnabled: boolean;
-  maxRateBps: number;
-  invitedBy: string | null;
-  invitedByCode: string | null;
-};
+export type AffiliateActivateCtxT = ActivateContextData;
 
-export type HubOverviewT = {
-  estimated: { clicks: number; uniqueVisitors: number; productViews: number; addToCart: number };
-  commerce: { attributedOrders: number; paidOrders: number; eligibleSalesMinor: number; reversedMinor: number };
-  earnings: AffiliateBalancesT & { personalDirectMinor: number; sponsorMinor: number };
-  network: { directReferrals: number; activatedAffiliates: number; affiliatesWithSales: number };
-  series: { date: string; clicks: number; orders: number; commissionMinor: number }[];
-  days: number;
-};
+export type HubOverviewT = OverviewData;
 
-export type DiscoverProductT = {
-  productId: string;
-  title: string;
-  slug: string;
-  storeSlug: string;
-  storeName: string;
-  image: string | null;
-  priceMinor: number;
-  rateBps: number;
-  estimatedCommissionMinor: number;
-  salesCount: number;
-  /** Raw impressions — Eye-icon count (replaces "sold" on the card). */
-  viewCount: number;
-  ratingAvg: number;
-  isFeatured: boolean;
-  addedAt: string | null;
-};
+export type DiscoverProductT = DiscoverProduct;
 
-export type DiscoverResT = { rows: DiscoverProductT[]; total: number; paused?: boolean; maxRateBps?: number };
+/** UI-flattened view of the contract's DiscoverData union — the "paused"
+ *  variant is the only one carrying `paused`, so the feed keeps one optional
+ *  flag instead of discriminating everywhere. */
+export type DiscoverResT = { rows: DiscoverProduct[]; total: number; paused?: boolean; maxRateBps?: number };
 
-export type LinkRowT = {
-  id: string;
-  code: string;
-  type: "product" | "store" | "collection" | "showcase";
-  channel: string;
-  label: string | null;
-  status: "active" | "archived";
-  clicks: number;
-  lastClickAt: string | null;
-  createdAt: string;
-  target:
-    | { kind: "product"; title: string; slug: string | null; storeSlug: string | null; storeName?: string | null; image?: string | null }
-    | { kind: "store"; title: string; slug: string | null }
-    | { kind: "collection"; title: string; slug: string | null; status: string | null }
-    | { kind: "showcase"; title: string; slug: string | null };
-};
+export type LinkRowT = AffiliateLinkSummary;
 
-export type CollectionItemT = {
-  productId: string;
-  position: number;
-  title: string;
-  slug: string;
-  priceMinor: number;
-  image: string | null;
-  storeName: string;
-  storeSlug: string;
-  eligible: boolean;
-  rateBps: number;
-};
+export type CollectionItemT = AffiliateCollectionItem;
 
-export type CollectionRowT = {
-  id: string;
-  title: string;
-  description: string | null;
-  slug: string;
-  status: "draft" | "published" | "archived";
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-  publishedAt: string | null;
-  items: CollectionItemT[];
-};
+export type CollectionRowT = AffiliateCollectionSummary;
 
-export type NetworkResT = {
-  total: number;
-  page: number;
-  referrals: { displayName: string; slug: string; status: string; activatedAt: string; generatedSales: boolean }[];
-  sponsorEarningsMinor: number;
-};
+export type NetworkResT = NetworkData;
 
-export type EarningsRowT = {
-  id: string;
-  role: "direct" | "sponsor";
-  status: "pending" | "approved" | "available" | "paid" | "reversed" | "held";
-  amountMinor: number;
-  reversedMinor: number;
-  holdReason: string | null;
-  availableAt: string | null;
-  paidAt: string | null;
-  payoutId: string | null;
-  createdAt: string;
-  orderNumber: string;
-  rateBps: number;
-  baseMinor: number;
-  poolMinor: number;
-  channel: string | null;
-  linkType: string | null;
-};
+export type EarningsRowT = AffiliateEarningRow;
 
-export type EarningsResT = {
-  total: number;
-  page: number;
-  balances: AffiliateBalancesT;
-  rows: EarningsRowT[];
-};
+export type EarningsResT = EarningsData;
 
-export type PayoutRowT = {
-  id: string;
-  amountMinor: number;
-  status: "requested" | "processing" | "paid" | "failed" | "rejected";
-  method: string;
-  reference: string | null;
-  note: string | null;
-  failReason: string | null;
-  requestedAt: string;
-  processedAt: string | null;
-};
+export type PayoutRowT = AffiliatePayoutRow;
 
-export type PayoutsResT = {
-  balances: AffiliateBalancesT;
-  minPayoutMinor: number;
-  payouts: PayoutRowT[];
-};
+export type PayoutsResT = PayoutsData;
 
-export type PubProductT = {
-  productId: string;
-  title: string;
-  slug: string;
-  priceMinor: number;
-  storeName: string;
-  storeSlug: string;
-  image: string | null;
-};
+export type PubProductT = AffiliatePubProduct;
 
+/** UI-flattened view of the contract's PubShowcaseData union (the `found`
+ *  discriminator relaxed to a boolean + optional showcase block). */
 export type PubShowcaseResT = {
   found: boolean;
-  showcase?: {
-    displayName: string;
-    bio: string | null;
-    avatarUrl: string | null;
-    slug: string;
-    pageType: "affiliate_recommendations";
-    collections: { id: string; title: string; description: string | null; slug: string; products: PubProductT[] }[];
-  };
+  showcase?: PubShowcaseFoundData["showcase"];
 };
 
+/** UI-flattened view of the contract's PubCollectionData union. */
 export type PubCollectionResT = {
   found: boolean;
-  collection?: {
-    title: string;
-    description: string | null;
-    curatedBy: string;
-    curatorSlug: string;
-    curatorAvatar: string | null;
-    pageType: "affiliate_collection";
-    products: PubProductT[];
-  };
+  collection?: PubCollectionFoundData["collection"];
 };
 
 // ---------------------------------------------------------------------------
@@ -641,9 +504,11 @@ export function useDiscoverSearch(enabled: boolean) {
     void Promise.resolve().then(() => {
       if (seq.current === id) setLoading(true);
     });
-    affGet<DiscoverResT>(url)
+    affGet<DiscoverData>(url)
       .then((d) => {
-        if (seq.current === id) setRows(d.paused ? [] : d.rows);
+        // Flattened picker view — only the paused variant carries `paused`.
+        const flat = d as DiscoverResT;
+        if (seq.current === id) setRows(flat.paused ? [] : flat.rows);
       })
       .catch(() => {
         if (seq.current === id) setRows([]);
@@ -699,7 +564,7 @@ export function useDiscoverFeed(params: {
       void Promise.resolve().then(() => {
         if (seq.current === id) setLoading(true);
       });
-      affGet<DiscoverResT>(`/api/affiliate/discover?${sp.toString()}`)
+      affGet<DiscoverData>(`/api/affiliate/discover?${sp.toString()}`)
         .then((d) => {
           if (seq.current !== id) return;
           setStoreMap((prev) => {
@@ -713,7 +578,7 @@ export function useDiscoverFeed(params: {
             }
             return changed ? next : prev;
           });
-          setData(d);
+          setData(d as DiscoverResT);
         })
         .catch((e) => {
           if (seq.current !== id) return;

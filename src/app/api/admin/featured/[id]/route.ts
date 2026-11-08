@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminFeaturedDeleteData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -29,5 +30,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: AdminFeaturedDeleteData = { deleted: true };
+  return ok(payload);
 });

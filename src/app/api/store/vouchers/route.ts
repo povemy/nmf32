@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { SUPPORTED_VOUCHER_KINDS } from "@/lib/vouchers";
+import type { SellerVoucherPanelRow, SellerVouchersPanelData, SellerVoucherCreateBody, SellerVoucherCreateData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -40,29 +41,28 @@ export const GET = handle(async () => {
   });
   const usedByVoucher = new Map(usedCounts.map((u) => [u.voucherId, u._count]));
 
-  return ok({
-    vouchers: rows.map((v) => ({
-      id: v.id,
-      code: v.code,
-      title: v.title,
-      kind: v.kind,
-      discountMinor: v.discountMinor,
-      percentOff: v.percentOff,
-      maxDiscountMinor: v.maxDiscountMinor,
-      minSpendMinor: v.minSpendMinor,
-      expiryAt: v.expiryAt,
-      startsAt: v.startsAt,
-      isActive: v.isActive,
-      scope: v.scope,
-      regionLimit: v.regionLimit,
-      quota: v.quota,
-      claimedCount: v.claimedCount,
-      holders: v._count.holders,
-      usedCount: usedByVoucher.get(v.id) ?? 0,
-      createdAt: v.createdAt,
-    })),
-    fsPriceAdjustMinor: store.fsPriceAdjustMinor,
-  });
+  const vouchers: SellerVoucherPanelRow[] = rows.map((v) => ({
+    id: v.id,
+    code: v.code,
+    title: v.title,
+    kind: v.kind,
+    discountMinor: v.discountMinor,
+    percentOff: v.percentOff,
+    maxDiscountMinor: v.maxDiscountMinor,
+    minSpendMinor: v.minSpendMinor,
+    expiryAt: v.expiryAt.toISOString(),
+    startsAt: v.startsAt ? v.startsAt.toISOString() : null,
+    isActive: v.isActive,
+    scope: v.scope,
+    regionLimit: v.regionLimit,
+    quota: v.quota,
+    claimedCount: v.claimedCount,
+    holders: v._count.holders,
+    usedCount: usedByVoucher.get(v.id) ?? 0,
+    createdAt: v.createdAt.toISOString(),
+  }));
+  const payload: SellerVouchersPanelData = { vouchers, fsPriceAdjustMinor: store.fsPriceAdjustMinor };
+  return ok(payload);
 });
 
 // POST /api/store/vouchers — create a STORE-scope voucher for the seller's own
@@ -73,7 +73,7 @@ export const GET = handle(async () => {
 //  • money fields are integer minor units.
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerVoucherCreateBody;
 
   const title = String(body.title ?? "").trim();
   if (title.length < 3 || title.length > 80) {
@@ -88,7 +88,7 @@ export const POST = handle(async (req: Request) => {
   if (minSpendMinor < 0 || minSpendMinor > 100_000_000) {
     throw new ApiError(400, "VALIDATION", "minSpendMinor must be a non-negative integer (minor units)");
   }
-  const quota = body.quota != null && body.quota !== "" ? intOr(body.quota, 0) : null;
+  const quota = body.quota != null && (body.quota as unknown) !== "" ? intOr(body.quota, 0) : null;
   if (quota != null && (quota < 1 || quota > 1_000_000)) {
     throw new ApiError(400, "VALIDATION", "quota must be a positive integer when provided");
   }
@@ -106,8 +106,10 @@ export const POST = handle(async (req: Request) => {
   let regionLimit: string | null = null;
 
   if (kind === "discount") {
-    const hasFlat = body.discountMinor != null && body.discountMinor !== "";
-    const hasPercent = body.percentOff != null && body.percentOff !== "";
+    // Bodies may arrive as form-ish strings — the empty-string checks below
+    // compare through `unknown` so the contract's number typing still compiles.
+    const hasFlat = body.discountMinor != null && (body.discountMinor as unknown) !== "";
+    const hasPercent = body.percentOff != null && (body.percentOff as unknown) !== "";
     if (hasFlat === hasPercent) {
       throw new ApiError(400, "VALIDATION", "Provide exactly one of discountMinor (flat) or percentOff (1..90)");
     }
@@ -120,7 +122,7 @@ export const POST = handle(async (req: Request) => {
       const p = intOr(body.percentOff, 0);
       if (p < 1 || p > 90) throw new ApiError(400, "VALIDATION", "percentOff must be 1..90");
       percentOff = p;
-      if (body.maxDiscountMinor != null && body.maxDiscountMinor !== "") {
+      if (body.maxDiscountMinor != null && (body.maxDiscountMinor as unknown) !== "") {
         maxDiscountMinor = intOr(body.maxDiscountMinor, 0);
         if (maxDiscountMinor <= 0) throw new ApiError(400, "VALIDATION", "maxDiscountMinor must be a positive integer when provided");
       }
@@ -182,25 +184,23 @@ export const POST = handle(async (req: Request) => {
     meta: { code: voucher.code, kind, storeSlug: store.slug, fsPriceAdjustMinor: store.fsPriceAdjustMinor },
   });
 
-  return ok(
-    {
-      voucher: {
-        id: voucher.id,
-        code: voucher.code,
-        title: voucher.title,
-        kind: voucher.kind,
-        discountMinor: voucher.discountMinor,
-        percentOff: voucher.percentOff,
-        maxDiscountMinor: voucher.maxDiscountMinor,
-        minSpendMinor: voucher.minSpendMinor,
-        expiryAt: voucher.expiryAt,
-        startsAt: voucher.startsAt,
-        isActive: voucher.isActive,
-        scope: voucher.scope,
-        regionLimit: voucher.regionLimit,
-        quota: voucher.quota,
-      },
+  const payload: SellerVoucherCreateData = {
+    voucher: {
+      id: voucher.id,
+      code: voucher.code,
+      title: voucher.title,
+      kind: voucher.kind,
+      discountMinor: voucher.discountMinor,
+      percentOff: voucher.percentOff,
+      maxDiscountMinor: voucher.maxDiscountMinor,
+      minSpendMinor: voucher.minSpendMinor,
+      expiryAt: voucher.expiryAt.toISOString(),
+      startsAt: voucher.startsAt ? voucher.startsAt.toISOString() : null,
+      isActive: voucher.isActive,
+      scope: voucher.scope,
+      regionLimit: voucher.regionLimit,
+      quota: voucher.quota,
     },
-    { status: 201 }
-  );
+  };
+  return ok(payload, { status: 201 });
 });

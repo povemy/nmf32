@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { postPayoutFailed } from "@/lib/ledger";
 import { assertTransition } from "@/lib/payout-state";
 import { rateLimit } from "@/lib/ratelimit";
-import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import { readBody, reqStr, type Body } from "@/app/api/admin/_helpers";
+import type { AdminPayoutFailBody, AdminPayoutRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,7 +23,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const admin = await requireCap("payouts.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as Body & AdminPayoutFailBody;
   const reason = reqStr(body, "reason", "reason");
 
   const payout = await db.payout.findUnique({ where: { id } });
@@ -99,5 +100,11 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
 
   const updated = await db.payout.findUnique({ where: { id } });
   if (!updated) throw new ApiError(404, "NOT_FOUND", "Payout not found");
-  return ok(updated);
+  const payload: AdminPayoutRow = {
+    ...updated,
+    paidAt: updated.paidAt ? updated.paidAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

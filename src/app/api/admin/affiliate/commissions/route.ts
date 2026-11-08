@@ -1,6 +1,11 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireAnyCap } from "@/lib/auth";
+import type {
+  AdminAffCommissionsData,
+  AdminAffCommissionsQuery,
+  AdminAffCommissionRow,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +19,15 @@ const VALID_STATUSES = ["pending", "approved", "available", "paid", "reversed", 
 export const GET = handle(async (req: Request) => {
   await requireAnyCap("affiliate.manage", "affiliate.finance");
   const url = new URL(req.url);
-  const statusParam = url.searchParams.get("status") ?? undefined;
+  const statusParam: AdminAffCommissionsQuery["status"] = url.searchParams.get("status") ?? undefined;
   const status = statusParam && VALID_STATUSES.includes(statusParam) ? statusParam : undefined;
-  const affiliateId = url.searchParams.get("affiliateId")?.trim() || undefined;
-  const storeId = url.searchParams.get("storeId")?.trim() || undefined;
+  const affiliateId: AdminAffCommissionsQuery["affiliateId"] = url.searchParams.get("affiliateId")?.trim() || undefined;
+  const storeId: AdminAffCommissionsQuery["storeId"] = url.searchParams.get("storeId")?.trim() || undefined;
   // Order-number search: trimmed, case-insensitive CONTAINS on the frozen
   // orderNumber snapshot (e.g. "NM-2410" narrows to that order's items).
-  const orderNumber = url.searchParams.get("orderNumber")?.trim() || undefined;
-  const fromParam = url.searchParams.get("from") ?? undefined;
-  const toParam = url.searchParams.get("to") ?? undefined;
+  const orderNumber: AdminAffCommissionsQuery["orderNumber"] = url.searchParams.get("orderNumber")?.trim() || undefined;
+  const fromParam: AdminAffCommissionsQuery["from"] = url.searchParams.get("from") ?? undefined;
+  const toParam: AdminAffCommissionsQuery["to"] = url.searchParams.get("to") ?? undefined;
   const fromMs = fromParam ? Date.parse(fromParam) : NaN;
   const toMs = toParam ? Date.parse(toParam) : NaN;
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
@@ -58,7 +63,27 @@ export const GET = handle(async (req: Request) => {
     }),
   ]);
 
-  return ok({
+  const rows: AdminAffCommissionRow[] = commissions.map((c) => ({
+    id: c.id,
+    orderNumber: c.orderNumber,
+    orderItemId: c.orderItemId,
+    affiliate: c.affiliate.displayName,
+    status: c.status,
+    rateBps: c.rateBps,
+    baseMinor: c.commissionableBaseMinor,
+    poolMinor: c.poolMinor,
+    createdAt: c.createdAt.toISOString(),
+    entries: c.entries.map((e) => ({
+      role: e.role,
+      status: e.status,
+      amountMinor: e.amountMinor,
+      reversedMinor: e.reversedMinor,
+      availableAt: e.availableAt?.toISOString() ?? null,
+      holdReason: e.holdReason,
+    })),
+  }));
+
+  const payload: AdminAffCommissionsData = {
     total,
     page,
     size,
@@ -74,24 +99,7 @@ export const GET = handle(async (req: Request) => {
       from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
       to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
     },
-    rows: commissions.map((c) => ({
-      id: c.id,
-      orderNumber: c.orderNumber,
-      orderItemId: c.orderItemId,
-      affiliate: c.affiliate.displayName,
-      status: c.status,
-      rateBps: c.rateBps,
-      baseMinor: c.commissionableBaseMinor,
-      poolMinor: c.poolMinor,
-      createdAt: c.createdAt.toISOString(),
-      entries: c.entries.map((e) => ({
-        role: e.role,
-        status: e.status,
-        amountMinor: e.amountMinor,
-        reversedMinor: e.reversedMinor,
-        availableAt: e.availableAt?.toISOString() ?? null,
-        holdReason: e.holdReason,
-      })),
-    })),
-  });
+    rows,
+  };
+  return ok(payload);
 });

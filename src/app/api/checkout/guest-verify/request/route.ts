@@ -2,6 +2,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { requireEmailChannel, type TransactionalEmailChannel } from "@/lib/email-provider";
 import { assertEmailOtpStorage, issueEmailOtp } from "@/lib/guest-otp";
+import type { GuestVerifyRequestBody, GuestVerifyRequestData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ const MESSAGE =
 
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "guest-verify-request", 5);
-  const body = (await req.json().catch(() => ({}))) as { email?: string };
+  const body = (await req.json().catch(() => ({}))) as GuestVerifyRequestBody;
   const email = (body.email ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     throw new ApiError(400, "VALIDATION", "A valid email address is required");
@@ -86,5 +87,6 @@ export const POST = handle(async (req: Request) => {
       "A verification code could not be sent right now — wait for any earlier code to expire (10 minutes) and try again"
     );
   }
-  return ok({ sent: true, message: MESSAGE });
+  const payload: GuestVerifyRequestData = { sent: true, message: MESSAGE };
+  return ok(payload);
 });

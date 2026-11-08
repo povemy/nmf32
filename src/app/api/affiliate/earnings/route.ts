@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireAffiliate, affiliateBalances } from "@/lib/affiliate";
+import type { EarningsQuery, EarningsData, AffiliateEarningRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const GET = handle(async (req: Request) => {
   const aff = await requireAffiliate();
   const url = new URL(req.url);
   const roleParam = url.searchParams.get("role");
-  const role = roleParam === "sponsor" ? "sponsor" : roleParam === "direct" ? "direct" : undefined;
+  const role: EarningsQuery["role"] = roleParam === "sponsor" ? "sponsor" : roleParam === "direct" ? "direct" : undefined;
   const status = url.searchParams.get("status") ?? undefined;
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
   const size = Math.min(50, Math.max(5, Number(url.searchParams.get("size") ?? 20) || 20));
@@ -41,27 +42,24 @@ export const GET = handle(async (req: Request) => {
     affiliateBalances(aff.id),
   ]);
 
-  return ok({
-    total,
-    page,
-    balances,
-    rows: entries.map((e) => ({
-      id: e.id,
-      role: e.role,
-      status: e.status,
-      amountMinor: e.amountMinor,
-      reversedMinor: e.reversedMinor,
-      holdReason: e.holdReason,
-      availableAt: e.availableAt?.toISOString() ?? null,
-      paidAt: e.paidAt?.toISOString() ?? null,
-      payoutId: e.payoutId,
-      createdAt: e.createdAt.toISOString(),
-      orderNumber: e.commission.orderNumber,
-      rateBps: e.commission.rateBps,
-      baseMinor: e.commission.commissionableBaseMinor,
-      poolMinor: e.commission.poolMinor,
-      channel: e.commission.channel,
-      linkType: e.commission.linkType,
-    })),
-  });
+  const rows: AffiliateEarningRow[] = entries.map((e) => ({
+    id: e.id,
+    role: e.role,
+    status: e.status,
+    amountMinor: e.amountMinor,
+    reversedMinor: e.reversedMinor,
+    holdReason: e.holdReason,
+    availableAt: e.availableAt?.toISOString() ?? null,
+    paidAt: e.paidAt?.toISOString() ?? null,
+    payoutId: e.payoutId,
+    createdAt: e.createdAt.toISOString(),
+    orderNumber: e.commission.orderNumber,
+    rateBps: e.commission.rateBps,
+    baseMinor: e.commission.commissionableBaseMinor,
+    poolMinor: e.commission.poolMinor,
+    channel: e.commission.channel,
+    linkType: e.commission.linkType,
+  }));
+  const payload: EarningsData = { total, page, balances, rows };
+  return ok(payload);
 });

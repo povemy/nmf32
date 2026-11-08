@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { OverridePatchBody, OverridePatchData, OverrideDeleteData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("commission.manage");
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as OverridePatchBody & Record<string, unknown>;
 
   const ov = await db.commissionOverride.findUnique({ where: { id } });
   if (!ov) throw new ApiError(404, "NOT_FOUND", "Override not found");
@@ -52,7 +53,14 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: OverridePatchData = {
+    ...updated,
+    validFrom: updated.validFrom ? updated.validFrom.toISOString() : null,
+    validTo: updated.validTo ? updated.validTo.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/commission/overrides/[id] (RBAC commission.manage)
@@ -75,5 +83,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: OverrideDeleteData = { deleted: true };
+  return ok(payload);
 });

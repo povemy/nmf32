@@ -20,47 +20,21 @@ import { authHeaders } from "@/lib/session-client";
 import { cn } from "@/lib/utils";
 import { apiSend, useApi, useDebounced } from "./use-api";
 import { EmptyState, ErrorState, Money, PageHeader, TONE_CLASS, fmtDT } from "./ui-bits";
-
-type SettingsBody = {
-  defaultPercent: number;
-  appliesToShipping: boolean;
-  basePriceRule: "paid_price" | "list_price";
-  fixedFeeMinor: number;
-  minCommissionMinor: number;
-  payoutHoldDays: number;
-  holdReleaseRule: "days_after_paid" | "days_after_delivered";
-  graceDaysAfterDelivered: number;
-};
-
-type SimTrace = {
-  rule_source: string;
-  source_id?: string;
-  holiday_id?: string;
-  percent: number;
-  base: number;
-  percent_part: number;
-  fixed_fee_allocated: number;
-  discount_allocated: number;
-  shipping_allocated: number;
-  flags: string[];
-};
-
-type SimResult = {
-  commissionMinor: number;
-  sellerNetMinor: number;
-  holdDays: number;
-  trace: SimTrace;
-};
-
-type SimBody = {
-  priceMinor: number;
-  qty: number;
-  discountMinor: number;
-  shippingMinor: number;
-  categoryId?: string | null;
-  sellerId?: string | null;
-  productId?: string | null;
-};
+import type {
+  AdminCategoryNode,
+  AdminSellersData,
+  CommissionAnalyticsData,
+  CommissionSettingsData,
+  CommissionSettingsPutBody,
+  CommissionSettingsPutData,
+  ExportCreateBody,
+  ExportCreateData,
+  ExportsData,
+  PspSettingsPutBody,
+  PspSettingsPutData,
+  SimulateBody,
+  SimulateData,
+} from "@/lib/types/api-contract";
 
 /* ---------------------------------------------------------------- FIN-01 */
 
@@ -76,7 +50,7 @@ const emptyForm = {
 };
 
 export function CommissionSettingsView() {
-  const { data, error, loading, refetch } = useApi<SettingsBody>("/api/admin/commission/settings");
+  const { data, error, loading, refetch } = useApi<CommissionSettingsData>("/api/admin/commission/settings");
   const [form, setForm] = useState<typeof emptyForm | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,7 +60,7 @@ export function CommissionSettingsView() {
   const [exDiscount, setExDiscount] = useState("0");
   const [exShipping, setExShipping] = useState("8.90");
 
-  const [simResult, setSimResult] = useState<SimResult | null>(null);
+  const [simResult, setSimResult] = useState<SimulateData | null>(null);
   const [simError, setSimError] = useState<string | null>(null);
   const debouncedEx = useDebounced(`${exPrice}|${exDiscount}|${exShipping}`, 450);
 
@@ -110,12 +84,13 @@ export function CommissionSettingsView() {
     const run = async () => {
       const [price, discount, shipping] = debouncedEx.split("|");
       try {
-        const res = await apiSend<SimResult>("/api/admin/commission/simulate", "POST", {
+        const body: SimulateBody = {
           priceMinor: toMinor(price || "0"),
           qty: 1,
           discountMinor: toMinor(discount || "0"),
           shippingMinor: toMinor(shipping || "0"),
-        });
+        };
+        const res = await apiSend<SimulateData>("/api/admin/commission/simulate", "POST", body);
         if (!cancelled) {
           setSimResult(res);
           setSimError(null);
@@ -153,16 +128,17 @@ export function CommissionSettingsView() {
     if (!form) return;
     setSaving(true);
     try {
-      await apiSend("/api/admin/commission/settings", "PUT", {
+      const body: CommissionSettingsPutBody = {
         defaultPercent: Number(form.defaultPercent),
         fixedFeeMinor: toMinor(form.fixedFee),
         minCommissionMinor: toMinor(form.minCommission),
         appliesToShipping: form.appliesToShipping,
-        basePriceRule: form.basePriceRule,
+        basePriceRule: form.basePriceRule as CommissionSettingsPutBody["basePriceRule"],
         payoutHoldDays: Number(form.payoutHoldDays),
-        holdReleaseRule: form.holdReleaseRule,
+        holdReleaseRule: form.holdReleaseRule as CommissionSettingsPutBody["holdReleaseRule"],
         graceDaysAfterDelivered: Number(form.graceDays),
-      });
+      };
+      await apiSend<CommissionSettingsPutData>("/api/admin/commission/settings", "PUT", body);
       toast.success("Commission settings saved", { description: "Audited server-side; affects future orders." });
       setConfirmOpen(false);
       void refetch();
@@ -416,9 +392,6 @@ function SettingsDiffDialog({
 
 /* ---------------------------------------------------------------- FIN-04 */
 
-type SimCategory = { id: string; name: string };
-type SimSeller = { id: string; displayName: string };
-
 export function SimulatorView() {
   const [price, setPrice] = useState("89.90");
   const [qty, setQty] = useState("1");
@@ -427,10 +400,10 @@ export function SimulatorView() {
   const [categoryId, setCategoryId] = useState("none");
   const [sellerId, setSellerId] = useState("none");
 
-  const cats = useApi<SimCategory[]>("/api/admin/categories");
-  const sellers = useApi<SimSeller[]>("/api/admin/sellers?size=100");
+  const cats = useApi<AdminCategoryNode[]>("/api/admin/categories");
+  const sellers = useApi<AdminSellersData[]>("/api/admin/sellers?size=100");
 
-  const body: SimBody = useMemo(
+  const body: SimulateBody = useMemo(
     () => ({
       priceMinor: toMinor(price || "0"),
       qty: Math.max(1, Number(qty || "1")),
@@ -444,7 +417,7 @@ export function SimulatorView() {
   );
   const debouncedBody = useDebounced(JSON.stringify(body), 450);
 
-  const [result, setResult] = useState<SimResult | null>(null);
+  const [result, setResult] = useState<SimulateData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -454,7 +427,7 @@ export function SimulatorView() {
       setRunning(true);
       setErr(null);
       try {
-        const res = await apiSend<SimResult>("/api/admin/commission/simulate", "POST", JSON.parse(debouncedBody) as SimBody);
+        const res = await apiSend<SimulateData>("/api/admin/commission/simulate", "POST", JSON.parse(debouncedBody) as SimulateBody);
         if (!cancelled) setResult(res);
       } catch (e) {
         if (!cancelled) {
@@ -584,41 +557,6 @@ function SimRow({ k, v, chip }: { k: string; v?: string; chip?: boolean }) {
 
 /* --------------------------------------------- FIN-08 Reports & exports (Task 17-③) */
 
-type ExportRowT = {
-  id: string;
-  periodFrom: string;
-  periodTo: string;
-  totalMinor: number;
-  orderCount: number;
-  lineCount: number;
-  format: string;
-  createdByEmail: string;
-  createdAt: string;
-};
-
-type AnalyticsT = {
-  days: number;
-  summary: {
-    commissionMinor: number;
-    salesMinor: number;
-    effectiveRatePct: number;
-    orderCount: number;
-    refundsReversalMinor: number;
-    allTimeCommissionMinor: number;
-  };
-  weekly: { weekStart: string; commissionMinor: number; orderCount: number }[];
-  stores: { walletId: string; storeName: string; commissionMinor: number; orderCount: number }[];
-  exports: ExportRowT[];
-  psp: {
-    webhookPath: string;
-    candidates: { id: string; label: string; note: string; awaitingAdapter: boolean }[];
-    autoSettle: boolean;
-    provider: string;
-    lastSettlement: { description: string; occurredAt: string; amountMinor: number } | null;
-    note: string;
-  };
-};
-
 /** Tabbed entry point used by admin-shell: Settings | Reports & exports. */
 export function CommissionView() {
   const [tab, setTab] = useState("settings");
@@ -652,13 +590,14 @@ function ReportStat({ label, value, sub, tone }: { label: string; value: string;
 
 function CommissionReportsView() {
   const [days, setDays] = useState("90");
-  const { data, error, loading, refetch } = useApi<AnalyticsT>(`/api/admin/commission/analytics?days=${days}`);
+  const { data, error, loading, refetch } = useApi<CommissionAnalyticsData>(`/api/admin/commission/analytics?days=${days}`);
   const [exporting, setExporting] = useState(false);
 
   const createExport = async (d: number) => {
     setExporting(true);
     try {
-      const res = await apiSend<{ export: ExportRowT; csv: string }>("/api/admin/commission/exports", "POST", { days: d });
+      const body: ExportCreateBody = { days: d };
+      const res = await apiSend<ExportCreateData>("/api/admin/commission/exports", "POST", body);
       const href = URL.createObjectURL(new Blob([res.csv], { type: "text/csv" }));
       const a = document.createElement("a");
       a.href = href;
@@ -676,7 +615,7 @@ function CommissionReportsView() {
     }
   };
 
-  const downloadHistory = async (row: ExportRowT) => {
+  const downloadHistory = async (row: ExportsData) => {
     try {
       const res = await fetch(`/api/admin/commission/exports/${row.id}/download`, { cache: "no-store", headers: authHeaders() });
       if (!res.ok) throw new Error(`Download failed (${res.status})`);
@@ -698,7 +637,8 @@ function CommissionReportsView() {
   // a production PSP adapter exists — the toast surfaces that honest message.
   const tryEnableAutoSettle = async () => {
     try {
-      await apiSend("/api/admin/commission/psp-settings", "PUT", { autoSettle: true });
+      const body: PspSettingsPutBody = { autoSettle: true };
+      await apiSend<PspSettingsPutData>("/api/admin/commission/psp-settings", "PUT", body);
       toast.success("Auto-settle enabled");
       void refetch();
     } catch (e) {

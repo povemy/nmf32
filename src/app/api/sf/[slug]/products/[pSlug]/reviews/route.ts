@@ -6,6 +6,7 @@ import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { findEligibleOrderForReview, sanitizeReviewInput, reviewsSchemaReady } from "@/lib/reviews";
 import { detectReviewSubmissionThreat, sanitizeReviewTextForDisplay } from "@/lib/review-text";
 import { creditReviewReward, REVIEW_REWARD_POINTS, pointsToMinor } from "@/lib/review-rewards";
+import type { SfReviewItem, SfReviewsListData, SfReviewsQuery, ReviewSubmitBody, ReviewSubmitData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +61,11 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
   const product = await db.product.findFirst({ where: { slug: pSlug, storeId: store.id }, select: { id: true } });
   if (!product) throw new ApiError(404, "PRODUCT_NOT_FOUND", "Product not found");
 
-  const starParam = url.searchParams.get("star");
+  const starParam = url.searchParams.get("star") as SfReviewsQuery["star"] | null;
   if (starParam != null && !["1", "2", "3", "4", "5"].includes(starParam)) {
     throw new ApiError(400, "VALIDATION", "star must be an integer between 1 and 5");
   }
-  const sortParam = url.searchParams.get("sort") ?? "recent";
+  const sortParam = (url.searchParams.get("sort") ?? "recent") as NonNullable<SfReviewsQuery["sort"]>;
   if (!["recent", "highest", "lowest"].includes(sortParam)) {
     throw new ApiError(400, "VALIDATION", "sort must be one of: recent, highest, lowest");
   }
@@ -79,7 +80,10 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
     status: "published",
     ...(starParam ? { rating: Number(starParam) } : {}),
   };
-  const orderBy: Prisma.ReviewOrderByWithRelationInput =
+  // Array (compound sort) or single-object (recent) branches — the precise
+  // Prisma orderBy input is the UNION of both forms; annotating only the
+  // object form made the array branches unassignable (TS2322).
+  const orderBy: Prisma.ReviewOrderByWithRelationInput | Prisma.ReviewOrderByWithRelationInput[] =
     sortParam === "highest" ? [{ rating: "desc" as const }, { createdAt: "desc" as const }] : sortParam === "lowest" ? [{ rating: "asc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" };
 
   const [rows, total] = await Promise.all([
@@ -102,24 +106,21 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
     db.review.count({ where }),
   ]);
 
-  return okPaged(
-    {
-      reviews: rows.map((r) => ({
-        id: r.id,
-        // orderId != null ⇒ verified purchase (B1) — server-derived, never a
-        // client-submitted flag. shopperId/email are never exposed publicly.
-        orderId: r.orderId,
-        customerName: r.customerName,
-        rating: r.rating,
-        // Display-side guard: legacy payload-carrying rows render blank.
-        title: sanitizeReviewTextForDisplay(r.title),
-        body: sanitizeReviewTextForDisplay(r.body),
-        reply: sanitizeReviewTextForDisplay(r.reply),
-        createdAt: r.createdAt,
-      })),
-    },
-    { page, size, total }
-  );
+  const reviews: SfReviewItem[] = rows.map((r) => ({
+    id: r.id,
+    // orderId != null ⇒ verified purchase (B1) — server-derived, never a
+    // client-submitted flag. shopperId/email are never exposed publicly.
+    orderId: r.orderId,
+    customerName: r.customerName,
+    rating: r.rating,
+    // Display-side guard: legacy payload-carrying rows render blank.
+    title: sanitizeReviewTextForDisplay(r.title),
+    body: sanitizeReviewTextForDisplay(r.body),
+    reply: sanitizeReviewTextForDisplay(r.reply),
+    createdAt: r.createdAt.toISOString(),
+  }));
+  const payload: SfReviewsListData = { reviews };
+  return okPaged(payload, { page, size, total });
 });
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,9 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   }
 
   const { slug, pSlug } = await ctx.params;
-  const raw = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  // Record intersection keeps the contract body shape AND the index signature
+  // sanitizeReviewInput's Record<string, unknown> parameter requires.
+  const raw = (await req.json().catch(() => ({}))) as ReviewSubmitBody & Record<string, unknown>;
 
   // 3. Store + product (single product fetch carries the seller email).
   // C1.3 defense-in-depth (V-F7 fix): live store + admin-approved seller —
@@ -279,20 +282,18 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
       },
     });
 
-    return ok(
-      {
-        id: created.review.id,
-        status: "pending",
-        orderCompleted: completed.count > 0,
-        reward: {
-          credited: true,
-          points: REVIEW_REWARD_POINTS,
-          minorEquivalent: pointsToMinor(REVIEW_REWARD_POINTS),
-        },
-        message: `Thanks! Your review is pending approval. ${REVIEW_REWARD_POINTS} membership points (≈ RM0.05) were added to your rewards.`,
+    const payload: ReviewSubmitData = {
+      id: created.review.id,
+      status: "pending",
+      orderCompleted: completed.count > 0,
+      reward: {
+        credited: true,
+        points: REVIEW_REWARD_POINTS,
+        minorEquivalent: pointsToMinor(REVIEW_REWARD_POINTS),
       },
-      { status: 201 }
-    );
+      message: `Thanks! Your review is pending approval. ${REVIEW_REWARD_POINTS} membership points (≈ RM0.05) were added to your rewards.`,
+    };
+    return ok(payload, { status: 201 });
   } catch (e) {
     // Race backstop: a concurrent submission won the @@unique([productId, shopperId]).
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

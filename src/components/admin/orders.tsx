@@ -20,6 +20,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiSend, useApi } from "./use-api";
 import { qs } from "./nav";
 import type { AdminNav } from "./nav";
+import type {
+  AdminDisputePatchBody,
+  AdminDisputeRow,
+  AdminDisputesData,
+  AdminOrdersData,
+  AdminRefundProcessData,
+  AdminRefundRejectBody,
+  AdminRefundRow,
+  AdminRefundsData,
+  AdminStoresData,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -41,21 +52,9 @@ const ORDER_STATUSES = [
 
 /* ---------------------------------------------------------------- ORD-01 */
 
-type AdminOrderRow = {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerEmail: string;
-  status: string;
-  totalMinor: number;
-  commissionMinor?: number;
-  paidAt?: string | null;
-  createdAt: string;
-  store?: { name: string } | null;
-  storeName?: string | null;
-};
-
-type StoreOption = { id: string; name: string };
+/** Orders-table row — the contract list element (AdminOrdersData) plus the
+ *  legacy `storeName` fallback the table reads. */
+type OrderListRow = AdminOrdersData & { storeName?: string | null };
 
 export function OrdersView({ nav }: { nav: AdminNav }) {
   const [status, setStatus] = useState("all");
@@ -64,13 +63,13 @@ export function OrdersView({ nav }: { nav: AdminNav }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
-  const stores = useApi<StoreOption[]>("/api/admin/stores");
+  const stores = useApi<AdminStoresData[]>("/api/admin/stores");
 
   const url = useMemo(
     () => `/api/admin/orders${qs({ status: status === "all" ? "" : status, storeId: storeId === "all" ? "" : storeId, search, page, size: 20 })}`,
     [status, storeId, search, page]
   );
-  const { data, meta, error, loading, refetch } = useApi<AdminOrderRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<OrderListRow[]>(url);
   const rows = data ?? [];
 
   const activeFilters = status !== "all" || storeId !== "all" || search !== "";
@@ -188,32 +187,19 @@ export function OrdersView({ nav }: { nav: AdminNav }) {
 
 /* ---------------------------------------------------------------- ORD-03 */
 
-type AdminRefundRow = {
-  id: string;
-  amountMinor: number;
-  reason?: string | null;
-  status: string;
-  requestedBy: string;
-  restock?: boolean;
-  commissionReversalMinor?: number;
-  processedAt?: string | null;
-  createdAt: string;
-  order?: { id: string; orderNumber: string; totalMinor: number } | null;
-};
-
 export function RefundsView({ nav }: { nav: AdminNav }) {
   const [status, setStatus] = useState("all");
   const url = useMemo(() => `/api/admin/refunds${qs({ status: status === "all" ? "" : status })}`, [status]);
-  const { data, error, loading, refetch } = useApi<AdminRefundRow[]>(url);
+  const { data, error, loading, refetch } = useApi<AdminRefundsData[]>(url);
   const rows = data ?? [];
 
   const [busy, setBusy] = useState<string | null>(null);
-  const [processTarget, setProcessTarget] = useState<AdminRefundRow | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<AdminRefundRow | null>(null);
+  const [processTarget, setProcessTarget] = useState<AdminRefundsData | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminRefundsData | null>(null);
 
-  const approve = async (r: AdminRefundRow): Promise<boolean> => {
+  const approve = async (r: AdminRefundsData): Promise<boolean> => {
     try {
-      await apiSend(`/api/admin/refunds/${r.id}/approve`, "POST");
+      await apiSend<AdminRefundRow>(`/api/admin/refunds/${r.id}/approve`, "POST");
       return true;
     } catch (e) {
       toast.error("Approve failed", { description: e instanceof Error ? e.message : String(e) });
@@ -221,7 +207,7 @@ export function RefundsView({ nav }: { nav: AdminNav }) {
     }
   };
 
-  const quickApprove = async (r: AdminRefundRow) => {
+  const quickApprove = async (r: AdminRefundsData) => {
     setBusy(r.id);
     const ok = await approve(r);
     setBusy(null);
@@ -231,14 +217,14 @@ export function RefundsView({ nav }: { nav: AdminNav }) {
     }
   };
 
-  const process = async (r: AdminRefundRow) => {
+  const process = async (r: AdminRefundsData) => {
     setBusy(r.id);
     try {
       if (r.status === "requested") {
         const ok = await approve(r);
         if (!ok) return;
       }
-      await apiSend(`/api/admin/refunds/${r.id}/process`, "POST");
+      await apiSend<AdminRefundProcessData>(`/api/admin/refunds/${r.id}/process`, "POST");
       toast.success("Refund processed", { description: "Ledger T5 posted and wallet adjusted." });
       setProcessTarget(null);
       void refetch();
@@ -249,10 +235,10 @@ export function RefundsView({ nav }: { nav: AdminNav }) {
     }
   };
 
-  const reject = async (r: AdminRefundRow, reason: string) => {
+  const reject = async (r: AdminRefundsData, reason: string) => {
     setBusy(r.id);
     try {
-      await apiSend(`/api/admin/refunds/${r.id}/reject`, "POST", { reason });
+      await apiSend<AdminRefundRow>(`/api/admin/refunds/${r.id}/reject`, "POST", { reason } satisfies AdminRefundRejectBody);
       toast.success("Refund rejected");
       setRejectTarget(null);
       void refetch();
@@ -380,21 +366,10 @@ export function RefundsView({ nav }: { nav: AdminNav }) {
 
 /* ---------------------------------------------------------------- ORD-04 */
 
-type AdminDisputeRow = {
-  id: string;
-  reason: string;
-  status: string;
-  openedBy: string;
-  resolution?: string | null;
-  resolvedAt?: string | null;
-  createdAt: string;
-  order?: { id: string; orderNumber: string; customerName: string; totalMinor: number } | null;
-};
-
 export function DisputesView({ nav }: { nav: AdminNav }) {
-  const { data, error, loading, refetch } = useApi<AdminDisputeRow[]>("/api/admin/disputes");
+  const { data, error, loading, refetch } = useApi<AdminDisputesData[]>("/api/admin/disputes");
   const rows = data ?? [];
-  const [detail, setDetail] = useState<AdminDisputeRow | null>(null);
+  const [detail, setDetail] = useState<AdminDisputesData | null>(null);
   const [nextStatus, setNextStatus] = useState("under_review");
   const [resolution, setResolution] = useState("");
   const [busy, setBusy] = useState(false);
@@ -410,10 +385,10 @@ export function DisputesView({ nav }: { nav: AdminNav }) {
     if (!detail) return;
     setBusy(true);
     try {
-      await apiSend(`/api/admin/disputes/${detail.id}`, "PATCH", {
-        status: nextStatus,
+      await apiSend<AdminDisputeRow>(`/api/admin/disputes/${detail.id}`, "PATCH", {
+        status: nextStatus as AdminDisputePatchBody["status"],
         resolution: nextStatus === "resolved" || nextStatus === "rejected" ? resolution.trim() : undefined,
-      });
+      } satisfies AdminDisputePatchBody);
       toast.success(`Dispute ${nextStatus.replace(/_/g, " ")}`);
       setDetail(null);
       void refetch();

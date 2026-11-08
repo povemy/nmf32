@@ -4,6 +4,7 @@ import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody } from "@/app/api/admin/_helpers";
 import { SETTINGS_REGISTRY, settingMetaFor, defaultJsonValue, validateSettingValue } from "@/lib/settings-registry";
+import type { AdminSettingsRow, SettingsPutBody, AdminSettingsPutRow } from "@/lib/types/api-contract";
 
 // GET /api/admin/settings — DB rows merged with the settings registry so the
 // UI can render friendly controls (toggles/selects/numbers) instead of raw
@@ -16,7 +17,7 @@ export const GET = handle(async (req: NextRequest) => {
   const visible = SETTINGS_REGISTRY.filter((m) => !m.hidden);
   const visibleKeys = new Set(visible.map((m) => m.key));
 
-  const known = visible.map((m) => {
+  const known: AdminSettingsRow[] = visible.map((m) => {
     const row = byKey.get(m.key);
     return {
       key: m.key,
@@ -26,7 +27,7 @@ export const GET = handle(async (req: NextRequest) => {
       meta: m,
     };
   });
-  const extras = rows
+  const extras: AdminSettingsRow[] = rows
     .filter((r) => !visibleKeys.has(r.key))
     .map((r) => ({
       key: r.key,
@@ -44,7 +45,7 @@ export const GET = handle(async (req: NextRequest) => {
 // garbage (the historic `"claimed"` contamination is impossible to recreate).
 export const PUT = handle(async (req: NextRequest) => {
   const admin = await requireCap("settings.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as SettingsPutBody & Record<string, unknown>;
   const settings = Array.isArray(body.settings) ? body.settings : null;
   if (!settings || settings.length === 0) throw new ApiError(400, "VALIDATION", "settings array is required");
 
@@ -95,5 +96,11 @@ export const PUT = handle(async (req: NextRequest) => {
   });
 
   const rows = await db.setting.findMany({ orderBy: { key: "asc" } });
-  return ok(rows);
+  const data: AdminSettingsPutRow[] = rows.map((r) => ({
+    key: r.key,
+    valueJson: r.valueJson,
+    description: r.description,
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+  return ok(data);
 });

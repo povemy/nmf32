@@ -3,6 +3,11 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { recomputePrice } from "../../products/helpers";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type {
+  SellerVariantPatchBody,
+  SellerProductVariant,
+  SellerVariantDeleteData,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +25,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const variant = await ownVariant(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerVariantPatchBody;
 
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) data.name = String(body.name);
@@ -53,7 +58,25 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   }
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
-  return ok(updated);
+  const payload: SellerProductVariant = {
+    id: updated.id,
+    productId: updated.productId,
+    name: updated.name,
+    optionName: updated.optionName,
+    optionValue: updated.optionValue,
+    priceMinor: updated.priceMinor,
+    compareAtPriceMinor: updated.compareAtPriceMinor,
+    stock: updated.stock,
+    moq: updated.moq,
+    lowStockThreshold: updated.lowStockThreshold,
+    sku: updated.sku,
+    isActive: updated.isActive,
+    imageUrl: updated.imageUrl,
+    sourceModelId: updated.sourceModelId,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/store/variants/[id] — soft deactivate (orders may reference it).
@@ -63,5 +86,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const variant = await ownVariant(store.id, id);
   const updated = await db.productVariant.update({ where: { id: variant.id }, data: { isActive: false } });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
-  return ok({ id: updated.id, isActive: updated.isActive });
+  const payload: SellerVariantDeleteData = { id: updated.id, isActive: updated.isActive };
+  return ok(payload);
 });

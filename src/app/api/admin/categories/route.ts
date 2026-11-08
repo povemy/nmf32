@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, slugify } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optNum } from "@/app/api/admin/_helpers";
+import type { AdminCategoryDetail, AdminCategoryNode, CategoryCreateBody } from "@/lib/types/api-contract";
 
 // GET /api/admin/categories — nested tree (parents with children)
 export const GET = handle(async (req: NextRequest) => {
@@ -18,7 +19,7 @@ export const GET = handle(async (req: NextRequest) => {
     list.push(c);
     byParent.set(key, list);
   }
-  const build = (parentId: string | null): unknown[] =>
+  const build = (parentId: string | null): AdminCategoryNode[] =>
     (byParent.get(parentId) ?? []).map((c) => ({
       id: c.id,
       name: c.name,
@@ -35,7 +36,7 @@ export const GET = handle(async (req: NextRequest) => {
 // POST /api/admin/categories {name, parentId?, commissionPercent?}
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireAdmin();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as CategoryCreateBody & Record<string, unknown>;
   const name = reqStr(body, "name", "name");
   const parentId = typeof body.parentId === "string" && body.parentId !== "" ? body.parentId : null;
   const commissionPercent = optNum(body, "commissionPercent");
@@ -63,5 +64,16 @@ export const POST = handle(async (req: NextRequest) => {
     after: { name, slug, parentId, commissionPercent: commissionPercent ?? null },
   });
 
-  return ok(created);
+  const payload: AdminCategoryDetail = {
+    id: created.id,
+    name: created.name,
+    slug: created.slug,
+    parentId: created.parentId,
+    commissionPercent: created.commissionPercent,
+    imageUrl: created.imageUrl,
+    sortOrder: created.sortOrder,
+    createdAt: created.createdAt.toISOString(),
+    updatedAt: created.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

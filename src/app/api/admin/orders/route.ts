@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminOrdersData } from "@/lib/types/api-contract";
 
 // GET /api/admin/orders?status=&storeId=&search=&page=&size=
 export const GET = handle(async (req: NextRequest) => {
@@ -43,12 +44,26 @@ export const GET = handle(async (req: NextRequest) => {
     db.order.count({ where }),
   ]);
 
-  const data = rows.map((o) => ({
-    ...o,
-    itemsCount: o._count.items,
-    commissionMinor: o.items.reduce((s, it) => s + it.commissionMinor, 0),
-    items: undefined,
-    _count: undefined,
-  }));
+  // Destructure items/_count OUT of the row (the pre-contract code nulled
+  // them with `items: undefined, _count: undefined`, which JSON.stringify
+  // drops — omitting the keys serializes identically) and convert the Date
+  // fields to the contract's ISO strings.
+  const data: AdminOrdersData[] = rows.map((o) => {
+    const { items, _count, ...oRow } = o;
+    return {
+      ...oRow,
+      paidAt: oRow.paidAt ? oRow.paidAt.toISOString() : null,
+      fulfilledAt: oRow.fulfilledAt ? oRow.fulfilledAt.toISOString() : null,
+      shippedAt: oRow.shippedAt ? oRow.shippedAt.toISOString() : null,
+      deliveredAt: oRow.deliveredAt ? oRow.deliveredAt.toISOString() : null,
+      receivedAt: oRow.receivedAt ? oRow.receivedAt.toISOString() : null,
+      completedAt: oRow.completedAt ? oRow.completedAt.toISOString() : null,
+      cancelledAt: oRow.cancelledAt ? oRow.cancelledAt.toISOString() : null,
+      createdAt: oRow.createdAt.toISOString(),
+      updatedAt: oRow.updatedAt.toISOString(),
+      itemsCount: _count.items,
+      commissionMinor: items.reduce((s, it) => s + it.commissionMinor, 0),
+    };
+  });
   return okPaged(data, { page, size, total });
 });

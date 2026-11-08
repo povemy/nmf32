@@ -3,6 +3,7 @@ import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { newSectionId, parsePageDoc } from "@/lib/sections";
 import { toJson } from "@/lib/json";
+import type { SellerPageDraftBody, SellerPageDraftData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export const PUT = handle(async (req: Request, ctx: { params: Promise<{ id: stri
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const page = await ownPage(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as { sections?: unknown };
+  const body = (await req.json().catch(() => ({}))) as SellerPageDraftBody;
 
   if (!Array.isArray(body.sections)) {
     throw new ApiError(400, "VALIDATION", "sections must be an array");
@@ -48,11 +49,12 @@ export const PUT = handle(async (req: Request, ctx: { params: Promise<{ id: stri
     meta: { slug: page.slug, version: updated.draftVersion, sections: sections.length },
   });
 
-  return ok({
+  const payload: SellerPageDraftData = {
     id: updated.id,
     slug: updated.slug,
     draftVersion: updated.draftVersion,
     hasUnpublished: updated.hasUnpublished,
     doc: parsePageDoc(updated.draftJson),
-  });
+  };
+  return ok(payload);
 });

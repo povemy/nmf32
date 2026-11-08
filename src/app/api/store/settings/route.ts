@@ -4,6 +4,7 @@ import { requireActiveSellerStore } from "@/lib/auth";
 import { toJson, parseJson } from "@/lib/json";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { SellerSettingsBody, SellerSettingsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ function sanitizeSocialMap(raw: unknown): Record<string, string> {
 // PATCH /api/store/settings — whitelist of editable store fields.
 export const PATCH = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerSettingsBody;
 
   const data: Record<string, unknown> = {};
   let sellerData: Record<string, unknown> = {};
@@ -127,11 +128,12 @@ export const PATCH = handle(async (req: Request) => {
   });
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market);
-  return ok({
+  const payload: SellerSettingsData = {
     id: updated.id,
     name: updated.name,
     tagline: updated.tagline,
     updated: [...Object.keys(data), ...Object.keys(sellerData)],
     ...(updatedSellerOptIn !== undefined ? { marketplaceOptIn: updatedSellerOptIn } : {}),
-  });
+  };
+  return ok(payload);
 });

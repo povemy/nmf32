@@ -48,7 +48,13 @@ import {
   statusTone,
   timeAgo,
 } from "../ui-bits";
-import type { AffiliatePayoutRow, AffiliatePayoutsBody, PayoutStatement } from "./types";
+import type { PayoutStatement } from "./types";
+import type {
+  AdminAffProcessBody,
+  AdminAffProcessData,
+  AdminAffPayoutRow,
+  AdminAffPayoutsData,
+} from "@/lib/types/api-contract";
 
 const PAYOUT_TABS = ["all", "requested", "processing", "paid", "failed", "rejected"] as const;
 
@@ -80,7 +86,7 @@ export function AffiliatePayoutsView() {
     return `/api/admin/affiliate/payouts?${sp.toString()}`;
   }, [status, page]);
 
-  const { data, error, loading, refetch } = useApi<AffiliatePayoutsBody>(url);
+  const { data, error, loading, refetch } = useApi<AdminAffPayoutsData>(url);
   const rows = useMemo(() => data?.payouts ?? [], [data]);
   const total = data?.total ?? 0;
   const serverPage = data?.page ?? page;
@@ -93,19 +99,20 @@ export function AffiliatePayoutsView() {
   }, [data]);
 
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [markPaidTarget, setMarkPaidTarget] = useState<AffiliatePayoutRow | null>(null);
-  const [failTarget, setFailTarget] = useState<AffiliatePayoutRow | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<AffiliatePayoutRow | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<AdminAffPayoutRow | null>(null);
+  const [failTarget, setFailTarget] = useState<AdminAffPayoutRow | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminAffPayoutRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const process = async (
-    row: AffiliatePayoutRow,
+    row: AdminAffPayoutRow,
     action: "approve" | "mark-paid" | "fail" | "reject",
     extra?: { reference?: string; reason?: string }
   ): Promise<boolean> => {
     setBusyId(row.id);
     try {
-      await apiSend(`/api/admin/affiliate/payouts/${encodeURIComponent(row.id)}/process`, "POST", { action, ...extra });
+      const body: AdminAffProcessBody = { action, ...extra };
+      await apiSend<AdminAffProcessData>(`/api/admin/affiliate/payouts/${encodeURIComponent(row.id)}/process`, "POST", body);
       void refetch();
       return true;
     } catch (e) {
@@ -116,7 +123,7 @@ export function AffiliatePayoutsView() {
     }
   };
 
-  const approve = async (row: AffiliatePayoutRow) => {
+  const approve = async (row: AdminAffPayoutRow) => {
     const ok = await process(row, "approve");
     if (ok) {
       toast.success(`${row.affiliate.displayName} payout approved`, {
@@ -378,7 +385,7 @@ function MarkPaidDialog({
   onClose,
   onConfirm,
 }: {
-  payout: AffiliatePayoutRow | null;
+  payout: AdminAffPayoutRow | null;
   busy: boolean;
   onClose: () => void;
   onConfirm: (reference: string) => void;
@@ -398,7 +405,7 @@ function MarkPaidInner({
   onClose,
   onConfirm,
 }: {
-  payout: AffiliatePayoutRow;
+  payout: AdminAffPayoutRow;
   busy: boolean;
   onClose: () => void;
   onConfirm: (reference: string) => void;
@@ -447,7 +454,7 @@ function MarkPaidInner({
 
 /* ------------------------------------------------------------ expand */
 
-function PayoutExpand({ payout }: { payout: AffiliatePayoutRow }) {
+function PayoutExpand({ payout }: { payout: AdminAffPayoutRow }) {
   const st = payout.statementJson ? parseJsonSafe<PayoutStatement>(payout.statementJson, {}) : null;
   const entries = st?.entries ?? [];
 

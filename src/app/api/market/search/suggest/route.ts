@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { productCardInclude, toProductCard, FALLBACK_IMG, type ProductWithRelations } from "../../../_shared/product-card";
 import { tokenize, buildTokenWhere, scoreProduct } from "../../_shared/search";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { MarketSuggestData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,12 @@ export const GET = handle(async (req: Request) => {
   rateLimit(req, "market-suggest", 30);
   const url = new URL(req.url);
   const raw = normalizeSearchQuery(url.searchParams.get("q"));
-  if (raw === "") return ok({ products: [], stores: [] }); // junk/empty ⇒ no cache entry
+  if (raw === "") {
+    // junk/empty ⇒ no cache entry
+    const empty: MarketSuggestData = { products: [], stores: [] };
+    return ok(empty);
+  }
   const { products, stores } = await loadSuggest(raw);
-  return ok({ products, stores });
+  const payload: MarketSuggestData = { products, stores };
+  return ok(payload);
 });

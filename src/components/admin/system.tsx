@@ -64,6 +64,18 @@ import {
 import { apiSend, apiGet, useApi } from "./use-api";
 import { qs } from "./nav";
 import { MfaCard } from "./mfa-card";
+import type {
+  AdminActivityLogRow,
+  AdminAuditLogRow,
+  AdminHealthData,
+  AdminNotificationRow,
+  AdminSettingsPutRow,
+  AdminSettingsRow,
+  PurgeBody,
+  PurgeCountData,
+  PurgeData,
+  SettingsPutBody,
+} from "@/lib/types/api-contract";
 import {
   CardsSkeleton,
   DiffViewer,
@@ -81,13 +93,10 @@ import {
 
 /* ------------------------------------------------------------- SettingsView */
 
-type SettingRow = {
-  key: string;
-  valueJson: string;
-  description?: string | null;
-  updatedAt?: string | null;
-  meta: SettingMeta;
-};
+/** SYS-01 settings row — the contract AdminSettingsRow with `meta` typed as
+ *  the rich registry SettingMeta the route embeds from @/lib/settings-registry
+ *  (the contract's inline meta type is the structural subset). */
+type SettingRow = Omit<AdminSettingsRow, "meta"> & { meta: SettingMeta };
 
 function parseVal<T>(raw: string | undefined, fallback: T): T {
   if (raw === undefined || raw === null || raw === "") return fallback;
@@ -482,9 +491,9 @@ export function SettingsView() {
     if (!canEdit || keys.length === 0) return;
     setSavingKeys((s) => [...new Set([...s, ...keys])]);
     try {
-      await apiSend("/api/admin/settings", "PUT", {
+      await apiSend<AdminSettingsPutRow[]>("/api/admin/settings", "PUT", {
         settings: keys.map((key) => ({ key, valueJson: drafts[key] })),
-      });
+      } satisfies SettingsPutBody);
       toast.success(keys.length === 1 ? "Setting saved" : `${keys.length} settings saved`, { description: keys.join(", ") });
       setDrafts((d) => {
         const next = { ...d };
@@ -841,16 +850,8 @@ were removed; the underlying table + seed rows are inert and left in place
 
 /* ---------------------------------------------------------------- AuditView */
 
-type AuditRow = {
-  id: string;
-  adminEmail: string;
-  action: string;
-  entityType?: string | null;
-  entityId?: string | null;
-  before?: unknown;
-  after?: unknown;
-  createdAt: string;
-};
+/** SYS-03 audit row — aliases the contract AdminAuditLogRow. */
+type AuditRow = AdminAuditLogRow;
 
 /** Audit rows deliver parsed objects; DiffViewer expects JSON strings. */
 function asJsonStr(v: unknown): string | null {
@@ -990,20 +991,7 @@ export function AuditView() {
 
 /* ------------------------------------------------------------- ActivityView */
 
-type ActivityRow = {
-  id: string;
-  actorType: string;
-  actorLabel?: string | null;
-  action: string;
-  entityType?: string | null;
-  entityId?: string | null;
-  meta?: unknown;
-  createdAt: string;
-};
-
 const ACTOR_TYPES = ["all", "admin", "seller", "customer", "system"];
-
-type PurgeStats = { total: number; byActor: { actorType: string; count: number }[] };
 
 export function ActivityView() {
   const me = useApp((s) => s.me);
@@ -1012,12 +1000,12 @@ export function ActivityView() {
   const [actorType, setActorType] = useState("all");
   const [page, setPage] = useState(1);
   const url = useMemo(() => `/api/admin/activity-logs${qs({ actorType: actorType === "all" ? "" : actorType, page, size: 25 })}`, [actorType, page]);
-  const { data, meta, error, loading, refetch } = useApi<ActivityRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<AdminActivityLogRow[]>(url);
   const rows = data ?? [];
 
   // ---- Clear All (permanent purge, superadmin + password re-check) ----------
   const [purgeOpen, setPurgeOpen] = useState(false);
-  const [purgeStats, setPurgeStats] = useState<PurgeStats | null>(null);
+  const [purgeStats, setPurgeStats] = useState<PurgeCountData | null>(null);
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgeBusy, setPurgeBusy] = useState(false);
   const [purgePassword, setPurgePassword] = useState("");
@@ -1030,7 +1018,7 @@ export function ActivityView() {
     setPurgeStats(null);
     setPurgeLoading(true);
     try {
-      const { data: stats } = await apiGet<PurgeStats>("/api/admin/activity-logs/purge");
+      const { data: stats } = await apiGet<PurgeCountData>("/api/admin/activity-logs/purge");
       setPurgeStats(stats);
     } catch (e) {
       setPurgeError(e instanceof Error ? e.message : "Failed to load log counts");
@@ -1043,7 +1031,7 @@ export function ActivityView() {
     setPurgeBusy(true);
     setPurgeError(null);
     try {
-      const res = await apiSend<{ deleted: number; remaining: number }>("/api/admin/activity-logs/purge", "POST", { password: purgePassword });
+      const res = await apiSend<PurgeData>("/api/admin/activity-logs/purge", "POST", { password: purgePassword } satisfies PurgeBody);
       toast.success("Activity log cleared", {
         description: `${res.deleted.toLocaleString()} entries permanently deleted — the log starts fresh now.`,
       });
@@ -1238,19 +1226,8 @@ export function ActivityView() {
 
 /* -------------------------------------------------------- NotificationsView */
 
-type NotificationRow = {
-  id: string;
-  event: string;
-  channel: string;
-  recipient: string;
-  subject?: string | null;
-  status: string;
-  error?: string | null;
-  createdAt: string;
-};
-
 export function NotificationsView() {
-  const { data, error, loading, refetch } = useApi<NotificationRow[]>("/api/admin/notifications");
+  const { data, error, loading, refetch } = useApi<AdminNotificationRow[]>("/api/admin/notifications");
   const rows = data ?? [];
 
   return (
@@ -1322,24 +1299,18 @@ export function NotificationsView() {
 
 /* --------------------------------------------------------------- HealthView */
 
-type HealthAuditRow = {
-  id: string;
-  adminEmail?: string;
-  action: string;
-  entityType?: string | null;
-  entityId?: string | null;
-  beforeJson?: string | null;
-  afterJson?: string | null;
-  createdAt: string;
+/** SYS-06 health probe — the contract AdminHealthData kept optional (the
+ *  board renders before the first response lands) with `db` widened to the
+ *  legacy boolean/{ok} shapes earlier builds emitted. */
+type HealthBody = {
+  status?: AdminHealthData["status"];
+  db?: AdminHealthData["db"] | boolean | { ok?: boolean };
+  counts?: Partial<AdminHealthData["counts"]>;
+  ledger?: Partial<Pick<AdminHealthData["ledger"], "ok" | "problems" | "txnCount" | "walletCount">>;
+  recentAudit?: AdminHealthData["recentAudit"];
 };
 
-type HealthBody = {
-  status?: string;
-  db?: string | boolean | { ok?: boolean };
-  counts?: { sellers?: number; stores?: number; products?: number; orders?: number };
-  ledger?: { ok?: boolean; problems?: string[]; txnCount?: number; walletCount?: number };
-  recentAudit?: HealthAuditRow[];
-};
+type HealthAuditRow = AdminHealthData["recentAudit"][number];
 
 export function HealthView() {
   const { data, error, loading, refetch } = useApi<HealthBody>("/api/admin/system/health");

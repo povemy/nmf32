@@ -2,6 +2,7 @@ import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseInsightsWindow, insightsCached, cartActivity, currentCartSnapshot, freshnessFor } from "@/lib/analytics/queries";
+import type { CartInsightsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const GET = handle(async (req: Request) => {
   const win = parseInsightsWindow(url);
   const cacheKey = `cart:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}`;
 
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<CartInsightsData> => {
     const [activity, snapshot, freshness] = await Promise.all([
       cartActivity(store.id, win),
       currentCartSnapshot(store.id),

@@ -5,6 +5,13 @@ import { rateLimitKey } from "@/lib/rate-limit";
 import { broadcastToThread, notifyUserInbox } from "@/lib/chat";
 import { clearThreadContext, resolveThreadContext } from "@/lib/chat-context";
 import { loadChatMessagePage } from "@/lib/chat-pagination";
+import type {
+  ThreadMessagesData,
+  SellerReplyBody,
+  SellerReplyData,
+  ClearContextBody,
+  ClearContextData,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +57,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: stri
   // bounded history page — AFTER the store ownership check
   const { messages, hasMore } = await loadChatMessagePage(thread.id, req);
 
-  return ok({
+  const payload: ThreadMessagesData = {
     thread: {
       id: thread.id,
       shopperName: thread.shopper.fullName,
@@ -58,7 +65,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: stri
       orderNumber: thread.orderNumber,
       contextType: thread.contextType,
       subject: thread.subject,
-      lastMessageAt: thread.lastMessageAt,
+      lastMessageAt: thread.lastMessageAt.toISOString(),
     },
     context,
     hasMore,
@@ -67,10 +74,11 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ id: stri
       senderType: m.senderType,
       senderName: m.senderName,
       body: m.body,
-      createdAt: m.createdAt,
-      readAt: m.readAt,
+      createdAt: m.createdAt.toISOString(),
+      readAt: m.readAt ? m.readAt.toISOString() : null,
     })),
-  });
+  };
+  return ok(payload);
 });
 
 // POST /api/store/chat/threads/[id]/messages { body } — seller replies.
@@ -80,7 +88,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   const { id } = await ctx.params;
   const { me, store } = await requireActiveSellerStore();
   rateLimitKey(me.id, "chat-send-seller", 20, 60_000);
-  const { body: text } = (await req.json().catch(() => ({}))) as { body?: string };
+  const { body: text } = (await req.json().catch(() => ({}))) as SellerReplyBody;
   const trimmed = (text ?? "").trim();
   if (!trimmed) throw new ApiError(400, "VALIDATION", "Message cannot be empty");
 
@@ -95,13 +103,13 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     data: { lastMessageAt: new Date(), shopperUnread: { increment: 1 }, sellerUnread: 0 },
   });
 
-  const payload = {
+  const payload: SellerReplyData = {
     id: message.id,
     threadId: thread.id,
-    senderType: "seller" as const,
+    senderType: "seller",
     senderName: store.name,
     body: message.body,
-    createdAt: message.createdAt,
+    createdAt: message.createdAt.toISOString(),
     readAt: null,
   };
   // thread room → open panels; shopper user room → inbox feed refresh
@@ -133,7 +141,7 @@ async function logActivitySafe(sellerId: string, email: string) {
 export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const { store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  const body = (await req.json().catch(() => ({}))) as ClearContextBody;
   if (body.action !== "clearContext") throw new ApiError(400, "BAD_REQUEST", "Unsupported action");
 
   const thread = await db.chatThread.findUnique({
@@ -143,5 +151,6 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (!thread || thread.storeId !== store.id) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
 
   await clearThreadContext(thread.id);
-  return ok({ threadId: thread.id, contextType: null });
+  const payload: ClearContextData = { threadId: thread.id, contextType: null };
+  return ok(payload);
 });

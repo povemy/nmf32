@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { ACCOUNTS, safeRefreshWalletCache } from "@/lib/ledger";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { SellerWallet, SellerWalletLine, SellerWalletData, SellerPayoutRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -34,13 +35,32 @@ export const GET = handle(async () => {
 
   const openRequest = payouts.find((p) => p.status === "requested") ?? null;
 
-  return ok({
-    wallet: fresh,
-    recentLines,
-    payouts,
+  // The wallet row was confirmed above; the refresh path only re-reads it.
+  const walletView: SellerWallet = {
+    ...fresh!,
+    createdAt: fresh!.createdAt.toISOString(),
+    updatedAt: fresh!.updatedAt.toISOString(),
+  };
+  const lines: SellerWalletLine[] = recentLines.map((r) => ({
+    ...r,
+    availableAt: r.availableAt ? r.availableAt.toISOString() : null,
+    createdAt: r.createdAt.toISOString(),
+    txn: { ...r.txn, occurredAt: r.txn.occurredAt.toISOString() },
+  }));
+  const payoutRows: SellerPayoutRow[] = payouts.map((p) => ({
+    ...p,
+    paidAt: p.paidAt ? p.paidAt.toISOString() : null,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  }));
+  const payload: SellerWalletData = {
+    wallet: walletView,
+    recentLines: lines,
+    payouts: payoutRows,
     minPayoutMinor: parseMaybeJson<number>(minSetting?.valueJson, 1000),
     openRequest: openRequest
-      ? { id: openRequest.id, referenceNo: openRequest.referenceNo, amountMinor: openRequest.amountMinor, createdAt: openRequest.createdAt }
+      ? { id: openRequest.id, referenceNo: openRequest.referenceNo, amountMinor: openRequest.amountMinor, createdAt: openRequest.createdAt.toISOString() }
       : null,
-  });
+  };
+  return ok(payload);
 });

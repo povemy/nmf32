@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { formatMinor } from "@/lib/money";
+import type { PriceAdjustBody, PriceAdjustData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ const MAX_ADJUST_MINOR = 5000; // RM 50.00
 
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as PriceAdjustBody;
 
   const action = String(body.action ?? "");
   if (action !== "apply" && action !== "revert") {
@@ -69,7 +70,8 @@ export const POST = handle(async (req: Request) => {
       meta: { amountMinor, updatedCount, storeSlug: store.slug },
     }).catch(() => undefined);
 
-    return ok({ action, amountMinor, updatedCount, fsPriceAdjustMinor: amountMinor });
+    const payload: PriceAdjustData = { action, amountMinor, updatedCount, fsPriceAdjustMinor: amountMinor };
+    return ok(payload);
   }
 
   // ------------------------------------------------------------------ revert
@@ -99,5 +101,6 @@ export const POST = handle(async (req: Request) => {
     meta: { amountMinor: adjust, updatedCount, storeSlug: store.slug },
   }).catch(() => undefined);
 
-  return ok({ action, amountMinor: adjust, updatedCount, fsPriceAdjustMinor: 0 });
+  const payload: PriceAdjustData = { action, amountMinor: adjust, updatedCount, fsPriceAdjustMinor: 0 };
+  return ok(payload);
 });

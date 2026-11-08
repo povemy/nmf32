@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parsePageDoc } from "@/lib/sections";
 import { toJson } from "@/lib/json";
+import type { SellerPageRevertData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +27,12 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
     },
   });
 
-  return ok({
+  const payload: SellerPageRevertData = {
     id: updated.id,
     slug: updated.slug,
     draftVersion: updated.draftVersion,
     hasUnpublished: updated.hasUnpublished,
     doc: parsePageDoc(updated.draftJson),
-  });
+  };
+  return ok(payload);
 });

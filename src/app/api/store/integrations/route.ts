@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseJson } from "@/lib/json";
+import type { SellerIntegrationRow, IntegrationBody, IntegrationSaveData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,13 @@ export const GET = handle(async () => {
   const { store } = await requireActiveSellerStore();
   const rows = await db.storeIntegration.findMany({ where: { storeId: store.id } });
   const byProvider = new Map(rows.map((r) => [r.provider, r]));
-  const integrations = PROVIDERS.map((provider) => {
+  const integrations: SellerIntegrationRow[] = PROVIDERS.map((provider) => {
     const row = byProvider.get(provider);
     return {
       provider,
       config: row ? parseJson<Record<string, unknown>>(row.configJson, {}) : {},
       isEnabled: row?.isEnabled ?? false,
-      updatedAt: row?.updatedAt ?? null,
+      updatedAt: row ? row.updatedAt.toISOString() : null,
     };
   });
   return ok(integrations);
@@ -28,7 +29,7 @@ export const GET = handle(async () => {
 // PUT /api/store/integrations {provider, config, isEnabled} — upsert per provider.
 export const PUT = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as IntegrationBody;
 
   const provider = String(body.provider ?? "");
   if (!PROVIDERS.includes(provider as (typeof PROVIDERS)[number])) {
@@ -50,9 +51,10 @@ export const PUT = handle(async (req: Request) => {
         data: { storeId: store.id, provider, configJson: config, isEnabled },
       });
 
-  return ok({
+  const payload: IntegrationSaveData = {
     provider: integration.provider,
     config: parseJson<Record<string, unknown>>(integration.configJson, {}),
     isEnabled: integration.isEnabled,
-  });
+  };
+  return ok(payload);
 });

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireAnyCap } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminBanksData, AdminBanksQuery } from "@/lib/types/api-contract";
 
 // GET /api/admin/banks?verified=true|false|all
 // F-26 (Phase 3): bank verification data (holder names, masked accounts,
@@ -11,7 +12,7 @@ import { db } from "@/lib/db";
 export const GET = handle(async (req: NextRequest) => {
   await requireAnyCap("sellers.approve", "payouts.manage");
   const url = new URL(req.url);
-  const verified = url.searchParams.get("verified");
+  const verified = (url.searchParams.get("verified") ?? undefined) as AdminBanksQuery["verified"];
 
   const where = verified && verified !== "all" ? { verified: verified === "true" } : {};
 
@@ -25,14 +26,14 @@ export const GET = handle(async (req: NextRequest) => {
     orderBy: { createdAt: "desc" },
   });
 
-  const data = rows.map((b) => ({
+  const data: AdminBanksData[] = rows.map((b) => ({
     id: b.id,
     holderName: b.holderName,
     bankName: b.bankName,
     accountNumberMasked: b.accountNumberMasked,
     verified: b.verified,
-    verifiedAt: b.verifiedAt,
-    createdAt: b.createdAt,
+    verifiedAt: b.verifiedAt ? b.verifiedAt.toISOString() : null,
+    createdAt: b.createdAt.toISOString(),
     sellerId: b.seller.id,
     sellerLegalName: b.seller.fullName,
     sellerEmail: b.seller.email,

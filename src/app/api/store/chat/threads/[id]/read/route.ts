@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { broadcastToThread } from "@/lib/chat";
+import type { ThreadReadData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +25,6 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
   if (marked.count > 0) {
     await broadcastToThread(thread.id, "chat:read", { threadId: thread.id, readerType: "seller", at: now.toISOString() });
   }
-  return ok({ read: true, marked });
+  const payload: ThreadReadData = { read: true, marked };
+  return ok(payload);
 });

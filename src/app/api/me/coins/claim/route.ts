@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { NOMO_FINANCE_ENABLED } from "@/lib/feature-flags";
+import type { CoinClaimData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -52,10 +53,11 @@ export const POST = handle(async () => {
     },
   });
 
-  return ok({
+  const payload: CoinClaimData = {
     awarded,
     coinBalance: updated.coinBalance,
     checkInStreak: streak,
-    nextClaimAt: new Date(now.getTime() + CLAIM_COOLDOWN_MS),
-  });
+    nextClaimAt: new Date(now.getTime() + CLAIM_COOLDOWN_MS).toISOString(),
+  };
+  return ok(payload);
 });

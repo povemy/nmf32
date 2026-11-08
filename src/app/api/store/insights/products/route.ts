@@ -2,6 +2,7 @@ import { handle, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseInsightsWindow, insightsCached, productPerformance, type ProductSort } from "@/lib/analytics/queries";
+import type { InsightsProductPerformanceData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export const GET = handle(async (req: Request) => {
   const sort = sortRaw as ProductSort;
 
   const cacheKey = `products:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}:${sort}:${page}:${size}`;
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<InsightsProductPerformanceData> => {
     const perf = await productPerformance(store.id, win, sort, page, size);
     return {
       rows: perf.rows,

@@ -26,36 +26,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, MapPin, Plus, TicketPercent, Truck } from "lucide-react";
+import type { SellerVoucherCreateBody, SellerVoucherCreateData, SellerVoucherPanelRow, SellerVouchersPanelData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------- types
 
-type SellerVoucher = {
-  id: string;
-  code: string;
-  title: string;
-  kind: string;
-  discountMinor: number;
-  percentOff: number | null;
-  maxDiscountMinor: number | null;
-  minSpendMinor: number;
-  expiryAt: string | null;
-  startsAt: string | null;
-  isActive: boolean;
-  scope: string;
-  regionLimit: string | null;
-  quota: number | null;
-  claimedCount: number;
-  holders: number;
-  usedCount: number;
-  createdAt: string;
-};
-
-type VouchersData = {
-  vouchers: SellerVoucher[];
-  fsPriceAdjustMinor: number;
-};
-
-function voucherValue(v: SellerVoucher): string {
+function voucherValue(v: SellerVoucherPanelRow): string {
   if (v.kind === "freeshipping") return "Free shipping";
   if (v.percentOff != null) {
     return v.maxDiscountMinor != null
@@ -68,7 +43,7 @@ function voucherValue(v: SellerVoucher): string {
 // ---------------------------------------------------------------- panel
 
 export default function SellerVouchers() {
-  const { data, loading, refetch } = useApi<VouchersData>("/api/store/vouchers");
+  const { data, loading, refetch } = useApi<SellerVouchersPanelData>("/api/store/vouchers");
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
@@ -226,7 +201,7 @@ function CreateVoucherDialog({
       return;
     }
 
-    const body: Record<string, unknown> = {
+    const body: SellerVoucherCreateBody = {
       title: title.trim(),
       kind,
       minSpendMinor,
@@ -254,7 +229,7 @@ function CreateVoucherDialog({
 
     setBusy(true);
     try {
-      const res = await apiSend<{ voucher: { code: string } }>("POST", "/api/store/vouchers", body);
+      const res = await apiSend<SellerVoucherCreateData>("POST", "/api/store/vouchers", body);
       toast.success(`Voucher ${res.voucher.code} created`);
       onOpenChange(false);
       onDone();

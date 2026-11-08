@@ -18,6 +18,14 @@ import { cn } from "@/lib/utils";
 import { apiSend, useApi } from "./use-api";
 import { useAdminCaps } from "./use-admin-caps";
 import type { AdminNav } from "./nav";
+import type {
+  AdminKycDocRow,
+  AdminSellerFullRow,
+  AdminSellerSuspendBody,
+  AdminSellerSuspendData,
+  AdminSellersData,
+  KycQueueData,
+} from "@/lib/types/api-contract";
 import {
   Badge,
 } from "@/components/ui/badge";
@@ -38,21 +46,11 @@ import {
 
 /* ------------------------------------------------------------------ types */
 
-export type AdminSellerRow = {
-  id: string;
-  email: string;
-  fullName: string;
-  displayName: string;
-  status: string;
-  riskTier: string;
-  commissionOverridePercent: number | null;
-  kycStatus: string;
-  planCode: string;
-  submittedAt?: string | null;
-  createdAt: string;
-  store?: { name: string; slug: string; status: string } | null;
+/** SEL-01 table row — the contract list element (AdminSellersData) plus the
+ *  legacy optional fallbacks the table still reads (`storeName`, top-level
+ *  `gmv30dMinor` — the contract carries GMV inside `store`). */
+type SellerListRow = AdminSellersData & {
   storeName?: string | null;
-  wallet?: { availableMinor: number; pendingMinor: number } | null;
   gmv30dMinor?: number;
 };
 
@@ -76,10 +74,10 @@ export function SellersView({ nav }: { nav: AdminNav }) {
     return `/api/admin/sellers?${sp.toString()}`;
   }, [status, risk, search, page]);
 
-  const { data, meta, error, loading, refetch } = useApi<AdminSellerRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<SellerListRow[]>(url);
   const rows = data ?? [];
 
-  const [confirmAction, setConfirmAction] = useState<{ kind: "approve" | "suspend"; seller: AdminSellerRow } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ kind: "approve" | "suspend"; seller: SellerListRow } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const runQuickAction = async () => {
@@ -87,7 +85,11 @@ export function SellersView({ nav }: { nav: AdminNav }) {
     setBusy(true);
     try {
       const path = `/api/admin/sellers/${confirmAction.seller.id}/${confirmAction.kind}`;
-      await apiSend(path, "POST", confirmAction.kind === "suspend" ? { reason: "Suspended from sellers list" } : undefined);
+      await apiSend<AdminSellerFullRow | AdminSellerSuspendData>(
+        path,
+        "POST",
+        confirmAction.kind === "suspend" ? ({ reason: "Suspended from sellers list" } satisfies AdminSellerSuspendBody) : undefined
+      );
       toast.success(`Seller ${confirmAction.kind === "approve" ? "approved" : "suspended"}`);
       setConfirmAction(null);
       void refetch();
@@ -293,21 +295,13 @@ export function SellersView({ nav }: { nav: AdminNav }) {
 
 /* --------------------------------------------------------------- SEL-03 */
 
-type KycCardSeller = {
-  id: string;
-  displayName: string;
-  email: string;
-  submittedAt?: string | null;
-  createdAt?: string;
-  store?: { name: string; productCount?: number } | null;
+/** SEL-03 queue card row — the contract KycQueueData plus legacy alias
+ *  fields the card falls back to (`storeName`, `kycDocuments`,
+ *  `bankAccounts`, `products`, top-level `productCount`). */
+type KycCardSeller = KycQueueData & {
   storeName?: string | null;
-  kycDocuments?: { id: string; docType: string; status: string; fileName: string }[];
-  /** API shape (kyc-queue route returns `docs`) */
-  docs?: { id: string; docType: string; status: string; fileName: string }[];
-  docsApproved?: number;
-  docsTotal?: number;
+  kycDocuments?: AdminKycDocRow[];
   bankAccounts?: { id: string; verified: boolean; bankName: string; accountNumberMasked: string }[];
-  banks?: { id: string; verified: boolean; bankName: string; accountNumberMasked: string }[];
   products?: unknown[];
   productCount?: number;
 };
@@ -327,7 +321,7 @@ export function KycQueueView({ nav }: { nav: AdminNav }) {
     if (!approving) return;
     setBusy(true);
     try {
-      await apiSend(`/api/admin/sellers/${approving.id}/approve`, "POST");
+      await apiSend<AdminSellerFullRow>(`/api/admin/sellers/${approving.id}/approve`, "POST");
       toast.success("Seller approved", { description: `${approving.displayName} is now active.` });
       setApproving(null);
       void refetch();

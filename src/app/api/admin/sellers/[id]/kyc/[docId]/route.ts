@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, logActivity } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import type { KycDecisionBody, KycDecisionData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string; docId: string }> };
 
@@ -20,7 +21,7 @@ type Ctx = { params: Promise<{ id: string; docId: string }> };
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("sellers.approve");
   const { id, docId } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as KycDecisionBody & Record<string, unknown>;
   const decision = reqStr(body, "decision", "decision");
   if (!["approved", "rejected"].includes(decision)) throw new ApiError(400, "VALIDATION", "decision must be approved | rejected");
   const reason = typeof body.reason === "string" ? body.reason : null;
@@ -94,5 +95,13 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     }
   }
 
-  return ok({ doc: updatedDoc, sellerKycStatus });
+  const payload: KycDecisionData = {
+    doc: {
+      ...updatedDoc,
+      reviewedAt: updatedDoc.reviewedAt ? updatedDoc.reviewedAt.toISOString() : null,
+      createdAt: updatedDoc.createdAt.toISOString(),
+    },
+    sellerKycStatus,
+  };
+  return ok(payload);
 });

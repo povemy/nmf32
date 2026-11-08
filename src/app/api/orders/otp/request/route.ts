@@ -3,6 +3,7 @@ import { handle, ok, logActivity } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { requireEmailChannel, type TransactionalEmailChannel } from "@/lib/email-provider";
 import { assertEmailOtpStorage, issueEmailOtp } from "@/lib/guest-otp";
+import type { GuestOrderOtpRequestBody, GuestOrderOtpRequestData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -34,16 +35,19 @@ export const dynamic = "force-dynamic";
 const UNIFORM_MESSAGE =
   "If an order matches those details, a 6-digit verification code has been sent to the email address on file. It expires in 10 minutes.";
 
+/** The single uniform success payload returned on EVERY path (no oracle). */
+const UNIFORM_PAYLOAD: GuestOrderOtpRequestData = { sent: true, message: UNIFORM_MESSAGE };
+
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "orders-otp-request", 5);
-  const body = (await req.json().catch(() => ({}))) as { email?: string; orderNumber?: string };
+  const body = (await req.json().catch(() => ({}))) as GuestOrderOtpRequestBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const orderNumber = (body.orderNumber ?? "").trim();
   if (!email.includes("@") || !orderNumber) {
-    return ok({ sent: true, message: UNIFORM_MESSAGE });
+    return ok(UNIFORM_PAYLOAD);
   }
   if (email.length > 254 || orderNumber.length > 32) {
-    return ok({ sent: true, message: UNIFORM_MESSAGE });
+    return ok(UNIFORM_PAYLOAD);
   }
   rateLimitKey(email, "orders-otp-email", 3, 3_600_000);
   rateLimitKey(orderNumber, "orders-otp-order", 5, 3_600_000);
@@ -89,5 +93,5 @@ export const POST = handle(async (req: Request) => {
   }
 
   // ALWAYS the uniform response.
-  return ok({ sent: true, message: UNIFORM_MESSAGE });
+  return ok(UNIFORM_PAYLOAD);
 });

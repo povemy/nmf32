@@ -22,12 +22,22 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { KeyRound, Loader2, Plug, Plus, RefreshCw, Send, Trash2, Webhook } from "lucide-react";
+import type {
+  IntegrationBody,
+  IntegrationSaveData,
+  SellerIntegrationRow,
+  SellerWebhookBody,
+  SellerWebhookCreateData,
+  SellerWebhookDeleteData,
+  SellerWebhookEndpoint,
+  SellerWebhookPatchBody,
+  SellerWebhookPatchData,
+  SellerWebhookRotateData,
+} from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------- pixels
 
-type Integration = { provider: string; config: Record<string, unknown>; isEnabled: boolean; updatedAt: string | null };
-
-const PIXELS: { provider: string; label: string; field: string; hint: string }[] = [
+const PIXELS: { provider: IntegrationBody["provider"]; label: string; field: string; hint: string }[] = [
   { provider: "meta_pixel", label: "Meta Pixel", field: "pixelId", hint: "Facebook & Instagram ad tracking" },
   { provider: "ga4", label: "Google Analytics 4", field: "measurementId", hint: "Traffic & funnel analytics" },
   { provider: "tiktok_pixel", label: "TikTok Pixel", field: "pixelId", hint: "TikTok ads conversion tracking" },
@@ -35,7 +45,7 @@ const PIXELS: { provider: string; label: string; field: string; hint: string }[]
 ];
 
 function PixelCards() {
-  const { data, refetch } = useApi<Integration[]>("/api/store/integrations");
+  const { data, refetch } = useApi<SellerIntegrationRow[]>("/api/store/integrations");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -49,7 +59,7 @@ function PixelCards() {
     setDrafts(d);
   }, [data]);
 
-  const save = async (provider: string, isEnabled?: boolean) => {
+  const save = async (provider: IntegrationBody["provider"], isEnabled?: boolean) => {
     const def = PIXELS.find((p) => p.provider === provider)!;
     const current = data?.find((i) => i.provider === provider);
     const nextEnabled = isEnabled ?? current?.isEnabled ?? false;
@@ -59,7 +69,7 @@ function PixelCards() {
       return;
     }
     const ok = await runMutation(
-      () => apiSend("PUT", "/api/store/integrations", { provider, config: { [def.field]: id ?? "" }, isEnabled: nextEnabled }),
+      () => apiSend<IntegrationSaveData>("PUT", "/api/store/integrations", { provider, config: { [def.field]: id ?? "" }, isEnabled: nextEnabled } satisfies IntegrationBody),
       `${def.label} ${nextEnabled ? "enabled" : "disabled"}`
     );
     if (ok) refetch();
@@ -102,19 +112,6 @@ function PixelCards() {
 }
 
 // ---------------------------------------------------------------- webhooks
-
-type Endpoint = {
-  id: string;
-  url: string;
-  // D1: masked form only (e.g. "whsec_…a1b2") — the plaintext secret is
-  // revealed exactly once by create/rotate and never listed again.
-  secretMasked: string;
-  events: string[];
-  isActive: boolean;
-  createdAt: string;
-  // C2.8: real delivery state — "pending" rows are queued/retrying, NOT sent.
-  deliveries: { id: string; event: string; status: string; responseCode: number | null; attempts: number; lastAttemptAt: string | null; createdAt: string }[];
-};
 
 const EVENT_CATALOG = [
   "order.created",
@@ -159,15 +156,16 @@ function SecretOnceDialog({ secret, onClose }: { secret: string | null; onClose:
 }
 
 function WebhooksSection() {
-  const { data, loading, refetch } = useApi<Endpoint[]>("/api/store/webhooks");
+  const { data, loading, refetch } = useApi<SellerWebhookEndpoint[]>("/api/store/webhooks");
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<Endpoint | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SellerWebhookEndpoint | null>(null);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
 
-  const sendTest = async (ep: Endpoint) => {
+  const sendTest = async (ep: SellerWebhookEndpoint) => {
     // C2.8: the test is a REAL signed delivery — surface the endpoint's actual
-    // answer instead of claiming a simulated send.
+    // answer instead of claiming a simulated send. (Route not covered by the
+    // API contract; precise local response shape.)
     try {
       const res = await apiSend<{ status: string; responseCode: number | null; error: string | null; note: string }>(
         "POST",
@@ -184,18 +182,18 @@ function WebhooksSection() {
     }
   };
 
-  const toggleActive = async (ep: Endpoint, next: boolean) => {
-    const ok = await runMutation(() => apiSend("PATCH", `/api/store/webhooks/${ep.id}`, { isActive: next }), `Endpoint ${next ? "enabled" : "paused"}`);
+  const toggleActive = async (ep: SellerWebhookEndpoint, next: boolean) => {
+    const ok = await runMutation(() => apiSend<SellerWebhookPatchData>("PATCH", `/api/store/webhooks/${ep.id}`, { isActive: next } satisfies SellerWebhookPatchBody), `Endpoint ${next ? "enabled" : "paused"}`);
     if (ok) refetch();
   };
 
   // D1 — rotate: the response carries the new plaintext secret exactly once;
   // surface it in the one-time callout and refresh the (masked) list.
-  const rotate = async (ep: Endpoint) => {
+  const rotate = async (ep: SellerWebhookEndpoint) => {
     if (rotatingId) return;
     setRotatingId(ep.id);
     try {
-      const res = await apiSend<{ id: string; secret: string }>("POST", `/api/store/webhooks/${ep.id}/rotate`);
+      const res = await apiSend<SellerWebhookRotateData>("POST", `/api/store/webhooks/${ep.id}/rotate`);
       toast.success("Signing secret rotated");
       setRotatedSecret(res.secret);
       refetch();
@@ -302,7 +300,7 @@ function WebhooksSection() {
               className="bg-rose-600 text-white hover:bg-rose-700"
               onClick={async () => {
                 if (!confirmDelete) return;
-                const ok = await runMutation(() => apiSend("DELETE", `/api/store/webhooks/${confirmDelete.id}`), "Endpoint deleted");
+                const ok = await runMutation(() => apiSend<SellerWebhookDeleteData>("DELETE", `/api/store/webhooks/${confirmDelete.id}`), "Endpoint deleted");
                 setConfirmDelete(null);
                 if (ok) refetch();
               }}
@@ -334,7 +332,7 @@ function CreateWebhookDialog({ open, onOpenChange, onDone }: { open: boolean; on
     }
     setBusy(true);
     try {
-      const created = await apiSend<{ secret: string }>("POST", "/api/store/webhooks", { url: url.trim(), events });
+      const created = await apiSend<SellerWebhookCreateData>("POST", "/api/store/webhooks", { url: url.trim(), events } satisfies SellerWebhookBody);
       toast.success("Endpoint created — signing secret generated");
       setUrl("");
       onOpenChange(false);

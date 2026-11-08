@@ -8,6 +8,7 @@ import {
   passwordEpochTag,
   PASSWORD_RESET_GRANT_TTL_MS,
 } from "@/lib/password-recovery";
+import type { VerifyRecoveryBody, VerifyRecoveryData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export const dynamic = "force-dynamic";
 // CAS-guarded — counters carry over across re-issued codes while live).
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "auth-recovery-verify", 10);
-  const body = (await req.json().catch(() => ({}))) as { email?: string; code?: string };
+  const body = (await req.json().catch(() => ({}))) as VerifyRecoveryBody;
   const email = normalizeRecoveryEmail(body.email);
   const code = (body.code ?? "").trim();
   if (!email || !code || code.length > 12) {
@@ -84,9 +85,10 @@ export const POST = handle(async (req: Request) => {
     meta: { grantTtlMs: PASSWORD_RESET_GRANT_TTL_MS },
   }).catch(() => undefined);
 
-  return ok({
+  const payload: VerifyRecoveryData = {
     token,
     email,
     expiresAt: new Date(Date.now() + PASSWORD_RESET_GRANT_TTL_MS).toISOString(),
-  });
+  };
+  return ok(payload);
 });

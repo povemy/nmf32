@@ -45,19 +45,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { apiGet, apiGetPaged, apiSend, runMutation, type StoreMe } from "./ui-bits";
-
-type StoreCategoryRow = { id: string; name: string; sortOrder: number; productCount: number };
-
-type OrganizedProduct = {
-  id: string;
-  title: string;
-  status: string;
-  isFeatured: boolean;
-  storeCategoryId: string | null;
-  salesCount: number;
-  viewCount: number;
-  images: { url: string }[];
-};
+import type {
+  SellerProductFull,
+  SellerProductPatchBody,
+  SellerSettingsBody,
+  SellerSettingsData,
+  StoreCategoryCreateBody,
+  StoreCategoryDeleteData,
+  StoreCategoryPatchBody,
+  StoreCategoryPatchData,
+  StoreCategoryRow,
+} from "@/lib/types/api-contract";
 
 const NO_CATEGORY = "__none__";
 
@@ -80,8 +78,8 @@ export default function StorefrontSettings({
   }, [store.cardShowStars, store.cardMetric]);
 
   const patchSettings = useCallback(
-    async (payload: Record<string, unknown>, revert: () => void, successMsg: string) => {
-      const ok = await runMutation(() => apiSend("PATCH", "/api/store/settings", payload), successMsg);
+    async (payload: SellerSettingsBody, revert: () => void, successMsg: string) => {
+      const ok = await runMutation(() => apiSend<SellerSettingsData>("PATCH", "/api/store/settings", payload), successMsg);
       if (!ok) revert();
       else await refreshStoreMe();
     },
@@ -293,7 +291,7 @@ function CategoriesManager() {
     const name = newName.trim();
     if (!name || busy) return;
     setBusy(true);
-    const ok = await runMutation(() => apiSend("POST", "/api/store/categories", { name }), `Category “${name}” added`);
+    const ok = await runMutation(() => apiSend<StoreCategoryRow>("POST", "/api/store/categories", { name } satisfies StoreCategoryCreateBody), `Category “${name}” added`);
     setBusy(false);
     if (ok) {
       setNewName("");
@@ -307,7 +305,7 @@ function CategoriesManager() {
       setRenamingId(null);
       return;
     }
-    const ok = await runMutation(() => apiSend("PATCH", `/api/store/categories/${cat.id}`, { name }), "Category renamed");
+    const ok = await runMutation(() => apiSend<StoreCategoryPatchData>("PATCH", `/api/store/categories/${cat.id}`, { name } satisfies StoreCategoryPatchBody), "Category renamed");
     if (ok) {
       setRenamingId(null);
       await load();
@@ -315,7 +313,7 @@ function CategoriesManager() {
   };
 
   const move = async (cat: StoreCategoryRow, direction: "up" | "down") => {
-    await runMutation(() => apiSend("PATCH", `/api/store/categories/${cat.id}`, { direction }), "Category order updated");
+    await runMutation(() => apiSend<StoreCategoryPatchData>("PATCH", `/api/store/categories/${cat.id}`, { direction } satisfies StoreCategoryPatchBody), "Category order updated");
     await load();
   };
 
@@ -323,7 +321,7 @@ function CategoriesManager() {
     if (!deleteTarget) return;
     const cat = deleteTarget;
     setDeleteTarget(null);
-    await runMutation(() => apiSend("DELETE", `/api/store/categories/${cat.id}`), `Category “${cat.name}” deleted`);
+    await runMutation(() => apiSend<StoreCategoryDeleteData>("DELETE", `/api/store/categories/${cat.id}`), `Category “${cat.name}” deleted`);
     await load();
   };
 
@@ -479,7 +477,7 @@ function CategoriesManager() {
 
 function ProductOrganizer() {
   const [cats, setCats] = useState<StoreCategoryRow[] | null>(null);
-  const [products, setProducts] = useState<OrganizedProduct[] | null>(null);
+  const [products, setProducts] = useState<SellerProductFull[] | null>(null);
   const [total, setTotal] = useState(0);
   const [hiddenCount, setHiddenCount] = useState(0);
 
@@ -491,7 +489,7 @@ function ProductOrganizer() {
       setCats([]);
     }
     try {
-      const { rows, meta } = await apiGetPaged<OrganizedProduct[]>("/api/store/products?page=1&size=100");
+      const { rows, meta } = await apiGetPaged<SellerProductFull[]>("/api/store/products?page=1&size=100");
       const visible = rows.filter((p) => p.status !== "archived");
       setProducts(visible);
       setTotal(meta?.total ?? visible.length);
@@ -513,12 +511,12 @@ function ProductOrganizer() {
     }
   };
 
-  const assignCategory = async (product: OrganizedProduct, value: string) => {
+  const assignCategory = async (product: SellerProductFull, value: string) => {
     const next = value === NO_CATEGORY ? null : value;
     if (next === product.storeCategoryId) return;
     setProducts((rows) => (rows ? rows.map((p) => (p.id === product.id ? { ...p, storeCategoryId: next } : p)) : rows));
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/products/${product.id}`, { storeCategoryId: next }),
+      () => apiSend<SellerProductFull>("PATCH", `/api/store/products/${product.id}`, { storeCategoryId: next } satisfies SellerProductPatchBody),
       next ? `Moved to ${cats?.find((c) => c.id === next)?.name ?? "category"}` : "Category removed"
     );
     if (!ok) {
@@ -528,11 +526,11 @@ function ProductOrganizer() {
     }
   };
 
-  const toggleFeatured = async (product: OrganizedProduct) => {
+  const toggleFeatured = async (product: SellerProductFull) => {
     const next = !product.isFeatured;
     setProducts((rows) => (rows ? rows.map((p) => (p.id === product.id ? { ...p, isFeatured: next } : p)) : rows));
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/products/${product.id}`, { isFeatured: next }),
+      () => apiSend<SellerProductFull>("PATCH", `/api/store/products/${product.id}`, { isFeatured: next } satisfies SellerProductPatchBody),
       next ? "Added to your Featured section" : "Removed from your Featured section"
     );
     if (!ok) {

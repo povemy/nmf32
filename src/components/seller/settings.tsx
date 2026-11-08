@@ -19,7 +19,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ExternalLink, Globe, LayoutTemplate, Loader2, Megaphone, Save, Settings2, ShieldQuestion, Store } from "lucide-react";
 import { useApp } from "@/lib/app-store";
+import type { SellerPageRow, SellerSettingsBody, SellerSettingsData } from "@/lib/types/api-contract";
 
+// UI-only identity form: flattens the contract's `social` record into separate
+// Instagram/Facebook/TikTok inputs (blank = not sent; see saveIdentity).
 type IdentityForm = {
   name: string;
   tagline: string;
@@ -134,7 +137,7 @@ function GeneralSettings({
     fetch("/api/store/pages", { cache: "no-store" })
       .then((r) => r.json())
       .then((body) => {
-        const pages = body?.data as { id: string; pageType: string }[] | undefined;
+        const pages = body?.data as SellerPageRow[] | undefined;
         const policy = pages?.find((p) => p.pageType === "policy" || p.pageType === "policies");
         setPolicyPageId(policy?.id ?? null);
       })
@@ -148,7 +151,7 @@ function GeneralSettings({
     setBusy(true);
     const ok = await runMutation(
       () => {
-        const payload: Record<string, unknown> = {
+        const payload: SellerSettingsBody = {
           name: form.name.trim(),
           tagline: form.tagline,
           description: form.description,
@@ -161,7 +164,7 @@ function GeneralSettings({
         if (form.facebook.trim()) social.facebook = form.facebook.trim();
         if (form.tiktok.trim()) social.tiktok = form.tiktok.trim();
         if (Object.keys(social).length > 0) payload.social = social;
-        return apiSend("PATCH", "/api/store/settings", payload);
+        return apiSend<SellerSettingsData>("PATCH", "/api/store/settings", payload);
       },
       "Store identity saved"
     );
@@ -172,7 +175,7 @@ function GeneralSettings({
   const saveOptIn = async (next: boolean) => {
     setOptIn(next);
     const ok = await runMutation(
-      () => apiSend("PATCH", "/api/store/settings", { marketplaceOptIn: next }),
+      () => apiSend<SellerSettingsData>("PATCH", "/api/store/settings", { marketplaceOptIn: next } satisfies SellerSettingsBody),
       next ? "Store listed on the NOMOFEE marketplace" : "Store removed from marketplace listings"
     );
     if (!ok) setOptIn(!next);

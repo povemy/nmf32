@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
+import type { MeAfterSalesDispute, ReturnRequestBody, ReturnRequestData, ReturnRequestsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ orderNumber: string }> }) => {
   const me = await requireShopper();
   const { orderNumber } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ReturnRequestBody;
 
   const reason = String(body.reason ?? "").trim();
   const type = body.type == null || String(body.type).trim() === "" ? "refund" : String(body.type).trim().toLowerCase();
@@ -61,16 +62,19 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ orderNu
     meta: { orderNumber: order.orderNumber, type, disputeId: dispute.id },
   });
 
-  return ok({
+  const payload: ReturnRequestData = {
     id: dispute.id,
     orderId: order.id,
     orderNumber: order.orderNumber,
     orderStatus: order.status,
-    type,
+    // The includes("refund","return") guard above pins the runtime value;
+    // TS cannot narrow String()-derived locals, so assert the union here.
+    type: type as ReturnRequestData["type"],
     reason,
     status: dispute.status,
-    createdAt: dispute.createdAt,
-  });
+    createdAt: dispute.createdAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // GET — quick buyer-side visibility of the current request on the order.
@@ -90,5 +94,17 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
     select: { id: true, reason: true, status: true, resolution: true, createdAt: true, resolvedAt: true },
   });
 
-  return ok({ orderNumber: order.orderNumber, orderStatus: order.status, disputes });
+  const payload: ReturnRequestsData = {
+    orderNumber: order.orderNumber,
+    orderStatus: order.status,
+    disputes: disputes.map((d): MeAfterSalesDispute => ({
+      id: d.id,
+      reason: d.reason,
+      status: d.status,
+      resolution: d.resolution,
+      createdAt: d.createdAt.toISOString(),
+      resolvedAt: d.resolvedAt ? d.resolvedAt.toISOString() : null,
+    })),
+  };
+  return ok(payload);
 });

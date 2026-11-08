@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { findCartForCaller, resolveCartCaller, shapeCart } from "../cart";
+import type { CartSelectionBody, CartSelectionData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 // are silently ignored.
 export const PATCH = handle(async (req: Request) => {
   const { shopperId: meId } = await resolveCartCaller();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as CartSelectionBody;
 
   if (typeof body.selected !== "boolean") throw new ApiError(400, "VALIDATION", "selected must be a boolean");
   const ids = Array.isArray(body.itemIds) ? body.itemIds.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
@@ -28,5 +29,6 @@ export const PATCH = handle(async (req: Request) => {
   });
 
   const fresh = await findCartForCaller(meId);
-  return ok({ cart: shapeCart(fresh) });
+  const payload: CartSelectionData = { cart: shapeCart(fresh) };
+  return ok(payload);
 });

@@ -21,10 +21,13 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_SECTION_ORDER, type HomeSectionId, type HomeSectionMeta } from "@/lib/home-layout";
 import { apiSend, useApi } from "./use-api";
 import { EmptyState, ErrorState, PageHeader } from "./ui-bits";
+import type { HomeLayoutData, HomeLayoutPutBody, HomeLayoutPutData } from "@/lib/types/api-contract";
 
-type LayoutPayload = {
+/** GET /api/admin/home-layout payload — the contract HomeLayoutData with
+ *  `order`/`sections` narrowed to the typed HomeSectionId/HomeSectionMeta
+ *  unions the server-side normalizer guarantees (known ids only, hero first). */
+type LayoutPayload = Omit<HomeLayoutData, "order" | "sections"> & {
   order: HomeSectionId[];
-  defaults: HomeSectionId[];
   sections: HomeSectionMeta[];
 };
 
@@ -101,8 +104,8 @@ export function HomepageLayoutView() {
     if (!order) return;
     setSaving(true);
     try {
-      const res = await apiSend<{ order: HomeSectionId[] }>("/api/admin/home-layout", "PUT", { order });
-      setOrder(res.order);
+      const res = await apiSend<HomeLayoutPutData>("/api/admin/home-layout", "PUT", { order } satisfies HomeLayoutPutBody);
+      setOrder(res.order as HomeSectionId[]);
       toast.success("Homepage layout saved", {
         description: "The public homepage follows this order within the cache window (seconds; ≤ 60 s worst case).",
       });

@@ -2,6 +2,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
+import type { CollectionsData, AffiliateCollectionSummary, CreateCollectionBody, CreateCollectionData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -32,24 +33,24 @@ export const GET = handle(async () => {
       },
     },
   });
-  return ok({
-    collections: collections.map((c) => ({
-      id: c.id, title: c.title, description: c.description, slug: c.slug,
-      status: c.status, version: c.version,
-      createdAt: c.createdAt.toISOString(), updatedAt: c.updatedAt.toISOString(),
-      publishedAt: c.publishedAt?.toISOString() ?? null,
-      items: c.items.map((it, idx) => ({
-        productId: it.productId, position: it.position ?? idx,
-        title: it.product.title, slug: it.product.slug, priceMinor: it.product.priceMinor,
-        image: it.product.images[0]?.url ?? null,
-        storeName: it.product.store.name, storeSlug: it.product.store.slug,
-        eligible:
-          it.product.status === "active" && it.product.store.status === "live" &&
-          it.product.store.affiliateOptIn && it.product.affiliateEnabled,
-        rateBps: it.product.affiliateRateBps ?? it.product.store.affiliateDefaultRateBps,
-      })),
+  const rows: AffiliateCollectionSummary[] = collections.map((c) => ({
+    id: c.id, title: c.title, description: c.description, slug: c.slug,
+    status: c.status, version: c.version,
+    createdAt: c.createdAt.toISOString(), updatedAt: c.updatedAt.toISOString(),
+    publishedAt: c.publishedAt?.toISOString() ?? null,
+    items: c.items.map((it, idx) => ({
+      productId: it.productId, position: it.position ?? idx,
+      title: it.product.title, slug: it.product.slug, priceMinor: it.product.priceMinor,
+      image: it.product.images[0]?.url ?? null,
+      storeName: it.product.store.name, storeSlug: it.product.store.slug,
+      eligible:
+        it.product.status === "active" && it.product.store.status === "live" &&
+        it.product.store.affiliateOptIn && it.product.affiliateEnabled,
+      rateBps: it.product.affiliateRateBps ?? it.product.store.affiliateDefaultRateBps,
     })),
-  });
+  }));
+  const payload: CollectionsData = { collections: rows };
+  return ok(payload);
 });
 
 // POST /api/affiliate/collections — create a draft collection (spec §3.D).
@@ -64,7 +65,7 @@ export const POST = handle(async (req: Request) => {
   if (!settings.collectionsEnabled) {
     throw new ApiError(403, "COLLECTIONS_DISABLED", "Collections are currently disabled");
   }
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as CreateCollectionBody;
   const title = String(body.title ?? "").trim();
   if (title.length < 3 || title.length > 80) throw new ApiError(400, "VALIDATION", "Title must be 3-80 characters");
   const description = body.description != null ? String(body.description).slice(0, 500) : null;
@@ -83,5 +84,6 @@ export const POST = handle(async (req: Request) => {
   const created = await db.affiliateCollection.create({
     data: { affiliateId: aff.id, title, description, slug, status: "draft" },
   });
-  return ok({ collection: { id: created.id, slug: created.slug, title: created.title, status: created.status } }, { status: 201 });
+  const payload: CreateCollectionData = { collection: { id: created.id, slug: created.slug, title: created.title, status: created.status } };
+  return ok(payload, { status: 201 });
 });

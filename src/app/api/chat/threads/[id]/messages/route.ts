@@ -4,6 +4,7 @@ import { requireShopper } from "@/lib/auth";
 import { rateLimitKey } from "@/lib/rate-limit";
 import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
 import { maybeAutoReply } from "@/lib/chat-quick-replies";
+import type { SendMessageBody, SendMessageData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   const { id } = await ctx.params;
   const me = await requireShopper();
   rateLimitKey(me.id, "chat-send-shopper", 20, 60_000);
-  const { body: text } = (await req.json().catch(() => ({}))) as { body?: string };
+  const { body: text } = (await req.json().catch(() => ({}))) as SendMessageBody;
   const trimmed = (text ?? "").trim();
   if (!trimmed) throw new ApiError(400, "VALIDATION", "Message cannot be empty");
 
@@ -32,13 +33,13 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     data: { lastMessageAt: new Date(), sellerUnread: { increment: 1 }, shopperUnread: 0 },
   });
 
-  const payload = {
+  const payload: SendMessageData = {
     id: message.id,
     threadId: thread.id,
-    senderType: "shopper" as const,
+    senderType: "shopper",
     senderName: me.fullName,
     body: message.body,
-    createdAt: message.createdAt,
+    createdAt: message.createdAt.toISOString(),
     readAt: null,
   };
   const sellerUserId = await sellerIdForStore(thread.storeId);

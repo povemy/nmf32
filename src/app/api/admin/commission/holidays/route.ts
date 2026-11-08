@@ -3,19 +3,27 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optNum, optDate, optBool } from "@/app/api/admin/_helpers";
+import type { HolidaysData, HolidayCreateBody, HolidayCreateData } from "@/lib/types/api-contract";
 
 // GET /api/admin/commission/holidays
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const rows = await db.feeHoliday.findMany({ orderBy: { startsAt: "desc" } });
-  const data = rows.map((h) => ({ ...h, scopeIdsList: h.scopeIds ? (JSON.parse(h.scopeIds) as string[]) : [] }));
+  const data: HolidaysData[] = rows.map((h) => ({
+    ...h,
+    startsAt: h.startsAt.toISOString(),
+    endsAt: h.endsAt.toISOString(),
+    createdAt: h.createdAt.toISOString(),
+    updatedAt: h.updatedAt.toISOString(),
+    scopeIdsList: h.scopeIds ? (JSON.parse(h.scopeIds) as string[]) : [],
+  }));
   return ok(data);
 });
 
 // POST /api/admin/commission/holidays (RBAC commission.manage)
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireCap("commission.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as HolidayCreateBody & Record<string, unknown>;
 
   const name = reqStr(body, "name", "name");
   const scope = typeof body.scope === "string" && ["all", "sellers", "categories"].includes(body.scope) ? body.scope : "all";
@@ -48,5 +56,12 @@ export const POST = handle(async (req: NextRequest) => {
     after: { name, scope, percent, startsAt, endsAt, isActive },
   });
 
-  return ok(created);
+  const payload: HolidayCreateData = {
+    ...created,
+    startsAt: created.startsAt.toISOString(),
+    endsAt: created.endsAt.toISOString(),
+    createdAt: created.createdAt.toISOString(),
+    updatedAt: created.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

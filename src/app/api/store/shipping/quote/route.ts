@@ -3,6 +3,7 @@ import { ApiError, handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parcelWeightForItems, quoteRates, zoneOf, cityForState } from "@/lib/shipping";
 import { parseJson } from "@/lib/json";
+import type { SellerShippingQuoteQuery, SellerShippingQuoteData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const url = new URL(req.url);
-  const orderId = url.searchParams.get("orderId")?.trim();
+  const orderId: SellerShippingQuoteQuery["orderId"] | undefined = url.searchParams.get("orderId")?.trim();
   if (!orderId) throw new ApiError(400, "VALIDATION", "orderId is required");
 
   const order = await db.order.findFirst({
@@ -34,18 +35,18 @@ export const GET = handle(async (req: Request) => {
   };
   const rates = quoteRates(parcel, { state });
 
-  return ok({
+  const payload: SellerShippingQuoteData = {
     orderId: order.id,
     orderNumber: order.orderNumber,
     orderStatus: order.status,
-    shippedAt: order.shippedAt,
+    shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
     shipment: order.shipment
       ? {
           status: order.shipment.status,
           awbNumber: order.shipment.awbNumber,
           courierName: order.shipment.courierName,
-          etaFrom: order.shipment.etaFrom,
-          etaTo: order.shipment.etaTo,
+          etaFrom: order.shipment.etaFrom ? order.shipment.etaFrom.toISOString() : null,
+          etaTo: order.shipment.etaTo ? order.shipment.etaTo.toISOString() : null,
         }
       : null,
     destination: {
@@ -55,5 +56,6 @@ export const GET = handle(async (req: Request) => {
     },
     parcel,
     rates,
-  });
+  };
+  return ok(payload);
 });

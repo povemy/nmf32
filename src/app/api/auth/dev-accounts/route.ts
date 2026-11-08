@@ -1,6 +1,7 @@
 import { handle, ok, fail } from "@/lib/api";
 import { db } from "@/lib/db";
 import { verifyPasswordAsync } from "@/lib/password";
+import type { DevAccountsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export const GET = handle(async () => {
     }
   }
 
-  return ok({
+  const payload: DevAccountsData = {
     title: "Development Test Accounts — Sandbox Only",
     accounts: verified.map((a) => ({
       type: a.type,
@@ -96,5 +97,6 @@ export const GET = handle(async () => {
       role: a.role ?? null,
       status: a.status ?? null,
     })),
-  });
+  };
+  return ok(payload);
 });

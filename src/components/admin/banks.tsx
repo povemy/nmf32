@@ -20,21 +20,7 @@ import {
   fmtDT,
 } from "./ui-bits";
 import { cn } from "@/lib/utils";
-
-type BankRow = {
-  id: string;
-  holderName: string;
-  bankName: string;
-  accountNumberMasked: string;
-  verified: boolean;
-  verifiedAt?: string | null;
-  createdAt?: string;
-  sellerId?: string;
-  sellerLegalName?: string;
-  sellerEmail?: string;
-  sellerStatus?: string;
-  storeName?: string | null;
-};
+import type { AdminBankRejectData, AdminBankVerifyData, AdminBanksData } from "@/lib/types/api-contract";
 
 /** Heuristic holder↔store similarity: shared normalised tokens (≥1, or all when single-token). */
 function nameMatches(holder: string | null | undefined, store: string | null | undefined): boolean {
@@ -50,16 +36,16 @@ function nameMatches(holder: string | null | undefined, store: string | null | u
 
 export function BanksView() {
   const { can } = useAdminCaps();
-  const queue = useApi<BankRow[]>("/api/admin/banks?verified=false");
-  const verified = useApi<BankRow[]>("/api/admin/banks?verified=true");
+  const queue = useApi<AdminBanksData[]>("/api/admin/banks?verified=false");
+  const verified = useApi<AdminBanksData[]>("/api/admin/banks?verified=true");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<BankRow | null>(null);
-  const [verifyTarget, setVerifyTarget] = useState<BankRow | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<AdminBanksData | null>(null);
+  const [verifyTarget, setVerifyTarget] = useState<AdminBanksData | null>(null);
 
-  const act = async (b: BankRow, kind: "verify" | "reject") => {
+  const act = async (b: AdminBanksData, kind: "verify" | "reject") => {
     setBusyId(b.id);
     try {
-      await apiSend(`/api/admin/banks/${b.id}/${kind}`, "POST");
+      await apiSend<AdminBankVerifyData | AdminBankRejectData>(`/api/admin/banks/${b.id}/${kind}`, "POST");
       toast.success(kind === "verify" ? "Bank account verified" : "Bank account rejected", {
         description: `${b.bankName} ${b.accountNumberMasked} · ${b.storeName ?? b.sellerLegalName ?? ""}`,
       });

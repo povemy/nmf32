@@ -4,6 +4,12 @@ import { requireAdmin, requireCap, requireAnyCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, optNum, optBool, str, stripSeller, daysAgo } from "@/app/api/admin/_helpers";
 import { getSellerEmailVerifiedAt } from "@/lib/seller-email-verification";
+import type {
+  AdminSellerDetail,
+  AdminSellerDetailData,
+  AdminSellerPatchBody,
+  AdminSellerRow,
+} from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -90,19 +96,87 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
       })
     : { _sum: { totalMinor: 0 }, _count: { _all: 0 } };
 
-  return ok({
-    seller: { ...stripSeller(seller), emailVerifiedAt: emailVerifiedAt ? emailVerifiedAt.toISOString() : null },
-    store: seller.store,
-    kycDocuments: seller.kycDocuments,
-    bankAccounts: seller.bankAccounts,
-    wallet: seller.wallet,
-    products: recentProducts,
-    orders: recentOrders,
-    notes: seller.sellerNotes,
+  // Prisma rows carry Date objects; the contract rows are ISO strings — map
+  // explicitly (JSON.stringify of a Date === toISOString, so the wire output
+  // is byte-identical to the pre-contract spread).
+  const storeRow: AdminSellerDetailData["store"] = seller.store
+    ? {
+        ...seller.store,
+        createdAt: seller.store.createdAt.toISOString(),
+        updatedAt: seller.store.updatedAt.toISOString(),
+      }
+    : null;
+  const walletRow: AdminSellerDetailData["wallet"] = seller.wallet
+    ? {
+        ...seller.wallet,
+        createdAt: seller.wallet.createdAt.toISOString(),
+        updatedAt: seller.wallet.updatedAt.toISOString(),
+      }
+    : null;
+  const kycDocRows: AdminSellerDetailData["kycDocuments"] = seller.kycDocuments.map((d) => ({
+    ...d,
+    reviewedAt: d.reviewedAt ? d.reviewedAt.toISOString() : null,
+    createdAt: d.createdAt.toISOString(),
+  }));
+  const bankRows: AdminSellerDetailData["bankAccounts"] = seller.bankAccounts.map((b) => ({
+    ...b,
+    verifiedAt: b.verifiedAt ? b.verifiedAt.toISOString() : null,
+    createdAt: b.createdAt.toISOString(),
+  }));
+  const noteRows: AdminSellerDetailData["notes"] = seller.sellerNotes.map((n) => ({
+    ...n,
+    createdAt: n.createdAt.toISOString(),
+  }));
+  const productRows: AdminSellerDetailData["products"] = recentProducts.map((p) => ({
+    ...p,
+    publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
+    lastSyncedAt: p.lastSyncedAt ? p.lastSyncedAt.toISOString() : null,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+    category: p.category
+      ? { ...p.category, createdAt: p.category.createdAt.toISOString(), updatedAt: p.category.updatedAt.toISOString() }
+      : null,
+  }));
+  const orderRows: AdminSellerDetailData["orders"] = recentOrders.map((o) => ({
+    ...o,
+    paidAt: o.paidAt ? o.paidAt.toISOString() : null,
+    fulfilledAt: o.fulfilledAt ? o.fulfilledAt.toISOString() : null,
+    shippedAt: o.shippedAt ? o.shippedAt.toISOString() : null,
+    deliveredAt: o.deliveredAt ? o.deliveredAt.toISOString() : null,
+    receivedAt: o.receivedAt ? o.receivedAt.toISOString() : null,
+    completedAt: o.completedAt ? o.completedAt.toISOString() : null,
+    cancelledAt: o.cancelledAt ? o.cancelledAt.toISOString() : null,
+    createdAt: o.createdAt.toISOString(),
+    updatedAt: o.updatedAt.toISOString(),
+  }));
+  const sellerRow: AdminSellerDetail = {
+    ...stripSeller(seller),
+    emailVerifiedAt: emailVerifiedAt ? emailVerifiedAt.toISOString() : null,
+    submittedAt: seller.submittedAt ? seller.submittedAt.toISOString() : null,
+    approvedAt: seller.approvedAt ? seller.approvedAt.toISOString() : null,
+    createdAt: seller.createdAt.toISOString(),
+    updatedAt: seller.updatedAt.toISOString(),
+    store: storeRow,
+    wallet: walletRow,
+    kycDocuments: kycDocRows,
+    bankAccounts: bankRows,
+    sellerNotes: noteRows,
+  };
+
+  const payload: AdminSellerDetailData = {
+    seller: sellerRow,
+    store: storeRow,
+    kycDocuments: kycDocRows,
+    bankAccounts: bankRows,
+    wallet: walletRow,
+    products: productRows,
+    orders: orderRows,
+    notes: noteRows,
     gmv30dMinor: agg._sum.totalMinor ?? 0,
     orders30d: agg._count._all,
     productCount,
-  });
+  };
+  return ok(payload);
 });
 
 // PATCH /api/admin/sellers/[id] — risk tier / commission / hold overrides / marketplace opt-in
@@ -114,7 +188,7 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
 // by any field they carry.
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as AdminSellerPatchBody & Record<string, unknown>;
 
   const touchesCommissionPolicy =
     "riskTier" in body || "commissionOverridePercent" in body || "holdDaysOverride" in body;
@@ -175,5 +249,12 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(stripSeller(updated));
+  const payload: AdminSellerRow = {
+    ...stripSeller(updated),
+    submittedAt: updated.submittedAt ? updated.submittedAt.toISOString() : null,
+    approvedAt: updated.approvedAt ? updated.approvedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

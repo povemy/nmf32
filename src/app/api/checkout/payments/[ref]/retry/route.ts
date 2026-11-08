@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
+import type { RetryPaymentData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,8 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ ref: s
       meta: { providerRef: ref, provider: group.provider },
     });
 
-    return ok({ status: "requires_payment" });
+    const payload: RetryPaymentData = { status: "requires_payment" };
+    return ok(payload);
   }
 
   const intent = await db.paymentIntent.findUnique({ where: { providerRef: ref } });
@@ -83,5 +85,6 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ ref: s
     meta: { providerRef: ref, provider: intent.provider },
   });
 
-  return ok({ status: "requires_payment" });
+  const payload: RetryPaymentData = { status: "requires_payment" };
+  return ok(payload);
 });

@@ -4,6 +4,11 @@ import { toJson } from "@/lib/json";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { matchFlags, moderationStatus, sanitizeProductImages, uniqueSlug, validateVariants } from "./helpers";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type {
+  SellerProductsQuery,
+  SellerProductFull,
+  SellerProductCreateBody,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +17,8 @@ export const GET = handle(async (req: Request) => {
   const { store } = await requireActiveSellerStore();
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url);
-  const search = url.searchParams.get("search")?.trim();
-  const status = url.searchParams.get("status")?.trim();
+  const search: SellerProductsQuery["search"] = url.searchParams.get("search")?.trim();
+  const status: SellerProductsQuery["status"] = url.searchParams.get("status")?.trim();
 
   const where: Record<string, unknown> = { storeId: store.id };
   if (search) where.title = { contains: search };
@@ -34,13 +39,76 @@ export const GET = handle(async (req: Request) => {
     db.product.count({ where }),
   ]);
 
-  return okPaged(rows, { page, size, total });
+  const payload: SellerProductFull[] = rows.map((p) => ({
+    id: p.id,
+    storeId: p.storeId,
+    categoryId: p.categoryId,
+    title: p.title,
+    slug: p.slug,
+    description: p.description,
+    status: p.status,
+    rejectReason: p.rejectReason,
+    priceMinor: p.priceMinor,
+    commissionPercentOverride: p.commissionPercentOverride,
+    flagsJson: p.flagsJson,
+    reportsCount: p.reportsCount,
+    salesCount: p.salesCount,
+    viewCount: p.viewCount,
+    ratingAvg: p.ratingAvg,
+    ratingCount: p.ratingCount,
+    isFeatured: p.isFeatured,
+    publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
+    storeCategoryId: p.storeCategoryId,
+    isFixture: p.isFixture,
+    sourcePlatform: p.sourcePlatform,
+    sourceShopId: p.sourceShopId,
+    sourceProductId: p.sourceProductId,
+    sourceUrl: p.sourceUrl,
+    sourceBrand: p.sourceBrand,
+    sourceStatus: p.sourceStatus,
+    lastSyncedAt: p.lastSyncedAt ? p.lastSyncedAt.toISOString() : null,
+    overridesJson: p.overridesJson,
+    affiliateEnabled: p.affiliateEnabled,
+    affiliateRateBps: p.affiliateRateBps,
+    seoTitle: p.seoTitle,
+    seoDescription: p.seoDescription,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+    images: p.images.map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      url: i.url,
+      sortOrder: i.sortOrder,
+      alt: i.alt,
+    })),
+    variants: p.variants.map((v) => ({
+      id: v.id,
+      productId: v.productId,
+      name: v.name,
+      optionName: v.optionName,
+      optionValue: v.optionValue,
+      priceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor,
+      stock: v.stock,
+      moq: v.moq,
+      lowStockThreshold: v.lowStockThreshold,
+      sku: v.sku,
+      isActive: v.isActive,
+      imageUrl: v.imageUrl,
+      sourceModelId: v.sourceModelId,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    })),
+    category: p.category,
+  }));
+
+  return okPaged(payload, { page, size, total });
 });
 
 // POST /api/store/products — create with images[] + variants[].
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerProductCreateBody;
 
   const title = String(body.title ?? "").trim();
   if (!title) throw new ApiError(400, "VALIDATION", "title is required");
@@ -107,5 +175,67 @@ export const POST = handle(async (req: Request) => {
   });
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.market, PUBLIC_CACHE_TAGS.stores);
-  return ok(product, { status: 201 });
+  const payload: SellerProductFull = {
+    id: product.id,
+    storeId: product.storeId,
+    categoryId: product.categoryId,
+    title: product.title,
+    slug: product.slug,
+    description: product.description,
+    status: product.status,
+    rejectReason: product.rejectReason,
+    priceMinor: product.priceMinor,
+    commissionPercentOverride: product.commissionPercentOverride,
+    flagsJson: product.flagsJson,
+    reportsCount: product.reportsCount,
+    salesCount: product.salesCount,
+    viewCount: product.viewCount,
+    ratingAvg: product.ratingAvg,
+    ratingCount: product.ratingCount,
+    isFeatured: product.isFeatured,
+    publishedAt: product.publishedAt ? product.publishedAt.toISOString() : null,
+    storeCategoryId: product.storeCategoryId,
+    isFixture: product.isFixture,
+    sourcePlatform: product.sourcePlatform,
+    sourceShopId: product.sourceShopId,
+    sourceProductId: product.sourceProductId,
+    sourceUrl: product.sourceUrl,
+    sourceBrand: product.sourceBrand,
+    sourceStatus: product.sourceStatus,
+    lastSyncedAt: product.lastSyncedAt ? product.lastSyncedAt.toISOString() : null,
+    overridesJson: product.overridesJson,
+    affiliateEnabled: product.affiliateEnabled,
+    affiliateRateBps: product.affiliateRateBps,
+    seoTitle: product.seoTitle,
+    seoDescription: product.seoDescription,
+    createdAt: product.createdAt.toISOString(),
+    updatedAt: product.updatedAt.toISOString(),
+    images: product.images.map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      url: i.url,
+      sortOrder: i.sortOrder,
+      alt: i.alt,
+    })),
+    variants: product.variants.map((v) => ({
+      id: v.id,
+      productId: v.productId,
+      name: v.name,
+      optionName: v.optionName,
+      optionValue: v.optionValue,
+      priceMinor: v.priceMinor,
+      compareAtPriceMinor: v.compareAtPriceMinor,
+      stock: v.stock,
+      moq: v.moq,
+      lowStockThreshold: v.lowStockThreshold,
+      sku: v.sku,
+      isActive: v.isActive,
+      imageUrl: v.imageUrl,
+      sourceModelId: v.sourceModelId,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
+    })),
+    category: product.category,
+  };
+  return ok(payload, { status: 201 });
 });

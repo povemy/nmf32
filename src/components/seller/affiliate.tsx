@@ -56,67 +56,16 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// ---------------------------------------------------------------- types
-
-type ProgrammeData = {
-  programmeEnabled: boolean;
-  maxRateBps: number;
-  optIn: boolean;
-  defaultRateBps: number;
-  enrolledProducts: number;
-  totalProducts: number;
-};
-
-type AffiliateProduct = {
-  id: string;
-  title: string;
-  slug: string;
-  status: string;
-  priceMinor: number;
-  affiliateEnabled: boolean;
-  effectiveRateBps: number;
-  rateSource: "product" | "store_default";
-  salesCount: number;
-  image: string | null;
-};
-
-type AffiliateProductsPage = {
-  total: number;
-  page: number;
-  maxRateBps: number;
-  storeOptIn: boolean;
-  storeDefaultRateBps: number;
-  products: AffiliateProduct[];
-};
-
-type CommissionRow = {
-  orderNumber: string;
-  createdAt: string;
-  status: string;
-  baseMinor: number;
-  rateBps: number;
-  poolMinor: number;
-  directMinor: number;
-  sponsorMinor: number;
-  reversedMinor: number;
-};
-
-type ReportData = {
-  days: number;
-  enrolledCount: number;
-  totalProducts: number;
-  clicks: number;
-  productViews: number;
-  attributedOrders: number;
-  eligibleSalesMinor: number;
-  totalPoolMinor: number;
-  directAllocationMinor: number;
-  sponsorAllocationMinor: number;
-  reversalMinor: number;
-  currentLiabilityMinor: number;
-  recentCommissions: CommissionRow[];
-};
+import type {
+  AffiliateProductBody,
+  AffiliateProductData,
+  AffiliateProductRow as AffiliateProduct,
+  AffiliateProgrammeData,
+  AffiliateProductsData,
+  AffiliateReportData,
+  AffiliateSettingsBody,
+  AffiliateSettingsData,
+} from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------- helpers
 
@@ -207,7 +156,7 @@ export default function SellerAffiliate({
 // ---------------------------------------------------------------- programme tab
 
 function ProgrammeTab() {
-  const { data, loading, error, refetch } = useApi<ProgrammeData>("/api/store/affiliate");
+  const { data, loading, error, refetch } = useApi<AffiliateProgrammeData>("/api/store/affiliate");
   const [optIn, setOptIn] = useState(false);
   const [rateText, setRateText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -247,7 +196,7 @@ function ProgrammeTab() {
   const saveOptIn = async (next: boolean) => {
     setOptIn(next);
     const ok = await runMutation(
-      () => apiSend("PATCH", "/api/store/affiliate", { optIn: next }),
+      () => apiSend<AffiliateSettingsData>("PATCH", "/api/store/affiliate", { optIn: next } satisfies AffiliateSettingsBody),
       next ? "Your store joined the affiliate programme" : "Your store left the affiliate programme"
     );
     if (!ok) setOptIn(!next);
@@ -262,7 +211,7 @@ function ProgrammeTab() {
     }
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("PATCH", "/api/store/affiliate", { defaultRateBps: bps }),
+      () => apiSend<AffiliateSettingsData>("PATCH", "/api/store/affiliate", { defaultRateBps: bps } satisfies AffiliateSettingsBody),
       `Default commission rate saved at ${fmtCommissionPercent(bps / 100)}`
     );
     setBusy(false);
@@ -379,7 +328,7 @@ function ProductsTab() {
   params.set("page", String(page));
   params.set("size", "10");
 
-  const { data, loading, error, refetch } = useApi<AffiliateProductsPage>(`/api/store/affiliate/products?${params.toString()}`);
+  const { data, loading, error, refetch } = useApi<AffiliateProductsData>(`/api/store/affiliate/products?${params.toString()}`);
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 10));
   const filtering = query.trim() !== "" || filter !== "all";
@@ -513,7 +462,7 @@ function AffiliateProductRow({
   const toggleEnrollment = async (next: boolean) => {
     setEnabled(next);
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { enabled: next }),
+      () => apiSend<AffiliateProductData>("PATCH", `/api/store/affiliate/products/${product.id}`, { enabled: next } satisfies AffiliateProductBody),
       next ? `${product.title} enrolled — buyers can now earn commission on it` : `${product.title} paused from the affiliate programme`
     );
     if (ok) onChanged();
@@ -528,7 +477,7 @@ function AffiliateProductRow({
     }
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: bps }),
+      () => apiSend<AffiliateProductData>("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: bps } satisfies AffiliateProductBody),
       `${product.title} commission rate set to ${fmtCommissionPercent(bps / 100)}`
     );
     setBusy(false);
@@ -542,7 +491,7 @@ function AffiliateProductRow({
     if (product.rateSource !== "product") return;
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: null }),
+      () => apiSend<AffiliateProductData>("PATCH", `/api/store/affiliate/products/${product.id}`, { rateBps: null } satisfies AffiliateProductBody),
       `${product.title} reset to the store default rate`
     );
     setBusy(false);
@@ -622,7 +571,7 @@ const DAY_WINDOWS = [7, 30, 90];
 
 function ReportTab() {
   const [days, setDays] = useState(30);
-  const { data, loading, error } = useApi<ReportData>(`/api/store/affiliate/report?days=${days}`);
+  const { data, loading, error } = useApi<AffiliateReportData>(`/api/store/affiliate/report?days=${days}`);
 
   return (
     <div className="space-y-4">

@@ -3,6 +3,7 @@ import { requireCap } from "@/lib/auth";
 import { auditAdmin } from "@/lib/api";
 import { correctSponsor, findAffiliateByCode } from "@/lib/affiliate";
 import { rateLimit } from "@/lib/rate-limit";
+import type { AdminAffSponsorBody, AdminAffSponsorData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   rateLimit(req, "admin-aff-sponsor", 20);
   const admin = await requireCap("affiliate.manage");
   const { id } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as AdminAffSponsorBody;
   const reason = String(body.reason ?? "");
   const sponsorCode = body.sponsorCode != null ? String(body.sponsorCode).trim() : null;
 
@@ -36,5 +37,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     before: { sponsorId: updated.sponsorId },
     after: { sponsorId: newSponsorId, reason },
   });
-  return ok({ sponsorId: updated.sponsorId });
+  const payload: AdminAffSponsorData = { sponsorId: updated.sponsorId };
+  return ok(payload);
 });

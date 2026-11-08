@@ -4,6 +4,7 @@ import { requireAdminUngated } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import type { MfaEnrollBody, MfaEnrollData } from "@/lib/types/api-contract";
 import {
   encryptSecret,
   generateTotpSecret,
@@ -29,7 +30,7 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: NextRequest) => {
   rateLimit(req, "admin-mfa", 10);
   const admin = await requireAdminUngated();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as MfaEnrollBody & Record<string, unknown>;
   const password = reqStr(body, "password", "Current password");
 
   if (!mfaEncryptionConfigured()) {
@@ -72,5 +73,6 @@ export const POST = handle(async (req: NextRequest) => {
     meta: { confirmed: false },
   });
 
-  return ok({ secretBase32, otpauthUrl: otpauthUrl(admin, secretBase32) });
+  const payload: MfaEnrollData = { secretBase32, otpauthUrl: otpauthUrl(admin, secretBase32) };
+  return ok(payload);
 });

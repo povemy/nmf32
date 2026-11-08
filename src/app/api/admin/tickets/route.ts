@@ -3,13 +3,14 @@ import { Prisma } from "@prisma/client";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminTicketsQuery, AdminTicketRow } from "@/lib/types/api-contract";
 
 // GET /api/admin/tickets?status=&page=&size=
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const url = new URL(req.url);
   const { page, size, skip, take } = getPagination(url);
-  const status = url.searchParams.get("status");
+  const status: AdminTicketsQuery["status"] = url.searchParams.get("status") ?? undefined;
 
   const where: Prisma.SupportTicketWhereInput = status && status !== "all" ? { status } : {};
 
@@ -32,13 +33,29 @@ export const GET = handle(async (req: NextRequest) => {
   const stores = storeIds.length ? await db.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, slug: true } }) : [];
   const stMap = new Map(stores.map((s) => [s.id, s]));
 
-  const data = rows.map((t) => ({
-    ...t,
-    store: t.storeId ? stMap.get(t.storeId) ?? null : null,
-    lastMessage: t.messages[0] ?? null,
+  const data: AdminTicketRow[] = rows.map((t) => ({
+    id: t.id,
+    storeId: t.storeId,
+    sellerEmail: t.sellerEmail,
+    subject: t.subject,
+    status: t.status,
+    priority: t.priority,
+    contextType: t.contextType,
+    contextId: t.contextId,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+    store: t.storeId ? (stMap.get(t.storeId) ?? null) : null,
+    lastMessage: t.messages[0]
+      ? {
+          id: t.messages[0].id,
+          ticketId: t.messages[0].ticketId,
+          authorType: t.messages[0].authorType,
+          authorLabel: t.messages[0].authorLabel,
+          body: t.messages[0].body,
+          createdAt: t.messages[0].createdAt.toISOString(),
+        }
+      : null,
     messageCount: t._count.messages,
-    messages: undefined,
-    _count: undefined,
   }));
   return okPaged(data, { page, size, total });
 });

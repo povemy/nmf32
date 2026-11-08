@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr } from "@/app/api/admin/_helpers";
+import type { AdminSellerNoteBody, AdminSellerNoteRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,14 +12,15 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
   const notes = await db.sellerNote.findMany({ where: { sellerId: id }, orderBy: { createdAt: "desc" } });
-  return ok(notes);
+  const payload: AdminSellerNoteRow[] = notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString() }));
+  return ok(payload);
 });
 
 // POST /api/admin/sellers/[id]/notes {body}
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireAdmin();
   const { id } = await ctx.params;
-  const payload = await readBody(req);
+  const payload = (await readBody(req)) as AdminSellerNoteBody & Record<string, unknown>;
   const text = reqStr(payload, "body", "body");
 
   // PHASE 2.3 select hygiene (C2.7): existence check — id-only select keeps
@@ -27,6 +29,7 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   if (!seller) throw new ApiError(404, "NOT_FOUND", "Seller not found");
 
   const note = await db.sellerNote.create({ data: { sellerId: id, author: admin.name, body: text } });
+  const noteRow: AdminSellerNoteRow = { ...note, createdAt: note.createdAt.toISOString() };
 
   await auditAdmin({
     adminId: admin.id,
@@ -37,5 +40,5 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { noteId: note.id, body: text },
   });
 
-  return ok(note);
+  return ok(noteRow);
 });

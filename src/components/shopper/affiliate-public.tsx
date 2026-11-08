@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { EmptyState, type ShopperCtx } from "./ui-bits";
 import { affGet, money, type PubCollectionResT, type PubProductT, type PubShowcaseResT } from "./affiliate-shared";
+import type { PubCollectionData, PubShowcaseData } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -102,7 +103,7 @@ export function AffiliateShowcaseView({ ctx, slug }: { ctx: ShopperCtx; slug: st
     setLoading(true);
     setErr(null);
     try {
-      setData(await affGet<PubShowcaseResT>(`/api/affiliate/pub/showcase/${encodeURIComponent(slug)}`));
+      setData(await affGet<PubShowcaseData>(`/api/affiliate/pub/showcase/${encodeURIComponent(slug)}`));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load this page");
     } finally {
@@ -206,7 +207,7 @@ export function AffiliateCollectionView({ ctx, slug }: { ctx: ShopperCtx; slug: 
     setLoading(true);
     setErr(null);
     try {
-      setData(await affGet<PubCollectionResT>(`/api/affiliate/pub/collection/${encodeURIComponent(slug)}`));
+      setData(await affGet<PubCollectionData>(`/api/affiliate/pub/collection/${encodeURIComponent(slug)}`));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load this page");
     } finally {

@@ -3,6 +3,7 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
 import { verifyOrderAccessGrant } from "@/lib/guest-otp";
+import type { GuestOrderLookupData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -76,17 +77,18 @@ export const GET = handle(async (req: Request) => {
     );
   }
 
-  return ok({
+  const payload: GuestOrderLookupData = {
     orderNumber: order.orderNumber,
     status: order.status,
     totalMinor: order.totalMinor,
     storeName: order.store.name,
     storeId: order.store.id,
     storeSlug: order.store.slug,
-    createdAt: order.createdAt,
+    createdAt: order.createdAt.toISOString(),
     items: order.items.map((i) => ({ title: i.title, qty: i.qty })),
-    history: order.history.map((h) => ({ toStatus: h.toStatus, createdAt: h.createdAt })),
-  });
+    history: order.history.map((h) => ({ toStatus: h.toStatus, createdAt: h.createdAt.toISOString() })),
+  };
+  return ok(payload);
 });
 
 // ---------------------------------------------------------------- loaders

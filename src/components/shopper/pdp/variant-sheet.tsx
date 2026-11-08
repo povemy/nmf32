@@ -28,7 +28,7 @@ import {
 import { QtyStepper } from "../ui-bits";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { PdpVariantT } from "./types";
+import type { PdpVariant } from "@/lib/types/api-contract";
 
 export function PdpVariantSheet({
   open,
@@ -49,7 +49,7 @@ export function PdpVariantSheet({
   onOpenChange: (open: boolean) => void;
   title: string;
   productImage: string | null;
-  variants: PdpVariantT[];
+  variants: PdpVariant[];
   variantId: string | null;
   onSelectVariant: (id: string) => void;
   qty: number;
@@ -73,7 +73,7 @@ export function PdpVariantSheet({
   // collapses into a single "Variant" list labelled by each row's own name —
   // honest to the flat model, never inventing combinations.
   const groups = useMemo(() => {
-    const byName = new Map<string, PdpVariantT[]>();
+    const byName = new Map<string, PdpVariant[]>();
     for (const v of variants) {
       const key = v.optionName ?? "Option";
       if (!byName.has(key)) byName.set(key, []);
@@ -81,12 +81,12 @@ export function PdpVariantSheet({
     }
     const entries = [...byName.entries()];
     if (entries.length <= 1) return entries;
-    return [["Variant", variants] as [string, PdpVariantT[]]];
+    return [["Variant", variants] as [string, PdpVariant[]]];
   }, [variants]);
 
   const headerImage = variant?.imageUrl ?? productImage;
 
-  const pick = (v: PdpVariantT) => {
+  const pick = (v: PdpVariant) => {
     if (v.stock <= 0) {
       onOosInteraction(v.id);
       toast.info("That option is sold out", { description: "Pick another one — it restocks when the seller replenishes stock." });

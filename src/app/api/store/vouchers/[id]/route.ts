@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { parseSellerVoucherInput } from "@/lib/vouchers";
+import type { SellerVoucherPatchBody, SellerVoucherRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +28,9 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { me, store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const voucher = await ownVoucher(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerVoucherPatchBody;
 
-  const wantsTermEdit = ["title", "kind", "discountMinor", "percentOff", "maxDiscountMinor", "minSpendMinor", "expiryAt", "quota"].some(
+  const wantsTermEdit = (["title", "kind", "discountMinor", "percentOff", "maxDiscountMinor", "minSpendMinor", "expiryAt", "quota"] as const).some(
     (k) => body[k] !== undefined
   );
   const holders = await heldCount(voucher.id);
@@ -83,7 +84,15 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
     meta: { code: voucher.code, editedFields: Object.keys(data) },
   }).catch(() => undefined);
 
-  return ok({ ...updated, heldCount: holders, redeemedCount });
+  const payload: SellerVoucherRow & { heldCount: number; redeemedCount: number } = {
+    ...updated,
+    expiryAt: updated.expiryAt.toISOString(),
+    startsAt: updated.startsAt ? updated.startsAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    heldCount: holders,
+    redeemedCount,
+  };
+  return ok(payload);
 });
 
 // DELETE /api/store/vouchers/[id] — SOFT delete: flip isActive=false so the
@@ -106,5 +115,12 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
     meta: { code: voucher.code, soft: true },
   }).catch(() => undefined);
 
-  return ok({ ...updated, deleted: true });
+  const payload: SellerVoucherRow & { deleted: boolean } = {
+    ...updated,
+    expiryAt: updated.expiryAt.toISOString(),
+    startsAt: updated.startsAt ? updated.startsAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    deleted: true,
+  };
+  return ok(payload);
 });

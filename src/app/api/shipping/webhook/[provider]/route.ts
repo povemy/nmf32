@@ -30,6 +30,7 @@ import { handle, ok, ApiError, transitionOrder, logActivity } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { hmacSha256Hex, safeEqualHex } from "@/lib/password";
 import { deliverySideEffects } from "@/lib/shipping";
+import type { ShippingWebhookBody, ShippingWebhookData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
 
   const { provider } = await ctx.params;
   const providerId = provider.trim().toLowerCase();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as ShippingWebhookBody;
 
   const awb = String(body.awb ?? body.trackingNumber ?? "").trim();
   const status = String(body.status ?? "").trim().toUpperCase();
@@ -93,7 +94,8 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
 
   // --- idempotent terminal guard ---
   if (TERMINAL_STATUSES.includes(shipment.status as (typeof TERMINAL_STATUSES)[number])) {
-    return ok({ orderNumber: shipment.order.orderNumber, shipmentStatus: shipment.status, ignored: true });
+    const ignoredPayload: ShippingWebhookData = { orderNumber: shipment.order.orderNumber, shipmentStatus: shipment.status, ignored: true };
+    return ok(ignoredPayload);
   }
 
   const description = String(body.description ?? status).slice(0, 300);
@@ -142,5 +144,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ provide
     meta: { orderNumber: shipment.order.orderNumber, awb, status },
   });
 
-  return ok({ orderNumber: shipment.order.orderNumber, shipmentStatus: updated.status });
+  const payload: ShippingWebhookData = { orderNumber: shipment.order.orderNumber, shipmentStatus: updated.status };
+  return ok(payload);
 });

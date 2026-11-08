@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { affiliateReconciliation } from "@/lib/affiliate-queries";
+import type { AdminAffReconciliation } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,6 @@ export const dynamic = "force-dynamic";
 // against the PLATFORM:AFFILIATE_LIABILITY ledger balance.
 export const GET = handle(async () => {
   await requireCap("affiliate.finance");
-  const report = await affiliateReconciliation();
-  return ok(report);
+  const payload: AdminAffReconciliation = await affiliateReconciliation();
+  return ok(payload);
 });

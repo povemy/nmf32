@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { handle, okPaged, getPagination } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminRefundsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/refunds?status=&page=&size=
 export const GET = handle(async (req: NextRequest) => {
@@ -37,5 +38,13 @@ export const GET = handle(async (req: NextRequest) => {
     db.refund.count({ where }),
   ]);
 
-  return okPaged(rows, { page, size, total });
+  // Refund rows (incl. the slim order context) match the contract shape;
+  // only the Date fields need ISO conversion.
+  const data: AdminRefundsData[] = rows.map((r) => ({
+    ...r,
+    processedAt: r.processedAt ? r.processedAt.toISOString() : null,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+  return okPaged(data, { page, size, total });
 });

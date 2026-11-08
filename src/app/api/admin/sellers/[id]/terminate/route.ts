@@ -4,6 +4,7 @@ import { requireCap, revokeUserSessions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, stripSeller } from "@/app/api/admin/_helpers";
 import { planAdminStorePath, transitionStoreToward, TransitionError } from "@/lib/store-lifecycle";
+import type { AdminSellerTerminateBody, AdminSellerTerminateData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("sellers.suspend");
   const { id } = await ctx.params;
-  const body = await readBody(req).catch(() => ({}) as Record<string, never>);
+  const body = await readBody(req).catch(() => ({}) as AdminSellerTerminateBody);
   const reason = typeof body.reason === "string" ? body.reason : "Contract termination";
 
   const seller = await db.seller.findUnique({ where: { id }, include: { store: true } });
@@ -62,5 +63,14 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "terminated", storeStatus: seller.store ? "draft" : null, reason, sessionsRevoked },
   });
 
-  return ok({ ...stripSeller(updated), sessionsRevoked });
+  const payload: AdminSellerTerminateData = {
+    ...stripSeller(updated),
+    submittedAt: updated.submittedAt ? updated.submittedAt.toISOString() : null,
+    approvedAt: updated.approvedAt ? updated.approvedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+    emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null,
+    sessionsRevoked,
+  };
+  return ok(payload);
 });

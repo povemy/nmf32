@@ -16,6 +16,26 @@ import { formatMinor } from "@/lib/money";
 import { apiSend, useApi } from "./use-api";
 import { useAdminCaps } from "./use-admin-caps";
 import type { AdminNav } from "./nav";
+import type {
+  AdminBankAcctRow,
+  AdminBankRejectData,
+  AdminBankVerifyData,
+  AdminKycDocRow,
+  AdminSellerDetailData,
+  AdminSellerFullRow,
+  AdminSellerNoteBody,
+  AdminSellerNoteRow,
+  AdminSellerPatchBody,
+  AdminSellerRejectBody,
+  AdminSellerRejectData,
+  AdminSellerRow,
+  AdminSellerSuspendBody,
+  AdminSellerSuspendData,
+  AdminSellerTerminateBody,
+  AdminSellerTerminateData,
+  KycDecisionBody,
+  KycDecisionData,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -32,47 +52,26 @@ import {
   timeAgo,
 } from "./ui-bits";
 
-type KycDoc = { id: string; docType: string; fileName: string; status: string; rejectReason?: string | null; reviewedAt?: string | null };
-type BankAcc = { id: string; holderName: string; bankName: string; accountNumberMasked: string; verified: boolean };
-type Note = { id: string; author: string; body: string; createdAt: string };
-type MiniProduct = { id: string; title: string; status: string; priceMinor: number };
-type MiniOrder = { id: string; orderNumber: string; status: string; totalMinor: number; createdAt: string };
+/* ------------------------------------------------------------------ types */
 
-type SellerDetailBody = {
-  seller: {
-    id: string;
-    email: string;
-    fullName: string;
-    displayName: string;
-    status: string;
-    riskTier: string;
-    kycStatus: string;
-    planCode: string;
-    marketplaceOptIn: boolean;
-    commissionOverridePercent: number | null;
-    holdDaysOverride: number | null;
-    rejectReason?: string | null;
-    submittedAt?: string | null;
-    approvedAt?: string | null;
-    createdAt: string;
-    // PHASE 2.3 (C2.7) — honest email-verification state. Absent/null =
-    // NOT verified (the API surfaces exactly the Seller.emailVerifiedAt
-    // column; nothing here may claim verification that did not occur).
-    emailVerifiedAt?: string | null;
-  };
-  store?: { id: string; name: string; slug: string; status: string } | null;
-  kycDocuments: KycDoc[];
-  bankAccounts: BankAcc[];
-  wallet?: { id: string; pendingMinor: number; availableMinor: number; lifetimeEarnedMinor: number; lifetimeCommissionMinor: number } | null;
-  products?: MiniProduct[];
-  orders?: MiniOrder[];
-  notes?: Note[];
-  gmv30dMinor?: number;
-};
+/** Request bodies accepted by the seller lifecycle endpoints act() drives. */
+type SellerActionBody =
+  | AdminSellerNoteBody
+  | AdminSellerRejectBody
+  | AdminSellerSuspendBody
+  | AdminSellerTerminateBody;
+
+/** Response payloads returned by the seller lifecycle endpoints act() drives. */
+type SellerActionResult =
+  | AdminSellerNoteRow
+  | AdminSellerFullRow
+  | AdminSellerRejectData
+  | AdminSellerSuspendData
+  | AdminSellerTerminateData;
 
 export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: string }) {
   const { can } = useAdminCaps();
-  const { data, error, loading, refetch } = useApi<SellerDetailBody>(`/api/admin/sellers/${sellerId}`);
+  const { data, error, loading, refetch } = useApi<AdminSellerDetailData>(`/api/admin/sellers/${sellerId}`);
   const [busy, setBusy] = useState<string | null>(null);
 
   // dialogs
@@ -92,10 +91,10 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
   const seller = data?.seller;
   const store = data?.store;
 
-  const act = async (key: string, path: string, body?: unknown, okMsg?: string) => {
+  const act = async (key: string, path: string, body?: SellerActionBody, okMsg?: string): Promise<boolean> => {
     setBusy(key);
     try {
-      await apiSend(path, "POST", body);
+      await apiSend<SellerActionResult>(path, "POST", body);
       toast.success(okMsg ?? "Done");
       void refetch();
       return true;
@@ -114,15 +113,15 @@ export function SellerDetailView({ nav, sellerId }: { nav: AdminNav; sellerId: s
       // Phase 3 / F-09: commission-policy fields are server-gated to
       // commission.manage — sessions without the cap send opt-in only, so
       // the PATCH never carries fields the role cannot write.
-      const body: Record<string, unknown> = {
+      const body: AdminSellerPatchBody = {
         marketplaceOptIn: optIn ?? seller.marketplaceOptIn,
       };
       if (can("commission.manage")) {
-        body.riskTier = risk ?? seller.riskTier;
+        body.riskTier = (risk ?? seller.riskTier) as AdminSellerPatchBody["riskTier"];
         body.commissionOverridePercent = commPct === "" ? null : Number(commPct);
         body.holdDaysOverride = holdDays === "" ? null : Number(holdDays);
       }
-      await apiSend(`/api/admin/sellers/${seller.id}`, "PATCH", body);
+      await apiSend<AdminSellerRow>(`/api/admin/sellers/${seller.id}`, "PATCH", body);
       toast.success("Seller updated", { description: "Changes audited server-side." });
       void refetch();
     } catch (e) {
@@ -565,7 +564,7 @@ function BankActionHead() {
   return <TableHead className="text-right">Action</TableHead>;
 }
 
-function BankRow({ acc, busy, onDone }: { acc: BankAcc; busy: boolean; onDone: () => void }) {
+function BankRow({ acc, busy, onDone }: { acc: AdminBankAcctRow; busy: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const { can } = useAdminCaps();
   return (
@@ -615,7 +614,7 @@ function BankRow({ acc, busy, onDone }: { acc: BankAcc; busy: boolean; onDone: (
 
 async function bankAction(id: string, kind: "verify" | "reject", body: unknown, onDone: () => void): Promise<boolean> {
   try {
-    await apiSend(`/api/admin/banks/${id}/${kind}`, "POST", body);
+    await apiSend<AdminBankVerifyData | AdminBankRejectData>(`/api/admin/banks/${id}/${kind}`, "POST", body);
     toast.success(kind === "verify" ? "Bank account verified" : "Bank account rejected");
     onDone();
     return true;
@@ -625,12 +624,12 @@ async function bankAction(id: string, kind: "verify" | "reject", body: unknown, 
   }
 }
 
-function KycDocRow({ doc, sellerId, busy, onDone }: { doc: KycDoc; sellerId: string; busy: boolean; onDone: () => void }) {
+function KycDocRow({ doc, sellerId, busy, onDone }: { doc: AdminKycDocRow; sellerId: string; busy: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const { can } = useAdminCaps();
   const decide = async (decision: "approved" | "rejected", reason?: string) => {
     try {
-      await apiSend(`/api/admin/sellers/${sellerId}/kyc/${doc.id}`, "POST", { decision, reason });
+      await apiSend<KycDecisionData>(`/api/admin/sellers/${sellerId}/kyc/${doc.id}`, "POST", { decision, reason } satisfies KycDecisionBody);
       toast.success(`Document ${decision}`);
       onDone();
       setOpen(false);

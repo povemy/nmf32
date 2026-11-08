@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerCouponPatchBody, SellerCouponRow, SellerCouponDeleteData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { store } = await requireActiveSellerStore();
   const { id } = await ctx.params;
   const coupon = await ownCoupon(store.id, id);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerCouponPatchBody;
 
   const data: Record<string, unknown> = {};
   if (body.description !== undefined) data.description = body.description == null ? null : String(body.description);
@@ -34,7 +35,26 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   if (body.isActive !== undefined) data.isActive = !!body.isActive;
 
   const updated = await db.coupon.update({ where: { id: coupon.id }, data });
-  return ok(updated);
+  const payload: SellerCouponRow = {
+    id: updated.id,
+    scope: updated.scope,
+    storeId: updated.storeId,
+    code: updated.code,
+    description: updated.description,
+    type: updated.type,
+    percent: updated.percent,
+    amountMinor: updated.amountMinor,
+    minSpendMinor: updated.minSpendMinor,
+    maxRedemptions: updated.maxRedemptions,
+    perCustomerLimit: updated.perCustomerLimit,
+    startsAt: updated.startsAt ? updated.startsAt.toISOString() : null,
+    endsAt: updated.endsAt ? updated.endsAt.toISOString() : null,
+    isActive: updated.isActive,
+    timesUsed: updated.timesUsed,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/store/coupons/[id]
@@ -43,5 +63,6 @@ export const DELETE = handle(async (_req: Request, ctx: { params: Promise<{ id: 
   const { id } = await ctx.params;
   const coupon = await ownCoupon(store.id, id);
   await db.coupon.delete({ where: { id: coupon.id } });
-  return ok({ id: coupon.id, deleted: true });
+  const payload: SellerCouponDeleteData = { id: coupon.id, deleted: true };
+  return ok(payload);
 });

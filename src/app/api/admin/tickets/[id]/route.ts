@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str } from "@/app/api/admin/_helpers";
+import type { AdminTicketDetailData, AdminTicketMessage, AdminTicketPatchBody, AdminTicketSummary } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,14 +21,37 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
   // store resolved manually (no relation declared on SupportTicket)
   const store = ticket.storeId ? await db.store.findUnique({ where: { id: ticket.storeId }, select: { id: true, name: true, slug: true } }) : null;
 
-  return ok({ ...ticket, store });
+  const payload: AdminTicketDetailData = {
+    id: ticket.id,
+    storeId: ticket.storeId,
+    sellerEmail: ticket.sellerEmail,
+    subject: ticket.subject,
+    status: ticket.status,
+    priority: ticket.priority,
+    contextType: ticket.contextType,
+    contextId: ticket.contextId,
+    createdAt: ticket.createdAt.toISOString(),
+    updatedAt: ticket.updatedAt.toISOString(),
+    messages: ticket.messages.map(
+      (m): AdminTicketMessage => ({
+        id: m.id,
+        ticketId: m.ticketId,
+        authorType: m.authorType,
+        authorLabel: m.authorLabel,
+        body: m.body,
+        createdAt: m.createdAt.toISOString(),
+      })
+    ),
+    store,
+  };
+  return ok(payload);
 });
 
 // PATCH /api/admin/tickets/[id] {status?, priority?}
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireAdmin();
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as AdminTicketPatchBody & Record<string, unknown>;
 
   const ticket = await db.supportTicket.findUnique({ where: { id } });
   if (!ticket) throw new ApiError(404, "NOT_FOUND", "Ticket not found");
@@ -57,5 +81,17 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: AdminTicketSummary = {
+    id: updated.id,
+    storeId: updated.storeId,
+    sellerEmail: updated.sellerEmail,
+    subject: updated.subject,
+    status: updated.status,
+    priority: updated.priority,
+    contextType: updated.contextType,
+    contextId: updated.contextId,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

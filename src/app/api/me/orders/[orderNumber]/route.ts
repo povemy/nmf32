@@ -4,6 +4,14 @@ import { requireShopper } from "@/lib/auth";
 import { maybeSyncTracking, mockPodUrl } from "@/lib/shipping";
 import { parseJson } from "@/lib/json";
 import { placeholderUrl } from "@/lib/placeholder";
+import type {
+  MeOrderDetailItem,
+  MeOrderDispute,
+  MeOrderHistoryEntry,
+  MeShipmentDetail,
+  MeShipmentEvent,
+  OrderDetailData,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +89,39 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
   const address = parseJson<AddressShape>(order.shippingAddressJson, {});
   const shipment = order.shipment;
 
-  return ok({
+  const shipmentDetail: MeShipmentDetail | null = shipment
+    ? {
+        status: shipment.status,
+        providerId: shipment.providerId,
+        courierName: shipment.courierName,
+        awbNumber: shipment.awbNumber,
+        labelUrl: shipment.labelUrl,
+        etaFrom: shipment.etaFrom ? shipment.etaFrom.toISOString() : null,
+        etaTo: shipment.etaTo ? shipment.etaTo.toISOString() : null,
+        bookedAt: shipment.bookedAt ? shipment.bookedAt.toISOString() : null,
+        deliveredAt: shipment.deliveredAt ? shipment.deliveredAt.toISOString() : null,
+        events: shipment.events.map((e): MeShipmentEvent => ({
+          id: e.id,
+          status: e.status,
+          description: e.description,
+          location: e.location,
+          occurredAt: e.occurredAt.toISOString(),
+          proofImageUrl: e.proofImageUrl ?? (e.status === "DELIVERED" && !e.proofImageUrl ? mockPodUrl(shipment.awbNumber ?? order.orderNumber) : null),
+        })),
+      }
+    : null;
+
+  const disputeDetail: MeOrderDispute | null = order.disputes[0]
+    ? {
+        id: order.disputes[0].id,
+        reason: order.disputes[0].reason,
+        status: order.disputes[0].status,
+        resolution: order.disputes[0].resolution,
+        createdAt: order.disputes[0].createdAt.toISOString(),
+      }
+    : null;
+
+  const payload: OrderDetailData = {
     orderNumber: order.orderNumber,
     status: order.status,
     currency: order.currency,
@@ -90,23 +130,23 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
     shippingMinor: order.shippingMinor,
     taxMinor: order.taxMinor,
     totalMinor: order.totalMinor,
-    createdAt: order.createdAt,
+    createdAt: order.createdAt.toISOString(),
     customerName: order.customerName,
     customerEmail: order.customerEmail, // lets the receipt endpoint work for account orders
     customerPhone: order.customerPhone,
     customerNote: order.customerNote,
     shippingAddress: address.line1 || address.city || address.state ? address : null,
     paymentProvider: order.paymentProvider,
-    paidAt: order.paidAt,
-    shippedAt: order.shippedAt,
-    deliveredAt: order.deliveredAt,
-    receivedAt: order.receivedAt,
-    completedAt: order.completedAt,
+    paidAt: order.paidAt ? order.paidAt.toISOString() : null,
+    shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
+    deliveredAt: order.deliveredAt ? order.deliveredAt.toISOString() : null,
+    receivedAt: order.receivedAt ? order.receivedAt.toISOString() : null,
+    completedAt: order.completedAt ? order.completedAt.toISOString() : null,
     trackingNumber: order.trackingNumber ?? shipment?.awbNumber ?? null,
     storeName: order.store.name,
     storeId: order.store.id,
     storeSlug: order.store.slug,
-    items: order.items.map((i) => ({
+    items: order.items.map((i): MeOrderDetailItem => ({
       id: i.id,
       title: i.title,
       variantLabel: i.variantLabel,
@@ -117,32 +157,17 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ orderNu
       variantId: i.variantId,
       imageUrl: i.product?.images[0]?.url ?? placeholderUrl(i.product?.slug ?? i.title, { w: 200, h: 200, label: i.title }),
     })),
-    history: order.history.map((h) => ({ fromStatus: h.fromStatus, toStatus: h.toStatus, actor: h.actor, note: h.note, createdAt: h.createdAt })),
-    shipment: shipment
-      ? {
-          status: shipment.status,
-          providerId: shipment.providerId,
-          courierName: shipment.courierName,
-          awbNumber: shipment.awbNumber,
-          labelUrl: shipment.labelUrl,
-          etaFrom: shipment.etaFrom,
-          etaTo: shipment.etaTo,
-          bookedAt: shipment.bookedAt,
-          deliveredAt: shipment.deliveredAt,
-          events: shipment.events.map((e) => ({
-            id: e.id,
-            status: e.status,
-            description: e.description,
-            location: e.location,
-            occurredAt: e.occurredAt,
-            proofImageUrl: e.proofImageUrl ?? (e.status === "DELIVERED" && !e.proofImageUrl ? mockPodUrl(shipment.awbNumber ?? order.orderNumber) : null),
-          })),
-        }
-      : null,
+    history: order.history.map((h): MeOrderHistoryEntry => ({
+      fromStatus: h.fromStatus,
+      toStatus: h.toStatus,
+      actor: h.actor,
+      note: h.note,
+      createdAt: h.createdAt.toISOString(),
+    })),
+    shipment: shipmentDetail,
     shipmentStatus: shipment?.status ?? null,
     shippingCourierName: shipment?.courierName ?? null,
-    dispute: order.disputes[0]
-      ? { id: order.disputes[0].id, reason: order.disputes[0].reason, status: order.disputes[0].status, resolution: order.disputes[0].resolution, createdAt: order.disputes[0].createdAt }
-      : null,
-  });
+    dispute: disputeDetail,
+  };
+  return ok(payload);
 });

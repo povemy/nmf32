@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { getAffiliateSettings } from "@/lib/affiliate";
+import type { AffiliatePubNotFoundData, PubShowcaseFoundData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string }> }) => {
   const settings = await getAffiliateSettings();
   if (!settings.showcaseEnabled) {
-    return ok({ found: false });
+    const payload: AffiliatePubNotFoundData = { found: false };
+    return ok(payload);
   }
   const { slug } = await ctx.params;
   const profile = await db.affiliateProfile.findUnique({
@@ -26,7 +28,8 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     },
   });
   if (!profile || profile.status !== "active") {
-    return ok({ found: false }, { status: 200 });
+    const payload: AffiliatePubNotFoundData = { found: false };
+    return ok(payload, { status: 200 });
   }
   const collections = await db.affiliateCollection.findMany({
     where: { affiliateId: profile.id, status: "published" },
@@ -47,7 +50,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       },
     },
   });
-  return ok({
+  const payload: PubShowcaseFoundData = {
     found: true,
     showcase: {
       displayName: profile.displayName,
@@ -71,5 +74,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
           })),
       })),
     },
-  });
+  };
+  return ok(payload);
 });

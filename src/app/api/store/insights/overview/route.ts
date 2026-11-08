@@ -15,6 +15,7 @@ import {
   freshnessFor,
   buildObservations,
 } from "@/lib/analytics/queries";
+import type { InsightsOverviewData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export const GET = handle(async (req: Request) => {
   const win = parseInsightsWindow(url);
   const cacheKey = `overview:${store.id}:${win.key}:${win.from.getTime()}:${win.to.getTime()}`;
 
-  const data = await insightsCached(cacheKey, url, async () => {
+  const data = await insightsCached(cacheKey, url, async (): Promise<InsightsOverviewData> => {
     const [traffic, funnel, cart, snapshot, paidOrders, paidPrev, refunds, refundsPrev, freshness] = await Promise.all([
       trafficSummary(store.id, win),
       funnelFor(store.id, win),

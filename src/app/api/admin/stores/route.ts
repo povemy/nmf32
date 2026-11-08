@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminStoresData } from "@/lib/types/api-contract";
 
 // GET /api/admin/stores?search=
 export const GET = handle(async (req: NextRequest) => {
@@ -30,13 +31,13 @@ export const GET = handle(async (req: NextRequest) => {
   });
   const gmvByStore = new Map(gmv.map((g) => [g.storeId, g._sum.totalMinor ?? 0]));
 
-  const data = rows.map((s) => ({
+  const data: AdminStoresData[] = rows.map((s) => ({
     id: s.id,
     name: s.name,
     slug: s.slug,
     status: s.status,
     tagline: s.tagline,
-    createdAt: s.createdAt,
+    createdAt: s.createdAt.toISOString(),
     seller: s.seller,
     productCount: s._count.products,
     orderCount: s._count.orders,

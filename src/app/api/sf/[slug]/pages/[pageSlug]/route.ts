@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { parsePageDoc, parseTheme } from "@/lib/sections";
 import { cardStyleFor } from "../../../../_shared/product-card";
+import type { SfPageData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
   const doc = parsePageDoc(page.publishedJson);
   const cardStyle = await cardStyleFor(store.id);
 
-  return ok({
+  const payload: SfPageData = {
     store: {
       id: store.id,
       name: store.name,
@@ -40,5 +41,6 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
       publishedVersion: page.publishedVersion,
     },
     sections: doc.sections,
-  });
+  };
+  return ok(payload);
 });

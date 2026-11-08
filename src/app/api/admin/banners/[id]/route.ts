@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optNum, optBool } from "@/app/api/admin/_helpers";
+import type { AdminBannerRow, AdminBannerDeleteData, BannerUpdateBody } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireAdmin();
   const { id } = await ctx.params;
-  const body = await readBody(req);
+  const body = (await readBody(req)) as BannerUpdateBody & Record<string, unknown>;
 
   const banner = await db.marketplaceBanner.findUnique({ where: { id } });
   if (!banner) throw new ApiError(404, "NOT_FOUND", "Banner not found");
@@ -40,7 +41,16 @@ export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
     after: data,
   });
 
-  return ok(updated);
+  const payload: AdminBannerRow = {
+    id: updated.id,
+    title: updated.title,
+    imageUrl: updated.imageUrl,
+    linkUrl: updated.linkUrl,
+    sortOrder: updated.sortOrder,
+    isActive: updated.isActive,
+    createdAt: updated.createdAt.toISOString(),
+  };
+  return ok(payload);
 });
 
 // DELETE /api/admin/banners/[id]
@@ -63,5 +73,6 @@ export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {
     after: null,
   });
 
-  return ok({ deleted: true });
+  const payload: AdminBannerDeleteData = { deleted: true };
+  return ok(payload);
 });

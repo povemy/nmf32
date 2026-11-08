@@ -1,6 +1,11 @@
 import { handle, ok } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireCap } from "@/lib/auth";
+import type {
+  AdminAffAccountsData,
+  AdminAffAccountsQuery,
+  AdminAffAccountRow,
+} from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +15,8 @@ export const dynamic = "force-dynamic";
 export const GET = handle(async (req: Request) => {
   await requireCap("affiliate.manage");
   const url = new URL(req.url);
-  const status = url.searchParams.get("status") ?? undefined;
-  const q = url.searchParams.get("q") ?? undefined;
+  const status: AdminAffAccountsQuery["status"] = url.searchParams.get("status") ?? undefined;
+  const q: AdminAffAccountsQuery["q"] = url.searchParams.get("q") ?? undefined;
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
   const size = Math.min(50, Math.max(5, Number(url.searchParams.get("size") ?? 20) || 20));
 
@@ -55,21 +60,20 @@ export const GET = handle(async (req: Request) => {
   const refMap = new Map(refCounts.map((r) => [r.sponsorId, r._count]));
   const earnMap = new Map(entryAgg.map((e) => [e.beneficiaryAffiliateId, (e._sum.amountMinor ?? 0) - (e._sum.reversedMinor ?? 0)]));
 
-  return ok({
-    total,
-    page,
-    accounts: profiles.map((p) => ({
-      id: p.id,
-      displayName: p.displayName,
-      slug: p.slug,
-      code: p.code,
-      email: p.user.email,
-      status: p.status,
-      sponsorName: p.sponsor?.displayName ?? null,
-      referrals: refMap.get(p.id) ?? 0,
-      lifetimeEarningsMinor: earnMap.get(p.id) ?? 0,
-      activatedAt: p.activatedAt.toISOString(),
-      suspendedReason: p.suspendedReason,
-    })),
-  });
+  const accounts: AdminAffAccountRow[] = profiles.map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    slug: p.slug,
+    code: p.code,
+    email: p.user.email,
+    status: p.status,
+    sponsorName: p.sponsor?.displayName ?? null,
+    referrals: refMap.get(p.id) ?? 0,
+    lifetimeEarningsMinor: earnMap.get(p.id) ?? 0,
+    activatedAt: p.activatedAt.toISOString(),
+    suspendedReason: p.suspendedReason,
+  }));
+
+  const payload: AdminAffAccountsData = { total, page, accounts };
+  return ok(payload);
 });

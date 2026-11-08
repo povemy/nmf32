@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, okPaged, ApiError, getPagination } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { placeholderUrl } from "@/lib/placeholder";
+import type { MeOrderSummary, OrdersData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -74,34 +75,36 @@ export const GET = handle(async (req: Request) => {
 
   const byStatus = new Map(counts.map((c) => [c.status, c._count._all]));
   const countFor = (list: string[]) => list.reduce((s, st) => s + (byStatus.get(st) ?? 0), 0);
-  const bucketCounts = Object.fromEntries(Object.entries(BUCKETS).map(([k, list]) => [k, countFor(list)]));
+  // Object.fromEntries widens to { [k: string]: number } — the keys are
+  // exactly BUCKETS' six bucket names, so narrow back to the contract union.
+  const bucketCounts = Object.fromEntries(
+    Object.entries(BUCKETS).map(([k, list]) => [k, countFor(list)])
+  ) as OrdersData["bucketCounts"];
 
-  return okPaged(
-    {
-      bucketCounts,
-      orders: rows.map((o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        status: o.status,
-        totalMinor: o.totalMinor,
-        createdAt: o.createdAt,
-        receivedAt: o.receivedAt,
-        paymentProvider: o.paymentProvider,
-        trackingNumber: o.trackingNumber ?? o.shipment?.awbNumber ?? null,
-        shipmentStatus: o.shipment?.status ?? null,
-        shippingCourierName: o.shipment?.courierName ?? null,
-        store: o.store,
-        items: o.items.map((i) => ({
-          id: i.id,
-          title: i.title,
-          variantLabel: i.variantLabel,
-          qty: i.qty,
-          unitPriceMinor: i.unitPriceMinor,
-          productId: i.productId,
-          imageUrl: i.product?.images[0]?.url ?? placeholderUrl(i.product?.slug ?? i.title, { w: 200, h: 200, label: i.title }),
-        })),
+  const payload: OrdersData = {
+    bucketCounts,
+    orders: rows.map((o): MeOrderSummary => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      status: o.status,
+      totalMinor: o.totalMinor,
+      createdAt: o.createdAt.toISOString(),
+      receivedAt: o.receivedAt ? o.receivedAt.toISOString() : null,
+      paymentProvider: o.paymentProvider,
+      trackingNumber: o.trackingNumber ?? o.shipment?.awbNumber ?? null,
+      shipmentStatus: o.shipment?.status ?? null,
+      shippingCourierName: o.shipment?.courierName ?? null,
+      store: o.store,
+      items: o.items.map((i) => ({
+        id: i.id,
+        title: i.title,
+        variantLabel: i.variantLabel,
+        qty: i.qty,
+        unitPriceMinor: i.unitPriceMinor,
+        productId: i.productId,
+        imageUrl: i.product?.images[0]?.url ?? placeholderUrl(i.product?.slug ?? i.title, { w: 200, h: 200, label: i.title }),
       })),
-    },
-    { page, size, total }
-  );
+    })),
+  };
+  return okPaged(payload, { page, size, total });
 });

@@ -14,37 +14,22 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { apiGet, apiSend, runMutation, type SellerNav } from "./ui-bits";
+import type { SeoBody, SeoData, SeoSaveData } from "@/lib/types/api-contract";
 
-type ProductSeo = {
-  id: string;
-  title: string;
-  slug: string;
-  status: string;
-  image: string | null;
-  seoTitle: string;
-  seoDescription: string;
-  ogImage: string | null;
-  noindex: boolean;
-  lockedFields: string[];
-  warnings: string[];
-};
-
-type Payload = {
-  store: { seoTitle: string; seoDescription: string; ogImage: string | null; canonicalUrl: string | null; noindex: boolean; lockedFields: string[]; warnings: string[] };
-  products: ProductSeo[];
-};
+// Contract /api/store/seo product row (inline in SeoData.products).
+type ProductSeo = SeoData["products"][number];
 
 const CHAR_HINT = { title: 60, description: 155 };
 
 export default function SellerSeo({ onNavigate }: { onNavigate: (nav: SellerNav) => void }) {
-  const [data, setData] = useState<Payload | null>(null);
+  const [data, setData] = useState<SeoData | null>(null);
   const [failed, setFailed] = useState(false);
   const [storeForm, setStoreForm] = useState<{ seoTitle: string; seoDescription: string } | null>(null);
   const [productForms, setProductForms] = useState<Record<string, { seoTitle: string; seoDescription: string }>>({});
 
   const refresh = useCallback(async () => {
     try {
-      const d = await apiGet<Payload>("/api/store/seo");
+      const d = await apiGet<SeoData>("/api/store/seo");
       setData(d);
       setStoreForm({ seoTitle: d.store.seoTitle ?? "", seoDescription: d.store.seoDescription ?? "" });
       setProductForms(
@@ -65,13 +50,13 @@ export default function SellerSeo({ onNavigate }: { onNavigate: (nav: SellerNav)
     if (!storeForm) return;
     const ok = await runMutation(
       () =>
-        apiSend("PATCH", "/api/store/seo", {
+        apiSend<SeoSaveData>("PATCH", "/api/store/seo", {
           target: "store",
           seoTitle: storeForm.seoTitle,
           seoDescription: storeForm.seoDescription,
           ...(lock === true ? { lock: ["seoTitle", "seoDescription"] } : {}),
           ...(lock === false ? { unlock: ["seoTitle", "seoDescription"] } : {}),
-        }),
+        } satisfies SeoBody),
       "Store SEO saved"
     );
     if (ok) await refresh();
@@ -82,14 +67,14 @@ export default function SellerSeo({ onNavigate }: { onNavigate: (nav: SellerNav)
     if (!form) return;
     const ok = await runMutation(
       () =>
-        apiSend("PATCH", "/api/store/seo", {
+        apiSend<SeoSaveData>("PATCH", "/api/store/seo", {
           target: "product",
           productId: p.id,
           seoTitle: form.seoTitle,
           seoDescription: form.seoDescription,
           ...(lock === true ? { lock: ["seoTitle", "seoDescription"] } : {}),
           ...(lock === false ? { unlock: ["seoTitle", "seoDescription"] } : {}),
-        }),
+        } satisfies SeoBody),
       `SEO saved for “${p.title.slice(0, 30)}”`
     );
     if (ok) await refresh();

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { ACCOUNTS } from "@/lib/ledger";
+import type { SellerWalletActivityData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
   );
 
   // Resolve the related business object so the UI can deep-link to it.
-  let related: Record<string, unknown> | null = null;
+  let related: SellerWalletActivityData["related"] = null;
   if (line.txn.refType === "order" && line.txn.refId) {
     const order = await db.order.findUnique({
       where: { id: line.txn.refId },
@@ -47,8 +48,8 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
         orderNumber: order.orderNumber,
         status: order.status,
         totalMinor: order.totalMinor,
-        placedAt: order.createdAt,
-        paidAt: order.paidAt,
+        placedAt: order.createdAt.toISOString(),
+        paidAt: order.paidAt ? order.paidAt.toISOString() : null,
         itemCount: order.items.reduce((s, i) => s + i.qty, 0),
       };
     }
@@ -62,7 +63,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
         status: payout.status,
         method: payout.method,
         amountMinor: payout.amountMinor,
-        paidAt: payout.paidAt,
+        paidAt: payout.paidAt ? payout.paidAt.toISOString() : null,
       };
     }
   } else if (line.txn.refType === "settlement") {
@@ -71,15 +72,15 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
     related = { kind: "wallet_adjustment", reference: line.txn.refId };
   }
 
-  return ok({
+  const payload: SellerWalletActivityData = {
     line: {
       id: line.id,
       accountCode: line.accountCode,
       direction: line.direction,
       amountMinor: line.amountMinor,
-      availableAt: line.availableAt,
+      availableAt: line.availableAt ? line.availableAt.toISOString() : null,
       memo: line.memo,
-      createdAt: line.createdAt,
+      createdAt: line.createdAt.toISOString(),
     },
     txn: {
       id: line.txn.id,
@@ -87,7 +88,7 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       refType: line.txn.refType,
       refId: line.txn.refId,
       description: line.txn.description,
-      occurredAt: line.txn.occurredAt,
+      occurredAt: line.txn.occurredAt.toISOString(),
     },
     walletAmountMinor,
     related,
@@ -96,9 +97,10 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ id: str
       accountCode: l.accountCode,
       direction: l.direction,
       amountMinor: l.amountMinor,
-      availableAt: l.availableAt,
+      availableAt: l.availableAt ? l.availableAt.toISOString() : null,
       memo: l.memo,
       isMine: l.walletId === wallet.id,
     })),
-  });
+  };
+  return ok(payload);
 });

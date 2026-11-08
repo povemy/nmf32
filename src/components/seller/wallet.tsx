@@ -23,9 +23,16 @@ import {
   useSellerTerms,
   type BankAccount,
   type SellerNav,
-  type SellerWallet,
   type WalletTab,
 } from "./ui-bits";
+import type {
+  BankAccountBody,
+  BankAccountPublic,
+  SellerPayoutRequestBody,
+  SellerPayoutRequestData,
+  SellerWalletActivityData,
+  SellerWalletData,
+} from "@/lib/types/api-contract";
 import SellerPendingReleases from "./pending-releases";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,32 +45,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, ArrowRight, Banknote, Clock3, Coins, Hourglass, Landmark, PiggyBank, Plus, ReceiptText, ShieldCheck, Wallet2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type WalletData = {
-  wallet: SellerWallet;
-  recentLines: {
-    id: string;
-    txnId: string;
-    direction: "credit" | "debit";
-    amountMinor: number;
-    availableAt: string | null;
-    memo: string | null;
-    createdAt: string;
-    txn: { id: string; txnType: string; description: string | null; occurredAt: string };
-  }[];
-  payouts: {
-    id: string;
-    referenceNo: string;
-    amountMinor: number;
-    status: string;
-    method: string;
-    paidAt: string | null;
-    failReason?: string | null; // seller-safe reason written by the fail/reject routes (see PayoutStatusChip note)
-    createdAt: string;
-  }[];
-  minPayoutMinor?: number;
-  openRequest?: { id: string; referenceNo: string; amountMinor: number; createdAt: string } | null;
-};
 
 const BANKS = ["Maybank", "CIMB", "Public Bank", "Bank Rakyat", "Hong Leong"];
 
@@ -139,8 +120,8 @@ export default function SellerWallet(
 }
 
 function WalletOverview({ onNavigate }: { onNavigate?: (n: SellerNav) => void }) {
-  const { data, loading, error, refetch } = useApi<WalletData>("/api/store/wallet");
-  const { data: bankAccounts, refetch: refetchBanks } = useApi<BankAccount[]>("/api/store/bank-accounts");
+  const { data, loading, error, refetch } = useApi<SellerWalletData>("/api/store/wallet");
+  const { data: bankAccounts, refetch: refetchBanks } = useApi<BankAccountPublic[]>("/api/store/bank-accounts");
   // ADDENDUM #8 — live platform terms (hold window + commission %) so admin
   // changes reflect here automatically (was hardcoded "7 days" / "8%").
   const { terms } = useSellerTerms();
@@ -456,7 +437,7 @@ function RequestPayoutDialog({
     if (!valid) return;
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("POST", "/api/store/payouts", { amountMinor: amount }),
+      () => apiSend<SellerPayoutRequestData>("POST", "/api/store/payouts", { amountMinor: amount } satisfies SellerPayoutRequestBody),
       "Payout request submitted — NOMOFEE finance will review it"
     );
     setBusy(false);
@@ -528,7 +509,7 @@ function AddBankDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCh
     }
     setBusy(true);
     const ok = await runMutation(
-      () => apiSend("POST", "/api/store/bank-accounts", { holderName: holderName.trim(), bankName, accountNumber }),
+      () => apiSend<BankAccountPublic>("POST", "/api/store/bank-accounts", { holderName: holderName.trim(), bankName, accountNumber } satisfies BankAccountBody),
       "Bank account added — verification by admin pending"
     );
     setBusy(false);
@@ -589,42 +570,6 @@ function AddBankDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCh
 
 // ---------------------------------------------------------------- individual activity page
 
-type ActivityDetail = {
-  line: {
-    id: string;
-    accountCode: string;
-    direction: "credit" | "debit";
-    amountMinor: number;
-    availableAt: string | null;
-    memo: string | null;
-    createdAt: string;
-  };
-  txn: {
-    id: string;
-    txnType: string;
-    refType: string | null;
-    refId: string | null;
-    description: string | null;
-    occurredAt: string;
-  };
-  walletAmountMinor: number;
-  related:
-    | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; paidAt: string | null; itemCount: number }
-    | { kind: "payout"; payoutId: string; referenceNo: string; status: string; method: string; amountMinor: number; paidAt: string | null }
-    | { kind: "settlement"; reference: string }
-    | { kind: "wallet_adjustment"; reference: string }
-    | null;
-  journal: {
-    id: string;
-    accountCode: string;
-    direction: "credit" | "debit";
-    amountMinor: number;
-    availableAt: string | null;
-    memo: string | null;
-    isMine: boolean;
-  }[];
-};
-
 const TXN_TYPE_LABEL: Record<string, string> = {
   order_paid: "Order payment received",
   gateway_settlement: "Gateway settlement",
@@ -644,7 +589,7 @@ function LedgerActivityDetail({
   onBack: () => void;
   onNavigate: (n: SellerNav) => void;
 }) {
-  const { data, loading, error } = useApi<ActivityDetail>(`/api/store/wallet/activity/${activityId}`);
+  const { data, loading, error } = useApi<SellerWalletActivityData>(`/api/store/wallet/activity/${activityId}`);
   // ADDENDUM #8 — live commission % for the order_paid explainer note.
   const { terms } = useSellerTerms();
 

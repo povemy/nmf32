@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { formatMinor } from "@/lib/money";
 import { parseJsonSafe, useApi } from "./use-api";
 import type { AdminNav } from "./nav";
+import type { AdminOrderDetailData } from "@/lib/types/api-contract";
 import {
   BreakdownChips,
   CopyButton,
@@ -22,58 +23,8 @@ import {
   fmtDT,
 } from "./ui-bits";
 
-type OrderItem = {
-  id: string;
-  title: string;
-  variantLabel?: string | null;
-  unitPriceMinor: number;
-  qty: number;
-  lineSubtotalMinor: number;
-  discountMinor: number;
-  shippingMinor: number;
-  commissionPercent: number;
-  commissionMinor: number;
-  fixedFeeMinor: number;
-  sellerNetMinor: number;
-  breakdownJson: string;
-  refundedMinor: number;
-};
-
-type OrderDetailBody = {
-  order: {
-    id: string;
-    orderNumber: string;
-    customerName: string;
-    customerEmail: string;
-    customerPhone?: string | null;
-    status: string;
-    disputedFlag?: boolean;
-    channel: string;
-    currency: string;
-    subtotalMinor: number;
-    discountMinor: number;
-    shippingMinor: number;
-    taxMinor: number;
-    totalMinor: number;
-    couponCode?: string | null;
-    shippingAddressJson: string;
-    customerNote?: string | null;
-    paymentProvider?: string | null;
-    trackingNumber?: string | null;
-    trackingProvider?: string | null;
-    paidAt?: string | null;
-    createdAt: string;
-    store?: { id: string; name: string; slug: string } | null;
-  };
-  items: OrderItem[];
-  history: { id: string; fromStatus: string | null; toStatus: string; actor: string; note?: string | null; createdAt: string }[];
-  paymentIntents: { id: string; provider: string; providerRef: string; amountMinor: number; status: string; redirectUrl?: string | null; expiresAt: string }[];
-  refunds: { id: string; amountMinor: number; reason?: string | null; status: string; createdAt: string }[];
-  dispute?: { id: string; reason: string; status: string; resolution?: string | null; createdAt: string } | null;
-};
-
 export function OrderDetailView({ nav, orderId }: { nav: AdminNav; orderId: string }) {
-  const { data, error, loading, refetch } = useApi<OrderDetailBody>(`/api/admin/orders/${orderId}`);
+  const { data, error, loading, refetch } = useApi<AdminOrderDetailData>(`/api/admin/orders/${orderId}`);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (error) {

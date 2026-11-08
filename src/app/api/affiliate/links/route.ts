@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
 import { newAffiliateLinkCode } from "@/lib/affiliate-attribution";
+import type { LinksData, AffiliateLinkSummary, CreateLinkBody, CreateLinkData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -40,27 +41,27 @@ export const GET = handle(async () => {
   const storeMap = new Map(stores.map((s) => [s.id, s]));
   const collectionMap = new Map(collections.map((c) => [c.id, c]));
 
-  return ok({
-    links: links.map((l) => ({
-      id: l.id, code: l.code, type: l.type, channel: l.channel, label: l.label,
-      status: l.status, clicks: l.clicks, lastClickAt: l.lastClickAt?.toISOString() ?? null,
-      createdAt: l.createdAt.toISOString(),
-      target: l.productId
-        ? {
-            kind: "product",
-            title: productMap.get(l.productId)?.title ?? "Product",
-            slug: productMap.get(l.productId)?.slug ?? null,
-            storeSlug: productMap.get(l.productId)?.store.slug ?? null,
-            storeName: productMap.get(l.productId)?.store.name ?? null,
-            image: productMap.get(l.productId)?.images[0]?.url ?? null,
-          }
-        : l.storeId
-          ? { kind: "store", title: storeMap.get(l.storeId)?.name ?? "Store", slug: storeMap.get(l.storeId)?.slug ?? null }
-          : l.collectionId
-            ? { kind: "collection", title: collectionMap.get(l.collectionId)?.title ?? "Collection", slug: collectionMap.get(l.collectionId)?.slug ?? null, status: collectionMap.get(l.collectionId)?.status ?? null }
-            : { kind: "showcase", title: "My showcase", slug: aff.slug },
-    })),
-  });
+  const rows: AffiliateLinkSummary[] = links.map((l) => ({
+    id: l.id, code: l.code, type: l.type, channel: l.channel, label: l.label,
+    status: l.status, clicks: l.clicks, lastClickAt: l.lastClickAt?.toISOString() ?? null,
+    createdAt: l.createdAt.toISOString(),
+    target: l.productId
+      ? {
+          kind: "product",
+          title: productMap.get(l.productId)?.title ?? "Product",
+          slug: productMap.get(l.productId)?.slug ?? null,
+          storeSlug: productMap.get(l.productId)?.store.slug ?? null,
+          storeName: productMap.get(l.productId)?.store.name ?? null,
+          image: productMap.get(l.productId)?.images[0]?.url ?? null,
+        }
+      : l.storeId
+        ? { kind: "store", title: storeMap.get(l.storeId)?.name ?? "Store", slug: storeMap.get(l.storeId)?.slug ?? null }
+        : l.collectionId
+          ? { kind: "collection", title: collectionMap.get(l.collectionId)?.title ?? "Collection", slug: collectionMap.get(l.collectionId)?.slug ?? null, status: collectionMap.get(l.collectionId)?.status ?? null }
+          : { kind: "showcase", title: "My showcase", slug: aff.slug },
+  }));
+  const payload: LinksData = { links: rows };
+  return ok(payload);
 });
 
 // POST /api/affiliate/links — create a promotional link (spec §3.C).
@@ -70,7 +71,7 @@ export const GET = handle(async () => {
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-link-create", 30);
   const aff = await requireAffiliate();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as CreateLinkBody;
   const type = String(body.type ?? "");
   // POST-IMPLEMENTATION AUDIT (P2): collections & showcase are deferred for
   // the initial release. While their feature gates are off, creating NEW
@@ -135,5 +136,6 @@ export const POST = handle(async (req: Request) => {
       productId, storeId, collectionId, channel, label,
     },
   });
-  return ok({ link: { id: link.id, code: link.code, type: link.type, channel: link.channel, label: link.label } }, { status: 201 });
+  const payload: CreateLinkData = { link: { id: link.id, code: link.code, type: link.type, channel: link.channel, label: link.label } };
+  return ok(payload, { status: 201 });
 });

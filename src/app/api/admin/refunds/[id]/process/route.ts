@@ -6,6 +6,7 @@ import { postRefund, walletTruth } from "@/lib/ledger";
 import { reverseAffiliateForRefund } from "@/lib/affiliate";
 import { allocateProportionally, divHalfUp, formatMinor } from "@/lib/money";
 import { bustPublicProductCache } from "@/lib/public-cache";
+import type { AdminRefundProcessData } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -523,10 +524,16 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     },
   });
 
-  return ok({
-    refund: processed,
+  const payload: AdminRefundProcessData = {
+    refund: {
+      ...processed,
+      processedAt: processed.processedAt ? processed.processedAt.toISOString() : null,
+      createdAt: processed.createdAt.toISOString(),
+      updatedAt: processed.updatedAt.toISOString(),
+    },
     txnId: result.txnId,
     orderStatus: result.fullyRefunded ? "refunded" : "partially_refunded",
     totalRefundedMinor: result.totalRefunded,
-  });
+  };
+  return ok(payload);
 });

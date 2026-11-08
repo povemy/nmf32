@@ -3,12 +3,13 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin, requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, reqStr, optNum, optDate } from "@/app/api/admin/_helpers";
+import type { AdminCommissionOverridesQuery, OverridesData, OverrideCreateBody, OverrideCreateData } from "@/lib/types/api-contract";
 
 // GET /api/admin/commission/overrides
 export const GET = handle(async (req: NextRequest) => {
   await requireAdmin();
   const url = new URL(req.url);
-  const scope = url.searchParams.get("scope");
+  const scope: AdminCommissionOverridesQuery["scope"] = url.searchParams.get("scope") ?? undefined;
 
   const rows = await db.commissionOverride.findMany({
     where: scope ? { scope } : {},
@@ -26,8 +27,12 @@ export const GET = handle(async (req: NextRequest) => {
   const cMap = new Map(categories.map((c) => [c.id, c.name] as const));
   const sMap = new Map(sellers.map((s) => [s.id, s] as const));
   const pMap = new Map(products.map((p) => [p.id, p.title] as const));
-  const data = rows.map((r) => ({
+  const data: OverridesData[] = rows.map((r) => ({
     ...r,
+    validFrom: r.validFrom ? r.validFrom.toISOString() : null,
+    validTo: r.validTo ? r.validTo.toISOString() : null,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
     categoryName: r.categoryId ? cMap.get(r.categoryId) ?? null : null,
     sellerName: r.sellerId ? sMap.get(r.sellerId)?.displayName ?? null : null,
     sellerEmail: r.sellerId ? sMap.get(r.sellerId)?.email ?? null : null,
@@ -39,7 +44,7 @@ export const GET = handle(async (req: NextRequest) => {
 // POST /api/admin/commission/overrides (RBAC commission.manage)
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireCap("commission.manage");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as OverrideCreateBody & Record<string, unknown>;
 
   const scope = reqStr(body, "scope", "scope");
   if (!["category", "seller", "product"].includes(scope)) {
@@ -86,5 +91,12 @@ export const POST = handle(async (req: NextRequest) => {
     after: { scope, categoryId, sellerId, productId, percent, fixedFeeMinor, holdDays },
   });
 
-  return ok(created);
+  const payload: OverrideCreateData = {
+    ...created,
+    validFrom: created.validFrom ? created.validFrom.toISOString() : null,
+    validTo: created.validTo ? created.validTo.toISOString() : null,
+    createdAt: created.createdAt.toISOString(),
+    updatedAt: created.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

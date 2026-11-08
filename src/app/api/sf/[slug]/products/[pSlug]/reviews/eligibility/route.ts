@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
-import { requireShopper } from "@/lib/auth";
+import { requireShopper, type ShopperUserDTO } from "@/lib/auth";
 import { findEligibleOrderForReview, reviewsSchemaReady } from "@/lib/reviews";
+import type { SfReviewEligibilityData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
 // Deliberately does NOT reveal whether an eligible order EXISTS beyond the
 // boolean the CTA needs — no order numbers, no data enrichment.
 export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: string; pSlug: string }> }) => {
-  let me;
+  let me: ShopperUserDTO;
   try {
     me = await requireShopper();
   } catch {
@@ -43,15 +44,25 @@ export const GET = handle(async (_req: Request, ctx: { params: Promise<{ slug: s
     select: { id: true, status: true, rating: true },
   });
   if (mine) {
-    return ok({ eligible: false, reason: "already_reviewed", review: { id: mine.id, status: mine.status, rating: mine.rating } });
+    const payload: SfReviewEligibilityData = {
+      eligible: false,
+      reason: "already_reviewed",
+      review: { id: mine.id, status: mine.status, rating: mine.rating },
+    };
+    return ok(payload);
   }
 
   // Sellers cannot review their own products (mirror the POST gate).
   const sellerEmail = product.store.seller.email;
   if (sellerEmail && sellerEmail.toLowerCase() === me.email.toLowerCase()) {
-    return ok({ eligible: false, reason: "own_product" });
+    const payload: SfReviewEligibilityData = { eligible: false, reason: "own_product" };
+    return ok(payload);
   }
 
   const eligibleOrder = await findEligibleOrderForReview(me.id, product.id, store.id);
-  return ok({ eligible: eligibleOrder != null, reason: eligibleOrder ? "ok" : "no_eligible_order" });
+  const payload: SfReviewEligibilityData = {
+    eligible: eligibleOrder != null,
+    reason: eligibleOrder ? "ok" : "no_eligible_order",
+  };
+  return ok(payload);
 });

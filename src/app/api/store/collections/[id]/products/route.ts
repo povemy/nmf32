@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerCollectionProductsBody, SellerCollectionProductsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
   const collection = await db.collection.findFirst({ where: { id, storeId: store.id } });
   if (!collection) throw new ApiError(404, "NOT_FOUND", "Collection not found");
 
-  const body = (await req.json().catch(() => ({}))) as { productIds?: unknown };
+  const body = (await req.json().catch(() => ({}))) as SellerCollectionProductsBody;
   if (!Array.isArray(body.productIds)) {
     throw new ApiError(400, "VALIDATION", "productIds must be an array of product ids");
   }
@@ -28,5 +29,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ id: str
     ),
   ]);
 
-  return ok({ id: collection.id, slug: collection.slug, productIds: ownedIds });
+  const payload: SellerCollectionProductsData = { id: collection.id, slug: collection.slug, productIds: ownedIds };
+  return ok(payload);
 });

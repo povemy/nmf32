@@ -6,6 +6,7 @@ import {
   resolveCampaignToken,
   persistAttribution,
 } from "@/lib/analytics/attribution";
+import type { LandingBody, LandingData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +25,12 @@ export const dynamic = "force-dynamic";
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "analytics-landing", 30, 60_000);
 
-  let body: Record<string, unknown> = {};
+  // LandingBody & Record: the contract body shape intersected with the index
+  // signature validateUtmParams' Record<string, unknown> parameter requires
+  // (a bare interface carries no implicit index signature).
+  let body: LandingBody & Record<string, unknown> = {};
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = (await req.json()) as LandingBody & Record<string, unknown>;
     if (body == null || typeof body !== "object" || Array.isArray(body)) body = {};
   } catch {
     body = {};
@@ -38,7 +42,8 @@ export const POST = handle(async (req: Request) => {
   if (!campaign && !hasAnyUtm(utm)) {
     // Nothing valid to capture — 200 (idempotent no-op, never an error state
     // the client needs to handle).
-    return ok({ captured: false });
+    const payload: LandingData = { captured: false };
+    return ok(payload);
   }
 
   // When the campaign token resolves, its canonical slug becomes the
@@ -54,5 +59,6 @@ export const POST = handle(async (req: Request) => {
   };
 
   const persisted = await persistAttribution(attr);
-  return ok({ captured: persisted });
+  const payload: LandingData = { captured: persisted };
+  return ok(payload);
 });

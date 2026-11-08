@@ -4,6 +4,7 @@ import { requireShopper } from "@/lib/auth";
 import { broadcastToThread, notifyUserInbox, sellerIdForStore } from "@/lib/chat";
 import { rateLimit } from "@/lib/rate-limit";
 import type { ChatMessage } from "@prisma/client";
+import type { ChatThreadsQuery, ChatThreadsData, CreateThreadBody, CreateThreadData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const GET = handle(async (req: Request) => {
   const me = await requireShopper();
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const filter = url.searchParams.get("filter") === "active" ? "active" : "all";
+  const filter: ChatThreadsQuery["filter"] = url.searchParams.get("filter") === "active" ? "active" : "all";
   const { page, size, skip, take } = getPagination(url, 100);
 
   // Search across store name, subject/order reference AND the latest message
@@ -55,25 +56,28 @@ export const GET = handle(async (req: Request) => {
     db.chatThread.count({ where: baseWhere }),
   ]);
 
-  return okPaged(
-    threads.map((t) => ({
-      id: t.id,
-      storeId: t.store.id,
-      displayName: t.store.name,
-      avatarUrl: t.store.logoUrl,
-      storeSlug: t.store.slug,
-      orderNumber: t.orderNumber,
-      contextType: t.contextType,
-      subject: t.subject,
-      createdAt: t.createdAt,
-      lastMessageAt: t.lastMessageAt,
-      unreadCount: t.shopperUnread,
-      lastMessage: t.messages[0]
-        ? { body: t.messages[0].body, senderType: t.messages[0].senderType, createdAt: t.messages[0].createdAt, readAt: t.messages[0].readAt }
-        : null,
-    })),
-    { page, size, total }
-  );
+  const items: ChatThreadsData = threads.map((t) => ({
+    id: t.id,
+    storeId: t.store.id,
+    displayName: t.store.name,
+    avatarUrl: t.store.logoUrl,
+    storeSlug: t.store.slug,
+    orderNumber: t.orderNumber,
+    contextType: t.contextType,
+    subject: t.subject,
+    createdAt: t.createdAt.toISOString(),
+    lastMessageAt: t.lastMessageAt.toISOString(),
+    unreadCount: t.shopperUnread,
+    lastMessage: t.messages[0]
+      ? {
+          body: t.messages[0].body,
+          senderType: t.messages[0].senderType,
+          createdAt: t.messages[0].createdAt.toISOString(),
+          readAt: t.messages[0].readAt ? t.messages[0].readAt.toISOString() : null,
+        }
+      : null,
+  }));
+  return okPaged(items, { page, size, total });
 });
 
 // POST /api/chat/threads { storeId | storeSlug, orderNumber? | productId?, message? } —
@@ -85,9 +89,7 @@ export const POST = handle(async (req: Request) => {
   // seed message + seller notification — keep automated abuse bounded).
   rateLimit(req, "chat-threads", 20);
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as {
-    storeId?: string; storeSlug?: string; orderNumber?: string; productId?: string; message?: string; subject?: string;
-  };
+  const body = (await req.json().catch(() => ({}))) as CreateThreadBody;
 
   const store = body.storeId
     ? await db.store.findUnique({ where: { id: body.storeId } })
@@ -205,7 +207,7 @@ export const POST = handle(async (req: Request) => {
     });
   }
 
-  return ok({
+  const payload: CreateThreadData = {
     thread: {
       id: thread.id,
       storeId: thread.storeId,
@@ -214,8 +216,19 @@ export const POST = handle(async (req: Request) => {
       orderNumber: thread.orderNumber,
       contextType: thread.contextType,
       subject: thread.subject,
-      lastMessageAt: thread.lastMessageAt,
+      lastMessageAt: thread.lastMessageAt.toISOString(),
     },
-    message,
-  });
+    message: message
+      ? {
+          id: message.id,
+          threadId: message.threadId,
+          senderType: message.senderType,
+          senderName: message.senderName,
+          body: message.body,
+          readAt: message.readAt ? message.readAt.toISOString() : null,
+          createdAt: message.createdAt.toISOString(),
+        }
+      : null,
+  };
+  return ok(payload);
 });

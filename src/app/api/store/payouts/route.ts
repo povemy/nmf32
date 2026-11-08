@@ -4,6 +4,7 @@ import { handle, ok, ApiError, notify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { walletTruth, refreshWalletCache, parseStatement } from "@/lib/ledger";
 import { parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { SellerPayoutWithStatement, SellerPayoutRequestBody, SellerPayoutRequestData, SellerPayoutRow } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,14 @@ export const GET = handle(async () => {
         take: 50,
       })
     : [];
-  return ok(payouts.map((p) => ({ ...p, statement: parseStatement(p.statementJson) })));
+  const rows: SellerPayoutWithStatement[] = payouts.map((p) => ({
+    ...p,
+    paidAt: p.paidAt ? p.paidAt.toISOString() : null,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+    statement: parseStatement(p.statementJson),
+  }));
+  return ok(rows);
 });
 
 // POST /api/store/payouts { amountMinor } — seller-initiated payout request.
@@ -38,7 +46,7 @@ export const GET = handle(async () => {
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
 
-  const body = (await req.json().catch(() => ({}))) as { amountMinor?: unknown; amount?: unknown };
+  const body = (await req.json().catch(() => ({}))) as SellerPayoutRequestBody;
   const amountMinor = Number(
     body.amountMinor ?? (typeof body.amount === "string" || typeof body.amount === "number" ? Math.round(Number(body.amount) * 100) : NaN)
   );
@@ -112,11 +120,18 @@ export const POST = handle(async (req: Request) => {
     dedupKey: `payout.requested:${payout.id}:seller`,
   });
 
-  return ok({
-    payout,
+  const payoutRow: SellerPayoutRow = {
+    ...payout,
+    paidAt: payout.paidAt ? payout.paidAt.toISOString() : null,
+    createdAt: payout.createdAt.toISOString(),
+    updatedAt: payout.updatedAt.toISOString(),
+  };
+  const payload: SellerPayoutRequestData = {
+    payout: payoutRow,
     message: `Request ${payout.referenceNo} submitted — funds stay in your available balance until NOMOFEE approves and transfers.`,
     storeName: store.name,
-  });
+  };
+  return ok(payload);
 });
 
 /** The Serializable critical section: open-request check → balance truth →

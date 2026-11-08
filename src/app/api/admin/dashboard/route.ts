@@ -3,6 +3,7 @@ import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dayKey, startOfToday, daysAgo, parseMaybeJson } from "@/app/api/admin/_helpers";
+import type { AdminDashboardData } from "@/lib/types/api-contract";
 
 // GET /api/admin/dashboard — command centre KPIs
 export const GET = handle(async (req: NextRequest) => {
@@ -103,7 +104,7 @@ export const GET = handle(async (req: NextRequest) => {
 
   const storeNameById = new Map(stores.map((s) => [s.id, s.name]));
 
-  return ok({
+  const payload: AdminDashboardData = {
     gmvTodayMinor: ordersTodayAgg._sum.totalMinor ?? 0,
     ordersToday: ordersTodayCount,
     commissionTodayMinor: commissionToday.reduce((s, it) => s + it.commissionMinor, 0),
@@ -125,7 +126,8 @@ export const GET = handle(async (req: NextRequest) => {
       displayName: s.displayName,
       storeName: s.store?.name ?? null,
       status: s.status,
-      createdAt: s.createdAt,
+      createdAt: s.createdAt.toISOString(),
     })),
-  });
+  };
+  return ok(payload);
 });

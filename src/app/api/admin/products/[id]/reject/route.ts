@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin, notify } from "@/lib/api";
 import { requireCap } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody } from "@/app/api/admin/_helpers";
+import type { AdminProductRejectBody, AdminProductRow } from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
   const admin = await requireCap("products.moderate");
   const { id } = await ctx.params;
-  const body = await readBody(req).catch(() => ({}) as Record<string, never>);
+  const body = await readBody(req).catch(() => ({}) as AdminProductRejectBody);
   const reason = typeof body.reason === "string" ? body.reason : "Does not meet listing guidelines";
 
   const product = await db.product.findUnique({ where: { id }, include: { store: { include: { seller: true } } } });
@@ -37,5 +38,12 @@ export const POST = handle(async (req: NextRequest, ctx: Ctx) => {
     after: { status: "rejected", reason },
   });
 
-  return ok(updated);
+  const payload: AdminProductRow = {
+    ...updated,
+    publishedAt: updated.publishedAt ? updated.publishedAt.toISOString() : null,
+    lastSyncedAt: updated.lastSyncedAt ? updated.lastSyncedAt.toISOString() : null,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+  return ok(payload);
 });

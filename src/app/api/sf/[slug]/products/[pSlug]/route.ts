@@ -5,6 +5,7 @@ import { trackProductView } from "@/lib/analytics/track";
 import { reviewsSchemaReady } from "@/lib/reviews";
 import { sanitizeReviewTextForDisplay } from "@/lib/review-text";
 import { publicCache, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { PdpData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +111,7 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
 
   const mv = minVariant(product.variants);
 
-  return ok({
+  const payload: PdpData = {
     product: {
       id: product.id,
       title: product.title,
@@ -164,7 +165,9 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       title: sanitizeReviewTextForDisplay(r.title),
       body: sanitizeReviewTextForDisplay(r.body),
       reply: sanitizeReviewTextForDisplay(r.reply),
-      createdAt: r.createdAt,
+      // Cached loader: Date on first load, ISO string after a cache
+      // round-trip — normalize to ISO either way (identical JSON).
+      createdAt: new Date(r.createdAt).toISOString(),
     })),
     related: related.map((p) => toProductCard(p as ProductWithRelations)),
     store: {
@@ -176,5 +179,6 @@ export const GET = handle(async (req: Request, ctx: { params: Promise<{ slug: st
       whatsapp: store.whatsapp,
       cardStyle,
     },
-  });
+  };
+  return ok(payload);
 });

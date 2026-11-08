@@ -4,19 +4,21 @@ import { requireActiveSellerStore } from "@/lib/auth";
 import { parseTheme } from "@/lib/sections";
 import { toJson } from "@/lib/json";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { ThemeBody, ThemeData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/store/theme
 export const GET = handle(async () => {
   const { store } = await requireActiveSellerStore();
-  return ok({ theme: parseTheme(store.themeJson) });
+  const payload: ThemeData = { theme: parseTheme(store.themeJson) };
+  return ok(payload);
 });
 
 // PUT /api/store/theme {theme: {...tokens}}
 export const PUT = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as { theme?: Record<string, unknown> };
+  const body = (await req.json().catch(() => ({}))) as ThemeBody;
   if (!body.theme || typeof body.theme !== "object") {
     throw new ApiError(400, "VALIDATION", "theme object is required");
   }
@@ -35,5 +37,6 @@ export const PUT = handle(async (req: Request) => {
     entityId: store.id,
   });
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores);
-  return ok({ theme: parseTheme(updated.themeJson) });
+  const payload: ThemeData = { theme: parseTheme(updated.themeJson) };
+  return ok(payload);
 });

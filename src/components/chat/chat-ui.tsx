@@ -14,32 +14,30 @@ import { io, type Socket } from "socket.io-client";
 import { ArrowLeft, Check, CheckCheck, Loader2, MessagesSquare, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSessionToken } from "@/lib/session-client";
+import type { ChatMessage, ChatThreadSummary } from "@/lib/types/api-contract";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — derived from the §8 chat contract rows (GET /api/chat/threads).
+// Both portals (shopper + seller inboxes) render through these projections.
 // ---------------------------------------------------------------------------
 
-export type ChatThreadRow = {
-  id: string;
-  displayName: string;
-  avatarUrl: string | null;
-  contextType: string | null;
-  orderNumber: string | null;
-  subject: string | null;
-  lastMessageAt: string;
-  unreadCount: number;
-  lastMessage: { body: string; senderType: string; createdAt: string; readAt: string | null } | null;
+/** Conversation-list row — the contract's ChatThreadSummary narrowed to the
+ *  fields the list renders (the seller-side StoreChatThreadSummary carries the
+ *  same fields minus storeSlug, so both feeds type the one row). */
+export type ChatThreadRow = Pick<
+  ChatThreadSummary,
+  "id" | "displayName" | "avatarUrl" | "contextType" | "orderNumber" | "subject" | "lastMessageAt" | "unreadCount" | "lastMessage"
+> & {
   /** Shopper-side rows carry the vendor's store slug (→ "view store" links). */
   storeSlug?: string | null;
 };
 
-export type ChatMsg = {
-  id: string;
+/** Message row — the contract's ChatMessage with senderType narrowed to the
+ *  two chat parties (drives bubble alignment) plus the client-only auto-reply
+ *  flag; threadId/readAt are optional because detail listings omit them. */
+export type ChatMsg = Omit<ChatMessage, "threadId" | "senderType" | "readAt"> & {
   threadId?: string;
   senderType: "shopper" | "seller";
-  senderName: string;
-  body: string;
-  createdAt: string;
   readAt?: string | null;
   isAutoReply?: boolean;
 };

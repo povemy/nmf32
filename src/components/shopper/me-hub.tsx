@@ -79,8 +79,40 @@ import {
   getMeHubServerSnapshot,
   type MeProfile as ProfileT,
   type MeWallet as WalletT,
-  type MeBucketCounts as BucketCounts,
 } from "@/lib/me-hub-cache";
+import type {
+  ActivityListData,
+  ClaimByCodeBody,
+  ClaimByCodeData,
+  ClaimVoucherBody,
+  ClaimVoucherData,
+  CoinClaimData,
+  CreateAddressData,
+  DeleteAddressData,
+  ListAddressesData,
+  CheckoutAddress,
+  MeOrderSummary,
+  MeRecommendationProduct,
+  MeReviewCandidate,
+  MeSubmittedReview,
+  MeTrackedActivity,
+  MeVoucherDetail,
+  MeVoucherStoreRef,
+  MyReviewsData,
+  OrdersData,
+  ProfilePatchBody,
+  ProfilePatchData,
+  ReceiveOrderData,
+  RecommendationsData,
+  ReorderData,
+  ShopperEvDoneData,
+  ShopperEvSentData,
+  ShopperEvVerifyBody,
+  ShopperEvVerifyData,
+  UpdateAddressData,
+  UpdateAddressBody,
+  VouchersData,
+} from "@/lib/types/api-contract";
 import {
   ApiFail,
   fetchJson,
@@ -117,28 +149,8 @@ type Tier = "SILVER" | "GOLD" | "PLATINUM";
 // persisted per shopper — so the banner paints instantly instead of
 // skeleton-while-fetching. Type aliases stay local for the file's JSX.
 
-type OrderRowT = {
-  id: string;
-  orderNumber: string;
-  status: string;
-  totalMinor: number;
-  createdAt: string;
-  receivedAt?: string | null;
-  paymentProvider?: string | null;
-  trackingNumber: string | null;
-  shipmentStatus?: string | null;
-  shippingCourierName?: string | null;
-  store: { id: string; name: string; slug: string };
-  items: {
-    id: string;
-    title: string;
-    variantLabel: string | null;
-    qty: number;
-    unitPriceMinor: number;
-    productId?: string;
-    imageUrl?: string;
-  }[];
-};
+/** Purchase-hub order summary — the contract's GET /api/me/orders row. */
+type OrderRowT = MeOrderSummary;
 
 /** Shipment state-machine labels (Shipment.status) for courier chips. */
 const SHIPMENT_STATUS_LABEL: Record<string, string> = {
@@ -157,26 +169,20 @@ function shipmentStatusLabel(s: string | null | undefined): string {
   return SHIPMENT_STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase();
 }
 
-type RecProductT = ProductCardT & {
-  inStock: boolean;
-  isFeatured: boolean;
-  isSellingFast: boolean;
-  payLaterEligible: boolean;
-};
+type RecProductT = ProductCardT & Pick<MeRecommendationProduct, "inStock" | "isFeatured" | "isSellingFast" | "payLaterEligible">;
 
 // Task 10-b voucher engine shapes (GET /api/me/vouchers → {vouchers, mine, center}).
-type VoucherStoreBriefT = { name: string; slug: string; logoUrl: string | null } | null;
+type VoucherStoreBriefT = MeVoucherStoreRef | null;
 
-type VoucherCoreT = {
-  id: string;
-  code: string;
-  title: string;
-  kind: string; // discount | freeshipping | coinsback
-  discountMinor: number;
-  percentOff: number | null;
-  maxDiscountMinor: number | null;
-  minSpendMinor: number;
-  expiryAt: string;
+/** UI-relaxed voucher snapshot — accepts every voucher block the contract
+ *  emits: MeVoucherDetail (wallet "mine" rows), MeVoucherSnapshot (legacy
+ *  flat "vouchers" rows, which carry no id/scope/store) and the claim-center
+ *  rows (no storeId). Only the fields the cards render are required. */
+type VoucherCoreT = Pick<
+  MeVoucherDetail,
+  "code" | "title" | "kind" | "discountMinor" | "percentOff" | "maxDiscountMinor" | "minSpendMinor" | "expiryAt"
+> & {
+  id?: string;
   scope?: string; // PLATFORM | STORE
   storeId?: string | null;
   regionLimit?: string | null;
@@ -194,23 +200,13 @@ type MineVoucherT = {
 };
 
 type CenterVoucherT = VoucherCoreT & {
+  id: string;
   claimedByMe: boolean;
   quotaRemaining: number | null;
   claimable: boolean;
 };
 
-type AddressT = {
-  id: string;
-  label: string;
-  name: string;
-  phone: string | null;
-  line1: string;
-  city: string;
-  state: string;
-  postcode: string;
-  isDefault: boolean;
-  updatedAt: string;
-};
+type AddressT = CheckoutAddress;
 
 type MeSub = "purchases" | "wallet" | "vouchers" | "likes" | "viewed" | "addresses" | "affiliate" | "reviews";
 
@@ -546,7 +542,7 @@ function EmailVerificationCard({ profile, onVerified }: { profile: ProfileT | nu
     if (busy) return;
     setBusy(true);
     try {
-      await postJson<{ sent: boolean; message?: string }>("/api/auth/shopper/email-verification/request", {});
+      await postJson<ShopperEvDoneData | ShopperEvSentData>("/api/auth/shopper/email-verification/request", {});
       setSent(true);
       setCode("");
       toast.success("Verification code sent", { description: "Check your inbox — the code expires in 10 minutes." });
@@ -572,10 +568,8 @@ function EmailVerificationCard({ profile, onVerified }: { profile: ProfileT | nu
     if (busy) return;
     setBusy(true);
     try {
-      const res = await postJson<{ verified: boolean; alreadyVerified?: boolean; ordersClaimed: number }>(
-        "/api/auth/shopper/email-verification/verify",
-        { code: digits }
-      );
+      const body: ShopperEvVerifyBody = { code: digits };
+      const res = await postJson<ShopperEvVerifyData>("/api/auth/shopper/email-verification/verify", body);
       if (res.verified) {
         toast.success(res.alreadyVerified ? "Email already verified" : "Email verified", {
           description: res.alreadyVerified
@@ -1206,7 +1200,7 @@ function CoinCard({ wallet, onRefresh }: { wallet: WalletT | null; onRefresh: ()
   const claim = async () => {
     setBusy(true);
     try {
-      const res = await postJson<{ awarded: number; coinBalance: number; checkInStreak: number }>("/api/me/coins/claim", {});
+      const res = await postJson<CoinClaimData>("/api/me/coins/claim", {});
       toast.success(`+${res.awarded} coins claimed!`, { description: `Streak ${res.checkInStreak} day${res.checkInStreak === 1 ? "" : "s"} · balance ${res.coinBalance} coins` });
       await onRefresh();
     } catch (e) {
@@ -1412,12 +1406,13 @@ function SettingsDialog({ open, onOpenChange, profile, onSaved }: { open: boolea
   const save = async () => {
     setBusy(true);
     try {
-      await patchJson("/api/me/profile", {
+      const body: ProfilePatchBody = {
         fullName: fullName.trim(),
         phone: phone.trim() || null,
         username: username.trim() || null,
         avatarUrl: avatar,
-      });
+      };
+      await patchJson<ProfilePatchData>("/api/me/profile", body);
       await refreshMe();
       await onSaved();
       toast.success("Profile updated");
@@ -1533,7 +1528,7 @@ function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperC
     else setMore(true);
     try {
       const q = t === "all" ? "" : `&bucket=${t}`;
-      const res = await fetchEnvelope<{ bucketCounts: BucketCounts; orders: OrderRowT[] }>(`/api/me/orders?page=${p}&size=8${q}`);
+      const res = await fetchEnvelope<OrdersData>(`/api/me/orders?page=${p}&size=8${q}`);
       setTotal(res.meta?.total ?? 0);
       setOrders((prev) => (replace || p === 1 ? res.data.orders : [...(prev ?? []), ...res.data.orders]));
     } catch {
@@ -1571,7 +1566,7 @@ function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperC
   const receive = async (orderNumber: string) => {
     setBusyOrder(orderNumber);
     try {
-      await postJson<{ status: string }>(`/api/me/orders/${orderNumber}/receive`, {});
+      await postJson<ReceiveOrderData>(`/api/me/orders/${orderNumber}/receive`, {});
       toast.success("Order received", { description: `${orderNumber} moved to To Rate — rate it within 30 days to complete it.` });
       await load(tab, 1, true);
     } catch (e) {
@@ -1585,10 +1580,7 @@ function PurchasesView({ ctx, onBack, initialTab, onGoReviews }: { ctx: ShopperC
   const buyAgain = async (orderNumber: string) => {
     setBusyOrder(orderNumber);
     try {
-      const res = await postJson<{ added: { title: string; qty: number }[]; skipped: { title: string; reason: string }[] }>(
-        `/api/me/orders/${orderNumber}/reorder`,
-        {}
-      );
+      const res = await postJson<ReorderData>(`/api/me/orders/${orderNumber}/reorder`, {});
       const addedUnits = res.added.reduce((s, a) => s + a.qty, 0);
       const detail = [
         res.added.map((a) => `${a.title} ×${a.qty}`).join(", "),
@@ -1856,44 +1848,11 @@ function PurchasesOrderCard({
 // endpoints (the review button can never appear for an ineligible purchase).
 // =============================================================================================
 
-type ReviewToReviewT = {
-  orderNumber: string;
-  orderStatus: string;
-  purchasedAt: string;
-  store: { id: string; name: string; slug: string };
-  product: { id: string; title: string; slug: string; imageUrl: string };
-};
+type ReviewToReviewT = MeReviewCandidate;
 
-type ReviewSubmittedT = {
-  id: string;
-  rating: number;
-  title: string | null;
-  body: string | null;
-  // Display-guard flags: the system blanked a payload-carrying field (legacy
-  // row) — render a small "removed by the system" note instead of silence.
-  titleRemoved?: boolean;
-  bodyRemoved?: boolean;
-  status: string;
-  createdAt: string;
-  product: { id: string; title: string; slug: string; imageUrl: string; store: { name: string; slug: string } };
-  reward: { points: number; reversed: boolean; reversalReason: string | null } | null;
-  editable: boolean;
-  editCount: number;
-};
+type ReviewSubmittedT = MeSubmittedReview;
 
-type ReviewsMgmtT = {
-  toReview: ReviewToReviewT[];
-  submitted: ReviewSubmittedT[];
-  rewards: {
-    activePoints: number;
-    activeCount: number;
-    reversedCount: number;
-    reversedPoints: number;
-    minorEquivalent: number;
-    recent: { id: string; kind: string; points: number; note: string | null; createdAt: string; reversedAt: string | null; reversalReason: string | null }[];
-  };
-  policy: { pointsPerReview: number; minorPerPoint: number; maxEdits: number };
-};
+type ReviewsMgmtT = MyReviewsData;
 
 function ReviewStatusBadge({ status }: { status: string }) {
   if (status === "published") {
@@ -1931,7 +1890,7 @@ function ReviewsView({ ctx, onBack }: { ctx: ShopperCtx; onBack: () => void }) {
   const load = useCallback(async () => {
     setFailed(false);
     try {
-      const d = await fetchJson<ReviewsMgmtT>("/api/me/reviews");
+      const d = await fetchJson<MyReviewsData>("/api/me/reviews");
       setData(d);
     } catch {
       setFailed(true);
@@ -2220,7 +2179,7 @@ function WalletView({ onBack, wallet, onRefresh }: { onBack: () => void; wallet:
   const claim = async () => {
     setBusy(true);
     try {
-      const res = await postJson<{ awarded: number; coinBalance: number; checkInStreak: number }>("/api/me/coins/claim", {});
+      const res = await postJson<CoinClaimData>("/api/me/coins/claim", {});
       toast.success(`+${res.awarded} coins claimed!`, { description: `Streak ${res.checkInStreak} · balance ${res.coinBalance} coins` });
       await onRefresh();
     } catch (e) {
@@ -2338,7 +2297,7 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
 
   const load = useCallback(async () => {
     try {
-      const d = await fetchJson<{ vouchers?: MineVoucherT[]; mine?: MineVoucherT[]; center?: CenterVoucherT[] }>("/api/me/vouchers");
+      const d = await fetchJson<VouchersData>("/api/me/vouchers");
       // `vouchers` is the legacy mine-array contract — keep honouring it in case
       // this view is ever rendered against an older API build.
       setMine(d.mine ?? d.vouchers ?? []);
@@ -2358,7 +2317,8 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
     if (!code.trim()) return;
     setCodeBusy(true);
     try {
-      const res = await postJson<{ voucher: { title: string } }>("/api/me/vouchers", { code: code.trim() });
+      const body: ClaimByCodeBody = { code: code.trim() };
+      const res = await postJson<ClaimByCodeData>("/api/me/vouchers", body);
       toast.success("Voucher claimed", { description: `${res.voucher.title} — saved to your wallet.` });
       setCode("");
       await load();
@@ -2373,7 +2333,8 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
   const claimPool = async (v: CenterVoucherT) => {
     setClaimingId(v.id);
     try {
-      const res = await postJson<{ voucher: { title: string } }>("/api/me/vouchers/claim", { voucherId: v.id });
+      const body: ClaimVoucherBody = { voucherId: v.id };
+      const res = await postJson<ClaimVoucherData>("/api/me/vouchers/claim", body);
       toast.success("Voucher claimed", { description: `${res.voucher.title} — saved to your wallet.` });
       // optimistic claimed-state swap, then resync from the server
       setCenter((prev) =>
@@ -2625,12 +2586,12 @@ function VouchersView({ onBack, onOpenMarket }: { onBack: () => void; onOpenMark
 // =============================================================================================
 
 function ActivityGridView({ type, title, onBack, ctx }: { type: "LIKE" | "VIEWED"; title: string; onBack: () => void; ctx: ShopperCtx }) {
-  const [items, setItems] = useState<{ activityId: string; product: ProductCardT }[] | null>(null);
+  const [items, setItems] = useState<MeTrackedActivity[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    fetchEnvelope<{ activities: { activityId: string; product: ProductCardT }[] }>(`/api/me/activity?type=${type}&size=24`)
+    fetchEnvelope<ActivityListData>(`/api/me/activity?type=${type}&size=24`)
       .then((d) => alive && setItems(d.data.activities))
       .catch(() => alive && setItems([]))
       .finally(() => alive && setLoading(false));
@@ -2768,7 +2729,7 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
     setLoading(true);
     setItems([]);
     setExhausted(false);
-    fetchEnvelope<{ products: RecProductT[] }>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=1&size=12`)
+    fetchEnvelope<RecommendationsData>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=1&size=12`)
       .then((d) => {
         if (!alive) return;
         setItems(d.data.products);
@@ -2786,7 +2747,7 @@ function ProductFeed({ ctx, sort, onSort }: { ctx: ShopperCtx; sort: string; onS
     setMore(true);
     try {
       const next = page + 1;
-      const d = await fetchEnvelope<{ products: RecProductT[] }>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=${next}&size=12`);
+      const d = await fetchEnvelope<RecommendationsData>(`/api/me/recommendations?sort=${encodeURIComponent(sort)}&page=${next}&size=12`);
       // Dedupe by id — the server paginates deterministically now, but the
       // personalised window legitimately shifts as the shopper browses
       // (VIEWED activities), so a belt-and-braces client guard keeps React's
@@ -2863,7 +2824,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      const d = await fetchJson<{ addresses: AddressT[] }>("/api/checkout/addresses");
+      const d = await fetchJson<ListAddressesData>("/api/checkout/addresses");
       setRows(d.addresses);
     } catch {
       setRows([]);
@@ -2879,11 +2840,11 @@ function AddressesView({ onBack }: { onBack: () => void }) {
     setBusy(true);
     try {
       if (editId) {
-        const d = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${editId}`, form);
+        const d = await patchJson<UpdateAddressData>(`/api/checkout/addresses/${editId}`, form);
         setRows(d.addresses);
         toast.success("Address updated");
       } else {
-        const d = await postJson<{ addresses: AddressT[] }>("/api/checkout/addresses", form);
+        const d = await postJson<CreateAddressData>("/api/checkout/addresses", form);
         setRows(d.addresses);
         toast.success("Address saved");
       }
@@ -2899,7 +2860,7 @@ function AddressesView({ onBack }: { onBack: () => void }) {
 
   const remove = async (id: string) => {
     try {
-      const d = await deleteJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`);
+      const d = await deleteJson<DeleteAddressData>(`/api/checkout/addresses/${id}`);
       setRows(d.addresses);
       setConfirmDelete(null);
       window.dispatchEvent(new Event("nomofee:addresses-changed"));
@@ -2911,7 +2872,8 @@ function AddressesView({ onBack }: { onBack: () => void }) {
 
   const setDefault = async (id: string) => {
     try {
-      const d = await patchJson<{ addresses: AddressT[] }>(`/api/checkout/addresses/${id}`, { isDefault: true });
+      const body: UpdateAddressBody = { isDefault: true };
+      const d = await patchJson<UpdateAddressData>(`/api/checkout/addresses/${id}`, body);
       setRows(d.addresses);
       window.dispatchEvent(new Event("nomofee:addresses-changed"));
       toast.success("Default address updated");

@@ -4,6 +4,7 @@ import { createSession } from "@/lib/auth";
 import { handle, ok, fail, logActivity } from "@/lib/api";
 import { claimGuestStateForShopper, mergeGuestCartForShopper } from "@/lib/shopper-merge";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
+import type { ShopperLoginBody, ShopperLoginData } from "@/lib/types/api-contract";
 
 // POST /api/auth/shopper/login { email, password } — buyer account sign-in.
 // Legacy guest orders placed with the account email (guest checkout existed
@@ -19,7 +20,7 @@ export const POST = handle(async (req: Request) => {
   // F-12 remediation: bounded brute-force throttle — shared "auth-login"
   // bucket (10/min/IP) with the admin/seller login route; uniform 429.
   rateLimit(req, "auth-login", 10);
-  const body = (await req.json().catch(() => ({}))) as { email?: string; password?: string };
+  const body = (await req.json().catch(() => ({}))) as ShopperLoginBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   if (!email || !password) return fail(400, "VALIDATION", "Email and password are required");
@@ -45,12 +46,13 @@ export const POST = handle(async (req: Request) => {
   // account cart (best-effort; never fails login).
   const guestCartMerged = await mergeGuestCartForShopper(shopper.id);
   await logActivity({ actorType: "shopper", actorId: shopper.id, actorLabel: shopper.email, action: "shopper.login", meta: { guestCartMerged: guestCartMerged.itemsMerged } });
-  return ok({
+  const payload: ShopperLoginData = {
     userType: "shopper",
     shopper: { id: shopper.id, email: shopper.email, fullName: shopper.fullName, phone: shopper.phone },
     token,
     claimed,
     emailVerified,
     guestCartMerged: guestCartMerged.itemsMerged,
-  });
+  };
+  return ok(payload);
 });

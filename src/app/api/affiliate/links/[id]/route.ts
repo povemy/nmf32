@@ -1,6 +1,7 @@
 import { handle, ok, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { requireAffiliate, getAffiliateSettings } from "@/lib/affiliate";
+import type { UpdateLinkBody, UpdateLinkData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   const { id } = await ctx.params;
   const link = await db.affiliateLink.findFirst({ where: { id, affiliateId: aff.id } });
   if (!link) throw new ApiError(404, "NOT_FOUND", "Link not found");
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as UpdateLinkBody;
   const data: Record<string, unknown> = {};
   if (body.status != null) {
     const status = String(body.status);
@@ -35,5 +36,6 @@ export const PATCH = handle(async (req: Request, ctx: { params: Promise<{ id: st
   }
   if (body.label != null) data.label = String(body.label).slice(0, 80);
   const updated = await db.affiliateLink.update({ where: { id: link.id }, data });
-  return ok({ link: { id: updated.id, status: updated.status, channel: updated.channel, label: updated.label } });
+  const payload: UpdateLinkData = { link: { id: updated.id, status: updated.status, channel: updated.channel, label: updated.label } };
+  return ok(payload);
 });

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerNotificationsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +33,16 @@ export const GET = handle(async () => {
     }),
   ]);
 
-  return ok({
+  const payload: SellerNotificationsData = {
     notifications: rows.map((r) => ({
       id: r.id,
       // subject is nullable in the schema — fall back to the event name so the
       // bell never renders a blank row.
       subject: r.subject ?? r.event,
-      createdAt: r.createdAt,
+      createdAt: r.createdAt.toISOString(),
       event: r.event,
     })),
     recentCount,
-  });
+  };
+  return ok(payload);
 });

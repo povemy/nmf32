@@ -3,6 +3,13 @@ import { handle, ok, ApiError } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dayKey, daysAgo } from "@/app/api/admin/_helpers";
+import type {
+  AdminReportsQuery,
+  AdminReportSalesData,
+  AdminReportSellersData,
+  AdminReportCommissionData,
+  AdminReportPayoutsData,
+} from "@/lib/types/api-contract";
 
 type Ctx = { params: Promise<{ type: string }> };
 
@@ -15,7 +22,7 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
   }
 
   const url = new URL(req.url);
-  const days = Math.min(365, Math.max(1, parseInt(url.searchParams.get("days") ?? "30", 10) || 30));
+  const days: NonNullable<AdminReportsQuery["days"]> = Math.min(365, Math.max(1, parseInt(url.searchParams.get("days") ?? "30", 10) || 30));
   const since = daysAgo(days - 1);
   since.setHours(0, 0, 0, 0);
 
@@ -40,15 +47,15 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
       return s?.store?.name ?? s?.displayName ?? "Unknown";
     };
 
-    return ok({
+    const payload: AdminReportPayoutsData = {
       batches: batches.map((b) => ({
         id: b.id,
         runType: b.runType,
         status: b.status,
         totalMinor: b.totalMinor,
         payoutCount: b.payoutCount,
-        startedAt: b.startedAt,
-        finishedAt: b.finishedAt,
+        startedAt: b.startedAt.toISOString(),
+        finishedAt: b.finishedAt ? b.finishedAt.toISOString() : null,
         payouts: b.payouts.map((p) => ({
           id: p.id,
           referenceNo: p.referenceNo,
@@ -56,7 +63,7 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
           amountMinor: p.amountMinor,
           status: p.status,
           method: p.method,
-          paidAt: p.paidAt,
+          paidAt: p.paidAt ? p.paidAt.toISOString() : null,
         })),
       })),
       totals: {
@@ -68,7 +75,8 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
         batchCount: batches.length,
       },
       days,
-    });
+    };
+    return ok(payload);
   }
 
   // sales / sellers / commission — all built from paid orders in window
@@ -132,7 +140,7 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
 
   if (type === "sales") {
     const series = [...seriesMap.entries()].map(([date, v]) => ({ date, ...v }));
-    return ok({
+    const payload: AdminReportSalesData = {
       series,
       totals: {
         gmvMinor: totalGmv,
@@ -141,7 +149,8 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
         aovMinor: orders.length ? Math.round(totalGmv / orders.length) : 0,
       },
       days,
-    });
+    };
+    return ok(payload);
   }
 
   if (type === "sellers") {
@@ -154,16 +163,17 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
         aovMinor: r.orders ? Math.round(r.gmvMinor / r.orders) : 0,
       }))
       .sort((a, b) => b.gmvMinor - a.gmvMinor);
-    return ok({
+    const payload: AdminReportSellersData = {
       rows,
       totals: { gmvMinor: totalGmv, orders: orders.length, commissionMinor: totalCommission, stores: rows.length },
       days,
-    });
+    };
+    return ok(payload);
   }
 
   // commission report
   const gmvBase = [...byStore.values()].reduce((s, r) => s + r.itemsValue, 0);
-  return ok({
+  const payload: AdminReportCommissionData = {
     series: [...seriesMap.entries()].map(([date, v]) => ({ date, commissionMinor: v.commissionMinor, gmvMinor: v.gmvMinor, orders: v.orders })),
     byCategory: [...byCategory.entries()]
       .map(([categoryName, commissionMinor]) => ({ categoryName, commissionMinor }))
@@ -171,5 +181,6 @@ export const GET = handle(async (req: NextRequest, ctx: Ctx) => {
     effectiveRate: totalGmv > 0 ? Math.round((totalCommission / totalGmv) * 10000) / 100 : 0,
     totals: { commissionMinor: totalCommission, gmvMinor: totalGmv, items: totalItems, itemsValueMinor: gmvBase },
     days,
-  });
+  };
+  return ok(payload);
 });

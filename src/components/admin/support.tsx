@@ -19,6 +19,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { apiSend, useApi } from "./use-api";
 import { qs } from "./nav";
+import type {
+  AdminTicketDetailData,
+  AdminTicketPatchBody,
+  AdminTicketReplyBody,
+  AdminTicketReplyData,
+  AdminTicketRow,
+  AdminTicketSummary,
+} from "@/lib/types/api-contract";
 import {
   EmptyState,
   ErrorState,
@@ -30,38 +38,6 @@ import {
   timeAgo,
 } from "./ui-bits";
 
-type TicketRow = {
-  id: string;
-  subject: string;
-  status: string;
-  priority: string;
-  sellerEmail?: string | null;
-  contextType?: string | null;
-  createdAt: string;
-  updatedAt?: string;
-  store?: { id: string; name: string; slug: string } | null;
-  lastMessage?: { authorType: string; authorLabel: string; body: string; createdAt: string } | null;
-  messageCount?: number;
-};
-
-type ThreadMessage = {
-  id: string;
-  authorType: string;
-  authorLabel: string;
-  body: string;
-  createdAt: string;
-};
-
-type TicketThread = {
-  id: string;
-  subject: string;
-  status: string;
-  priority: string;
-  sellerEmail?: string | null;
-  store?: { name: string; slug: string } | null;
-  messages: ThreadMessage[];
-};
-
 const TICKET_STATUSES = ["open", "pending", "closed"];
 const TICKET_PRIORITIES = ["low", "normal", "high", "urgent"];
 
@@ -69,21 +45,21 @@ export function SupportView() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const url = useMemo(() => `/api/admin/tickets${qs({ status: status === "all" ? "" : status, page, size: 15 })}`, [status, page]);
-  const { data, meta, error, loading, refetch } = useApi<TicketRow[]>(url);
+  const { data, meta, error, loading, refetch } = useApi<AdminTicketRow[]>(url);
   const rows = data ?? [];
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
 
-  const thread = useApi<TicketThread>(openId ? `/api/admin/tickets/${openId}` : null);
+  const thread = useApi<AdminTicketDetailData>(openId ? `/api/admin/tickets/${openId}` : null);
   const active = rows.find((t) => t.id === openId) ?? null;
 
   const sendReply = async () => {
     if (!openId || !reply.trim()) return;
     setSending(true);
     try {
-      await apiSend(`/api/admin/tickets/${openId}/reply`, "POST", { body: reply.trim() });
+      await apiSend<AdminTicketReplyData>(`/api/admin/tickets/${openId}/reply`, "POST", { body: reply.trim() } satisfies AdminTicketReplyBody);
       toast.success("Reply sent", { description: "Ticket moved to pending (awaiting seller)." });
       setReply("");
       void thread.refetch();
@@ -95,10 +71,10 @@ export function SupportView() {
     }
   };
 
-  const patchTicket = async (patch: { status?: string; priority?: string }) => {
+  const patchTicket = async (patch: AdminTicketPatchBody) => {
     if (!openId) return;
     try {
-      await apiSend(`/api/admin/tickets/${openId}`, "PATCH", patch);
+      await apiSend<AdminTicketSummary>(`/api/admin/tickets/${openId}`, "PATCH", patch);
       toast.success("Ticket updated");
       void thread.refetch();
       void refetch();
@@ -258,7 +234,7 @@ export function SupportView() {
               <div className="flex gap-2">
                 <Select
                   value={thread.data?.status ?? active?.status ?? "open"}
-                  onValueChange={(v) => void patchTicket({ status: v })}
+                  onValueChange={(v) => void patchTicket({ status: v as AdminTicketPatchBody["status"] })}
                 >
                   <SelectTrigger className="min-h-[44px] w-36" aria-label="Ticket status">
                     <SelectValue placeholder="Status" />
@@ -271,7 +247,7 @@ export function SupportView() {
                 </Select>
                 <Select
                   value={thread.data?.priority ?? active?.priority ?? "normal"}
-                  onValueChange={(v) => void patchTicket({ priority: v })}
+                  onValueChange={(v) => void patchTicket({ priority: v as AdminTicketPatchBody["priority"] })}
                 >
                   <SelectTrigger className="min-h-[44px] w-36" aria-label="Ticket priority">
                     <SelectValue placeholder="Priority" />

@@ -25,6 +25,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { postJson, ApiFail } from "@/components/shopper/ui-bits";
+import type {
+  ForgotPasswordBody,
+  ForgotPasswordData,
+  ResetPasswordBody,
+  ResetPasswordData,
+  VerifyRecoveryBody,
+  VerifyRecoveryData,
+} from "@/lib/types/api-contract";
 
 type Step =
   | { phase: "request" }
@@ -49,9 +57,9 @@ export function PasswordRecoveryPanel({ onBackToLogin }: { onBackToLogin: (email
     setError(null);
     setNotice(null);
     try {
-      const res = await postJson<{ sent: boolean; message: string }>("/api/auth/forgot-password", {
+      const res = await postJson<ForgotPasswordData>("/api/auth/forgot-password", {
         email: email.trim(),
-      });
+      } satisfies ForgotPasswordBody);
       setNotice(res.message);
       setStep({ phase: "reset", email: email.trim().toLowerCase() });
     } catch (err) {
@@ -84,16 +92,16 @@ export function PasswordRecoveryPanel({ onBackToLogin }: { onBackToLogin: (email
     setNotice(null);
     try {
       // Step 2: verify the recovery code → single-use reset grant.
-      const verified = await postJson<{ token: string; email: string }>("/api/auth/verify-recovery", {
+      const verified = await postJson<VerifyRecoveryData>("/api/auth/verify-recovery", {
         email: step.phase === "reset" ? step.email : email.trim().toLowerCase(),
         code: normalizedCode,
-      });
+      } satisfies VerifyRecoveryBody);
       // Step 3: consume the grant with the new password (server revokes all
       // live sessions of the account).
-      const done = await postJson<{ reset: boolean; message: string }>("/api/auth/reset-password", {
+      const done = await postJson<ResetPasswordData>("/api/auth/reset-password", {
         token: verified.token,
         newPassword,
-      });
+      } satisfies ResetPasswordBody);
       setNotice(done.message);
       setStep({ phase: "done", email: verified.email });
       setCode("");

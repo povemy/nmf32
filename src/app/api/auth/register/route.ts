@@ -11,6 +11,7 @@ import { ensureWalletAccounts } from "@/lib/ledger";
 import { rateLimit } from "@/lib/rate-limit";
 import { getEmailChannel } from "@/lib/email-provider";
 import { issueEmailOtp, assertEmailOtpStorage } from "@/lib/guest-otp";
+import type { RegisterBody, RegisterData } from "@/lib/types/api-contract";
 
 // POST /api/auth/register — seller self-service signup (M02)
 // Creates: seller (status=onboarding) + draft store w/ default template pages + wallet.
@@ -26,10 +27,7 @@ export const POST = handle(async (req: NextRequest) => {
   // F-12 remediation: account-creation throttle — 5 signups per minute per IP
   // (shared "auth-register" bucket with the shopper register route).
   rateLimit(req, "auth-register", 5);
-  const body = (await req.json()) as {
-    email?: string; password?: string; fullName?: string; displayName?: string;
-    countryCode?: string; storeName?: string; storeSlug?: string; phone?: string;
-  };
+  const body = (await req.json()) as RegisterBody;
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   const fullName = (body.fullName ?? "").trim();
@@ -150,18 +148,16 @@ export const POST = handle(async (req: NextRequest) => {
     emailVerificationSent = false;
   }
 
-  return ok(
-    {
-      userType: "seller",
-      seller: {
-        id: result.seller.id, email, fullName, displayName, status: "onboarding",
-        storeId: result.store.id, storeSlug: slug, storeName,
-      },
-      // A brand-new account is NEVER verified yet (honest default).
-      emailVerified: false,
-      emailVerificationSent,
-      token,
+  const payload: RegisterData = {
+    userType: "seller",
+    seller: {
+      id: result.seller.id, email, fullName, displayName, status: "onboarding",
+      storeId: result.store.id, storeSlug: slug, storeName,
     },
-    { status: 201 }
-  );
+    // A brand-new account is NEVER verified yet (honest default).
+    emailVerified: false,
+    emailVerificationSent,
+    token,
+  };
+  return ok(payload, { status: 201 });
 });

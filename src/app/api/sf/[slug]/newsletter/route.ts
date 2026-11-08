@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify, logActivity } from "@/lib/api";
 import { rateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { parseJson } from "@/lib/json";
+import type { NewsletterBody, NewsletterData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
   // B4 — burst guard: 5 req/min/IP kills scripted submissions across slugs.
   rateLimit(req, "sf-newsletter", 5);
   const { slug } = await ctx.params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as NewsletterBody;
 
   // Email is the only consumed field: trim + lowercase (rate key + storage
   // stability); over-length input is REJECTED (400) rather than silently
@@ -67,5 +68,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ slug: s
     });
   }
 
-  return ok({ subscribed: true });
+  const payload: NewsletterData = { subscribed: true };
+  return ok(payload);
 });

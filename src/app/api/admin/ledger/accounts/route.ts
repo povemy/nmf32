@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handle, ok } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { AdminLedgerAccountsData } from "@/lib/types/api-contract";
 
 // GET /api/admin/ledger/accounts — accounts with summed debit/credit balances
 export const GET = handle(async (req: NextRequest) => {
@@ -28,7 +29,7 @@ export const GET = handle(async (req: NextRequest) => {
 
   const meta = new Map(grouped.map((g) => [g.accountCode, { count: g._count._all }]));
 
-  const data = accounts.map((a) => {
+  const data: AdminLedgerAccountsData[] = accounts.map((a) => {
     const s = sums.get(a.code) ?? { debit: 0, credit: 0 };
     // asset accounts: debit-positive; liability/revenue: credit-positive
     const balanceMinor = a.type === "asset" ? s.debit - s.credit : s.credit - s.debit;

@@ -9,6 +9,7 @@
 import { snapshot } from "@/lib/metrics";
 import { db } from "@/lib/db";
 import { safeEqual } from "@/lib/secretbox";
+import type { MetricsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +30,10 @@ export async function GET(req: Request) {
     return Response.json({ error: { code: "METRICS_UNAVAILABLE", message: "Prisma runtime metrics are not available on this client build (fail-closed)" } }, { status: 503 });
   }
   const snap = await snapshot(async () => metricsClient.$metrics!.json());
+  // snapshot() is statically typed as a loose Record<string, unknown>; its runtime registry shape matches MetricsData.
+  const data = snap as unknown as MetricsData;
   return Response.json(
-    { data: snap },
+    { data },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

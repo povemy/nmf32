@@ -3,6 +3,7 @@ import { handle, ok, ApiError, auditAdmin } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readBody, str, optNum } from "@/app/api/admin/_helpers";
+import type { AdminFeaturedRow, FeaturedCreateBody, FeaturedCreateData } from "@/lib/types/api-contract";
 
 // GET /api/admin/featured — featured slots joined with product info
 export const GET = handle(async (req: NextRequest) => {
@@ -19,12 +20,12 @@ export const GET = handle(async (req: NextRequest) => {
     orderBy: [{ slot: "asc" }, { sortOrder: "asc" }],
   });
 
-  const data = slots.map((s) => ({
+  const data: AdminFeaturedRow[] = slots.map((s) => ({
     id: s.id,
     slot: s.slot,
     sortOrder: s.sortOrder,
     isActive: s.isActive,
-    createdAt: s.createdAt,
+    createdAt: s.createdAt.toISOString(),
     product: {
       id: s.product.id,
       title: s.product.title,
@@ -42,7 +43,7 @@ export const GET = handle(async (req: NextRequest) => {
 // POST /api/admin/featured {productId, slot?}
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireAdmin();
-  const body = await readBody(req);
+  const body = (await readBody(req)) as FeaturedCreateBody & Record<string, unknown>;
   const productId = typeof body.productId === "string" ? body.productId : "";
   const slot = str(body, "slot") ?? "home_grid";
   const sortOrder = Math.round(optNum(body, "sortOrder") ?? 0);
@@ -62,5 +63,13 @@ export const POST = handle(async (req: NextRequest) => {
     after: { productId, title: product.title, slot, sortOrder },
   });
 
-  return ok(created);
+  const payload: FeaturedCreateData = {
+    id: created.id,
+    productId: created.productId,
+    slot: created.slot,
+    sortOrder: created.sortOrder,
+    isActive: created.isActive,
+    createdAt: created.createdAt.toISOString(),
+  };
+  return ok(payload);
 });

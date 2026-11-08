@@ -5,6 +5,7 @@ import { assertCronAuth } from "@/lib/cron-auth";
 import { recordEvent } from "@/lib/metrics";
 import { bustPublicProductCache } from "@/lib/public-cache";
 import { runExpirySweep } from "@/lib/expiry-sweep";
+import type { ExpirySweepOutcome, ExpirySweepStatusData, ExpirySweepThrottledData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,8 @@ export const POST = handle(async (req: Request) => {
     // P2.3-7 (monitoring honesty): real expiry-sweep outcome counters on
     // /api/metrics (events: "cron.expiry_sweep:*").
     recordEvent("cron.expiry_sweep", "throttled");
-    return ok({ throttled: true, expired: 0, auth: auth.mode });
+    const throttled: ExpirySweepThrottledData = { throttled: true, expired: 0, auth: auth.mode };
+    return ok(throttled);
   }
   g.__expirySweepAt = now;
 
@@ -73,7 +75,7 @@ export const POST = handle(async (req: Request) => {
   const remaining = await db.paymentGroup.count({
     where: { status: { in: ["requires_payment", "failed"] }, expiresAt: { lt: new Date() } },
   });
-  const outcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), auth: auth.mode };
+  const outcome: ExpirySweepOutcome = { ...stats, remainingBacklog: remaining, durationMs: Math.round(performance.now() - t0), at: new Date().toISOString(), auth: auth.mode };
 
   // PHASE 2.1 (§9-A): released reservations restored stock — cached public
   // product/market data is stale. Bust ONLY when something was actually
@@ -110,11 +112,12 @@ export const GET = handle(async (req: Request) => {
     }),
     db.setting.findUnique({ where: { key: "cron.expiry_sweep.last" } }),
   ]);
-  return ok({
+  const payload: ExpirySweepStatusData = {
     backlog,
     oldestExpiredAt: oldest?.expiresAt?.toISOString() ?? null,
-    lastRun: lastSetting ? JSON.parse(lastSetting.valueJson) : null,
+    lastRun: lastSetting ? (JSON.parse(lastSetting.valueJson) as ExpirySweepOutcome) : null,
     auth: auth.mode,
     schedulingNote: "Recurring invocation: mini-services/expiry-scheduler (this deployment) or a platform cron in production; this endpoint is the tick, not the scheduler",
-  });
+  };
+  return ok(payload);
 });

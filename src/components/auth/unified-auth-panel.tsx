@@ -35,31 +35,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authHeaders, clearDeviceCartToken, knownCartToken, setSessionToken } from "@/lib/session-client";
+import type {
+  MfaVerifyBody,
+  MfaVerifyData,
+  UnifiedAdminData,
+  UnifiedLoginBody,
+  UnifiedMfaData,
+  UnifiedSellerData,
+  UnifiedShopperData,
+} from "@/lib/types/api-contract";
 import { DevAccountsPanel } from "./dev-accounts-panel";
 
-export type UnifiedUserType = "admin" | "seller" | "shopper";
+/** The account tables POST /api/auth/unified-login resolves across — the
+ *  contract success variants' `userType` discriminants. */
+export type UnifiedUserType =
+  | UnifiedAdminData["userType"]
+  | UnifiedSellerData["userType"]
+  | UnifiedShopperData["userType"];
 
-/** POST /api/auth/unified-login success payload (envelope `data`). */
+/** POST /api/auth/unified-login session-minted variants (the MFA challenge
+ *  variant is excluded — it carries no token yet). */
+type UnifiedSessionData = UnifiedAdminData | UnifiedSellerData | UnifiedShopperData;
+
+/** POST /api/auth/unified-login success payload (envelope `data`): the
+ *  contract's admin / seller / shopper variants flattened into the
+ *  optional-field view the portal hosts' onAuthed callbacks consume. */
 export type UnifiedLoginResponse = {
   userType: UnifiedUserType;
   token: string;
-  admin?: { id: string; email: string; name: string; role: string } | null;
-  seller?: {
-    id: string;
-    email: string;
-    fullName: string;
-    displayName: string;
-    status: string;
-    storeId: string | null;
-    storeSlug: string | null;
-    storeName: string | null;
-  } | null;
-  shopper?: { id: string; email: string; fullName: string; phone: string | null } | null;
-  isAffiliate?: boolean;
-  claimed?: { addressesClaimed: number; ordersClaimed: number };
+  admin?: UnifiedAdminData["admin"] | null;
+  seller?: UnifiedSellerData["seller"] | null;
+  shopper?: UnifiedShopperData["shopper"] | null;
+  isAffiliate?: UnifiedShopperData["isAffiliate"];
+  claimed?: UnifiedShopperData["claimed"];
+  guestCartMerged?: UnifiedShopperData["guestCartMerged"];
   /** FINAL CLOSURE §2 — false until email ownership is verified; guest-order
    *  claiming is gated server-side on the same proof. */
-  emailVerified?: boolean;
+  emailVerified?: UnifiedShopperData["emailVerified"];
 };
 
 type LoginFail = {
@@ -75,11 +87,11 @@ type LoginFail = {
 };
 
 type LoginResult =
-  | { ok: true; data: UnifiedLoginResponse }
-  | { ok: "mfa"; mfa: { challenge: string; email: string } }
+  | { ok: true; data: UnifiedSessionData }
+  | { ok: "mfa"; mfa: Pick<UnifiedMfaData, "challenge" | "email"> }
   | { ok: false; fail: LoginFail };
 
-type MfaVerifyResult = { ok: true; data: UnifiedLoginResponse } | { ok: false; fail: LoginFail };
+type MfaVerifyResult = { ok: true; data: MfaVerifyData } | { ok: false; fail: LoginFail };
 
 /** Pull the optional MFA detail fields out of an error envelope. */
 function mfaFailDetails(raw: unknown): { attemptsRemaining?: number; retryAfterSeconds?: number } {
@@ -100,6 +112,7 @@ async function requestUnifiedLogin(
     // into the account even where the sm_cart cookie is unavailable (sandboxed
     // iframe previews). No token yet → header omitted, merge is a no-op.
     const cartToken = knownCartToken();
+    const loginBody: UnifiedLoginBody = portal ? { email, password, portal } : { email, password };
     const res = await fetch("/api/auth/unified-login", {
       method: "POST",
       cache: "no-store",
@@ -110,10 +123,18 @@ async function requestUnifiedLogin(
         ...authHeaders(),
         ...(cartToken ? { "X-Cart-Token": cartToken } : {}),
       },
-      body: JSON.stringify(portal ? { email, password, portal } : { email, password }),
+      body: JSON.stringify(loginBody),
     });
+    // Contract wire view of the envelope: `data` is the UnifiedLoginResponse
+    // variant union widened with the probe fields the runtime guards below
+    // read before trusting one (the JSON is untrusted until narrowed).
     const body = (await res.json().catch(() => ({}))) as {
-      data?: Record<string, unknown>;
+      data?: (UnifiedMfaData | UnifiedAdminData | UnifiedSellerData | UnifiedShopperData) & {
+        mfaRequired?: true;
+        challenge?: string;
+        email?: string;
+        token?: string;
+      };
       error?: { code?: string; message?: string; details?: { types?: unknown } & Record<string, unknown> };
     };
     if (res.ok && body.data) {
@@ -124,7 +145,7 @@ async function requestUnifiedLogin(
         return { ok: "mfa", mfa: { challenge: d.challenge, email: typeof d.email === "string" ? d.email : "" } };
       }
       if (typeof d.token === "string" && d.token !== "") {
-        return { ok: true, data: d as unknown as UnifiedLoginResponse };
+        return { ok: true, data: d as UnifiedSessionData };
       }
     }
     const rawTypes = body.error?.details?.types;
@@ -156,18 +177,19 @@ async function requestUnifiedLogin(
  *  is the NORMAL login success shape — identical post-login handling. */
 async function requestMfaVerify(challenge: string, code: string): Promise<MfaVerifyResult> {
   try {
+    const verifyBody: MfaVerifyBody = { challenge, code };
     const res = await fetch("/api/auth/mfa/verify", {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ challenge, code }),
+      body: JSON.stringify(verifyBody),
     });
     const body = (await res.json().catch(() => ({}))) as {
-      data?: Record<string, unknown>;
+      data?: MfaVerifyData;
       error?: { code?: string; message?: string; details?: Record<string, unknown> };
     };
     if (res.ok && body.data && typeof body.data.token === "string" && body.data.token !== "") {
-      return { ok: true, data: body.data as unknown as UnifiedLoginResponse };
+      return { ok: true, data: body.data };
     }
     const { attemptsRemaining, retryAfterSeconds } = mfaFailDetails(body.error?.details);
     return {
@@ -236,7 +258,7 @@ export function UnifiedAuthPanel({
   const [ambiguous, setAmbiguous] = useState<{ message: string; types: UnifiedUserType[] } | null>(null);
 
   // ---- C4 MFA second step state -----------------------------------------
-  const [mfa, setMfa] = useState<{ challenge: string; email: string } | null>(null);
+  const [mfa, setMfa] = useState<Pick<UnifiedMfaData, "challenge" | "email"> | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [mfaBusy, setMfaBusy] = useState(false);
@@ -248,7 +270,7 @@ export function UnifiedAuthPanel({
 
   /** Shared post-login handling — the password path and the MFA path land in
    *  the exact same place (token bridge + host routing). */
-  const completeLogin = async (data: UnifiedLoginResponse) => {
+  const completeLogin = async (data: UnifiedSessionData) => {
     // localStorage bridge for cookie-less contexts (cross-site iframe
     // preview panels) — mirrors the previous per-portal login forms.
     setSessionToken(data.token);

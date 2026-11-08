@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { ApiError, getPagination, handle, okPaged } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { ACCOUNTS, refreshWalletCache } from "@/lib/ledger";
+import type { PendingReleaseRow, PendingReleasesData, PendingReleasesSummary } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export const GET = handle(async (req: Request) => {
     : [];
   const orderById = new Map(orders.map((o) => [o.id, o]));
 
-  const releases = lines.map((l) => {
+  const releases: PendingReleaseRow[] = lines.map((l) => {
     const order = (l.refId ? orderById.get(l.refId) : undefined) ?? null;
     const availableAt = l.availableAt as Date;
     // paidAt = the order's payment timestamp when present, else the T1 txn's
@@ -77,21 +78,18 @@ export const GET = handle(async (req: Request) => {
       orderNumber: order?.orderNumber ?? "—",
       orderStatus: order?.status ?? "unknown",
       amountMinor: l.amountMinor,
-      paidAt,
-      availableAt,
+      paidAt: paidAt.toISOString(),
+      availableAt: availableAt.toISOString(),
       holdDays,
     };
   });
 
-  return okPaged(
-    {
-      summary: {
-        totalMinor: sum._sum.amountMinor ?? 0,
-        count: total,
-        nextReleaseAt: next?.availableAt ?? null,
-      },
-      releases,
-    },
-    { page, size, total }
-  );
+  const summary: PendingReleasesSummary = {
+    totalMinor: sum._sum.amountMinor ?? 0,
+    count: total,
+    nextReleaseAt: next?.availableAt ? next.availableAt.toISOString() : null,
+  };
+  const payload: PendingReleasesData = { summary, releases };
+
+  return okPaged(payload, { page, size, total });
 });

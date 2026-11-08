@@ -1,5 +1,6 @@
 import { handle, ok } from "@/lib/api";
 import { tickShipments } from "@/lib/shipping";
+import type { ShippingTickData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,11 @@ export const POST = handle(async () => {
   const last = typeof g.__shippingTickAt === "number" ? g.__shippingTickAt : 0;
   const now = Date.now();
   if (now - last < TICK_THROTTLE_MS) {
-    return ok({ advanced: 0, throttled: true, results: [] });
+    const throttled: ShippingTickData = { advanced: 0, throttled: true, results: [] };
+    return ok(throttled);
   }
   g.__shippingTickAt = now;
   const result = await tickShipments();
-  return ok({ ...result, throttled: false });
+  const payload: ShippingTickData = { ...result, throttled: false };
+  return ok(payload);
 });

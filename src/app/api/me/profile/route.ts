@@ -5,6 +5,7 @@ import { requireShopper } from "@/lib/auth";
 import { sanitizeExternalUrl } from "@/lib/url-guard";
 import { PAID_ORDER_STATUSES, tierForSpend, nextTier, TIER_THRESHOLDS_MINOR, MEMBERSHIP_TIERS, type MembershipTier } from "@/lib/membership";
 import { getShopperEmailVerified } from "@/lib/guest-otp";
+import type { ProfileData, ProfilePatchBody, ProfilePatchData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export const GET = handle(async () => {
   // card (fail-closed read: missing table → false → card shows, claiming gated).
   const emailVerified = await getShopperEmailVerified(me.id);
 
-  return ok({
+  const payload: ProfileData = {
     id: shopper.id,
     email: shopper.email,
     emailVerified,
@@ -60,18 +61,23 @@ export const GET = handle(async () => {
     membershipLevel: tier,
     followingCount: shopper.followingCount,
     followerCount: shopper.followerCount,
-    memberSince: shopper.createdAt,
+    memberSince: shopper.createdAt.toISOString(),
     addressCount,
     lifetimeSpendMinor,
     tierProgress: upcoming
       ? {
-          nextTier: upcoming,
-          nextThresholdMinor: nextAtMinor,
+          // Both casts are type-level only: nextTier()'s declared return
+          // includes "SILVER" (never actually returned — SILVER's successor is
+          // GOLD), and nextAtMinor is always the upcoming tier's threshold
+          // whenever `upcoming` is set (they derive from the same value).
+          nextTier: upcoming as "GOLD" | "PLATINUM",
+          nextThresholdMinor: nextAtMinor as number,
           remainingMinor: Math.max(0, (nextAtMinor ?? 0) - lifetimeSpendMinor),
           percent: Math.min(100, Math.round(((lifetimeSpendMinor - tierSinceMinor) / Math.max(1, (nextAtMinor ?? 0) - tierSinceMinor)) * 100)),
         }
       : null,
-  });
+  };
+  return ok(payload);
 });
 
 const patchSchema = z.object({
@@ -104,7 +110,7 @@ function sanitizeAvatarUrl(raw: string | null | undefined): string | null {
 // PATCH /api/me/profile — edit profile settings (name, phone, handle, avatar).
 export const PATCH = handle(async (req: Request) => {
   const me = await requireShopper();
-  const body = (await req.json().catch(() => ({}))) as unknown;
+  const body = (await req.json().catch(() => ({}))) as ProfilePatchBody;
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     throw new ApiError(400, "VALIDATION", parsed.error.issues[0]?.message ?? "Invalid profile payload");
@@ -127,5 +133,6 @@ export const PATCH = handle(async (req: Request) => {
     },
     select: { id: true, fullName: true, username: true, avatarUrl: true, phone: true },
   });
-  return ok({ profile: updated });
+  const payload: ProfilePatchData = { profile: updated };
+  return ok(payload);
 });

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { canPublish, transitionStore } from "@/lib/store-lifecycle";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { PublishData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -65,5 +66,6 @@ export const POST = handle(async function (_req: NextRequest) {
     }
     const res = await transitionStore({ storeId: seller.store.id, to: "live", actorType: "seller", actorId: session.userId, note: "published via publish gate" });
     bustPublicCacheSafe(PUBLIC_CACHE_TAGS.stores, PUBLIC_CACHE_TAGS.market);
-    return ok({ status: res.status, publishedAt: new Date().toISOString() });
+    const payload: PublishData = { status: res.status, publishedAt: new Date().toISOString() };
+    return ok(payload);
 });

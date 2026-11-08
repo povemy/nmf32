@@ -77,7 +77,6 @@ import {
   fmtDateTime,
   fetchEnvelope,
   type CartItemT,
-  type CartT,
   type CategoryT,
   type ProductCardT,
   type ShopperCtx,
@@ -111,6 +110,36 @@ import {
 } from "@/components/chat/chat-ui";
 import { useChatUserRoom } from "@/lib/chat-presence";
 import NotificationBell from "./notification-bell";
+import type {
+  AddCartItemBody,
+  AddCartItemData,
+  CartSelectionBody,
+  CartSelectionData,
+  CartSettingsDTO,
+  ChatMarkReadData,
+  ChatThreadsData,
+  ChatUnreadData,
+  ClearContextBody,
+  ClearContextData,
+  DeleteCartItemData,
+  LandingBody,
+  MarketSuggestData,
+  SendMessageBody,
+  SendMessageData,
+  SfAppConfigResponse,
+  SfCartSettingsData,
+  SfTheme,
+  ShopperRegisterData,
+  StockProbeData,
+  ThreadContextCard,
+  ThreadDetailData,
+  TrackBody,
+  TrackData,
+  TrackReferralBody,
+  TrackReferralData,
+  UpdateCartItemBody,
+  UpdateCartItemData,
+} from "@/lib/types/api-contract";
 
 const VIEW_KEY = SHOPPER_VIEW_KEY;
 
@@ -130,7 +159,7 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
     }
     let alive = true;
     const load = () =>
-      fetchJson<{ total: number }>("/api/chat/unread")
+      fetchJson<ChatUnreadData>("/api/chat/unread")
         .then((d) => alive && setUnread(d.total ?? 0))
         .catch(() => {});
     load();
@@ -145,7 +174,7 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
   useEffect(() => {
     if (!shopperSignedIn) return;
     const sync = () =>
-      fetchJson<{ total: number }>("/api/chat/unread")
+      fetchJson<ChatUnreadData>("/api/chat/unread")
         .then((d) => setUnread(d.total ?? 0))
         .catch(() => {});
     window.addEventListener("nomofee:chat-sync", sync);
@@ -156,7 +185,7 @@ function useChatUnread(shopperSignedIn: boolean, viewName: ShopperView["name"]) 
     if (!shopperSignedIn) return;
     const t = setTimeout(
       () =>
-        fetchJson<{ total: number }>("/api/chat/unread")
+        fetchJson<ChatUnreadData>("/api/chat/unread")
           .then((d) => setUnread(d.total ?? 0))
           .catch(() => {}),
       viewName === "messages" ? 600 : 0
@@ -184,7 +213,7 @@ function useFooterVisible() {
     fetch("/api/sf/app-config", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((b) => {
-        const v = (b as { data?: { footerVisible?: boolean } } | null)?.data?.footerVisible;
+        const v = (b as SfAppConfigResponse | null)?.data?.footerVisible;
         if (typeof v === "boolean" && !cancelled) {
           appConfigCache = { at: Date.now(), footerVisible: v };
           setVisible(v);
@@ -239,7 +268,7 @@ export default function ShopperShell() {
     const hasAttrParams = ATTR_PARAM_KEYS.some((k) => params.get(k) != null);
     const fireLandingBeacon = async (): Promise<void> => {
       try {
-        const payload: Record<string, string> = {};
+        const payload: LandingBody = {};
         for (const k of [...ATTR_PARAM_KEYS, "sf"]) {
           const v = params.get(k);
           if (v != null && v !== "") payload[k] = v.slice(0, 200);
@@ -277,13 +306,8 @@ export default function ShopperShell() {
           setReady(true);
           void (async () => {
             try {
-              const r = await postJson<{
-                target:
-                  | { kind: "product"; storeSlug: string; productSlug: string }
-                  | { kind: "store"; storeSlug: string }
-                  | { kind: "collection"; collectionSlug: string }
-                  | { kind: "showcase"; affiliateSlug: string };
-              }>("/api/affiliate/track", { code: al });
+              const body: TrackBody = { code: al };
+              const r = await postJson<TrackData>("/api/affiliate/track", body);
               const t = r.target;
               if (t.kind === "product") setView({ name: "pdp", slug: t.storeSlug, pSlug: t.productSlug });
               else if (t.kind === "store") setView({ name: "storefront", slug: t.storeSlug });
@@ -301,7 +325,8 @@ export default function ShopperShell() {
         const refCode = params.get("ref");
         if (refCode) {
           const channel = params.get("src");
-          void postJson("/api/affiliate/track-referral", { code: refCode, channel: channel ?? undefined }).catch(() => {
+          const referralBody: TrackReferralBody = { code: refCode, channel: channel ?? undefined };
+          void postJson<TrackReferralData>("/api/affiliate/track-referral", referralBody).catch(() => {
             /* best-effort */
           });
           setView({ name: "affiliate" });
@@ -797,9 +822,7 @@ function MarketHeader({
       return;
     }
     let alive = true;
-    fetchEnvelope<{ products: ProductCardT[]; stores: { name: string; slug: string; logoUrl: string }[] }>(
-      `/api/market/search/suggest?q=${encodeURIComponent(q)}`
-    )
+    fetchEnvelope<MarketSuggestData>(`/api/market/search/suggest?q=${encodeURIComponent(q)}`)
       .then(({ data }) => alive && setSuggestData(data ?? { products: [], stores: [] }))
       .catch(() => alive && setSuggestData(null));
     return () => {
@@ -1490,11 +1513,7 @@ function ShopperAuthDialog() {
     const f = new FormData(e.currentTarget);
     setBusy(true);
     try {
-      const res = await postJson<{
-        token?: string;
-        emailVerificationSent?: boolean;
-        emailVerified?: boolean;
-      }>("/api/auth/shopper/register", {
+      const res = await postJson<ShopperRegisterData>("/api/auth/shopper/register", {
         fullName: f.get("fullName"),
         email: f.get("email"),
         password: f.get("password"),
@@ -1581,10 +1600,22 @@ function ShopperAuthDialog() {
 
 // ---------------------------------------------------------------- messages (chat)
 
-/** The "what is this chat about" bubble — product or order. */
-type ThreadContextCard =
-  | { kind: "product"; productId: string; title: string; slug: string; storeSlug: string; image: string | null; priceMinor: number; compareAtPriceMinor: number | null }
-  | { kind: "order"; orderId: string; orderNumber: string; status: string; totalMinor: number; placedAt: string; itemCount: number; firstItemTitle: string | null; firstItemImage: string | null };
+// ---------------------------------------------------------------------------
+// Chat fetch views — the contract's ThreadDetailData with `messages` re-typed
+// to the shared chat-ui ChatMsg row (the contract types senderType as a free
+// string; chat-ui narrows it to "shopper" | "seller" for bubble alignment).
+// ---------------------------------------------------------------------------
+
+type ThreadDetailView = Omit<ThreadDetailData, "messages"> & { messages: ChatMsg[] };
+
+/** Older keyset page of the same route (only hasMore + messages are read). */
+type ChatMsgPage = Pick<ThreadDetailView, "hasMore" | "messages">;
+
+/** Conversation header bar state — the contract thread row narrowed to the
+ *  fields the header renders. */
+type ActiveThreadHeader = Pick<ThreadDetailData["thread"], "storeName" | "orderNumber" | "contextType" | "subject"> & {
+  storeSlug: string | null;
+};
 
 /** The shopper messages hub — master-detail chat per the messaging redesign:
  *  ChatHeader (back button + "Chats" + live search + All/Active pills), rich
@@ -1600,7 +1631,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ChatFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(initialThreadId ?? null);
-  const [activeThread, setActiveThread] = useState<{ storeName: string; storeSlug: string | null; orderNumber: string | null; contextType: string | null; subject: string | null } | null>(null);
+  const [activeThread, setActiveThread] = useState<ActiveThreadHeader | null>(null);
   const [context, setContext] = useState<ThreadContextCard | null>(null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
   // Phase 2.4 (C2.x): bounded history — the GET returns the latest
@@ -1621,7 +1652,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       // pills no longer round-trips to the server, which is what read as a
       // blink ("it validates before it shows"). Socket pushes + read
       // receipts keep the same snapshot live and authoritative.
-      const { data } = await fetchEnvelope<ChatThreadRow[]>("/api/chat/threads?size=100");
+      const { data } = await fetchEnvelope<ChatThreadsData>("/api/chat/threads?size=100");
       setThreads(data);
       return data;
     } catch {
@@ -1632,12 +1663,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
 
   const loadMessages = useCallback(async (threadId: string) => {
     try {
-      const d = await fetchJson<{
-        thread: { storeName: string; storeSlug: string | null; orderNumber: string | null; contextType: string | null; subject: string | null };
-        context: ThreadContextCard | null;
-        hasMore: boolean;
-        messages: ChatMsg[];
-      }>(`/api/chat/threads/${threadId}?limit=${CHAT_PAGE_SIZE}`);
+      const d = await fetchJson<ThreadDetailView>(`/api/chat/threads/${threadId}?limit=${CHAT_PAGE_SIZE}`);
       setMessages(d.messages);
       setHasOlder(d.hasMore === true);
       setActiveThread({ storeName: d.thread.storeName, storeSlug: d.thread.storeSlug ?? null, orderNumber: d.thread.orderNumber, contextType: d.thread.contextType, subject: d.thread.subject });
@@ -1657,7 +1683,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     setLoadingOlder(true);
     const prevHeight = scrollRef.current?.scrollHeight ?? 0;
     try {
-      const d = await fetchJson<{ hasMore: boolean; messages: ChatMsg[] }>(
+      const d = await fetchJson<ChatMsgPage>(
         `/api/chat/threads/${activeId}?limit=${CHAT_PAGE_SIZE}&before=${encodeURIComponent(messages[0].id)}`
       );
       prependRestoreRef.current = prevHeight;
@@ -1736,7 +1762,8 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
       setActiveThread((prev) => (prev ? { ...prev, orderNumber: null, contextType: null, subject: null } : prev));
       setThreads((prev) => (prev ? prev.map((t) => (t.id === threadId ? { ...t, orderNumber: null, contextType: null, subject: null } : t)) : prev));
       try {
-        await patchJson(`/api/chat/threads/${threadId}`, { action: "clearContext" });
+        const body: ClearContextBody = { action: "clearContext" };
+        await patchJson<ClearContextData>(`/api/chat/threads/${threadId}`, body);
       } catch {
         toast.error("Could not remove the quote — try again");
       }
@@ -1755,7 +1782,7 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
           if (msg.senderType === "seller") {
             // arrived while the shopper is looking at this conversation —
             // clear the badge + stamp ✓✓ for the seller straight away
-            void postJson(`/api/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
+            void postJson<ChatMarkReadData>(`/api/chat/threads/${msg.threadId}/read`, {}).catch(() => {});
           }
           patchRow(msg.threadId, msg.body, msg.senderType, msg.createdAt, true);
         } else if (msg.threadId) {
@@ -1810,7 +1837,8 @@ function MessagesView({ ctx, initialThreadId }: { ctx: ShopperCtx; initialThread
     if (!text || !activeId || sending) return;
     setSending(true);
     try {
-      const msg = await postJson<ChatMsg>(`/api/chat/threads/${activeId}/messages`, { body: text });
+      const body: SendMessageBody = { body: text };
+      const msg = await postJson<SendMessageData>(`/api/chat/threads/${activeId}/messages`, body);
       setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : prev ? [...prev, msg] : [msg]));
       setDraft("");
       patchRow(activeId, msg.body, msg.senderType, msg.createdAt, true);
@@ -2268,27 +2296,7 @@ function ShopperFooter({
 // forms there, structured settings here, no JSON anywhere in the vendor UI.
 // =============================================================================================
 
-type CartDrawerConfig = {
-  layout: string;
-  showFreeShippingBar: boolean;
-  freeShipThresholdMinor: number;
-  upsellEnabled: boolean;
-  upsellTitle: string;
-  upsellLimit: number;
-  urgencyStockEnabled: boolean;
-  urgencyStockThreshold: number;
-  urgencyViewersEnabled: boolean;
-  urgencyViewersMin: number;
-  urgencyViewersMax: number;
-  urgencyCountdownEnabled: boolean;
-  urgencyCountdownMinutes: number;
-  showOrderNote: boolean;
-  showDiscountHint: boolean;
-  checkoutLabel: string;
-  showContinueShopping: boolean;
-  stickyCta: boolean;
-  trustBadges: string[];
-};
+type CartDrawerConfig = Omit<CartSettingsDTO, "upsellMode">;
 
 const CART_DRAWER_DEFAULTS: CartDrawerConfig = {
   layout: "standard",
@@ -2314,8 +2322,12 @@ const CART_DRAWER_DEFAULTS: CartDrawerConfig = {
 
 type UpsellProduct = ProductCardT & { variantId: string | null; stock: number };
 
+/** GET /api/sf/[slug]/cart-settings payload as the drawer consumes it —
+ *  SfCartSettingsData with the theme trimmed to the accent colour the drawer
+ *  paints, the settings block projected onto the drawer's own config fields
+ *  and the upsell/best-seller cards kept as the shared ProductCardT view. */
 type SfCartSettingsPayload = {
-  store: { id: string; name: string; slug: string; theme?: { primaryColor?: string } | null };
+  store: Pick<SfCartSettingsData["store"], "id" | "name" | "slug"> & { theme?: Pick<SfTheme, "primaryColor"> | null };
   settings: CartDrawerConfig | null;
   upsell: UpsellProduct[];
   // Task 30: top sellers resolved for EVERY live store — the cross-vendor AOV
@@ -2389,7 +2401,7 @@ function CartDrawer({
           return [slug, cached.failed ? null : cached.payload] as const;
         }
         try {
-          const payload = await fetchJson<SfCartSettingsPayload>(`/api/sf/${encodeURIComponent(slug)}/cart-settings`);
+          const payload = await fetchJson<SfCartSettingsData>(`/api/sf/${encodeURIComponent(slug)}/cart-settings`);
           cartSettingsCache.set(slug, { at: Date.now(), payload });
           return [slug, payload] as const;
         } catch {
@@ -2533,7 +2545,8 @@ function CartDrawer({
       setTimeout(() => {
         qtyTimers.current.delete(itemId);
         const intended = cartSnapshot().items.find((x) => x.id === itemId)?.qty ?? clamped;
-        patchJson<{ cart: CartT }>(`/api/cart/items/${itemId}`, { qty: intended })
+        const body: UpdateCartItemBody = { qty: intended };
+        patchJson<UpdateCartItemData>(`/api/cart/items/${itemId}`, body)
           .then((res) => {
             qtyRevertPoint.current.set(itemId, intended);
             if (qtyTimers.current.has(itemId)) return; // newer taps pending — they will settle
@@ -2580,7 +2593,7 @@ function CartDrawer({
     }
     qtyRevertPoint.current.delete(itemId);
     mutateCartItems((items) => items.filter((x) => x.id !== itemId));
-    deleteJson(`/api/cart/items/${itemId}`).catch(() => {
+    deleteJson<DeleteCartItemData>(`/api/cart/items/${itemId}`).catch(() => {
       // Failure is rare (offline / session expired) — put the line back where
       // it was (guarded: never duplicate if state moved on) and say so.
       mutateCartItems((items) => {
@@ -2608,9 +2621,7 @@ function CartDrawer({
     const ids = [...new Set(cartSnapshot().items.map((i) => i.variantId))];
     if (ids.length === 0) return;
     const seq = ++stockProbeSeq.current;
-    fetchJson<{ stocks: Record<string, { stock: number; moq: number; purchasable: boolean }> }>(
-      `/api/cart/stock?ids=${encodeURIComponent(ids.join(","))}`
-    )
+    fetchJson<StockProbeData>(`/api/cart/stock?ids=${encodeURIComponent(ids.join(","))}`)
       .then(({ stocks }) => {
         if (seq !== stockProbeSeq.current) return; // a newer open/refresh supersedes
         const adjusted: string[] = [];
@@ -2649,7 +2660,8 @@ function CartDrawer({
   // newer toggle). Zero waiting, zero refetch — the messaging-filter approach.
   function setItemSelected(itemId: string, selected: boolean) {
     mutateCartItems((items) => items.map((it) => (it.id === itemId ? { ...it, selected } : it)));
-    patchJson(`/api/cart/items/${itemId}`, { selected }).catch(() => {
+    const body: UpdateCartItemBody = { selected };
+    patchJson<UpdateCartItemData>(`/api/cart/items/${itemId}`, body).catch(() => {
       mutateCartItems((items) =>
         items.map((it) => (it.id === itemId && it.selected === selected ? { ...it, selected: !selected } : it))
       );
@@ -2661,7 +2673,8 @@ function CartDrawer({
     const ids = g.items.map((it) => it.id);
     const idSet = new Set(ids);
     mutateCartItems((items) => items.map((it) => (idSet.has(it.id) ? { ...it, selected } : it)));
-    patchJson("/api/cart/selection", { itemIds: ids, selected }).catch(() => {
+    const body: CartSelectionBody = { itemIds: ids, selected };
+    patchJson<CartSelectionData>("/api/cart/selection", body).catch(() => {
       mutateCartItems((items) =>
         items.map((it) => (idSet.has(it.id) && it.selected === selected ? { ...it, selected: !selected } : it))
       );
@@ -2673,7 +2686,8 @@ function CartDrawer({
     if (!p.variantId) return;
     setAddingUpsell(p.id);
     try {
-      const res = await postJson<{ cart: CartT; notice: string | null }>("/api/cart/items", { variantId: p.variantId, qty: 1 });
+      const body: AddCartItemBody = { variantId: p.variantId, qty: 1 };
+      const res = await postJson<AddCartItemData>("/api/cart/items", body);
       applyServerCart(res.cart); // same-frame badge/drawer update, zero refetch
       if (res.notice) toast.warning("Cart updated", { description: res.notice });
       else toast.success("Added to cart", { description: p.title });

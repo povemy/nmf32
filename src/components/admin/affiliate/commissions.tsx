@@ -30,7 +30,13 @@ import {
   TableSkeleton,
   fmtDT,
 } from "../ui-bits";
-import { bpsLabel, type CommissionsBody, type CommissionRow } from "./types";
+import { bpsLabel } from "./types";
+import type {
+  AdminAffCommissionRow,
+  AdminAffCommissionsData,
+  AdminAffHoldData,
+  AdminStoresData,
+} from "@/lib/types/api-contract";
 
 const COMMISSION_STATUSES = ["pending", "approved", "available", "paid", "reversed", "held"];
 
@@ -65,7 +71,7 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
 
   // Store directory for the store filter — fetched once on mount. Load-test
   // fixtures can repeat a store name, so duplicates are disambiguated by slug.
-  const { data: stores } = useApi<{ id: string; name: string; slug: string }[]>("/api/admin/stores");
+  const { data: stores } = useApi<AdminStoresData[]>("/api/admin/stores");
   const storeOptions = useMemo(() => {
     const list = (stores ?? []).map((s) => ({ id: s.id, name: s.name, slug: s.slug }));
     const counts = new Map<string, number>();
@@ -94,7 +100,7 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
     return `/api/admin/affiliate/commissions?${sp.toString()}`;
   }, [status, affiliateFilter, storeFilter, orderQuery, fromIso, toIso, page]);
 
-  const { data, error, loading, refetch } = useApi<CommissionsBody>(url);
+  const { data, error, loading, refetch } = useApi<AdminAffCommissionsData>(url);
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const total = data?.total ?? 0;
   const serverPage = data?.page ?? page;
@@ -123,8 +129,8 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
   };
 
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [holdTarget, setHoldTarget] = useState<CommissionRow | null>(null);
-  const [releaseTarget, setReleaseTarget] = useState<CommissionRow | null>(null);
+  const [holdTarget, setHoldTarget] = useState<AdminAffCommissionRow | null>(null);
+  const [releaseTarget, setReleaseTarget] = useState<AdminAffCommissionRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -132,10 +138,13 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
     setExpanded(null);
   }, [url]);
 
-  const runHold = async (row: CommissionRow, action: "hold" | "release", reason?: string) => {
+  const runHold = async (row: AdminAffCommissionRow, action: "hold" | "release", reason?: string) => {
     setBusyId(row.id);
     try {
-      const res = await apiSend<{ status: string }>(`/api/admin/affiliate/commissions/${encodeURIComponent(row.id)}/hold`, "POST", {
+      // NOTE: the contract body (AdminAffHoldBody) marks `reason` required,
+      // but the route only enforces it for holds — the release path sends
+      // `{ action }` alone, so the body stays inline rather than typed.
+      const res = await apiSend<AdminAffHoldData>(`/api/admin/affiliate/commissions/${encodeURIComponent(row.id)}/hold`, "POST", {
         action,
         ...(reason ? { reason } : {}),
       });
@@ -154,9 +163,9 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
     }
   };
 
-  const canHold = (row: CommissionRow): boolean =>
+  const canHold = (row: AdminAffCommissionRow): boolean =>
     row.status !== "held" && row.entries.some((e) => ["pending", "approved", "available"].includes(e.status));
-  const canRelease = (row: CommissionRow): boolean => row.entries.some((e) => e.status === "held");
+  const canRelease = (row: AdminAffCommissionRow): boolean => row.entries.some((e) => e.status === "held");
 
   return (
     <div className="space-y-4">
@@ -448,7 +457,7 @@ export function AffiliateCommissionsView({ nav }: { nav: AdminNav }) {
 
 /* ------------------------------------------------------- entry breakdown */
 
-function EntryBreakdown({ row }: { row: CommissionRow }) {
+function EntryBreakdown({ row }: { row: AdminAffCommissionRow }) {
   return (
     <div className="p-3">
       <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

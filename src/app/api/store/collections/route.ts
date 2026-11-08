@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError, slugify } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
 import { bustPublicCacheSafe, PUBLIC_CACHE_TAGS } from "@/lib/public-cache";
+import type { SellerCollectionRow, SellerCollectionCreateBody } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -13,23 +14,22 @@ export const GET = handle(async () => {
     include: { products: { include: { product: { select: { id: true, title: true, slug: true, priceMinor: true, status: true } } } } },
     orderBy: { createdAt: "desc" },
   });
-  return ok(
-    collections.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      description: c.description,
-      productCount: c.products.length,
-      products: c.products.map((cp) => cp.product),
-      createdAt: c.createdAt,
-    }))
-  );
+  const payload: SellerCollectionRow[] = collections.map((c) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    description: c.description,
+    productCount: c.products.length,
+    products: c.products.map((cp) => cp.product),
+    createdAt: c.createdAt.toISOString(),
+  }));
+  return ok(payload);
 });
 
 // POST /api/store/collections {name, description?}
 export const POST = handle(async (req: Request) => {
   const { me, store } = await requireActiveSellerStore();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as SellerCollectionCreateBody;
 
   const name = String(body.name ?? "").trim();
   if (!name) throw new ApiError(400, "VALIDATION", "name is required");
@@ -51,5 +51,16 @@ export const POST = handle(async (req: Request) => {
   });
 
   bustPublicCacheSafe(PUBLIC_CACHE_TAGS.products);
-  return ok({ ...collection, productCount: 0, products: [] }, { status: 201 });
+  const payload: SellerCollectionRow = {
+    id: collection.id,
+    storeId: collection.storeId,
+    name: collection.name,
+    slug: collection.slug,
+    description: collection.description,
+    createdAt: collection.createdAt.toISOString(),
+    updatedAt: collection.updatedAt.toISOString(),
+    productCount: 0,
+    products: [],
+  };
+  return ok(payload, { status: 201 });
 });

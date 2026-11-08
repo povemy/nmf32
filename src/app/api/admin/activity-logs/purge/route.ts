@@ -4,6 +4,7 @@ import { requireCap } from "@/lib/auth";
 import { verifyPasswordAsync } from "@/lib/password";
 import { db } from "@/lib/db";
 import { readBody } from "@/app/api/admin/_helpers";
+import type { PurgeCountData, PurgeBody, PurgeData } from "@/lib/types/api-contract";
 
 // Permanent ActivityLog purge (RX-CHECKLIST addendum #6).
 //
@@ -37,16 +38,17 @@ export const GET = handle(async () => {
     db.activityLog.count(),
     db.activityLog.groupBy({ by: ["actorType"], _count: { _all: true } }),
   ]);
-  return ok({
+  const payload: PurgeCountData = {
     total,
     byActor: byActor.map((a) => ({ actorType: a.actorType, count: a._count._all })),
-  });
+  };
+  return ok(payload);
 });
 
 // POST /api/admin/activity-logs/purge {password} — verify + wipe + audit.
 export const POST = handle(async (req: NextRequest) => {
   const admin = await requireCap("logs.purge");
-  const body = await readBody(req);
+  const body = (await readBody(req)) as PurgeBody & Record<string, unknown>;
   const password = typeof body.password === "string" ? body.password : "";
   if (!password) throw new ApiError(400, "VALIDATION", "Admin password is required");
 
@@ -94,5 +96,6 @@ export const POST = handle(async (req: NextRequest) => {
     after: { deleted, remaining, scope: "all actor types" },
   });
 
-  return ok({ deleted, remaining });
+  const payload: PurgeData = { deleted, remaining };
+  return ok(payload);
 });

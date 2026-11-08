@@ -33,30 +33,19 @@ import { formatMinor } from "@/lib/money";
 import { useApi } from "./use-api";
 import { EmptyState, ErrorState, HealthDot, KpiCard, Money, PageHeader, StatusChip, timeAgo } from "./ui-bits";
 import type { AdminNav } from "./nav";
+import type { AdminDashboardData, AdminHealthData } from "@/lib/types/api-contract";
 
-type DashboardBody = {
-  gmvTodayMinor: number;
-  ordersToday: number;
-  commissionTodayMinor: number;
-  activeStores: number;
-  pendingKyc: number;
-  productsToModerate: number;
-  refundsQueue: number;
-  disputesOpen: number;
-  payoutsDueMinor: number;
-  payoutsDueSellers: number;
-  gmvSeries30d: { date: string; gmvMinor: number; orders: number }[];
-  topStores: { storeName: string; gmv30dMinor: number; orders30d: number }[];
-  recentSellers: { id: string; displayName: string; storeName: string | null; status: string; createdAt: string }[];
-};
-
+/** DASH-01 health probe — the ledger block is derived from the contract
+ *  AdminHealthData; `db` stays the legacy defensive union
+ *  (boolean | {ok}) because the KPI card's typeof-narrowing below relies on
+ *  it (the contract types `db` as the literal "up"). */
 type HealthBody = {
   db?: { ok?: boolean } | boolean;
-  ledger?: { ok?: boolean; problems?: string[]; txnCount?: number; walletCount?: number };
+  ledger?: Partial<Pick<AdminHealthData["ledger"], "ok" | "problems" | "txnCount" | "walletCount">>;
 };
 
 export function DashboardView({ nav }: { nav: AdminNav }) {
-  const dash = useApi<DashboardBody>("/api/admin/dashboard");
+  const dash = useApi<AdminDashboardData>("/api/admin/dashboard");
   const health = useApi<HealthBody>("/api/admin/system/health");
 
   const series = useMemo(() => (dash.data?.gmvSeries30d ?? []).map((p) => ({ ...p, gmvMinor: Number(p.gmvMinor) || 0 })), [dash.data]);

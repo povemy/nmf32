@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { handle, ok, ApiError, notify, logActivity } from "@/lib/api";
 import { requireActiveSellerStore } from "@/lib/auth";
+import type { SellerDomainVerifiedData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -37,5 +38,20 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ id: st
     meta: { domain: record.domain },
   });
 
-  return ok(updated);
+  // lastCheckedAt is non-null on this payload: the update above just wrote it.
+  const payload: SellerDomainVerifiedData = {
+    id: updated.id,
+    storeId: updated.storeId,
+    domain: updated.domain,
+    mode: updated.mode,
+    status: updated.status,
+    sslStatus: updated.sslStatus,
+    isPrimary: updated.isPrimary,
+    lastCheckedAt: updated.lastCheckedAt!.toISOString(),
+    errorReason: updated.errorReason,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  };
+
+  return ok(payload);
 });

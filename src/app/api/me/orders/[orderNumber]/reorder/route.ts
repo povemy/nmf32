@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { handle, ok, ApiError } from "@/lib/api";
 import { requireShopper } from "@/lib/auth";
 import { createCartForShopper, findCartForShopper } from "@/app/api/cart/cart";
+import type { ReorderData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +36,13 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
   });
   if (!order) throw new ApiError(404, "NOT_FOUND", "No order with that number on your account");
 
-  const added: { title: string; qty: number }[] = [];
-  const skipped: { title: string; reason: string }[] = [];
+  const added: ReorderData["added"] = [];
+  const skipped: ReorderData["skipped"] = [];
 
   const lines = order.items.filter((i) => i.variantId && i.variant);
   if (lines.length === 0) {
-    return ok({ added, skipped: [{ title: "Items from this order", reason: "No longer available" }] });
+    const payload: ReorderData = { added, skipped: [{ title: "Items from this order", reason: "No longer available" }] };
+    return ok(payload);
   }
 
   // Active cart for this shopper (multi-seller: one cart, many stores).
@@ -83,5 +85,6 @@ export const POST = handle(async (_req: Request, ctx: { params: Promise<{ orderN
     added.push({ title, qty: delta });
   }
 
-  return ok({ added, skipped });
+  const payload: ReorderData = { added, skipped };
+  return ok(payload);
 });

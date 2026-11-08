@@ -1,6 +1,7 @@
 import { handle, ok } from "@/lib/api";
 import { rateLimit } from "@/lib/rate-limit";
 import { trackReferralVisit } from "@/lib/affiliate-attribution";
+import type { TrackReferralBody, TrackReferralData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,13 @@ export const dynamic = "force-dynamic";
 // Returns {invitedBy} so the landing can show "You were invited by @x".
 export const POST = handle(async (req: Request) => {
   rateLimit(req, "affiliate-track-ref", 30);
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as TrackReferralBody;
   const code = String(body.code ?? "").trim();
-  if (!code) return ok({ invitedBy: null });
+  if (!code) {
+    const payload: TrackReferralData = { invitedBy: null };
+    return ok(payload);
+  }
   const result = await trackReferralVisit(code, body.channel != null ? String(body.channel) : undefined);
-  return ok({ invitedBy: result?.displayName ?? null });
+  const payload: TrackReferralData = { invitedBy: result?.displayName ?? null };
+  return ok(payload);
 });

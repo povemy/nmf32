@@ -5,6 +5,7 @@ import { isEligibleOrder, ELIGIBLE_CANDIDATE_STATUSES, reviewsSchemaReady } from
 import { sanitizeReviewTextForDisplay, wasReviewTextRemoved } from "@/lib/review-text";
 import { summarizeShopperRewards } from "@/lib/review-rewards";
 import { placeholderUrl } from "@/lib/placeholder";
+import type { MeReviewCandidate, MeReviewRewardsSummary, MeSubmittedReview, MyReviewsData } from "@/lib/types/api-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -99,13 +100,7 @@ export const GET = handle(async () => {
     },
   });
 
-  const toReview: Array<{
-    orderNumber: string;
-    orderStatus: string;
-    purchasedAt: Date;
-    store: { id: string; name: string; slug: string };
-    product: { id: string; title: string; slug: string; imageUrl: string };
-  }> = [];
+  const toReview: MeReviewCandidate[] = [];
   const seenProductIds = new Set<string>();
   for (const o of candidateOrders) {
     for (const item of o.items) {
@@ -125,7 +120,7 @@ export const GET = handle(async () => {
       toReview.push({
         orderNumber: o.orderNumber,
         orderStatus: o.status,
-        purchasedAt: o.createdAt,
+        purchasedAt: o.createdAt.toISOString(),
         store: { id: p.store.id, name: p.store.name, slug: p.store.slug },
         product: {
           id: p.id,
@@ -139,12 +134,29 @@ export const GET = handle(async () => {
     if (toReview.length >= 50) break;
   }
 
-  // 4) Reward ledger summary.
-  const rewards = await summarizeShopperRewards(me.id);
+  // 4) Reward ledger summary (Prisma rows carry Date fields — serialize to
+  //    the contract's ISO strings for identical JSON output).
+  const rawRewards = await summarizeShopperRewards(me.id);
+  const rewards: MeReviewRewardsSummary = {
+    activePoints: rawRewards.activePoints,
+    activeCount: rawRewards.activeCount,
+    reversedCount: rawRewards.reversedCount,
+    reversedPoints: rawRewards.reversedPoints,
+    minorEquivalent: rawRewards.minorEquivalent,
+    recent: rawRewards.recent.map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      points: e.points,
+      note: e.note,
+      createdAt: e.createdAt.toISOString(),
+      reversedAt: e.reversedAt ? e.reversedAt.toISOString() : null,
+      reversalReason: e.reversalReason,
+    })),
+  };
 
-  return ok({
+  const payload: MyReviewsData = {
     toReview,
-    submitted: myReviews.map((r) => ({
+    submitted: myReviews.map((r): MeSubmittedReview => ({
       id: r.id,
       rating: r.rating,
       // Display-side guard: a payload-carrying text renders blank here too,
@@ -154,8 +166,9 @@ export const GET = handle(async () => {
       body: sanitizeReviewTextForDisplay(r.body),
       titleRemoved: wasReviewTextRemoved(r.title),
       bodyRemoved: wasReviewTextRemoved(r.body),
-      status: r.status,
-      createdAt: r.createdAt,
+      // DB column is a free String; moderation only ever writes these three.
+      status: r.status as MeSubmittedReview["status"],
+      createdAt: r.createdAt.toISOString(),
       product: {
         id: r.product.id,
         title: r.product.title,
@@ -175,5 +188,6 @@ export const GET = handle(async () => {
       minorPerPoint: 1,
       maxEdits: MAX_EDITS,
     },
-  });
+  };
+  return ok(payload);
 });

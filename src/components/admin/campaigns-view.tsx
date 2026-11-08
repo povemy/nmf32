@@ -71,6 +71,13 @@ import {
 } from "@/lib/campaigns";
 import { apiSend, useApi, useDebounced } from "./use-api";
 import { qs } from "./nav";
+import type {
+  AdminCampaignDeleteData,
+  AdminCampaignItem,
+  CampaignCreateBody,
+  CampaignMediaData,
+  CampaignUpdateBody,
+} from "@/lib/types/api-contract";
 import {
   ConfirmDialog,
   EmptyState,
@@ -84,29 +91,9 @@ import {
 
 /* ------------------------------------------------------------------ types */
 
-type CampaignRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  presetId: string | null;
-  isPublished: boolean;
-  archivedAt: string | null;
-  placement: string;
-  priority: number;
-  displayOrder: number;
-  ctaLabel: string | null;
-  ctaHref: string | null;
-  bannerDesktopUrl: string | null;
-  bannerMobileUrl: string | null;
-  thumbnailUrl: string | null;
-  productQuery: string | null;
-  startAt: string;
-  endAt: string;
-  theme: CampaignThemeT;
-  status: "draft" | "scheduled" | "live" | "ended" | "archived";
-  daysUntilStart: number;
-  daysLeft: number;
-};
+/** MKT-04 campaign row — aliases the contract AdminCampaignItem (parsed
+ *  theme + derived status + day countdowns). */
+type CampaignRow = AdminCampaignItem;
 
 const CAMPAIGN_STATUS_CLASS: Record<CampaignRow["status"], string> = {
   draft: "border-muted-foreground/30 bg-muted text-muted-foreground",
@@ -230,7 +217,7 @@ async function uploadCampaignMedia(file: File): Promise<string> {
     headers: authHeaders(), // no Content-Type — the browser sets the multipart boundary
     body: fd,
   });
-  let body: { data?: { url?: string }; error?: { message?: string } } = {};
+  let body: { data?: CampaignMediaData; error?: { message?: string } } = {};
   try {
     body = (await res.json()) as typeof body;
   } catch {
@@ -539,7 +526,7 @@ export function CampaignsView() {
   const save = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = {
+      const payload: CampaignCreateBody = {
         name: form.name.trim(),
         presetId: form.presetId || null,
         description: form.description.trim() || null,
@@ -558,10 +545,10 @@ export function CampaignsView() {
         isPublished: form.publish,
       };
       if (editing) {
-        await apiSend(`/api/admin/campaigns/${editing.id}`, "PATCH", payload);
+        await apiSend<AdminCampaignItem>(`/api/admin/campaigns/${editing.id}`, "PATCH", payload);
         toast.success("Campaign updated", { description: `${form.name.trim()} — changes reach the homepage within the cache window (seconds; ≤ 60 s worst case)` });
       } else {
-        await apiSend("/api/admin/campaigns", "POST", payload);
+        await apiSend<AdminCampaignItem>("/api/admin/campaigns", "POST", payload);
         toast.success("Campaign created", {
           description: form.publish ? `${form.name.trim()} is scheduled/live` : `${form.name.trim()} saved as draft — invisible to shoppers until published`,
         });
@@ -582,7 +569,7 @@ export function CampaignsView() {
   const togglePublish = async (c: CampaignRow) => {
     setBusyId(c.id);
     try {
-      await apiSend(`/api/admin/campaigns/${c.id}`, "PATCH", { isPublished: !c.isPublished });
+      await apiSend<AdminCampaignItem>(`/api/admin/campaigns/${c.id}`, "PATCH", { isPublished: !c.isPublished } satisfies CampaignUpdateBody);
       toast.success(`Campaign ${c.isPublished ? "unpublished" : "published"}`, { description: c.name });
       void refetch();
     } catch (e) {
@@ -599,7 +586,7 @@ export function CampaignsView() {
   const toggleArchive = async (c: CampaignRow) => {
     setBusyId(c.id);
     try {
-      await apiSend(`/api/admin/campaigns/${c.id}`, "PATCH", { archived: !c.archivedAt });
+      await apiSend<AdminCampaignItem>(`/api/admin/campaigns/${c.id}`, "PATCH", { archived: !c.archivedAt } satisfies CampaignUpdateBody);
       toast.success(c.archivedAt ? "Campaign restored" : "Campaign archived", {
         description: c.archivedAt
           ? `${c.name} is back in the normal lifecycle`
@@ -618,7 +605,7 @@ export function CampaignsView() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
     try {
-      await apiSend(`/api/admin/campaigns/${deleteTarget.id}`, "DELETE");
+      await apiSend<AdminCampaignDeleteData>(`/api/admin/campaigns/${deleteTarget.id}`, "DELETE");
       toast.success("Campaign deleted", { description: deleteTarget.name });
       setDeleteTarget(null);
       void refetch();

@@ -7,6 +7,7 @@
 // ============================================================================
 import { deviceHeaders } from "@/lib/session-client";
 import type { PdpEventType } from "@/lib/analytics/track";
+import type { PdpEventBody } from "@/lib/types/api-contract";
 
 let beaconCtx: { storeId: string; productId: string | null } | null = null;
 
@@ -28,7 +29,7 @@ export function pdpTrack(
       productId: opts.productId ?? ctx.productId,
       variantId: opts.variantId ?? null,
       qty: opts.qty ?? null,
-    });
+    } satisfies PdpEventBody);
     // keepalive lets the beacon survive an immediate navigation (Buy Now →
     // checkout view swap) just like the landing attribution beacon.
     void fetch("/api/analytics/pdp-event", {
