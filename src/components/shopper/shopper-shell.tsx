@@ -1542,10 +1542,17 @@ function ShopperAuthDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? close() : null)}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto max-w-sm">
+      {/* Mobile fit: the box keeps a 1rem gutter per side (max-w-[calc(100%-2rem)])
+          up to the intended max-w-sm (24rem) from sm up — the un-prefixed
+          `max-w-sm` alone silently dropped the base gutter class via
+          tailwind-merge and rendered edge-to-edge on phones. Height uses dvh
+          where supported so mobile browser chrome can't clip the bottom.
+          [&>*]:min-w-0 stops grid children (long titles/emails) from blowing
+          the single auto grid track past the box. */}
+      <DialogContent className="max-h-[88vh] supports-[height:100dvh]:max-h-[88dvh] max-w-[calc(100%-2rem)] sm:max-w-sm overflow-y-auto [&>*]:min-w-0">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5 text-teal-700" /> {recoveryMode ? "Reset your password" : "NOMOFEE shopper account"}
+          <DialogTitle className="flex items-center gap-2 pr-8">
+            <User className="h-5 w-5 shrink-0 text-teal-700" /> {recoveryMode ? "Reset your password" : "NOMOFEE shopper account"}
           </DialogTitle>
           <DialogDescription>
             {recoveryMode
